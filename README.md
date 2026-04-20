@@ -4,18 +4,21 @@ scadwright is a Python library for designing 3D parts and assemblies: you write 
 
 ## What is this and why does it exist?
 
-OpenSCAD is a great tool that offers a straight-forward and easy path to programmatic 3d design: declare shapes, transform them, combine them with booleans.
+OpenSCAD offers a straight-forward and easy path to programmatic 3d design: declare shapes, transform them, combine them with booleans.
 
-But OpenSCAD's language is limited in ways that rapidly get annoying once your project grows beyond a few parts.
+But OpenSCAD is limited in ways that rapidly get annoying once your project grows beyond a few parts.
 
-**scadwright keeps the OpenSCAD model** — the same shapes, the same transforms, the same boolean operations — and lets you write them in Python.
+**scadwright keeps the basic OpenSCAD model** — the same shapes, the same transforms, the same boolean operations — and lets you write them in Python.
 
-However, **scadwright is not just a python wrapper for OpenSCAD**: you get the ability to add new components and transforms to the language, components that publish their dimensions to callers, a rich library of reusable shapes out of the box, scripts you can parametrize from the command line, real error messages with line numbers, and automated tests.
+However, **scadwright goes way beyond just a python wrapper for OpenSCAD**: you get the ability to add new components and transforms to the language, components that publish their dimensions to callers, a rich library of reusable shapes out of the box, scripts you can parametrize from the command line, real error messages with line numbers, and automated tests.
 
 While simple projects very strongly resemeble OpenSCAD code (easy to be productive immediately), as your projects grows in complexity, **scadwright allows a graceful transition to more complex features**, without any hard syntactic or conceptual boundaries. **Styles can be mixed and matched in the same project.**
 
-Thus the more advanced constructs use a syntax that's neither OpenSCAD nor standard
-object-oriented python: the goal is to ruthlessly elimate boiler plate, and make those advanced constructs simple to use for those with little background in object-oriented python.  
+I have put significant effort into refining the UX of scadwright:  the more advanced constructs use a syntax 
+that's neither quite OpenSCAD nor quite standard object-oriented python. Instead, the goal is to ruthlessly 
+elimate boiler plate, and make constructs simple to use in common cases for those with little background in
+object-oriented python or advanced OpenSCAD, while retaining full python capabilities and a low-level interface
+for exceptional cases.
 
 scadwright calls OpenSCAD only at render time. The Python side has no external dependencies, but sympy is highly recommended to enable full functionality.  I've taken some care to make emitted SCAD relatively human-readable.
 
