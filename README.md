@@ -456,7 +456,7 @@ In parallel, I'm actually using this library for my current 3d printing projects
 
 ## Documentation
 
-I've taken great care to produce excellent documentation that's easy to consume.  This is not an AI-generated after-thought, but rather months of iteration on explaining simply how to produce expressive and powerful code.
+I've taken great care to produce excellent documentation that's easy to consume.  This is not an AI-generated after-thought, but rather carefully written docs for producing expressive and powerful code simply.
 
 [Full documentation here](docs/README.md). Documentation is along the lines of the [OpenSCAD Language Reference](https://openscad.org/documentation.html).  There's also a [cheatsheet](docs/cheatsheet.md) that parallels [the OpenSCAD cheatsheet](https://openscad.org/cheatsheet/).
 
