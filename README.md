@@ -448,7 +448,7 @@ I've been working on the specification for this for years, long before AI was a 
 
 Is there AI generated code in here?  Yes.  It's 2026.  
 
-Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands of incremental iterations, and a fair amount of hand-coding and human-writing (including this right here).
+Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands, of incremental iterations, and a fair amount of hand-coding and human-writing (including this bit right here).
 
 Pretty much every part of scadwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intutive and naively simple, and working through hard trade-offs in detail though examples.  I've been writing code since the late 90s, and I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
 
@@ -457,7 +457,7 @@ framework and motivated its completion.
 
 ## Documentation
 
-I've taken great care to produce excellent documentation that's easy to consume.  This is not an AI-generated after-thought, but rather carefully written docs for producing expressive and powerful code simply.
+I've taken great care to produce excellent documentation that's easy to consume.  This is not an AI-generated afterthought, but rather carefully written docs for producing expressive and powerful code simply.
 
 [Full documentation here](docs/README.md). Documentation is along the lines of the [OpenSCAD Language Reference](https://openscad.org/documentation.html).  There's also a [cheatsheet](docs/cheatsheet.md) that parallels [the OpenSCAD cheatsheet](https://openscad.org/cheatsheet/).
 
