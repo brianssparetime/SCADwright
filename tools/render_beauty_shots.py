@@ -1,0 +1,154 @@
+"""Render beauty-shot PNGs from the manifest.
+
+Produces PNGs for shape-library Components and example scripts with a
+consistent camera and colorscheme, so docs images regenerate from one command.
+
+Usage:
+    python tools/render_beauty_shots.py                   # render all
+    python tools/render_beauty_shots.py --filter tube     # render matching
+    python tools/render_beauty_shots.py --openscad PATH   # custom binary
+
+Requires OpenSCAD. Binary is located via --openscad, $SCADWRIGHT_OPENSCAD,
+the `openscad` name on PATH, or the default macOS .app path.
+
+When embedding generated images in markdown docs, put captions on a new line
+beneath the image to avoid sizing breakage, i.e.:
+
+    ![alt](path/to/image.png)
+
+    *caption here*
+
+not:
+
+    ![alt](path/to/image.png) *caption here*
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+CAMERA = "0,0,0,60,0,45,500"   # rx=60° inclination, rz=45° azimuth; dist overridden by --viewall
+IMGSIZE = "1200,900"
+COLORSCHEME = "Metallic"
+FN = 96                        # override $fn globally for smooth circles
+MAC_DEFAULT = "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
+
+
+def _resolve_openscad(explicit: str | None) -> str:
+    candidate = explicit or os.environ.get("SCADWRIGHT_OPENSCAD") or "openscad"
+    found = shutil.which(candidate)
+    if found:
+        return found
+    if Path(MAC_DEFAULT).exists():
+        return MAC_DEFAULT
+    raise SystemExit(
+        f"could not find openscad binary {candidate!r}. "
+        "Install OpenSCAD, pass --openscad PATH, or set $SCADWRIGHT_OPENSCAD."
+    )
+
+
+def _render_png(scad_path: Path, out_png: Path, openscad: str, opts: dict) -> None:
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    # Preview (throwntogether) rather than full CGAL render: respects color()
+    # directives, handles non-closed meshes (e.g. Helix), and renders faster.
+    cmd = [
+        openscad,
+        "-o", str(out_png),
+        f"--camera={opts['camera']}",
+        f"--imgsize={opts['imgsize']}",
+        f"--colorscheme={opts['colorscheme']}",
+        "--autocenter",
+        "--viewall",
+        "-D", f"$fn={opts['fn']}",
+        str(scad_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"openscad failed for {out_png}:\n{result.stderr.strip() or result.stdout.strip()}"
+        )
+
+
+def _render_component_entry(entry: dict, tmpdir: str, openscad: str, opts: dict) -> None:
+    from scadwright.render import render
+
+    cls = entry["component"]
+    kwargs = entry.get("kwargs", {})
+    label = entry.get("name", cls.__name__.lower())
+    instance = cls(**kwargs)
+    scad_path = Path(tmpdir) / f"{label}.scad"
+    render(instance, scad_path)
+    _render_png(scad_path, Path(entry["out"]), openscad, opts)
+
+
+def _render_example_entry(entry: dict, tmpdir: str, openscad: str, opts: dict) -> None:
+    # Run `scadwright build` in a subprocess so each example imports in a
+    # fresh interpreter — avoids collisions on module-level state like the
+    # @transform decorator's global registry when multiple variants of the
+    # same script are rendered in one run.
+    script = entry["script"]
+    variant = entry["variant"]
+    scad_path = Path(tmpdir) / f"{Path(script).stem}-{variant}.scad"
+    result = subprocess.run(
+        [sys.executable, "-m", "scadwright.cli",
+         "build", script, "--variant", variant, "-o", str(scad_path)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"scadwright build failed for {script} variant {variant}:\n"
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+    _render_png(scad_path, Path(entry["out"]), openscad, opts)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Render beauty-shot PNGs from the manifest.")
+    parser.add_argument("--filter", help="render only entries whose output path contains this substring")
+    parser.add_argument("--openscad", default=None, help="path to openscad binary")
+    parser.add_argument("--camera", default=CAMERA, help=f"OpenSCAD --camera arg (default: {CAMERA})")
+    parser.add_argument("--imgsize", default=IMGSIZE, help=f"WxH comma pair (default: {IMGSIZE})")
+    parser.add_argument("--colorscheme", default=COLORSCHEME, help=f"OpenSCAD colorscheme (default: {COLORSCHEME})")
+    parser.add_argument("--fn", type=int, default=FN, help=f"override $fn for smooth circles (default: {FN})")
+    args = parser.parse_args(argv)
+
+    tools_dir = Path(__file__).parent
+    sys.path.insert(0, str(tools_dir))
+    import beauty_shots as manifest
+
+    openscad = _resolve_openscad(args.openscad)
+    opts = {"camera": args.camera, "imgsize": args.imgsize, "colorscheme": args.colorscheme, "fn": args.fn}
+
+    def _match(path: str) -> bool:
+        return args.filter is None or args.filter in path
+
+    components = [e for e in getattr(manifest, "COMPONENTS", []) if _match(e["out"])]
+    examples = [e for e in getattr(manifest, "EXAMPLES", []) if _match(e["out"])]
+    total = len(components) + len(examples)
+    if total == 0:
+        print("no entries match the filter", file=sys.stderr)
+        return 1
+
+    print(f"rendering {total} shot(s) with openscad={openscad}", file=sys.stderr)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for e in components:
+            print(f"  [component] -> {e['out']}", file=sys.stderr)
+            _render_component_entry(e, tmpdir, openscad, opts)
+        for e in examples:
+            print(f"  [example]   -> {e['out']}", file=sys.stderr)
+            _render_example_entry(e, tmpdir, openscad, opts)
+
+    print(f"done: wrote {total} image(s)", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

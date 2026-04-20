@@ -16,6 +16,10 @@ Tube(h=10, id=8, od=10)      # thk solved = 1
 Tube(h=10, od=10, thk=1)     # id solved = 8
 ```
 
+![Tube](images/tube.png)
+
+*`Tube(od=20, id=16, h=30)` — a thick-walled hollow cylinder.*
+
 ## `Funnel(h, thk, top_*, bot_*)`
 
 Tapered tube. For each end, specify one of the inner or outer diameter.
@@ -26,6 +30,10 @@ Funnel(h=20, thk=2, bot_od=14, top_od=18)
 Funnel(h=20, thk=2, bot_id=10, top_od=18)    # mix and match
 ```
 
+![Funnel](images/funnel.png)
+
+*`Funnel(h=30, thk=2, bot_id=8, top_id=30)` — a wide-top taper to a narrow bottom.*
+
 ## `RoundedBox(size, r)`
 
 Box with all edges rounded by a sphere of radius `r`. Centered on the origin. Each `size` axis must be larger than `2*r`.
@@ -33,6 +41,10 @@ Box with all edges rounded by a sphere of radius `r`. Centered on the origin. Ea
 ```python
 RoundedBox(size=(20, 10, 5), r=1)
 ```
+
+![Rounded box](images/rounded-box.png)
+
+*`RoundedBox(size=(40, 25, 15), r=3)` — a box with every edge and corner smoothly filleted.*
 
 ## `UShapeChannel(channel_width, channel_height, outer_width, outer_height, wall_thk, channel_length)`
 

@@ -21,6 +21,10 @@ Hex grid of holes in a rectangular slab. `size` is `(x, y, z)`.
 HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 ```
 
+![Honeycomb panel](images/honeycomb-panel.png)
+
+*`HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)` — hex-grid pierced slab for ventilation or weight reduction.*
+
 ### `GridPanel(size, cell_size, wall_thk)`
 
 Square grid of holes.
@@ -46,6 +50,10 @@ Plate with raised text on the surface.
 ```python
 TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.5, font_size=8)
 ```
+
+![Text plate](images/text-plate.png)
+
+*`TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.8, font_size=8)` — raised text on a flat plate, useful for labels and tags.*
 
 ### `EmbossedLabel(label, plate_w, plate_h, plate_thk, depth, font_size)`
 
@@ -83,6 +91,10 @@ Cantilever snap-fit hook. Arm flexes to snap over a ledge.
 ```python
 SnapHook(arm_length=10, hook_depth=2, thk=1.5, width=5)
 ```
+
+![Snap hook](images/snap-hook.png)
+
+*`SnapHook(arm_length=12, hook_depth=2, thk=1.5, width=5)` — cantilever snap-fit that flexes to clip over a ledge.*
 
 ### `GripTab(tab_w, tab_h, tab_d, taper)`
 

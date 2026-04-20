@@ -25,6 +25,10 @@ Published attributes: `pitch_r`, `outer_r`, `root_r`, `base_r`.
 
 For herringbone gears, build two helical gears with opposite helix angles and union them.
 
+![Spur gear](images/spur-gear.png)
+
+*`SpurGear(module=1.5, teeth=24, h=6)` — standard involute teeth around a central bore.*
+
 ## `RingGear(module, teeth, h, rim_thk)`
 
 Internal gear: teeth on the inside of a ring. Meshes with a SpurGear of the same module.
@@ -41,6 +45,10 @@ Linear gear that meshes with a spur gear. Extends along the x-axis, teeth pointi
 Rack(module=2, teeth=10, length=63, h=5)
 ```
 
+![Rack](images/rack.png)
+
+*`Rack(module=2, teeth=10, length=63, h=5)` — linear gear meshing with a spur gear of the same module.*
+
 ## `BevelGear(module, teeth, h)`
 
 Conical gear (Tredgold's approximation). For a 90-degree pair, use `cone_angle=45` on both gears.
@@ -48,6 +56,10 @@ Conical gear (Tredgold's approximation). For a 90-degree pair, use `cone_angle=4
 ```python
 BevelGear(module=2, teeth=20, h=5, cone_angle=45)
 ```
+
+![Bevel gear](images/bevel-gear.png)
+
+*`BevelGear(module=2, teeth=20, h=5, cone_angle=45)` — conical gear for right-angle pairs.*
 
 ## `Worm(module, length, shaft_r)` / `WormGear(module, teeth, h)`
 

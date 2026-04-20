@@ -77,6 +77,10 @@ coil = Helix(r=10, wire_r=1, pitch=5, turns=3)
 - `pitch` -- z-rise per full turn
 - `turns` -- number of turns
 
+![Helix](images/helix.png)
+
+*`Helix(r=10, wire_r=1.5, pitch=5, turns=4)` — a solid coil rising along z.*
+
 ### `Spring`
 
 Compression spring with optional flat ends for stable resting.
@@ -88,3 +92,7 @@ s = Spring(r=8, wire_r=0.5, pitch=3, turns=5, flat_ends=False)
 
 - Same params as `Helix`, plus `flat_ends` (default `True`).
 - Flat ends add half-turn at zero pitch at each end so the spring sits flat.
+
+![Spring](images/spring.png)
+
+*`Spring(r=8, wire_r=1, pitch=4, turns=5)` — a compression spring with flat end turns for stable resting.*

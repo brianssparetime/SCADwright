@@ -21,6 +21,10 @@ Bolt(size="M5", length=20, head="button")        # button head
 
 Sizes: M2, M2.5, M3, M4, M5, M6, M8, M10, M12. Head styles: `"socket"` (ISO 4762), `"button"` (ISO 7380).
 
+![Bolt](images/bolt.png)
+
+*`Bolt(size="M5", length=20)` — head at the top, smooth shaft extending down.*
+
 ## `HexNut(size)` / `SquareNut(size)`
 
 ISO metric nuts centered on the origin.
@@ -46,6 +50,10 @@ Hollow screw-mount column. Publishes a `mount_top` anchor at the top.
 post = Standoff(od=7, id=3, h=8)
 pcb = cube([50, 30, 1.6]).attach(post, face="mount_top")
 ```
+
+![Standoff](images/standoff.png)
+
+*`Standoff(od=7, id=3, h=20)` — hollow column with a through-hole for a mounting screw.*
 
 ## `HeatSetPocket(size)`
 

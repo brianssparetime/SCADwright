@@ -38,6 +38,7 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 - Print and display `@variant`s
 
 ![Battery holder](images/BatteryBox-display.png)
+
 *display variant -- six ghost AA cells protruding above the tray to illustrate how the finger-scoops line up*
 
 ---
@@ -60,6 +61,7 @@ equations = [
 ```
 
 ![Bracket set](images/BracketSet-display.png)
+
 *display variant -- three brackets, each specified by a different pair of (rise, run, hyp, angle), with the remaining two solved*
 
 ---
@@ -75,6 +77,7 @@ A snap-on enclosure: a rounded-corner box with chamfered top/bottom edges and fo
 - `params` with inequality constraints for positive and non-negative groups
 
 ![Box and lid](images/BoxAndLid-display.png)
+
 *display variant -- lid seated on the box, its centering lip dropped into the mouth*
 
 ---
@@ -90,6 +93,7 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 - Concrete subclasses (`M57LensHousing`, `M57LensHood`); print-variant splay plus assembled display variant
 
 ![Lens housing](images/M57Lens-display.png)
+
 *display variant -- housing with clip-on hood mated on top, viewed from above*
 
 ---
@@ -105,6 +109,7 @@ A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at
 - Multi-instantiation driven by spec data (one standoff per mount hole, one port cutout per `PortSpec`)
 
 ![Project box](images/ProjectBox-display.png)
+
 *display variant -- lid sitting on the assembled case, vents on top, PCB stand-in visible through the port cutouts on the sides*
 
 ---
