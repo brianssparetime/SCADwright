@@ -441,6 +441,19 @@ Included in this project is [a Visual Studio Code extension](/vscode/) that dete
 
 This makes it simple to see the results of changes with a single click.  As long as the generated filename is the same (i.e. you're invoking the same variant), clicking preview will auotmatically update the code in an open OpenSCAD instance and re-preview it, saving the time of closing and re-opening the application.
 
+
+## Is this AI generated slop?
+
+I've been working on the specification for this for years, long before AI was a thing.
+
+Is there AI generated code in here?  Yes.  It's 2026.  
+
+Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands of incremental iterations, and a fair amount of hand-coding and human-writing (including this right here).
+
+Pretty much every part of scadwright has gone through 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intutive and naively simple, and working through hard trade-offs in detail though examples.  I've been writing code since the late 90s, and I wouldn't put my name on something that's dogshit or poorly thought out.
+
+In parallel, I'm actually using this library for my current 3d printing projects - the [Bronica S2 lens housing](/examples/lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) are examples from my other work.
+
 ## Documentation
 
 I've taken great care to produce excellent documentation that's easy to consume.  This is not an AI-generated after-thought, but rather months of iteration on explaining simply how to produce expressive and powerful code.
