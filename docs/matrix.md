@@ -1,6 +1,6 @@
 # Matrix
 
-`Matrix` is scadwright's 4×4 transform type. It's what the bbox visitor uses internally to thread transforms through an AST, and it's exposed so you can use it directly when you need to compute placements, transform points, or compose transforms without building shapes.
+`Matrix` is SCADwright's 4×4 transform type. It's what the bbox visitor uses internally to thread transforms through an AST, and it's exposed so you can use it directly when you need to compute placements, transform points, or compose transforms without building shapes.
 
 You don't need Matrix for everyday modeling — `node.translate(...)`, `node.rotate(...)`, etc. handle the common cases. Reach for Matrix when:
 

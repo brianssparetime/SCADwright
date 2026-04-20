@@ -34,7 +34,7 @@ render(t, "tube.scad")                     # build() runs now, result is cached
 render(t.right(20).red(), "moved.scad")    # transforms work too
 ```
 
-`build()` returns the actual shape. It runs the first time scadwright needs the geometry (render, bounding box, etc.) and the result is cached.
+`build()` returns the actual shape. It runs the first time SCADwright needs the geometry (render, bounding box, etc.) and the result is cached.
 
 ## Declaring parameters
 
@@ -310,7 +310,7 @@ This is supported but not recommended -- you lose equation solving, auto-generat
 ### Build caching and errors
 
 - `build()` runs once per Component instance and the result is cached. Treat Components as immutable after construction.
-- If `build()` raises any exception that isn't already a `SCADwrightError`, scadwright wraps it in a `BuildError` that includes the Component class name and the source location of where you instantiated it. The original exception is chained via `__cause__`.
+- If `build()` raises any exception that isn't already a `SCADwrightError`, SCADwright wraps it in a `BuildError` that includes the Component class name and the source location of where you instantiated it. The original exception is chained via `__cause__`.
 
 ### Frozen after construction
 

@@ -1,6 +1,6 @@
-# scadwright
+# SCADwright
 
-scadwright is a Python library for designing 3D models. You write Python code that describes shapes, transforms, and combinations; scadwright writes an OpenSCAD source file (`.scad`); OpenSCAD renders that file into STL or other formats.
+SCADwright is a Python library for designing 3D models. You write Python code that describes shapes, transforms, and combinations; SCADwright writes an OpenSCAD source file (`.scad`); OpenSCAD renders that file into STL or other formats.
 
 If you've used OpenSCAD before, the shapes and operations will look familiar. The language around them is Python, which gives you classes, functions, automated tests, and proper error messages.
 
@@ -22,8 +22,8 @@ having to re-write anything.
 
 ### Comparative references:
 
-- [Coming from OpenSCAD](coming_from_openscad.md) — SCAD features (for, if, let, modules, `$t`, `$preview`, etc.) mapped to their scadwright/Python equivalents
-- [How is scadwright different?](how_is_scadwright_different.md) — comparison with SolidPython, PythonSCAD, CadQuery, Build123d, JSCAD, and plain OpenSCAD
+- [Coming from OpenSCAD](coming_from_openscad.md) — SCAD features (for, if, let, modules, `$t`, `$preview`, etc.) mapped to their SCADwright/Python equivalents
+- [How is SCADwright different?](how_is_scadwright_different.md) — comparison with SolidPython, PythonSCAD, CadQuery, Build123d, JSCAD, and plain OpenSCAD
 
 ### OpenSCAD equivalent functionality:
 
@@ -49,7 +49,7 @@ having to re-write anything.
 - [Matrix](matrix.md) — 4×4 transform math for advanced placement calculations
 - [Resolution](resolution.md) — controlling smoothness (`fn`/`fa`/`fs`), precedence rules
 - [Command line](cli_and_args.md) — `scadwright build`/`preview`/`render`, script parameters
-- [Errors and logging](errors_and_logging.md) — what scadwright does when something's wrong
+- [Errors and logging](errors_and_logging.md) — what SCADwright does when something's wrong
 - [Debug helpers](debug.md) — `force_render`, `echo` for SCAD-side diagnostics (niche)
 - [Testing](testing.md) — `tree_hash` for regression pinning, geometry assertions, golden-file patterns
 
@@ -85,6 +85,6 @@ Transforms also exist as chained methods on every shape (`cube(10).translate([5,
 
 ## Style guide
 
-[Style guide](style-guide.md) — conventions for writing idiomatic scadwright code: preferred patterns (`equations`, directional helpers, `attach`/`through`), when lower-level alternatives are justified, and common anti-patterns. Worth reading before authoring Components or contributing to the shape library.
+[Style guide](style-guide.md) — conventions for writing idiomatic SCADwright code: preferred patterns (`equations`, directional helpers, `attach`/`through`), when lower-level alternatives are justified, and common anti-patterns. Worth reading before authoring Components or contributing to the shape library.
 
-It's also particularly useful to drop into an LLM's context when using AI assistance — it steers generated code away from generic-Python habits toward scadwright's idioms.
+It's also particularly useful to drop into an LLM's context when using AI assistance — it steers generated code away from generic-Python habits toward SCADwright's idioms.

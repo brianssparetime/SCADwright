@@ -1,6 +1,6 @@
 # Shape library
 
-scadwright ships a library of ready-made shapes so you don't spend half your project reinventing tubes, gears, and screw holes. Every shape is either a Component (capitalized, with readable attributes and equation solving) or a factory function (lowercase, returns a primitive).
+SCADwright ships a library of ready-made shapes so you don't spend half your project reinventing tubes, gears, and screw holes. Every shape is either a Component (capitalized, with readable attributes and equation solving) or a factory function (lowercase, returns a primitive).
 
 ## Using shapes
 

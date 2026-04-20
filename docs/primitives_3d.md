@@ -29,7 +29,7 @@ cube([10, 20, 30], center=[True, True, False])  # same as "xy"
   - `center="xy"` — string listing axes to center. `"xy"` centers X and Y but sits on Z=0; `"z"` centers Z only, etc.
   - `center=[True, True, False]` — per-axis bool list, same effect as `"xy"`.
 
-**About `center`:** OpenSCAD's `center` is all-or-nothing. scadwright lets you center on individual axes. Pass a string of axis letters (`"x"`, `"xy"`, `"xyz"`) or a list of three booleans. When the centering is mixed, scadwright wraps the cube in a `translate(...)` automatically.
+**About `center`:** OpenSCAD's `center` is all-or-nothing. SCADwright lets you center on individual axes. Pass a string of axis letters (`"x"`, `"xy"`, `"xyz"`) or a list of three booleans. When the centering is mixed, SCADwright wraps the cube in a `translate(...)` automatically.
 
 ## `sphere`
 
@@ -96,7 +96,7 @@ polyhedron(
 - `faces` — list of faces; each face lists the indices into `points` that form its corners. A face must have at least 3 corners.
 - `convexity` — optional integer hint to OpenSCAD for rendering complex shapes; you usually don't need it.
 
-scadwright checks that every index in `faces` refers to a real point. Out-of-range indices raise a `ValidationError` with the offending line.
+SCADwright checks that every index in `faces` refers to a real point. Out-of-range indices raise a `ValidationError` with the offending line.
 
 ## `surface`
 
@@ -115,7 +115,7 @@ terrain = surface("heightmap.png", center=True, invert=False, convexity=5)
 - `invert` — for PNG input, inverts the brightness-to-height mapping. Ignored for DAT files.
 - `convexity` — optional render-complexity hint.
 
-**Bounding box note:** because the surface's extent depends on the file contents (which scadwright doesn't parse), `bbox(surface(...))` returns a degenerate zero-bbox. If you need a real bbox for assembly checks, wrap the surface with a known container (e.g. `intersection(surface(...), cube([W, H, Z], center=True))`) so the intersection's bbox reflects your intended bounds.
+**Bounding box note:** because the surface's extent depends on the file contents (which SCADwright doesn't parse), `bbox(surface(...))` returns a degenerate zero-bbox. If you need a real bbox for assembly checks, wrap the surface with a known container (e.g. `intersection(surface(...), cube([W, H, Z], center=True))`) so the intersection's bbox reflects your intended bounds.
 
 ## `scad_import`
 
@@ -146,10 +146,10 @@ gasket = linear_extrude(profile, height=3)
 SCADwright resolves the imported shape's bbox in this order:
 
 1. **Explicit `bbox=` hint** wins if you provide one.
-2. **STL files are auto-parsed** — if the path ends in `.stl` and the file exists, scadwright reads the triangle vertices to compute the real bbox. No hint needed.
+2. **STL files are auto-parsed** — if the path ends in `.stl` and the file exists, SCADwright reads the triangle vertices to compute the real bbox. No hint needed.
 3. **Otherwise, degenerate zero-bbox.** `assert_fits_in` and similar checks will treat the shape as a point at the origin.
 
-For non-STL formats (SVG/DXF/3MF/OFF/AMF), scadwright doesn't parse the file, so provide the `bbox=` hint when you need assembly checks:
+For non-STL formats (SVG/DXF/3MF/OFF/AMF), SCADwright doesn't parse the file, so provide the `bbox=` hint when you need assembly checks:
 
 ```python
 # Hint required for bbox-aware operations on non-STL inputs:
@@ -161,7 +161,7 @@ svg_part = scad_import("profile.svg")
 bbox(svg_part)        # BBox(min=(0,0,0), max=(0,0,0))
 ```
 
-If you change an STL file mid-session and want scadwright to re-read it:
+If you change an STL file mid-session and want SCADwright to re-read it:
 
 ```python
 from scadwright._stl import stl_bbox
@@ -173,7 +173,7 @@ stl_bbox.cache_clear()
 ### Advanced notes
 
 - `cube` per-axis centering emits SCAD as `translate([offsets]) cube(size, center=false);` rather than touching OpenSCAD's `center` flag. The wrapping is automatic; the bounding box reflects the post-translation position.
-- `polyhedron` doesn't validate that faces form a closed solid — that's OpenSCAD's job at render time. scadwright only checks index ranges.
+- `polyhedron` doesn't validate that faces form a closed solid — that's OpenSCAD's job at render time. SCADwright only checks index ranges.
 
 ### See also
 

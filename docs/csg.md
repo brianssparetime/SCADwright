@@ -85,7 +85,7 @@ Minkowski grows the shape by the second operand's size, so the result is bigger 
 
 ## Operator shorthand
 
-For simple expressions, scadwright supports Python's set-operator syntax on shapes:
+For simple expressions, SCADwright supports Python's set-operator syntax on shapes:
 
 ```python
 a | b          # union          (matches Python set: |)
@@ -112,7 +112,7 @@ The named functions (`union`, `difference`, etc.) remain the right choice when:
 
 ### Epsilon clearances
 
-When a cutter shares a face with the shape it's cutting (e.g. a hole through a wall), coincident surfaces produce rendering artifacts in OpenSCAD. scadwright handles this automatically with `through()`:
+When a cutter shares a face with the shape it's cutting (e.g. a hole through a wall), coincident surfaces produce rendering artifacts in OpenSCAD. SCADwright handles this automatically with `through()`:
 
 ```python
 body = cube([40, 40, 5])

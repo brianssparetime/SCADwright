@@ -1,6 +1,6 @@
 # Command line and parameters
 
-scadwright gives you two ways to render a script: call `render(...)` from inside the script, or run the `scadwright build` command.
+SCADwright gives you two ways to render a script: call `render(...)` from inside the script, or run the `scadwright build` command.
 
 Imports used on this page:
 
@@ -12,7 +12,7 @@ The CLI also lets you parametrize a script — declare named parameters once, th
 
 ## `scadwright build`
 
-After installing scadwright, the `scadwright` command is available. The `build` subcommand takes a Python script and writes an OpenSCAD file:
+After installing SCADwright, the `scadwright` command is available. The `build` subcommand takes a Python script and writes an OpenSCAD file:
 
 ```
 scadwright build widget.py                          # writes widget.scad
@@ -25,7 +25,7 @@ scadwright build widget.py --vpd=200                # set camera distance ($vpd)
 scadwright build widget.py -v                       # show INFO logs while building
 ```
 
-The script must define a top-level `MODEL` (a scadwright shape). The CLI imports the script, finds `MODEL`, and renders it.
+The script must define a top-level `MODEL` (a SCADwright shape). The CLI imports the script, finds `MODEL`, and renders it.
 
 If the script doesn't define `MODEL`, the CLI prints a clear error and exits.
 
@@ -53,7 +53,7 @@ scadwright render widget.py --variant=print
 
 ## Script parameters: `arg`
 
-Declare a parameter at the top of your script. The first time you call `arg`, scadwright parses the command-line arguments and looks up the value:
+Declare a parameter at the top of your script. The first time you call `arg`, SCADwright parses the command-line arguments and looks up the value:
 
 ```python
 width = arg("width", default=40, type=float, help="widget width in mm")

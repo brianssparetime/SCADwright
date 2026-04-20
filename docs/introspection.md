@@ -1,6 +1,6 @@
 # Bounding boxes and tests
 
-scadwright can answer geometric questions about a shape without sending it to OpenSCAD: how big is it, where is it, does it fit in a print volume, does it overlap with another shape. These are the building blocks for writing automated tests of your designs.
+SCADwright can answer geometric questions about a shape without sending it to OpenSCAD: how big is it, where is it, does it fit in a print volume, does it overlap with another shape. These are the building blocks for writing automated tests of your designs.
 
 Imports used on this page:
 
@@ -93,7 +93,7 @@ assert_bbox_equal(part, BBox(min=(0, 0, 0), max=(10, 20, 30)))
 
 ## Regression-pinning geometry: `tree_hash`
 
-`tree_hash(node)` returns a short stable string. The hash changes only if the geometry semantically changes — moving the same script to a different file, or reformatting scadwright's emitter output, doesn't change it.
+`tree_hash(node)` returns a short stable string. The hash changes only if the geometry semantically changes — moving the same script to a different file, or reformatting SCADwright's emitter output, doesn't change it.
 
 ```python
 def test_widget_geometry_pinned():
@@ -104,7 +104,7 @@ Use this to lock in known-good versions of a part. When a code change shifts geo
 
 ## Inspecting transforms
 
-For users who want to know "where did this shape end up?", scadwright exposes its transform math.
+For users who want to know "where did this shape end up?", SCADwright exposes its transform math.
 
 ### `Matrix`
 

@@ -1,4 +1,4 @@
-# scadwright cheatsheet
+# SCADwright cheatsheet
 
 One-page reference. Each section links to its full docs page for details.
 
@@ -424,4 +424,4 @@ scadwright render widget.py -o widget.stl                   # build + headless S
 from scadwright.errors import ValidationError, BuildError, EmitError, SCADwrightError
 ```
 
-All scadwright errors carry a `.source_location` with the user's file and line. `SCADwrightError` is the common base; catch it to catch anything scadwright raises.
+All SCADwright errors carry a `.source_location` with the user's file and line. `SCADwrightError` is the common base; catch it to catch anything SCADwright raises.

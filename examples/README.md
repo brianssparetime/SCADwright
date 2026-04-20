@@ -1,6 +1,6 @@
-# scadwright examples
+# SCADwright examples
 
-Each file is a self-contained scadwright project that renders to one or more `.scad` files you can open in OpenSCAD. Run them with either:
+Each file is a self-contained SCADwright project that renders to one or more `.scad` files you can open in OpenSCAD. Run them with either:
 
 ```
 python examples/<name>.py                           # default variant
@@ -23,7 +23,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 
 ## 0. [`simple-plate.py`](simple-plate.py)
 
-A plate with two holes. No Components, no Design -- just primitives, booleans, and a `render()` call. This is the simplest possible scadwright script and shows that scadwright starts looking like OpenSCAD code.
+A plate with two holes. No Components, no Design -- just primitives, booleans, and a `render()` call. This is the simplest possible SCADwright script and shows that SCADwright starts looking like OpenSCAD code.
 
 ---
 
@@ -116,4 +116,4 @@ A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at
 
 ## Appendix: original source
 
-[`s2-lens-v2b.scad`](s2-lens-v2b.scad) is the pre-scadwright OpenSCAD file that `lens-housing.py` was ported from. Useful as a side-by-side read: roughly the same geometry in 463 lines of SCAD vs. ~320 lines of Python.
+[`s2-lens-v2b.scad`](s2-lens-v2b.scad) is the pre-SCADwright OpenSCAD file that `lens-housing.py` was ported from. Useful as a side-by-side read: roughly the same geometry in 463 lines of SCAD vs. ~320 lines of Python.

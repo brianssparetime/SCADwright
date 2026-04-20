@@ -1,12 +1,12 @@
 # Quick Start / Organizing a project
 
-scadwright projects span a range from "a few lines of primitives" to "multi-part assembly with a dozen measurements." You don't need to learn the full feature set up front -- start simple, and layer on structure only when the project calls for it.
+SCADwright projects span a range from "a few lines of primitives" to "multi-part assembly with a dozen measurements." You don't need to learn the full feature set up front -- start simple, and layer on structure only when the project calls for it.
 
 For worked examples at each level of complexity, see [examples/](../examples/README.md).
 
 ## Graceful scaling of complexity
 
-The same part -- a plate with two holes -- written three ways, each building on the last. This shows how scadwright features layer on without requiring you to rewrite what you already have.
+The same part -- a plate with two holes -- written three ways, each building on the last. This shows how SCADwright features layer on without requiring you to rewrite what you already have.
 
 ### Stage 1: Flat script
 
@@ -129,7 +129,7 @@ A concrete subclass is where your project-specific measurements live:
 
 - **Subclass the generic Component.** `class MyPlate(Plate):`.
 - **Fill in each measurement as a plain class attribute.** `width = 80`.
-- **No `__init__`, no `super()` call.** scadwright generates the `__init__` for you; class attributes override the equation-declared Params.
+- **No `__init__`, no `super()` call.** SCADwright generates the `__init__` for you; class attributes override the equation-declared Params.
 - **Equations still work.** A concrete `Tube` subclass with `h = 10`, `id = 8`, `thk = 1` still lets the solver compute `od`.
 
 > **Never bake project-specific defaults into a generic Component.** If a value is specific to one design, it belongs as a class attribute on a concrete subclass, not as `Param(..., default=<that value>)` on the generic class. Either the value is genuinely tunable (a Param with no default or a geometrically neutral default like `corner_r=0`) or it's a fixed design choice (class attribute on the concrete subclass).
@@ -146,7 +146,7 @@ my_project/
     main.py             # Design + @variant + run()
 ```
 
-Generic Components import only from scadwright and the standard library. Concrete subclasses import their generic base and fill in values. The Design file imports concrete subclasses and composes the scene. `run()` goes in exactly one file -- the one you pass to `scadwright build`.
+Generic Components import only from SCADwright and the standard library. Concrete subclasses import their generic base and fill in values. The Design file imports concrete subclasses and composes the scene. `run()` goes in exactly one file -- the one you pass to `scadwright build`.
 
 ## Next steps
 
@@ -157,4 +157,4 @@ Once you're comfortable with the three stages above, these features are worth le
 - [Custom transforms](custom_transforms.md) -- add your own verbs to the language (`.chamfer_top(depth=1)` on any shape)
 - [Shape library](shapes/README.md) -- tubes, gears, fasteners, and dozens more pre-built shapes
 - [Variants](variants.md) -- `@variant` options, `run()` dispatch rules, and multi-part assembly layouts
-- [Style guide](style-guide.md) -- coding conventions for writing clean, idiomatic scadwright
+- [Style guide](style-guide.md) -- coding conventions for writing clean, idiomatic SCADwright

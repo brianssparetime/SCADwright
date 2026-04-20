@@ -31,7 +31,7 @@ If you forget the `*` separator, registration raises a clear error at import tim
 
 ## Hoisted vs inline
 
-When you use the same transform multiple times with the same options, scadwright generates one OpenSCAD `module` and calls it at each spot:
+When you use the same transform multiple times with the same options, SCADwright generates one OpenSCAD `module` and calls it at each spot:
 
 ```python
 union(
@@ -42,7 +42,7 @@ union(
 
 The output SCAD has one `module chamfer_top_<hash>(depth) { ... }` definition and two short calls to it. This keeps the rendered file small and readable.
 
-**There's a catch.** To produce the module, scadwright runs your function once with a *placeholder* in place of the shape. That means your function must treat its shape argument **opaquely** — don't read `.size`, `.r`, `.width`, or any other attribute off it. If you try, you get a clear `AttributeError` pointing at the fix:
+**There's a catch.** To produce the module, SCADwright runs your function once with a *placeholder* in place of the shape. That means your function must treat its shape argument **opaquely** — don't read `.size`, `.r`, `.width`, or any other attribute off it. If you try, you get a clear `AttributeError` pointing at the fix:
 
 ```python
 @transform("bad")

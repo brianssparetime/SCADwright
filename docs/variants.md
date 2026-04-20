@@ -1,6 +1,6 @@
 # Variants
 
-A scadwright project often needs to produce more than one `.scad` file from the same set of parts. Variants let you define multiple arrangements -- different scenes, different orientations, different levels of detail -- all from one script, with shared parts instantiated once.
+A SCADwright project often needs to produce more than one `.scad` file from the same set of parts. Variants let you define multiple arrangements -- different scenes, different orientations, different levels of detail -- all from one script, with shared parts instantiated once.
 
 ## The Design + @variant pattern
 

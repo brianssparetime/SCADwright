@@ -22,7 +22,7 @@ Reload VSCode. Open any Python file containing `import scadwright` or `from scad
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `scadwright.scadwrightCommand` | `scadwright` | Command to invoke for the scadwright CLI. Use a full path if it isn't on `PATH`. |
+| `scadwright.scadwrightCommand` | `scadwright` | Command to invoke for the SCADwright CLI. Use a full path if it isn't on `PATH`. |
 | `scadwright.openscadCommand` | `openscad` | Command to invoke OpenSCAD. |
 | `scadwright.variant` | `""` | Variant passed to `scadwright build --variant=…`. Empty = no flag. |
 | `scadwright.saveBeforeBuild` | `true` | Save the active file before running `scadwright build`. |

@@ -1,6 +1,6 @@
 # Transformations
 
-Transformations move, rotate, scale, mirror, or color a shape. In scadwright they're methods you call on the shape itself; each returns a new shape with the transform applied. The original shape is unchanged, so you can reuse it.
+Transformations move, rotate, scale, mirror, or color a shape. In SCADwright they're methods you call on the shape itself; each returns a new shape with the transform applied. The original shape is unchanged, so you can reuse it.
 
 Imports used on this page:
 

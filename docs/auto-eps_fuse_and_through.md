@@ -1,6 +1,6 @@
 # Eliminating manual epsilon overlap
 
-OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in a boolean operation. Without it, the geometry kernel produces artifacts or non-manifold output. scadwright provides two tools to handle this automatically.
+OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in a boolean operation. Without it, the geometry kernel produces artifacts or non-manifold output. SCADwright provides two tools to handle this automatically.
 
 ## `through(parent)` -- for cutters in `difference()`
 

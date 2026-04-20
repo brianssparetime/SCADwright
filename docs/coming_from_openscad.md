@@ -1,12 +1,12 @@
 # Coming from OpenSCAD
 
-If you know OpenSCAD and you're looking for a feature by name, this page maps the common ones to their scadwright equivalent. scadwright deliberately doesn't implement SCAD's language-level features (loops, conditionals, let-bindings, functions, modules) at the emit layer — you get those from Python instead, and the result is usually shorter and more expressive.
+If you know OpenSCAD and you're looking for a feature by name, this page maps the common ones to their SCADwright equivalent. SCADwright deliberately doesn't implement SCAD's language-level features (loops, conditionals, let-bindings, functions, modules) at the emit layer — you get those from Python instead, and the result is usually shorter and more expressive.
 
 Not exhaustive; covers what SCAD users commonly stumble over.
 
 ## Side-by-side: migrating a script
 
-Here's a small OpenSCAD file and its scadwright equivalent, line by line:
+Here's a small OpenSCAD file and its SCADwright equivalent, line by line:
 
 **OpenSCAD:**
 ```scad
@@ -36,7 +36,7 @@ module plate() {
 plate();
 ```
 
-**scadwright:**
+**SCADwright:**
 ```python
 from scadwright import render
 from scadwright.boolops import difference
@@ -72,7 +72,7 @@ for (i = [0:9])
         cube(5);
 ```
 
-scadwright — use a Python for-loop plus `union`, a list comprehension, or the `array` helper:
+SCADwright — use a Python for-loop plus `union`, a list comprehension, or the `array` helper:
 
 ```python
 from scadwright.boolops import union
@@ -100,7 +100,7 @@ if (mode == "solid") cube(10);
 else                 sphere(r=5);
 ```
 
-scadwright — inside a `Component.build()`, use plain Python:
+SCADwright — inside a `Component.build()`, use plain Python:
 
 ```python
 class Widget(Component):
@@ -121,7 +121,7 @@ points = [for (i=[0:35]) [10*cos(i*10), 10*sin(i*10)]];
 polygon(points);
 ```
 
-scadwright — Python list comprehension:
+SCADwright — Python list comprehension:
 
 ```python
 from scadwright import math as scmath
@@ -139,7 +139,7 @@ SCAD:
 let (r = d/2, h = sqrt(3) * r) ...
 ```
 
-scadwright — just Python variable assignment:
+SCADwright — just Python variable assignment:
 
 ```python
 r = d / 2
@@ -154,7 +154,7 @@ SCAD:
 size = large ? 20 : 10;
 ```
 
-scadwright — Python conditional expression:
+SCADwright — Python conditional expression:
 
 ```python
 size = 20 if large else 10
@@ -162,7 +162,7 @@ size = 20 if large else 10
 
 ### `each` keyword
 
-SCAD uses `each` to unpack lists in comprehensions. Python's `*` unpacking does the same job in every context scadwright cares about:
+SCAD uses `each` to unpack lists in comprehensions. Python's `*` unpacking does the same job in every context SCADwright cares about:
 
 ```python
 extras = [cube(1), cube(2)]
@@ -186,7 +186,7 @@ module bracket(width, height) {
 bracket(40, 20);
 ```
 
-scadwright — [Components](components.md):
+SCADwright — [Components](components.md):
 
 ```python
 from scadwright import Component, Param
@@ -221,7 +221,7 @@ def hex_grid_points(cols, rows, spacing):
 
 ### `children()` and `$children`
 
-SCAD's `children()` passes the caller-provided subtree into a module. scadwright's equivalent is either:
+SCAD's `children()` passes the caller-provided subtree into a module. SCADwright's equivalent is either:
 
 1. **Plain Python function arguments** — accept the shape as a parameter:
 
@@ -240,7 +240,7 @@ SCAD's `children()` passes the caller-provided subtree into a module. scadwright
     cube([10, 10, 5]).chamfer_top(depth=1)
     ```
 
-SCAD's `$children` (number of children passed to a module) doesn't apply — in scadwright, you receive the actual children as Python arguments and can `len()` them if needed.
+SCAD's `$children` (number of children passed to a module) doesn't apply — in SCADwright, you receive the actual children as Python arguments and can `len()` them if needed.
 
 ## Type tests
 
@@ -254,7 +254,7 @@ isinstance(x, str)           # is_string
 isinstance(x, (list, tuple)) # is_list
 ```
 
-**Note:** Python makes `bool` a subclass of `int`, so `isinstance(True, int)` is `True`. scadwright's own validators reject booleans where numbers are expected. If you're writing your own predicate, check `isinstance(x, bool)` first.
+**Note:** Python makes `bool` a subclass of `int`, so `isinstance(True, int)` is `True`. SCADwright's own validators reject booleans where numbers are expected. If you're writing your own predicate, check `isinstance(x, bool)` first.
 
 ## Strings and lists
 
@@ -281,7 +281,7 @@ math.pi                      # SCAD's PI — use Python's stdlib constant
 
 ## `assert`
 
-SCAD's `assert(condition, "message")` is a render-time check. scadwright offers three layers:
+SCAD's `assert(condition, "message")` is a render-time check. SCADwright offers three layers:
 
 ```python
 # 1. Equation constraints: declarative, runs at construction.
@@ -309,7 +309,7 @@ Fully supported as chained methods: `.highlight()`, `.background()`, `.disable()
 
 ### `$preview`
 
-OpenSCAD sets `$preview = true` during F5 preview and `false` during F6 render. scadwright doesn't have a direct equivalent -- the closest concept is [variants](variants.md):
+OpenSCAD sets `$preview = true` during F5 preview and `false` during F6 render. SCADwright doesn't have a direct equivalent -- the closest concept is [variants](variants.md):
 
 ```python
 from scadwright.design import Design, run, variant
@@ -367,24 +367,24 @@ values = [random.uniform(min_v, max_v) for _ in range(count)]
 
 ## Including other SCAD files
 
-SCAD's `use <file>` and `include <file>` are supported as emit-time keyword arguments on `render` / `emit_str` / `emit`. See [Integrating legacy SCAD code](scad_interop.md) — this is the rare case; scadwright's default assumption is that shared code lives in Python modules, not SCAD files.
+SCAD's `use <file>` and `include <file>` are supported as emit-time keyword arguments on `render` / `emit_str` / `emit`. See [Integrating legacy SCAD code](scad_interop.md) — this is the rare case; SCADwright's default assumption is that shared code lives in Python modules, not SCAD files.
 
 ## BOSL2's `attach()` system
 
-If you're coming from BOSL2, you may be used to its `attach()` / `anchor()` system for positioning parts relative to each other. scadwright has a similar but lighter system:
+If you're coming from BOSL2, you may be used to its `attach()` / `anchor()` system for positioning parts relative to each other. SCADwright has a similar but lighter system:
 
 - Every shape gets six bbox-derived anchors (`top`, `bottom`, `front`, `back`, `lside`, `rside`) automatically.
 - `peg.attach(plate)` puts the peg's bottom on the plate's top (the most common stacking operation).
 - Components declare custom anchors at class scope: `mount = anchor(at="w/2, w/2, thk", normal=(0,0,1))`.
 - `orient=True` adds rotation so anchor normals oppose each other (faces touching).
 
-Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and they don't shift the origin. scadwright keeps `center=` for origin control and `attach()` for positioning -- two separate concepts.
+Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and they don't shift the origin. SCADwright keeps `center=` for origin control and `attach()` for positioning -- two separate concepts.
 
 See [Anchors and attachment](anchors.md) for the full reference.
 
-scadwright also automates epsilon overlap -- `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps joints. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md).
+SCADwright also automates epsilon overlap -- `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps joints. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md).
 
-## Features scadwright doesn't have (and probably won't)
+## Features SCADwright doesn't have (and probably won't)
 
 A short list of things that SCAD users occasionally ask about:
 

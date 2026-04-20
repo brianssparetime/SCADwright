@@ -1,17 +1,17 @@
-# How is scadwright different?
+# How is SCADwright different?
 
-If you searched "Python OpenSCAD" or "Python parametric CAD," several other projects probably came up. Here's how scadwright relates to each. The goal isn't to claim scadwright is better at every axis — it's to help you pick the right tool for what you're building.
+If you searched "Python OpenSCAD" or "Python parametric CAD," several other projects probably came up. Here's how SCADwright relates to each. The goal isn't to claim SCADwright is better at every axis — it's to help you pick the right tool for what you're building.
 
 ## SolidPython / SolidPython2
 
-[SolidPython](https://github.com/SolidCode/SolidPython) and its actively-maintained successor [SolidPython2](https://github.com/jeff-dh/SolidPython) are the most common Python wrappers around OpenSCAD. Like scadwright, they generate `.scad` source from a Python script.
+[SolidPython](https://github.com/SolidCode/SolidPython) and its actively-maintained successor [SolidPython2](https://github.com/jeff-dh/SolidPython) are the most common Python wrappers around OpenSCAD. Like SCADwright, they generate `.scad` source from a Python script.
 
-**How scadwright differs:**
+**How SCADwright differs:**
 
-- **Components publish dimensions.** A SolidPython part is a function that returns geometry; the caller can't ask "where are your mount holes?" without re-running the math themselves. scadwright's `Component` classes declare their parameters via equations and constraints; every param and every equation-solved value is readable directly by the caller (e.g. `tube.od`, `bracket.rise`).
-- **Real validation with source locations.** `cube([-5, 10, 10])` in scadwright raises `ValidationError: cube size[0] must be non-negative, got -5.0 (at widget.py:42)`. SolidPython hands the bad value to OpenSCAD and you debug from the rendered output.
+- **Components publish dimensions.** A SolidPython part is a function that returns geometry; the caller can't ask "where are your mount holes?" without re-running the math themselves. SCADwright's `Component` classes declare their parameters via equations and constraints; every param and every equation-solved value is readable directly by the caller (e.g. `tube.od`, `bracket.rise`).
+- **Real validation with source locations.** `cube([-5, 10, 10])` in SCADwright raises `ValidationError: cube size[0] must be non-negative, got -5.0 (at widget.py:42)`. SolidPython hands the bad value to OpenSCAD and you debug from the rendered output.
 - **Built-in shape library.** `Tube`, `Funnel`, `RoundedBox`, `FilletRing`, `Sector`, `RoundedSlot`, etc. ship with the package. SolidPython gives you the OpenSCAD primitives; reusable shapes you copy-paste between projects.
-- **Equations and solving.** scadwright Components can declare relationships like `od == id + 2*thk` and supply any two of the three; the framework solves for the third.
+- **Equations and solving.** SCADwright Components can declare relationships like `od == id + 2*thk` and supply any two of the three; the framework solves for the third.
 - **Test infrastructure.** `tree_hash` for regression-pinning a part's geometry, and `assert_fits_in` / `assert_contains` / `assert_no_collision` for geometry assertions.
 - **Variants.** Named print/display variants are first-class instead of commented-out code blocks.
 
@@ -21,46 +21,46 @@ If you mostly want a thin Python layer over OpenSCAD's verbs and don't need the 
 
 [OpenPySCAD](https://github.com/taxpon/openpyscad) is another wrapper that generates SCAD source. The original goals overlap with SolidPython — chained transforms on shape objects, then `.dumps()` to a string.
 
-**How scadwright differs:** essentially the same delta as SolidPython — Components, validation with source locations, shape library, equations, tests, variants, CLI. OpenPySCAD development has been quiet for several years; if you're starting fresh today, scadwright or SolidPython2 are more current options.
+**How SCADwright differs:** essentially the same delta as SolidPython — Components, validation with source locations, shape library, equations, tests, variants, CLI. OpenPySCAD development has been quiet for several years; if you're starting fresh today, SCADwright or SolidPython2 are more current options.
 
 ## PythonSCAD (gsohler/openscad fork)
 
 [PythonSCAD](https://pythonscad.org/) is Guillaume Sohler's fork that *replaces* OpenSCAD's interpreter with Python. Your script runs inside the OpenSCAD process and emits geometry directly to OpenSCAD's CSG engine — no `.scad` file in the middle.
 
-**How scadwright differs:**
+**How SCADwright differs:**
 
-- **Different objective.** PythonSCAD makes Python the primary language *inside* OpenSCAD. scadwright stays outside: you author in Python, scadwright emits a standard `.scad` file, and you can open it in stock OpenSCAD or any other tool that consumes SCAD. No fork required.
-- **Distribution.** scadwright is a `pip install` away and works with any OpenSCAD version. PythonSCAD requires installing a custom OpenSCAD build.
-- **Interop.** scadwright's output is plain SCAD that other people, scripts, and tools can read or modify. PythonSCAD scripts only run inside the forked interpreter.
+- **Different objective.** PythonSCAD makes Python the primary language *inside* OpenSCAD. SCADwright stays outside: you author in Python, SCADwright emits a standard `.scad` file, and you can open it in stock OpenSCAD or any other tool that consumes SCAD. No fork required.
+- **Distribution.** SCADwright is a `pip install` away and works with any OpenSCAD version. PythonSCAD requires installing a custom OpenSCAD build.
+- **Interop.** SCADwright's output is plain SCAD that other people, scripts, and tools can read or modify. PythonSCAD scripts only run inside the forked interpreter.
 
-If you're already committed to OpenSCAD as your end-to-end environment and want Python's expressiveness inside it, PythonSCAD is the more direct route. If you want a Python toolchain that produces standard SCAD output, scadwright.
+If you're already committed to OpenSCAD as your end-to-end environment and want Python's expressiveness inside it, PythonSCAD is the more direct route. If you want a Python toolchain that produces standard SCAD output, SCADwright.
 
 ## OpenJSCAD / JSCAD
 
 [JSCAD](https://openjscad.xyz/) is a JavaScript-based parametric modeling library with its own renderer. Same general idea as SolidPython — author in code, render to mesh — but the language is JS and the renderer is built in.
 
-**How scadwright differs:** language and runtime, mainly. scadwright is Python-first and emits `.scad` for OpenSCAD to render. JSCAD is JS-first with its own web-based renderer. Pick whichever language you'd rather author in; both are mature.
+**How SCADwright differs:** language and runtime, mainly. SCADwright is Python-first and emits `.scad` for OpenSCAD to render. JSCAD is JS-first with its own web-based renderer. Pick whichever language you'd rather author in; both are mature.
 
 ## CadQuery
 
 [CadQuery](https://github.com/CadQuery/cadquery) is a Python library that drives OpenCASCADE — a full B-Rep (boundary representation) CAD kernel. It's the closest open-source analogue to commercial parametric CAD like SolidWorks or Onshape.
 
-**How scadwright differs:**
+**How SCADwright differs:**
 
-- **Different geometry model.** CadQuery works in B-Rep — exact curved surfaces, real fillets, true revolves, fillets that actually compute curvature. scadwright (and OpenSCAD) work in CSG with mesh approximation: a "fillet" is a small minkowski sweep, a circle is an N-gon. CSG is faster and simpler; B-Rep is more accurate and supports operations that mesh CSG can't (true blends, exact-radius fillets, draft analysis).
-- **Different output.** CadQuery exports STEP, IGES, BREP — formats that downstream CAD/CAM tools accept natively. scadwright exports `.scad` (which OpenSCAD can render to STL).
-- **Different feel.** CadQuery's "fluent API" works in 3D sketch planes, edge selectors, and feature trees; scadwright stays close to OpenSCAD's primitives + transforms + CSG model.
+- **Different geometry model.** CadQuery works in B-Rep — exact curved surfaces, real fillets, true revolves, fillets that actually compute curvature. SCADwright (and OpenSCAD) work in CSG with mesh approximation: a "fillet" is a small minkowski sweep, a circle is an N-gon. CSG is faster and simpler; B-Rep is more accurate and supports operations that mesh CSG can't (true blends, exact-radius fillets, draft analysis).
+- **Different output.** CadQuery exports STEP, IGES, BREP — formats that downstream CAD/CAM tools accept natively. SCADwright exports `.scad` (which OpenSCAD can render to STL).
+- **Different feel.** CadQuery's "fluent API" works in 3D sketch planes, edge selectors, and feature trees; SCADwright stays close to OpenSCAD's primitives + transforms + CSG model.
 
-If you need precise mechanical engineering output (manufacturing-grade fillets, surface continuity, exports for traditional CAD pipelines), CadQuery is the better fit. scadwright is for the OpenSCAD use case: 3D-printable parts, programmatic mesh CSG, fast iteration, simple geometry model.
+If you need precise mechanical engineering output (manufacturing-grade fillets, surface continuity, exports for traditional CAD pipelines), CadQuery is the better fit. SCADwright is for the OpenSCAD use case: 3D-printable parts, programmatic mesh CSG, fast iteration, simple geometry model.
 
 ## Build123d
 
 [Build123d](https://github.com/gumyr/build123d) is a newer Python CAD library, also OpenCASCADE-based, sharing CadQuery's geometric capabilities with a different (often nicer) API.
 
-**How scadwright differs:** same axis as CadQuery — Build123d is B-Rep / OpenCASCADE / industrial CAD output, scadwright is OpenSCAD / mesh CSG / `.scad` output. Pick scadwright for OpenSCAD-style work; pick Build123d for the same niche CadQuery serves.
+**How SCADwright differs:** same axis as CadQuery — Build123d is B-Rep / OpenCASCADE / industrial CAD output, SCADwright is OpenSCAD / mesh CSG / `.scad` output. Pick SCADwright for OpenSCAD-style work; pick Build123d for the same niche CadQuery serves.
 
 ## Plain OpenSCAD
 
 OpenSCAD itself, with no Python.
 
-**How scadwright differs:** scadwright exists to give you Python's expressiveness — real classes that publish dimensions, real error messages with line numbers, real test infrastructure, real CLI argument parsing, a real module ecosystem — while emitting standard OpenSCAD as the output format. If your projects fit comfortably in OpenSCAD's `module` / `function` model and you don't miss the things above, plain OpenSCAD is one less moving part. The pain points scadwright addresses (modules can't expose dimensions, errors don't tell you where, etc.) are the headers in this project's [README](../README.md).
+**How SCADwright differs:** SCADwright exists to give you Python's expressiveness — real classes that publish dimensions, real error messages with line numbers, real test infrastructure, real CLI argument parsing, a real module ecosystem — while emitting standard OpenSCAD as the output format. If your projects fit comfortably in OpenSCAD's `module` / `function` model and you don't miss the things above, plain OpenSCAD is one less moving part. The pain points SCADwright addresses (modules can't expose dimensions, errors don't tell you where, etc.) are the headers in this project's [README](../README.md).

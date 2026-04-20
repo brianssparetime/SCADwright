@@ -1,6 +1,6 @@
-# Testing scadwright projects
+# Testing SCADwright projects
 
-scadwright provides a few tools for writing automated tests against your designs.
+SCADwright provides a few tools for writing automated tests against your designs.
 
 ## Geometry pinning with `tree_hash`
 
@@ -65,4 +65,4 @@ def test_widget_scad_output(tmp_path):
         golden.write_text(actual)    # first run: create the golden file
 ```
 
-scadwright's own test suite uses this pattern extensively. When you make an intentional change, regenerate the golden files and review the diff.
+SCADwright's own test suite uses this pattern extensively. When you make an intentional change, regenerate the golden files and review the diff.

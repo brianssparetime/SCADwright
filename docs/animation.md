@@ -2,7 +2,7 @@
 
 OpenSCAD's animation feature drives a special variable `$t` from 0 to 1 over a configurable timeline; you reference `$t` inside transforms and sizes to make geometry change frame-by-frame. OpenSCAD's view also reads top-of-file `$vpr`/`$vpt`/`$vpd`/`$vpf` globals as the default camera.
 
-scadwright exposes both via `scadwright.animation`:
+SCADwright exposes both via `scadwright.animation`:
 
 ```python
 from scadwright.animation import t, cond, viewpoint
@@ -35,7 +35,7 @@ To run the animation: open the `.scad` in OpenSCAD, then **View → Animate**, s
 - **Primitive sizes**: `cube` size dimensions, `sphere` radius/diameter, `cylinder` height/radius/diameter.
 - **Viewpoint fields** (see below).
 
-Anywhere else, scadwright expects a Python number — passing a `SymbolicExpr` raises `ValidationError` with a clear message. Validators like `positive=True` short-circuit when the value is symbolic (no way to check at build time).
+Anywhere else, SCADwright expects a Python number — passing a `SymbolicExpr` raises `ValidationError` with a clear message. Validators like `positive=True` short-circuit when the value is symbolic (no way to check at build time).
 
 ### Arithmetic and operators
 

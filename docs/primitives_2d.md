@@ -65,7 +65,7 @@ polygon(
 - `paths` — optional. When omitted, all points form a single closed shape in declaration order. When given, each path lists indices into `points`; the first path is the outer boundary, the rest are holes.
 - `convexity` — optional render hint; you usually don't need it.
 
-scadwright checks that every index in `paths` refers to a real point.
+SCADwright checks that every index in `paths` refers to a real point.
 
 ## `text`
 
@@ -95,7 +95,7 @@ part = union(plate, label)
 - `bbox` — optional `((min_x, min_y, 0), (max_x, max_y, 0))` hint. Overrides the built-in heuristic. SCADwright-side metadata only; never emitted to SCAD.
 - `fn` / `fa` / `fs` — facet controls for curved outlines.
 
-**Bounding box is estimated by default.** scadwright doesn't rasterize glyphs, so without a hint the bbox uses `0.6 * size * spacing` per character and `size` for height. Real glyphs vary — narrow sans-serifs are tighter, monospace and bold italics wider. For assembly checks against a specific font, pass a `bbox=` hint measured from that font:
+**Bounding box is estimated by default.** SCADwright doesn't rasterize glyphs, so without a hint the bbox uses `0.6 * size * spacing` per character and `size` for height. Real glyphs vary — narrow sans-serifs are tighter, monospace and bold italics wider. For assembly checks against a specific font, pass a `bbox=` hint measured from that font:
 
 ```python
 # Known extents for this font at this size:

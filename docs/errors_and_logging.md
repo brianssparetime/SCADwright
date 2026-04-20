@@ -8,7 +8,7 @@ from scadwright.errors import ValidationError, BuildError, EmitError, SCADwright
 
 ## Errors
 
-When something goes wrong, scadwright raises one of three error types. All three inherit from a common base, `SCADwrightError`, so a single `except SCADwrightError` catches anything the library throws.
+When something goes wrong, SCADwright raises one of three error types. All three inherit from a common base, `SCADwrightError`, so a single `except SCADwrightError` catches anything the library throws.
 
 ### `ValidationError`
 
@@ -22,7 +22,7 @@ ValidationError: cube size[0] must be non-negative, got -5.0 (at widget.py:42)
 
 ### `BuildError`
 
-Raised when a `Component`'s `build()` method itself raises an exception (other than another scadwright error). scadwright wraps the original exception, adds the component's class name and source location, and chains the original via Python's `__cause__`.
+Raised when a `Component`'s `build()` method itself raises an exception (other than another SCADwright error). SCADwright wraps the original exception, adds the component's class name and source location, and chains the original via Python's `__cause__`.
 
 ```
 BuildError: while building Widget: division by zero (at widget.py:88)
@@ -30,7 +30,7 @@ BuildError: while building Widget: division by zero (at widget.py:88)
 
 The original exception is still accessible — pytest and Python's traceback show it under "the above exception was the direct cause of the following exception."
 
-If `build()` raises a `SCADwrightError` (like a `ValidationError` from a primitive inside it), scadwright passes it through unchanged — no double-wrapping.
+If `build()` raises a `SCADwrightError` (like a `ValidationError` from a primitive inside it), SCADwright passes it through unchanged — no double-wrapping.
 
 ### `EmitError`
 
@@ -53,11 +53,11 @@ Each error carries a `source_location` attribute when one was captured. The prin
 
 ## Logging
 
-scadwright logs build timings, emit timings, and other internal events using Python's standard `logging` module. The library is silent by default — you have to opt in.
+SCADwright logs build timings, emit timings, and other internal events using Python's standard `logging` module. The library is silent by default — you have to opt in.
 
 ### `set_verbose`
 
-The simple way to see what scadwright is doing:
+The simple way to see what SCADwright is doing:
 
 ```python
 set_verbose()                  # show INFO-level events (build/emit timings)

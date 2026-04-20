@@ -1,6 +1,6 @@
 # Debug helpers
 
-Tools for SCAD-side diagnostics. Most scadwright users never need this — for Python-side debugging, use `print()` or logging. These helpers exist for cases where the diagnostic needs to live in the emitted SCAD output.
+Tools for SCAD-side diagnostics. Most SCADwright users never need this — for Python-side debugging, use `print()` or logging. These helpers exist for cases where the diagnostic needs to live in the emitted SCAD output.
 
 Imports used on this page:
 

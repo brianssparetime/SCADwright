@@ -1,8 +1,17 @@
-# scadwright style guide
+# SCADwright style guide
 
-Conventions for writing Components, examples, and shape-library entries. This is the reference for how scadwright code should look.
+Conventions for writing Components, examples, and shape-library entries. This is the reference for how SCADwright code should look.
 
 SCADwright code should be as simple and expressive as possible, even if that means departing from standard python idiom.
+
+---
+
+## Naming the project
+
+- **SCADwright** — the project name. Use in prose: document titles, README and docs text, docstrings and comments that refer to the project, descriptions, marketing.
+- **scadwright** — the Python package. Use in code: imports (`from scadwright import ...`), CLI invocations (`scadwright build ...`), `pip install scadwright`, `pyproject.toml`, and anywhere the literal identifier must match the installed package.
+
+The dividing line is prose-vs-code: if it's a sentence *about* the project, write **SCADwright**; if it's something you'd type into an editor or a terminal, write **scadwright**.
 
 ---
 
@@ -120,7 +129,7 @@ def print(self):                                    # user-chosen variant name
 
 ### Import style
 
-Standard library first, then scadwright modules grouped by subpackage. Specific imports only:
+Standard library first, then SCADwright modules grouped by subpackage. Specific imports only:
 
 ```python
 from collections import namedtuple
