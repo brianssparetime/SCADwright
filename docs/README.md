@@ -82,3 +82,9 @@ The public API is split into small, focused submodules. Import what you need:
 The root namespace (`from scadwright import ...`) keeps the Component authoring surface (`Component`, `Param`, validators) and top-level tools (`bbox`, `tree_hash`, `emit`, `render`, `resolution`, `variant`, etc.).
 
 Transforms also exist as chained methods on every shape (`cube(10).translate([5, 0, 0])`), which usually reads better for simple expressions; the standalone `translate(cube(10), [5, 0, 0])` form is available for cases where the subject is a complex expression already.
+
+## Style guide
+
+[Style guide](style-guide.md) — conventions for writing idiomatic scadwright code: preferred patterns (`equations`, directional helpers, `attach`/`through`), when lower-level alternatives are justified, and common anti-patterns. Worth reading before authoring Components or contributing to the shape library.
+
+It's also particularly useful to drop into an LLM's context when using AI assistance — it steers generated code away from generic-Python habits toward scadwright's idioms.

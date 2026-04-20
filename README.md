@@ -430,6 +430,8 @@ scadwright has no required dependencies beyond Python's standard library, howeve
 
 If you're developing with Claude Code, install the [OpenSCAD MCP server](https://github.com/quellant/openscad-mcp). It gives Claude the ability to render your `.scad` output, visually inspect the result, and catch geometry errors without you having to open OpenSCAD yourself. scadwright's generated SCAD is fully compatible -- Claude can build your script, render it through the MCP, and iterate on the design in a tight feedback loop.
 
+Whichever AI assistant you use, dropping the [style guide](docs/style-guide.md) into its context steers generated code away from generic-Python habits toward scadwright's idioms.
+
 ### VS Code extension 
 
 Included in this project is [a Visual Studio Code extension](/vscode/) that detects when you open a python scadwright file and shows icons to preview in OpenSCAD, render to a file, or kill any OpenSCAD instances.  
