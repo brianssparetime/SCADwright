@@ -1,0 +1,159 @@
+"""Infill panel Components: honeycomb, grid, triangular grid."""
+
+from __future__ import annotations
+
+import math
+
+from scadwright.boolops import difference, intersection, union
+from scadwright.component.base import Component
+from scadwright.component.params import Param
+from scadwright.extrusions import linear_extrude
+from scadwright.primitives import cube, square
+
+
+class HoneycombPanel(Component):
+    """Honeycomb infill panel: hex grid of holes in a rectangular slab.
+
+    ``size`` is ``(x, y, z)`` outer dimensions. ``cell_size`` is the
+    distance across flats of each hexagonal cell. ``wall_thk`` is the
+    wall thickness between cells.
+    """
+
+    size = Param(tuple)
+    equations = ["cell_size, wall_thk > 0"]
+
+    def setup(self):                                    # framework hook: optional
+        if len(self.size) != 3:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"HoneycombPanel: size must be a 3-tuple, got {self.size!r}"
+            )
+
+    def build(self):
+        x, y, z = self.size
+        slab = cube([x, y, z], center="xy")
+
+        # Build a grid of hexagonal cutters.
+        cs = self.cell_size
+        wt = self.wall_thk
+        pitch = cs + wt
+        hex_r = cs / (2 * math.cos(math.pi / 6))  # circumradius
+
+        # Hex profile.
+        hex_pts = [
+            (hex_r * math.cos(math.pi / 6 + i * math.pi / 3),
+             hex_r * math.sin(math.pi / 6 + i * math.pi / 3))
+            for i in range(6)
+        ]
+        from scadwright.primitives import polygon
+        hex_profile = polygon(points=hex_pts)
+        hex_cutter = linear_extrude(hex_profile, height=z + 0.02)
+
+        cutters = []
+        row_height = pitch * math.sin(math.pi / 3)
+        cols = int(x / pitch) + 2
+        rows = int(y / row_height) + 2
+
+        for row in range(rows):
+            for col in range(cols):
+                cx = col * pitch + (pitch / 2 if row % 2 else 0) - x / 2
+                cy = row * row_height - y / 2
+                cutters.append(hex_cutter.translate([cx, cy, -0.01]))
+
+        if not cutters:
+            return slab
+        return intersection(slab, difference(slab, union(*cutters)))
+
+
+class GridPanel(Component):
+    """Rectangular grid infill panel: square holes in a slab.
+
+    ``size`` is ``(x, y, z)``. ``cell_size`` and ``wall_thk`` control
+    the grid spacing.
+    """
+
+    size = Param(tuple)
+    equations = ["cell_size, wall_thk > 0"]
+
+    def setup(self):                                    # framework hook: optional
+        if len(self.size) != 3:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"GridPanel: size must be a 3-tuple, got {self.size!r}"
+            )
+
+    def build(self):
+        x, y, z = self.size
+        slab = cube([x, y, z], center="xy")
+
+        cs = self.cell_size
+        wt = self.wall_thk
+        pitch = cs + wt
+
+        cutters = []
+        cols = int(x / pitch) + 1
+        rows = int(y / pitch) + 1
+        cell = cube([cs, cs, z + 0.02])
+
+        for row in range(rows):
+            for col in range(cols):
+                cx = col * pitch + wt / 2 - x / 2
+                cy = row * pitch + wt / 2 - y / 2
+                cutters.append(cell.translate([cx, cy, -0.01]))
+
+        if not cutters:
+            return slab
+        return difference(slab, union(*cutters))
+
+
+class TriGridPanel(Component):
+    """Triangular grid infill panel: triangular holes in a slab.
+
+    ``size`` is ``(x, y, z)``. ``cell_size`` is the triangle side
+    length. ``wall_thk`` is wall thickness.
+    """
+
+    size = Param(tuple)
+    equations = ["cell_size, wall_thk > 0"]
+
+    def setup(self):                                    # framework hook: optional
+        if len(self.size) != 3:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"TriGridPanel: size must be a 3-tuple, got {self.size!r}"
+            )
+
+    def build(self):
+        x, y, z = self.size
+        slab = cube([x, y, z], center="xy")
+
+        cs = self.cell_size
+        wt = self.wall_thk
+        # Equilateral triangle height.
+        h_tri = cs * math.sqrt(3) / 2
+        pitch_x = cs + wt
+        pitch_y = h_tri + wt
+
+        from scadwright.primitives import polygon
+
+        cutters = []
+        cols = int(x / pitch_x) + 2
+        rows = int(y / pitch_y) + 2
+
+        for row in range(rows):
+            for col in range(cols):
+                cx = col * pitch_x + (pitch_x / 2 if row % 2 else 0) - x / 2
+                cy = row * pitch_y - y / 2
+                # Upward-pointing triangle.
+                tri = polygon(points=[
+                    (-cs / 2, 0),
+                    (cs / 2, 0),
+                    (0, h_tri),
+                ])
+                cutters.append(
+                    linear_extrude(tri, height=z + 0.02).translate([cx, cy, -0.01])
+                )
+
+        if not cutters:
+            return slab
+        return difference(slab, union(*cutters))

@@ -1,0 +1,103 @@
+{
+  "name": "scadwright-vscode",
+  "displayName": "SCADwright",
+  "description": "Preview, render, and manage OpenSCAD output for scadwright Python scripts.",
+  "version": "0.1.0",
+  "publisher": "scadwright-local",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:python"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "scadwright.kill",
+        "title": "SCADwright: Kill OpenSCAD",
+        "icon": {
+          "light": "icons/kill.svg",
+          "dark": "icons/kill.svg"
+        }
+      },
+      {
+        "command": "scadwright.preview",
+        "title": "SCADwright: Preview in OpenSCAD",
+        "icon": {
+          "light": "icons/preview.svg",
+          "dark": "icons/preview.svg"
+        }
+      },
+      {
+        "command": "scadwright.render",
+        "title": "SCADwright: Render to STL",
+        "icon": {
+          "light": "icons/render.svg",
+          "dark": "icons/render.svg"
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "scadwright.kill",
+          "when": "scadwright.isSCADwrightFile",
+          "group": "navigation@1"
+        },
+        {
+          "command": "scadwright.preview",
+          "when": "scadwright.isSCADwrightFile",
+          "group": "navigation@2"
+        },
+        {
+          "command": "scadwright.render",
+          "when": "scadwright.isSCADwrightFile",
+          "group": "navigation@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "scadwright.kill",
+          "when": "scadwright.isSCADwrightFile"
+        },
+        {
+          "command": "scadwright.preview",
+          "when": "scadwright.isSCADwrightFile"
+        },
+        {
+          "command": "scadwright.render",
+          "when": "scadwright.isSCADwrightFile"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SCADwright",
+      "properties": {
+        "scadwright.scadwrightCommand": {
+          "type": "string",
+          "default": "scadwright",
+          "description": "Path or command to invoke for the scadwright CLI."
+        },
+        "scadwright.openscadCommand": {
+          "type": "string",
+          "default": "openscad",
+          "description": "Path or command to invoke for OpenSCAD."
+        },
+        "scadwright.variant": {
+          "type": "string",
+          "default": "",
+          "description": "Variant to pass to scadwright build (e.g. 'print' or 'display'). Empty = no variant flag."
+        },
+        "scadwright.saveBeforeBuild": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save the active file before invoking scadwright build."
+        }
+      }
+    }
+  }
+}

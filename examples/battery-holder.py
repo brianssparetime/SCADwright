@@ -1,0 +1,190 @@
+"""Parametric battery holder: a desk tray with N cradles for cylindrical
+cells, sized to a given battery spec.
+
+Demonstrates (intermediate scope):
+- Equations solving for inter-related dimensions.
+- A custom transform applied multiple times (one per cradle).
+- Multi-instantiation of the same cradle geometry.
+- Concrete subclass per battery type + count.
+- Component publishing: the holder exposes `cradle_positions` and outer
+  dimensions so the display variant can read them.
+
+Run:
+    python examples/battery-holder.py
+    scadwright build examples/battery-holder.py --variant=display
+"""
+
+from collections import namedtuple
+
+from scadwright import Component, Param, bbox
+from scadwright.boolops import difference, intersection, union
+from scadwright.design import Design, run, variant
+from scadwright.primitives import cube, cylinder
+from scadwright.shapes import Tube, rounded_rect
+from scadwright.transforms import transform
+
+
+# =============================================================================
+# GLOBALS
+# =============================================================================
+
+EPS = 0.01
+
+
+# =============================================================================
+# REUSABLE: battery spec, custom verb, generic holder
+# =============================================================================
+
+
+BatterySpec = namedtuple("BatterySpec", "d length label")
+
+AAA     = BatterySpec(d=10.5, length=44.5, label="AAA")
+AA      = BatterySpec(d=14.5, length=50.5, label="AA")
+C_CELL  = BatterySpec(d=26.2, length=50.0, label="C")
+D_CELL  = BatterySpec(d=34.2, length=61.5, label="D")
+_18650  = BatterySpec(d=18.5, length=65.0, label="18650")
+CR123A  = BatterySpec(d=17.0, length=34.5, label="CR123A")
+
+
+@transform("finger_scoop", inline=True)
+def finger_scoop(node, *, at_x, tray_y, width, depth, top_z):
+    """Cut a semicircular notch into the top-front edge of the +y outer
+    wall, so the user can pinch the battery from the side and lift it out.
+
+    For the scoop to be functional, `depth` must be greater than the wall
+    thickness between the cradle well and the outer wall — otherwise it
+    stops short and exposes no battery. Typical sizing: wall_thk +
+    clearance + 2-3mm of penetration into the well.
+
+    `at_x` is the x-position of the cradle (the scoop is centered on it).
+    `tray_y` is the outer-wall y-coordinate (the surface to notch).
+    `width` is scoop width along x. `depth` is radial depth of the cut
+    (penetration into the tray from the outer wall, and how far down from
+    `top_z` the notch extends). `top_z` is the z of the tray's top face.
+    """
+    cutter = (
+        cylinder(h=width, r=depth, center=True)
+        .rotate([0, 90, 0])
+        .translate([at_x, tray_y, top_z])
+    )
+    return difference(node, cutter)
+
+
+class BatteryHolder(Component):
+    """Open-top tray with N cradle wells sized to a single battery spec.
+    Each well is a cylindrical pocket sunk into a rounded-corner tray."""
+
+    spec = Param(BatterySpec)
+    count = Param(int, positive=True)
+    equations = [
+        "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_depth > 0",
+        "corner_r >= 0",
+    ]
+
+    def setup(self):                                       # framework hook: optional, runs after Params are set
+        if self.tray_depth <= self.floor_thk:
+            raise ValueError(
+                f"tray_depth {self.tray_depth} must exceed floor_thk {self.floor_thk}"
+            )
+        if self.tray_depth >= self.spec.length:
+            raise ValueError(
+                f"tray_depth {self.tray_depth} should be less than battery "
+                f"length {self.spec.length} so the cell protrudes for grip"
+            )
+        self.pitch = self.spec.d + 2 * (self.clearance + self.wall_thk)
+        self.outer_w = self.count * self.pitch + 2 * self.end_clearance
+        self.outer_l = self.pitch + 2 * self.side_clearance
+        self.outer_size = (self.outer_w, self.outer_l, self.tray_depth)
+        half_span = (self.count - 1) * self.pitch / 2
+        self.cradle_positions = tuple(
+            -half_span + i * self.pitch for i in range(self.count)
+        )
+
+    def build(self):                                       # framework hook: required; returns the shape
+        w, l, h = self.outer_size
+        body = rounded_rect(w, l, r=self.corner_r).linear_extrude(height=h)
+
+        well_d = self.spec.d + 2 * self.clearance
+        well_h = h - self.floor_thk + EPS
+        wells = union(*[
+            cylinder(h=well_h, d=well_d)
+                .translate([x, 0, self.floor_thk])
+            for x in self.cradle_positions
+        ])
+
+        carved = difference(body, wells)
+
+        for x in self.cradle_positions:
+            carved = carved.finger_scoop(
+                at_x=x, tray_y=l / 2,
+                width=self.scoop_width, depth=self.scoop_depth,
+                top_z=h,
+            )
+        return carved
+
+
+def _battery_stand_in(spec: BatterySpec, fn: int = 32):
+    """A colored cylinder roughly the size of a real cell, for display
+    variants that want to show the holder with its contents."""
+    body = Tube(h=spec.length - 2, od=spec.d, thk=0.8, fn=fn)
+    return body.color("darkgreen")
+
+
+# =============================================================================
+# CONCRETE: specific holders for this project
+# =============================================================================
+
+
+class AA6Holder(BatteryHolder):
+    spec = AA
+    count = 6
+    wall_thk = 1.6
+    clearance = 0.4
+    end_clearance = 3.0
+    side_clearance = 3.0
+    floor_thk = 2.0
+    tray_depth = 28.0
+    corner_r = 3.0
+    scoop_width = 15.0
+    scoop_depth = 7.5
+
+
+class Holder18650x4(BatteryHolder):
+    spec = _18650
+    count = 4
+    wall_thk = 2.0
+    clearance = 0.5
+    end_clearance = 4.0
+    side_clearance = 4.0
+    floor_thk = 2.5
+    tray_depth = 36.0
+    corner_r = 4.0
+    scoop_width = 18.0
+    scoop_depth = 9.0
+
+
+# =============================================================================
+# DESIGN
+# =============================================================================
+
+
+class BatteryBox(Design):
+    holder = AA6Holder()
+
+    @variant(fn=48, default=True)
+    def print(self):
+        return self.holder
+
+    @variant(fn=48)
+    def display(self):
+        h = self.holder
+        protrusion_z = h.floor_thk + h.spec.length / 2
+        batteries = union(*[
+            _battery_stand_in(h.spec).translate([x, 0, protrusion_z])
+            for x in h.cradle_positions
+        ])
+        return union(h, batteries)
+
+
+if __name__ == "__main__":
+    run()
