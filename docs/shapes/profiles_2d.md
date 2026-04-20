@@ -17,6 +17,10 @@ Rectangle with rounded corners, centered on the origin. `r=0` falls back to a pl
 rounded_rect(20, 10, 2, fn=16)
 ```
 
+![Rounded rect](images/rounded-rect.png)
+
+*`rounded_rect(30, 18, 3).linear_extrude(height=3)` — shown extruded to read as a 3D plate.*
+
 ## `rounded_square(size, r, *, fn=None)`
 
 Convenience wrapper around `rounded_rect`. `size` can be a single number (square) or `[w, h]`.
@@ -42,6 +46,10 @@ Pie slice cut from a disc.
 Sector(r=10, angles=(0, 60), fn=24)
 ```
 
+![Sector](images/sector.png)
+
+*`Sector(r=15, angles=(0, 120)).linear_extrude(height=3)` — a 120° pie slice, extruded.*
+
 ## `Arc(r, angles, width, fn=None)`
 
 Ring segment -- like a Sector but only the outer band. Published attributes: `inner_r`, `outer_r`.
@@ -49,6 +57,10 @@ Ring segment -- like a Sector but only the outer band. Published attributes: `in
 ```python
 Arc(r=10, angles=(0, 90), width=2, fn=24)
 ```
+
+![Arc](images/arc.png)
+
+*`Arc(r=15, angles=(0, 120), width=3).linear_extrude(height=3)` — a ring segment, extruded.*
 
 ## `RoundedEndsArc(r, angles, width, end_r, fn=None)`
 
@@ -65,3 +77,7 @@ Capsule / stadium shape: rectangle with semicircular caps on the short sides. Wh
 ```python
 RoundedSlot(length=20, width=4, fn=16)
 ```
+
+![Rounded slot](images/rounded-slot.png)
+
+*`RoundedSlot(length=30, width=6).linear_extrude(height=3)` — a stadium/capsule profile, extruded.*

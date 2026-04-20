@@ -20,6 +20,10 @@ bolt.along_curve(path=path, count=6)
 
 Each copy is rotated so its z-axis aligns with the path tangent at that point.
 
+![Along curve](images/along-curve.png)
+
+*Bolts placed along a bezier path, each oriented to the local tangent.*
+
 ## `.bend(radius, axis="z")`
 
 Wrap linear geometry into a circular arc around a cylinder of the given radius.
@@ -33,6 +37,10 @@ The shape's extent along the bend axis is mapped to an arc. This is an approxima
 
 `axis` controls the bend direction: `"x"`, `"y"`, or `"z"` (default).
 
+![Bend](images/bend.png)
+
+*`cube([2, 2, 60]).bend(radius=15)` — a straight bar wrapped into a circular arc.*
+
 ## `.twist_copy(angle, count)`
 
 Create stacked copies with incremental rotation around z.
@@ -43,3 +51,7 @@ fan = blade.twist_copy(angle=45, count=8)
 ```
 
 Each copy is rotated by `angle` degrees relative to the previous one and offset upward by the shape's height. The first copy is unrotated.
+
+![Twist copy](images/twist-copy.png)
+
+*`cube([20, 3, 1]).twist_copy(angle=45, count=8)` — stacked copies rotated progressively around z.*

@@ -19,6 +19,10 @@ Prism(sides=6, r=10, h=20)              # hexagonal prism
 Prism(sides=4, r=10, h=15, top_r=5)     # square frustum
 ```
 
+![Prism](images/prism.png)
+
+*`Prism(sides=6, r=12, h=20)` — a hexagonal column.*
+
 ## `Pyramid(sides, r, h)`
 
 N-sided pyramid with apex at (0, 0, h), base on z=0.
@@ -27,6 +31,10 @@ N-sided pyramid with apex at (0, 0, h), base on z=0.
 Pyramid(sides=4, r=10, h=20)            # square pyramid
 Pyramid(sides=3, r=8, h=12)             # triangular
 ```
+
+![Pyramid](images/pyramid.png)
+
+*`Pyramid(sides=4, r=12, h=20)` — a square pyramid with apex above the origin.*
 
 ## Platonic solids
 
@@ -39,6 +47,10 @@ Dodecahedron(r=10)
 Icosahedron(r=10)
 ```
 
+![Icosahedron](images/icosahedron.png)
+
+*`Icosahedron(r=15)` — a 20-faced regular polyhedron, inscribed in a sphere of radius 15.*
+
 ## `Torus(major_r, minor_r)`
 
 Donut centered on the origin in the XY plane. Optional `angle` for a partial sweep.
@@ -50,6 +62,10 @@ Torus(major_r=20, minor_r=5, angle=180) # half ring
 
 `minor_r` must be less than `major_r`.
 
+![Torus](images/torus.png)
+
+*`Torus(major_r=20, minor_r=5)` — a donut lying flat in the XY plane.*
+
 ## `Dome(r)`
 
 Hemisphere with flat face on z=0. Optional `thk` for a hollow shell.
@@ -58,6 +74,10 @@ Hemisphere with flat face on z=0. Optional `thk` for a hollow shell.
 Dome(r=15)                              # solid hemisphere
 Dome(r=15, thk=2)                       # hollow dome, 2mm wall
 ```
+
+![Dome](images/dome.png)
+
+*`Dome(r=15, thk=2)` — a hollow hemispherical shell with a 2 mm wall.*
 
 ## `SphericalCap(any two of six params)`
 

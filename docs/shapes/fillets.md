@@ -18,6 +18,10 @@ ChamferedBox(size=(30, 20, 10), fillet=2)     # rounded edges
 ChamferedBox(size=(30, 20, 10), chamfer=2)    # 45-degree bevels
 ```
 
+![Chamfered box](images/chamfered-box.png)
+
+*`ChamferedBox(size=(30, 20, 10), fillet=2)` — box with every edge rolled to a 2 mm radius.*
+
 ## `FilletMask(r, length, axis="z")`
 
 Subtractable concave fillet mask. Place at an edge and subtract to round it.
@@ -55,6 +59,10 @@ Stepped cylinder for socket-head screws. Shaft at z=0, wider bore on top.
 hole = Counterbore(shaft_d=3.2, head_d=5.5, head_depth=3, shaft_depth=10)
 part = difference(plate, hole.through(plate))
 ```
+
+![Counterbore](images/counterbore.png)
+
+*`Counterbore(shaft_d=4, head_d=7, head_depth=4, shaft_depth=12)` — the solid mask; subtract it from a part for a socket-head pocket.*
 
 ## `FilletRing(id, od, base_angle)`
 

@@ -21,6 +21,10 @@ Bearing(id=10, od=30, width=9)           # custom
 
 Publishes `id`, `od`, `width`. Available series: 604-609, 623-626, 6000-6005, 6200-6205.
 
+![Bearing](images/bearing.png)
+
+*`Bearing(series="608")` — 608-series ball bearing (8×22×7 mm).*
+
 ## `GT2Pulley(teeth, bore_d, belt_width)`
 
 GT2 timing belt pulley (2mm pitch) with flanges and bore.
@@ -30,6 +34,10 @@ GT2Pulley(teeth=20, bore_d=5, belt_width=6)
 ```
 
 Publishes `pitch_d`, `od`.
+
+![GT2 pulley](images/gt2-pulley.png)
+
+*`GT2Pulley(teeth=20, bore_d=5, belt_width=6)` — 2mm-pitch timing belt pulley with flanges.*
 
 ## `HTDPulley(teeth, bore_d, belt_width, pitch)`
 
@@ -47,6 +55,10 @@ D-shaped shaft cross-section. Extrude for a 3D shaft.
 DShaft(d=5, flat_depth=0.5).linear_extrude(height=20)
 ```
 
+![D-shaft](images/d-shaft.png)
+
+*`DShaft(d=10, flat_depth=1.0).linear_extrude(height=40)` — motor shaft profile with a flat for a set-screw grip.*
+
 ## `KeyedShaft(d, key_w, key_h)` (2D)
 
 Shaft cross-section with a rectangular keyway. Extrude for 3D.
@@ -54,6 +66,10 @@ Shaft cross-section with a rectangular keyway. Extrude for 3D.
 ```python
 KeyedShaft(d=10, key_w=3, key_h=1.5).linear_extrude(height=30)
 ```
+
+![Keyed shaft](images/keyed-shaft.png)
+
+*`KeyedShaft(d=12, key_w=3, key_h=1.5).linear_extrude(height=40)` — shaft with a rectangular keyway.*
 
 ### See also
 

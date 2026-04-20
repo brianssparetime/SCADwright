@@ -80,10 +80,17 @@ def _render_png(scad_path: Path, out_png: Path, openscad: str, opts: dict) -> No
 def _render_component_entry(entry: dict, tmpdir: str, openscad: str, opts: dict) -> None:
     from scadwright.render import render
 
-    cls = entry["component"]
-    kwargs = entry.get("kwargs", {})
-    label = entry.get("name", cls.__name__.lower())
-    instance = cls(**kwargs)
+    # Two entry forms: Component class + kwargs, OR a build callable returning
+    # a Node. The callable form is needed for 2D profiles that must be
+    # extruded to be visible, and for transform-chain demos.
+    if "build" in entry:
+        instance = entry["build"]()
+        label = entry.get("name") or Path(entry["out"]).stem
+    else:
+        cls = entry["component"]
+        kwargs = entry.get("kwargs", {})
+        label = entry.get("name", cls.__name__.lower())
+        instance = cls(**kwargs)
     scad_path = Path(tmpdir) / f"{label}.scad"
     render(instance, scad_path)
     _render_png(scad_path, Path(entry["out"]), openscad, opts)
