@@ -40,6 +40,14 @@ COLORSCHEME = "Metallic"
 FN = 96                        # override $fn globally for smooth circles
 MAC_DEFAULT = "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
 
+# Shape-library hero/gallery mosaic — fixed layout so successive regens
+# stay consistent. Re-run with --hero after adding/removing shapes.
+HERO_DIR = Path("docs/shapes/images")
+HERO_OUTPUT = HERO_DIR / "hero.png"
+HERO_TILE = "7x5"              # 35 cells; extra trailing cells rendered as blanks
+HERO_GEOMETRY = "300x225+3+3"  # per-tile size + 3px gap
+HERO_BG = "#AAAAFF"            # matches the Metallic shots' lavender backdrop
+
 
 def _resolve_openscad(explicit: str | None) -> str:
     candidate = explicit or os.environ.get("SCADWRIGHT_OPENSCAD") or "openscad"
@@ -96,6 +104,39 @@ def _render_component_entry(entry: dict, tmpdir: str, openscad: str, opts: dict)
     _render_png(scad_path, Path(entry["out"]), openscad, opts)
 
 
+def _render_hero() -> int:
+    """Assemble the shape-library hero mosaic from every PNG in HERO_DIR
+    (except the hero itself) via `magick montage`.
+
+    Sort order is alphabetical so the grid layout is stable across runs.
+    Requires ImageMagick on PATH.
+    """
+    magick = shutil.which("magick")
+    if not magick:
+        raise SystemExit(
+            "could not find 'magick' on PATH. Install ImageMagick (e.g. `brew install imagemagick`)."
+        )
+    if not HERO_DIR.is_dir():
+        raise SystemExit(f"hero directory not found: {HERO_DIR}")
+
+    tiles = sorted(p for p in HERO_DIR.glob("*.png") if p.name != HERO_OUTPUT.name)
+    if not tiles:
+        raise SystemExit(f"no tiles found under {HERO_DIR}")
+
+    cmd = [magick, "montage", *map(str, tiles),
+           "-tile", HERO_TILE,
+           "-geometry", HERO_GEOMETRY,
+           "-background", HERO_BG,
+           str(HERO_OUTPUT)]
+    print(f"assembling hero from {len(tiles)} tile(s) -> {HERO_OUTPUT}", file=sys.stderr)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"magick montage failed:\n{result.stderr.strip() or result.stdout.strip()}"
+        )
+    return 0
+
+
 def _render_example_entry(entry: dict, tmpdir: str, openscad: str, opts: dict) -> None:
     # Run `scadwright build` in a subprocess so each example imports in a
     # fresh interpreter — avoids collisions on module-level state like the
@@ -125,7 +166,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--imgsize", default=IMGSIZE, help=f"WxH comma pair (default: {IMGSIZE})")
     parser.add_argument("--colorscheme", default=COLORSCHEME, help=f"OpenSCAD colorscheme (default: {COLORSCHEME})")
     parser.add_argument("--fn", type=int, default=FN, help=f"override $fn for smooth circles (default: {FN})")
+    parser.add_argument("--hero", action="store_true",
+                        help=f"regenerate {HERO_OUTPUT} from the current shape-library PNGs and exit (no shot rendering)")
     args = parser.parse_args(argv)
+
+    if args.hero:
+        return _render_hero()
 
     tools_dir = Path(__file__).parent
     sys.path.insert(0, str(tools_dir))
