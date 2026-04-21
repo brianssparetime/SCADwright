@@ -6,6 +6,7 @@ import math
 
 from scadwright.component.base import Component
 from scadwright.primitives import polyhedron
+from scadwright.shapes.polyhedra._util import ring_points
 
 
 class Tetrahedron(Component):
@@ -17,26 +18,15 @@ class Tetrahedron(Component):
     equations = ["r > 0"]
 
     def build(self):
-        # Vertices of a regular tetrahedron inscribed in a unit sphere,
-        # scaled by r. One vertex at the top.
+        # Apex at +z; three base vertices in a ring at z = -r/3.
         r = self.r
-        angle = math.acos(-1 / 3)  # ~109.47 degrees
-        sin_a = math.sin(angle)
-        pts = [
-            (0, 0, r),
-            (r * sin_a, 0, r * (-1 / 3)),
-            (r * sin_a * math.cos(2 * math.pi / 3),
-             r * sin_a * math.sin(2 * math.pi / 3),
-             r * (-1 / 3)),
-            (r * sin_a * math.cos(4 * math.pi / 3),
-             r * sin_a * math.sin(4 * math.pi / 3),
-             r * (-1 / 3)),
-        ]
+        ring_r = r * math.sin(math.acos(-1 / 3))  # ~0.9428 * r
+        pts = [(0, 0, r)] + ring_points(3, ring_r, -r / 3)
         faces = [
-            [0, 1, 2],
-            [0, 2, 3],
-            [0, 3, 1],
-            [1, 3, 2],
+            [0, 1, 2],    # apex + base[0..1]
+            [0, 2, 3],    # apex + base[1..2]
+            [0, 3, 1],    # apex + base[2..0]
+            [1, 3, 2],    # base (reversed winding for outward normal)
         ]
         return polyhedron(points=pts, faces=faces)
 
@@ -50,16 +40,16 @@ class Octahedron(Component):
     equations = ["r > 0"]
 
     def build(self):
+        # Equator ring of 4 vertices at z=0 plus apex (+z) and nadir (-z).
         r = self.r
-        pts = [
-            (r, 0, 0), (-r, 0, 0),
-            (0, r, 0), (0, -r, 0),
-            (0, 0, r), (0, 0, -r),
-        ]
-        faces = [
-            [4, 0, 2], [4, 2, 1], [4, 1, 3], [4, 3, 0],
-            [5, 2, 0], [5, 1, 2], [5, 3, 1], [5, 0, 3],
-        ]
+        n = 4
+        pts = ring_points(n, r, 0) + [(0, 0, r), (0, 0, -r)]
+        apex, nadir = n, n + 1
+        faces = []
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append([apex, i, j])     # top fan
+            faces.append([nadir, j, i])    # bottom fan (reversed winding)
         return polyhedron(points=pts, faces=faces)
 
 

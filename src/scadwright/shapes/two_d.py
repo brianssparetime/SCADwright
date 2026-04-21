@@ -58,7 +58,10 @@ def regular_polygon(sides: int, r: float):
 class Sector(Component):
     """Pie slice: a portion of a disc between two angles (degrees).
 
-    Built as `intersection(circle(r), angled_wedge)`.
+    Built as `intersection(circle(r), angled_wedge)`. The wedge is a
+    straight-sided guard extending past the disc; the curved boundary
+    comes from `circle(r)`, which flows `$fn` through the framework
+    like any other primitive — no Sector-specific resolution knob.
     """
 
     equations = ["r > 0"]
@@ -68,13 +71,15 @@ class Sector(Component):
         start, end = float(self.angles[0]), float(self.angles[1])
         if end < start:
             end += 360.0
-        steps = max(2, int(self.fn) if self.fn else 32)
-        verts = [(0.0, 0.0)]
-        for i in range(steps + 1):
-            t = start + (end - start) * (i / steps)
-            verts.append((self.r * math.cos(math.radians(t)), self.r * math.sin(math.radians(t))))
-        wedge = polygon(points=verts)
-        return intersection(circle(r=self.r), wedge)
+        ext = self.r * 2  # guard radius: wedge must extend past the disc
+        span = end - start
+        # Subdivide the wedge into ≤90° chunks so the polygon stays convex.
+        n_segs = max(1, int(math.ceil(span / 90)))
+        pts = [(0.0, 0.0)]
+        for i in range(n_segs + 1):
+            t = start + span * i / n_segs
+            pts.append((ext * math.cos(math.radians(t)), ext * math.sin(math.radians(t))))
+        return intersection(circle(r=self.r), polygon(points=pts))
 
 
 class Arc(Component):

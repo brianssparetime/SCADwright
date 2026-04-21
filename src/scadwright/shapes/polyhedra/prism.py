@@ -2,19 +2,10 @@
 
 from __future__ import annotations
 
-import math
-
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.primitives import polyhedron
-
-
-def _ring_points(n: int, r: float, z: float) -> list[tuple[float, float, float]]:
-    """``n`` evenly-spaced points on a circle of radius ``r`` at height ``z``."""
-    return [
-        (r * math.cos(2 * math.pi * i / n), r * math.sin(2 * math.pi * i / n), z)
-        for i in range(n)
-    ]
+from scadwright.shapes.polyhedra._util import ring_points
 
 
 class Prism(Component):
@@ -33,7 +24,7 @@ class Prism(Component):
         n = self.sides
         r_top = self.top_r if self.top_r is not None else self.r
 
-        points = _ring_points(n, self.r, 0.0) + _ring_points(n, r_top, self.h)
+        points = ring_points(n, self.r, 0.0) + ring_points(n, r_top, self.h)
 
         faces = []
         # Bottom face (reversed winding).
@@ -59,7 +50,7 @@ class Pyramid(Component):
 
     def build(self):
         n = self.sides
-        points = _ring_points(n, self.r, 0.0)
+        points = ring_points(n, self.r, 0.0)
         apex = len(points)
         points.append((0.0, 0.0, self.h))
 

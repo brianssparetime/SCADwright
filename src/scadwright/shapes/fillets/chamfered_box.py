@@ -20,6 +20,13 @@ class ChamferedBox(Component):
     """
 
     size = Param(tuple)
+    # `fillet > 0` and `chamfer > 0` are per-Param constraints that fire
+    # only when the value is non-None (optional-Param opt-out), so they
+    # coexist with the XOR selector below.
+    equations = [
+        "fillet > 0",
+        "chamfer > 0",
+    ]
     fillet = Param(float, default=None)
     chamfer = Param(float, default=None)
 
