@@ -6,7 +6,9 @@ $fn = 24;
 // Funnel
 difference() {
     cylinder(h=20, r1=7, r2=9, center=false);
-    translate([0, 0, -1]) {
-        cylinder(h=22, r1=5, r2=7, center=false);
+    translate([0, 0, -0.01]) {
+        scale([1, 1, 1.001]) {
+            cylinder(h=20, r1=5, r2=7, center=false);
+        }
     }
 }

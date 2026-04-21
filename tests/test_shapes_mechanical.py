@@ -50,7 +50,7 @@ def test_gt2_pulley_publishes_pitch_d():
 
 
 def test_gt2_too_few_teeth_raises():
-    with pytest.raises(ValidationError, match="teeth must be >= 10"):
+    with pytest.raises(ValidationError, match="teeth: must be >= 10"):
         GT2Pulley(teeth=5, bore_d=3, belt_width=6)
 
 

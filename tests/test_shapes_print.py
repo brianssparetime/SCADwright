@@ -82,7 +82,7 @@ def test_vent_slots_builds():
 
 
 def test_vent_slots_too_few_raises():
-    with pytest.raises(ValidationError, match="slot_count must be >= 1"):
+    with pytest.raises(ValidationError, match="slot_count: must be >= 1"):
         VentSlots(width=30, height=20, thk=2, slot_width=20,
                   slot_height=1.5, slot_count=0)
 

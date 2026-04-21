@@ -40,7 +40,7 @@ def test_prism_emits_polyhedron():
 
 
 def test_prism_too_few_sides_raises():
-    with pytest.raises(ValidationError, match="sides must be >= 3"):
+    with pytest.raises(ValidationError, match="sides: must be >= 3"):
         Prism(sides=2, r=5, h=10)
 
 
@@ -59,7 +59,7 @@ def test_pyramid_emits_polyhedron():
 
 
 def test_pyramid_too_few_sides_raises():
-    with pytest.raises(ValidationError, match="sides must be >= 3"):
+    with pytest.raises(ValidationError, match="sides: must be >= 3"):
         Pyramid(sides=1, r=5, h=10)
 
 

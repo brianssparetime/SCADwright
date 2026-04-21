@@ -5,9 +5,7 @@ from __future__ import annotations
 import math
 
 from scadwright.component.base import Component
-from scadwright.component.anchors import anchor
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import polygon
 from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
@@ -28,16 +26,18 @@ class SpurGear(Component):
     ``base_r`` (the standard gear circle radii).
     """
 
-    equations = ["module, h > 0"]
-    teeth = Param(int)
+    equations = [
+        "module, h > 0",
+        "pressure_angle > 0",
+        "pressure_angle <= 45",
+        "helix_angle >= -45",
+        "helix_angle <= 45",
+    ]
+    teeth = Param(int, min=6)
     pressure_angle = Param(float, default=20.0)
     helix_angle = Param(float, default=0.0)
 
     def setup(self):                                    # framework hook: optional
-        if self.teeth < 6:
-            raise ValidationError(
-                f"SpurGear: teeth must be >= 6, got {self.teeth}"
-            )
         pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
         self.pitch_r = pr
         self.base_r = br

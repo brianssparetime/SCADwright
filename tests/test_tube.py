@@ -47,4 +47,4 @@ def test_tube_emits_difference():
     out = emit_str(t)
     assert "difference()" in out
     assert "cylinder(h=10, r=5" in out
-    assert "cylinder(h=12, r=4" in out  # inner extended by 2 to avoid coincidence
+    assert "cylinder(h=10, r=4" in out  # inner cutter; through() handles end-cap overlap

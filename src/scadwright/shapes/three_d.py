@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from scadwright.boolops import difference, minkowski
 from scadwright.component.base import Component
-from scadwright.component.params import Param, positive
+from scadwright.component.params import Param
 from scadwright.errors import ValidationError
 from scadwright.primitives import cube, cylinder, sphere
 
@@ -22,7 +22,7 @@ class Tube(Component):
 
     def build(self):
         outer = cylinder(h=self.h, r=self.od / 2.0)
-        inner = cylinder(h=self.h + 2, r=self.id / 2.0).down(1)
+        inner = cylinder(h=self.h, r=self.id / 2.0).through(outer)
         return difference(outer, inner)
 
 
@@ -46,10 +46,10 @@ class Funnel(Component):
             r2=self.top_od / 2.0,
         )
         inner = cylinder(
-            h=self.h + 2,
+            h=self.h,
             r1=self.bot_id / 2.0,
             r2=self.top_id / 2.0,
-        ).down(1)
+        ).through(outer)
         return difference(outer, inner)
 
 
@@ -60,7 +60,7 @@ class RoundedBox(Component):
     """
 
     size = Param(tuple)  # (x, y, z)
-    r = Param(float, validators=[positive])
+    equations = ["r > 0"]
 
     def setup(self):
         if len(self.size) != 3:
@@ -119,9 +119,7 @@ class FilletRing(Component):
             cone_h = _m.tan(angle_rad) * (self.od / 2.0)
             cone = cylinder(h=cone_h, r1=self.od / 2.0, r2=0)
             cut_h = _m.tan(angle_rad) * (self.id / 2.0)
-            cutter = cylinder(
-                h=cut_h + 2 * eps, r=self.id / 2.0
-            ).down(eps)
+            cutter = cylinder(h=cut_h, r=self.id / 2.0).through(cone)
             return difference(cone, cutter)
 
         # slant == "inwards"
@@ -146,12 +144,12 @@ class UShapeChannel(Component):
     equations = [
         "outer_width == channel_width + 2 * wall_thk",
         "outer_height == channel_height + wall_thk",
+        "bottom_width == outer_width",
         "channel_width, channel_height, outer_width, outer_height, wall_thk, channel_length > 0",
     ]
     n_shape = Param(bool, default=False)
 
     def setup(self):
-        self.bottom_width = self.outer_width
         # Channel opening: center of the open top (or bottom if n_shape).
         open_z = 0.0 if self.n_shape else self.outer_height
         open_normal = (0.0, 0.0, -1.0) if self.n_shape else (0.0, 0.0, 1.0)

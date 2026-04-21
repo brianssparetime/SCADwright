@@ -19,14 +19,10 @@ class Prism(Component):
     """
 
     equations = ["r, h > 0"]
-    sides = Param(int)
+    sides = Param(int, min=3)
     top_r = Param(float, default=None)
 
     def setup(self):
-        if self.sides < 3:
-            raise ValidationError(
-                f"Prism: sides must be >= 3, got {self.sides}"
-            )
         if self.top_r is not None and self.top_r < 0:
             raise ValidationError(
                 f"Prism: top_r must be >= 0, got {self.top_r}"
@@ -69,13 +65,7 @@ class Pyramid(Component):
     """
 
     equations = ["r, h > 0"]
-    sides = Param(int)
-
-    def setup(self):
-        if self.sides < 3:
-            raise ValidationError(
-                f"Pyramid: sides must be >= 3, got {self.sides}"
-            )
+    sides = Param(int, min=3)
 
     def build(self):
         n = self.sides

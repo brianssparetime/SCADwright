@@ -6,7 +6,6 @@ from collections import namedtuple
 
 from scadwright.boolops import difference
 from scadwright.component.base import Component
-from scadwright.component.anchors import anchor
 from scadwright.component.params import Param
 from scadwright.primitives import cylinder
 
@@ -73,5 +72,5 @@ class Bearing(Component):
 
     def build(self):
         outer = cylinder(h=self.width, d=self.od)
-        bore = cylinder(h=self.width + 0.02, d=self.id).down(0.01)
+        bore = cylinder(h=self.width, d=self.id).through(outer)
         return difference(outer, bore)

@@ -58,7 +58,7 @@ def test_spur_gear_helical():
 
 
 def test_spur_gear_too_few_teeth_raises():
-    with pytest.raises(ValidationError, match="teeth must be >= 6"):
+    with pytest.raises(ValidationError, match="teeth: must be >= 6"):
         SpurGear(module=1, teeth=3, h=5)
 
 

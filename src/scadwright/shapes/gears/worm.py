@@ -6,7 +6,6 @@ import math
 
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.shapes.curves.paths import helix_path
 from scadwright.shapes.curves.sweep import path_extrude
 from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
@@ -21,15 +20,15 @@ class Worm(Component):
     ``leads`` is the number of thread starts (1 = single-start).
     """
 
-    equations = ["module, length, shaft_r > 0"]
-    leads = Param(int, default=1)
+    equations = [
+        "module, length, shaft_r > 0",
+        "pressure_angle > 0",
+        "pressure_angle <= 45",
+        "pitch == pi * module",
+        "thread_r == shaft_r + module",
+    ]
+    leads = Param(int, default=1, min=1)
     pressure_angle = Param(float, default=20.0)
-
-    def setup(self):                                    # framework hook: optional
-        if self.leads < 1:
-            raise ValidationError(f"Worm: leads must be >= 1, got {self.leads}")
-        self.pitch = math.pi * self.module
-        self.thread_r = self.shaft_r + self.module
 
     def build(self):
         # Trapezoidal thread cross-section.
@@ -65,15 +64,15 @@ class WormGear(Component):
     The gear axis is along z, perpendicular to the worm axis.
     """
 
-    equations = ["module, h > 0"]
-    teeth = Param(int)
+    equations = [
+        "module, h > 0",
+        "pressure_angle > 0",
+        "pressure_angle <= 45",
+    ]
+    teeth = Param(int, min=12)
     pressure_angle = Param(float, default=20.0)
 
     def setup(self):                                    # framework hook: optional
-        if self.teeth < 12:
-            raise ValidationError(
-                f"WormGear: teeth must be >= 12, got {self.teeth}"
-            )
         pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
         self.pitch_r = pr
         self.outer_r = otr

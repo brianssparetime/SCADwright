@@ -37,15 +37,15 @@ class FilletMask(Component):
 
         if ax == "z":
             block = cube([r, r, self.length])
-            cutter = cylinder(h=self.length + 0.02, r=r).translate([r, r, -0.01])
+            cutter = cylinder(h=self.length, r=r).translate([r, r, 0])
         elif ax == "x":
             block = cube([self.length, r, r])
-            cutter = cylinder(h=self.length + 0.02, r=r).rotate([0, 90, 0]).translate([-0.01, r, r])
+            cutter = cylinder(h=self.length, r=r).rotate([0, 90, 0]).translate([0, r, r])
         else:  # y
             block = cube([r, self.length, r])
-            cutter = cylinder(h=self.length + 0.02, r=r).rotate([90, 0, 0]).translate([r, self.length + 0.01, r])
+            cutter = cylinder(h=self.length, r=r).rotate([90, 0, 0]).translate([r, self.length, r])
 
-        return difference(block, cutter)
+        return difference(block, cutter.through(block))
 
 
 class ChamferMask(Component):
@@ -74,18 +74,16 @@ class ChamferMask(Component):
 
         # Build a triangular prism by subtracting a rotated cube from a
         # square cross-section block.
+        diag = s * math.sqrt(2)
         if ax == "z":
             block = cube([s, s, self.length])
             # Diagonal cut: rotate a cube 45 degrees.
-            diag = s * math.sqrt(2)
-            cutter = cube([diag, diag, self.length + 0.02]).rotate([0, 0, 45]).translate([0, 0, -0.01])
+            cutter = cube([diag, diag, self.length]).rotate([0, 0, 45])
         elif ax == "x":
             block = cube([self.length, s, s])
-            diag = s * math.sqrt(2)
-            cutter = cube([self.length + 0.02, diag, diag]).rotate([45, 0, 0]).translate([-0.01, 0, 0])
+            cutter = cube([self.length, diag, diag]).rotate([45, 0, 0])
         else:  # y
             block = cube([s, self.length, s])
-            diag = s * math.sqrt(2)
-            cutter = cube([diag, self.length + 0.02, diag]).rotate([0, 45, 0]).translate([0, -0.01, 0])
+            cutter = cube([diag, self.length, diag]).rotate([0, 45, 0])
 
-        return difference(block, cutter)
+        return difference(block, cutter.through(block))

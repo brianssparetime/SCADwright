@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scadwright.boolops import difference, union
+from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.anchors import anchor
 from scadwright.primitives import cylinder
@@ -22,8 +22,5 @@ class Standoff(Component):
     mount_top = anchor(at="0, 0, h", normal=(0, 0, 1))
 
     def build(self):
-        post = difference(
-            cylinder(h=self.h, d=self.od),
-            cylinder(h=self.h + 0.02, d=self.id).down(0.01),
-        )
-        return post
+        outer = cylinder(h=self.h, d=self.od)
+        return difference(outer, cylinder(h=self.h, d=self.id).through(outer))

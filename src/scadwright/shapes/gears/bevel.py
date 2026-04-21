@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import math
 
-from scadwright.boolops import intersection
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
-from scadwright.primitives import cylinder, polygon
+from scadwright.primitives import polygon
 from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
 
 
@@ -24,20 +22,18 @@ class BevelGear(Component):
     For a 90-degree gear pair, each gear has ``cone_angle=45``.
     """
 
-    equations = ["module, h > 0"]
-    teeth = Param(int)
+    equations = [
+        "module, h > 0",
+        "pressure_angle > 0",
+        "pressure_angle <= 45",
+        "cone_angle > 0",
+        "cone_angle < 90",
+    ]
+    teeth = Param(int, min=6)
     pressure_angle = Param(float, default=20.0)
     cone_angle = Param(float, default=45.0)
 
     def setup(self):                                    # framework hook: optional
-        if self.teeth < 6:
-            raise ValidationError(
-                f"BevelGear: teeth must be >= 6, got {self.teeth}"
-            )
-        if not (0 < self.cone_angle < 90):
-            raise ValidationError(
-                f"BevelGear: cone_angle must be in (0, 90), got {self.cone_angle}"
-            )
         pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
         self.pitch_r = pr
         self.outer_r = otr

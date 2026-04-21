@@ -6,7 +6,6 @@ import math
 
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import polygon
 
@@ -21,15 +20,13 @@ class Rack(Component):
     ``h`` is the extrusion depth (z-axis).
     """
 
-    equations = ["module, length, h > 0"]
-    teeth = Param(int)
+    equations = [
+        "module, length, h > 0",
+        "pressure_angle > 0",
+        "pressure_angle <= 45",
+    ]
+    teeth = Param(int, min=1)
     pressure_angle = Param(float, default=20.0)
-
-    def setup(self):                                    # framework hook: optional
-        if self.teeth < 1:
-            raise ValidationError(
-                f"Rack: teeth must be >= 1, got {self.teeth}"
-            )
 
     def build(self):
         m = self.module

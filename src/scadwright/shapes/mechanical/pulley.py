@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import math
 
 from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import cylinder
 
 
@@ -21,16 +19,12 @@ class GT2Pulley(Component):
     The pulley is centered on the origin, bore along z.
     """
 
-    teeth = Param(int)
-    equations = ["bore_d, belt_width > 0"]
-
-    def setup(self):                                    # framework hook: optional
-        if self.teeth < 10:
-            raise ValidationError(
-                f"GT2Pulley: teeth must be >= 10, got {self.teeth}"
-            )
-        self.pitch_d = self.teeth * 2.0 / math.pi
-        self.od = self.pitch_d + 1.0  # approximate outer diameter
+    teeth = Param(int, min=10)
+    equations = [
+        "bore_d, belt_width > 0",
+        "pitch_d == teeth * 2.0 / pi",
+        "od == pitch_d + 1.0",
+    ]
 
     def build(self):
         flange_extra = 1.0
@@ -40,13 +34,14 @@ class GT2Pulley(Component):
         flange_h = 0.8
         bottom_flange = cylinder(h=flange_h, d=flange_d).down(flange_h)
         top_flange = cylinder(h=flange_h, d=flange_d).up(self.belt_width)
-        bore = cylinder(
-            h=self.belt_width + 2 * flange_h + 0.02,
-            d=self.bore_d,
-        ).down(flange_h + 0.01)
 
         from scadwright.boolops import union
-        return difference(union(body, bottom_flange, top_flange), bore)
+        assembled = union(body, bottom_flange, top_flange)
+        bore = cylinder(
+            h=self.belt_width + 2 * flange_h,
+            d=self.bore_d,
+        ).down(flange_h)
+        return difference(assembled, bore.through(assembled))
 
 
 class HTDPulley(Component):
@@ -56,16 +51,12 @@ class HTDPulley(Component):
     diameter. Otherwise identical to GT2Pulley in structure.
     """
 
-    teeth = Param(int)
-    equations = ["bore_d, belt_width, pitch > 0"]
-
-    def setup(self):                                    # framework hook: optional
-        if self.teeth < 10:
-            raise ValidationError(
-                f"HTDPulley: teeth must be >= 10, got {self.teeth}"
-            )
-        self.pitch_d = self.teeth * self.pitch / math.pi
-        self.od = self.pitch_d + 1.5
+    teeth = Param(int, min=10)
+    equations = [
+        "bore_d, belt_width, pitch > 0",
+        "pitch_d == teeth * pitch / pi",
+        "od == pitch_d + 1.5",
+    ]
 
     def build(self):
         flange_extra = 1.0
@@ -74,10 +65,11 @@ class HTDPulley(Component):
         flange_h = 1.0
         bottom_flange = cylinder(h=flange_h, d=flange_d).down(flange_h)
         top_flange = cylinder(h=flange_h, d=flange_d).up(self.belt_width)
-        bore = cylinder(
-            h=self.belt_width + 2 * flange_h + 0.02,
-            d=self.bore_d,
-        ).down(flange_h + 0.01)
 
         from scadwright.boolops import union
-        return difference(union(body, bottom_flange, top_flange), bore)
+        assembled = union(body, bottom_flange, top_flange)
+        bore = cylinder(
+            h=self.belt_width + 2 * flange_h,
+            d=self.bore_d,
+        ).down(flange_h)
+        return difference(assembled, bore.through(assembled))

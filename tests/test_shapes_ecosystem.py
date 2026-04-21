@@ -30,7 +30,7 @@ def test_gridfinity_base_emits():
 
 
 def test_gridfinity_base_invalid_raises():
-    with pytest.raises(ValidationError, match="at least 1x1"):
+    with pytest.raises(ValidationError, match="grid_x: must be >= 1"):
         GridfinityBase(grid_x=0, grid_y=1)
 
 

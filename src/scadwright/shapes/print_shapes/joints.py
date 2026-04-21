@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from scadwright.boolops import difference, union
+from scadwright.boolops import union
 from scadwright.component.base import Component
-from scadwright.component.anchors import anchor
-from scadwright.component.params import Param
-from scadwright.primitives import cube, cylinder
+from scadwright.primitives import cube
 
 
 class TabSlot(Component):
@@ -20,13 +18,12 @@ class TabSlot(Component):
     cutout (use the ``slot`` attribute to get just the cutter).
     """
 
-    equations = ["tab_w, tab_h, tab_d, clearance > 0"]
-
-    def setup(self):                                    # framework hook: optional
-        c = self.clearance
-        self.slot_w = self.tab_w + 2 * c
-        self.slot_h = self.tab_h + c
-        self.slot_d = self.tab_d + 2 * c
+    equations = [
+        "tab_w, tab_h, tab_d, clearance > 0",
+        "slot_w == tab_w + 2 * clearance",
+        "slot_h == tab_h + clearance",
+        "slot_d == tab_d + 2 * clearance",
+    ]
 
     def build(self):
         return cube([self.tab_w, self.tab_d, self.tab_h], center="xy")

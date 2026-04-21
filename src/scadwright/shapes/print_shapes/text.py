@@ -53,7 +53,7 @@ class EmbossedLabel(Component):
             halign="center",
             valign="center",
         )
-        cutter = linear_extrude(label_2d, height=self.depth + 0.01).up(
+        cutter = linear_extrude(label_2d, height=self.depth).up(
             self.plate_thk - self.depth
         )
-        return difference(plate, cutter)
+        return difference(plate, cutter.through(plate))

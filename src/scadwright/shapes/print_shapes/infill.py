@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import math
 
-from scadwright.boolops import difference, intersection, union
+from scadwright.boolops import difference, union
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.extrusions import linear_extrude
-from scadwright.primitives import cube, square
+from scadwright.primitives import cube
 
 
 class HoneycombPanel(Component):
@@ -47,7 +47,7 @@ class HoneycombPanel(Component):
         ]
         from scadwright.primitives import polygon
         hex_profile = polygon(points=hex_pts)
-        hex_cutter = linear_extrude(hex_profile, height=z + 0.02)
+        hex_cutter = linear_extrude(hex_profile, height=z)
 
         cutters = []
         row_height = pitch * math.sin(math.pi / 3)
@@ -58,11 +58,11 @@ class HoneycombPanel(Component):
             for col in range(cols):
                 cx = col * pitch + (pitch / 2 if row % 2 else 0) - x / 2
                 cy = row * row_height - y / 2
-                cutters.append(hex_cutter.translate([cx, cy, -0.01]))
+                cutters.append(hex_cutter.translate([cx, cy, 0]))
 
         if not cutters:
             return slab
-        return intersection(slab, difference(slab, union(*cutters)))
+        return difference(slab, union(*cutters).through(slab))
 
 
 class GridPanel(Component):
@@ -93,17 +93,17 @@ class GridPanel(Component):
         cutters = []
         cols = int(x / pitch) + 1
         rows = int(y / pitch) + 1
-        cell = cube([cs, cs, z + 0.02])
+        cell = cube([cs, cs, z])
 
         for row in range(rows):
             for col in range(cols):
                 cx = col * pitch + wt / 2 - x / 2
                 cy = row * pitch + wt / 2 - y / 2
-                cutters.append(cell.translate([cx, cy, -0.01]))
+                cutters.append(cell.translate([cx, cy, 0]))
 
         if not cutters:
             return slab
-        return difference(slab, union(*cutters))
+        return difference(slab, union(*cutters).through(slab))
 
 
 class TriGridPanel(Component):
@@ -151,9 +151,9 @@ class TriGridPanel(Component):
                     (0, h_tri),
                 ])
                 cutters.append(
-                    linear_extrude(tri, height=z + 0.02).translate([cx, cy, -0.01])
+                    linear_extrude(tri, height=z).translate([cx, cy, 0])
                 )
 
         if not cutters:
             return slab
-        return difference(slab, union(*cutters))
+        return difference(slab, union(*cutters).through(slab))

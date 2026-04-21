@@ -17,17 +17,17 @@ class Torus(Component):
     ``angle`` sweeps a partial torus (default 360 for a full ring).
     """
 
-    equations = ["major_r, minor_r > 0"]
+    equations = [
+        "major_r, minor_r > 0",
+        "angle > 0",
+        "angle <= 360",
+    ]
     angle = Param(float, default=360.0)
 
     def setup(self):
         if self.minor_r >= self.major_r:
             raise ValidationError(
                 f"Torus: minor_r ({self.minor_r}) must be < major_r ({self.major_r})"
-            )
-        if not (0 < self.angle <= 360):
-            raise ValidationError(
-                f"Torus: angle must be in (0, 360], got {self.angle}"
             )
 
     def build(self):

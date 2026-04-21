@@ -6,7 +6,9 @@ $fn = 24;
 // Tube
 difference() {
     cylinder(h=15, r=7, center=false);
-    translate([0, 0, -1]) {
-        cylinder(h=17, r=5, center=false);
+    translate([0, 0, -0.01]) {
+        scale([1, 1, 1.00133]) {
+            cylinder(h=15, r=5, center=false);
+        }
     }
 }

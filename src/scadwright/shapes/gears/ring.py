@@ -7,7 +7,6 @@ import math
 from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import circle, polygon
 from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
@@ -20,15 +19,15 @@ class RingGear(Component):
     ``rim_thk`` is the wall thickness outside the tooth roots.
     """
 
-    equations = ["module, h, rim_thk > 0"]
-    teeth = Param(int)
+    equations = [
+        "module, h, rim_thk > 0",
+        "pressure_angle > 0",
+        "pressure_angle <= 45",
+    ]
+    teeth = Param(int, min=12)
     pressure_angle = Param(float, default=20.0)
 
     def setup(self):                                    # framework hook: optional
-        if self.teeth < 12:
-            raise ValidationError(
-                f"RingGear: teeth must be >= 12, got {self.teeth}"
-            )
         pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
         self.pitch_r = pr
         self.outer_r = otr

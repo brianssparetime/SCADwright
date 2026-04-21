@@ -6,13 +6,10 @@ These Components generate bases and bins compatible with the standard.
 
 from __future__ import annotations
 
-import math
 
 from scadwright.boolops import difference, union
 from scadwright.component.base import Component
-from scadwright.component.anchors import anchor
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import cube, cylinder
 
 
@@ -37,14 +34,10 @@ class GridfinityBase(Component):
     holes in the center of each cell.
     """
 
-    grid_x = Param(int)
-    grid_y = Param(int)
+    grid_x = Param(int, min=1)
+    grid_y = Param(int, min=1)
 
     def setup(self):                                    # framework hook: optional
-        if self.grid_x < 1 or self.grid_y < 1:
-            raise ValidationError(
-                f"GridfinityBase: grid must be at least 1x1, got {self.grid_x}x{self.grid_y}"
-            )
         self.outer_w = self.grid_x * GRID_UNIT
         self.outer_l = self.grid_y * GRID_UNIT
 
@@ -59,7 +52,7 @@ class GridfinityBase(Component):
 
                 # Screw hole in center of each cell.
                 cutters.append(
-                    cylinder(h=SCREW_H + 0.01, d=SCREW_D).translate([cx, cy, -0.01])
+                    cylinder(h=SCREW_H, d=SCREW_D).translate([cx, cy, 0])
                 )
 
                 # Magnet holes at each corner of each cell.
@@ -68,11 +61,11 @@ class GridfinityBase(Component):
                         mx = cx + dx * (GRID_UNIT / 2 - 4.0)
                         my = cy + dy * (GRID_UNIT / 2 - 4.0)
                         cutters.append(
-                            cylinder(h=MAGNET_H + 0.01, d=MAGNET_D).translate([mx, my, -0.01])
+                            cylinder(h=MAGNET_H, d=MAGNET_D).translate([mx, my, 0])
                         )
 
         if cutters:
-            return difference(plate, union(*cutters))
+            return difference(plate, union(*cutters).through(plate))
         return plate
 
 
@@ -84,20 +77,12 @@ class GridfinityBin(Component):
     ``dividers_x`` splits the bin into compartments along x.
     """
 
-    grid_x = Param(int)
-    grid_y = Param(int)
-    height_units = Param(int)
-    dividers_x = Param(int, default=1)
+    grid_x = Param(int, min=1)
+    grid_y = Param(int, min=1)
+    height_units = Param(int, min=1)
+    dividers_x = Param(int, default=1, min=1)
 
     def setup(self):                                    # framework hook: optional
-        if self.grid_x < 1 or self.grid_y < 1:
-            raise ValidationError(
-                f"GridfinityBin: grid must be at least 1x1"
-            )
-        if self.height_units < 1:
-            raise ValidationError(
-                f"GridfinityBin: height_units must be >= 1"
-            )
         self.outer_w = self.grid_x * GRID_UNIT - 0.5  # slight clearance
         self.outer_l = self.grid_y * GRID_UNIT - 0.5
         self.total_h = self.height_units * 7.0 + LIP_HEIGHT
@@ -107,10 +92,10 @@ class GridfinityBin(Component):
         inner_w = self.outer_w - 2 * WALL_THK
         inner_l = self.outer_l - 2 * WALL_THK
         inner_h = self.total_h - BOTTOM_THK
-        inner = cube([inner_w, inner_l, inner_h + 0.01]).translate(
+        inner = cube([inner_w, inner_l, inner_h]).translate(
             [WALL_THK, WALL_THK, BOTTOM_THK]
         )
-        shell = difference(outer, inner)
+        shell = difference(outer, inner.through(outer))
 
         if self.dividers_x > 1:
             divider_spacing = inner_w / self.dividers_x

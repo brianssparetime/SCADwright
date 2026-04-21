@@ -20,14 +20,7 @@ class VentSlots(Component):
         "width, height, thk > 0",
         "slot_width, slot_height > 0",
     ]
-    slot_count = Param(int)
-
-    def setup(self):                                    # framework hook: optional
-        if self.slot_count < 1:
-            from scadwright.errors import ValidationError
-            raise ValidationError(
-                f"VentSlots: slot_count must be >= 1, got {self.slot_count}"
-            )
+    slot_count = Param(int, min=1)
 
     def build(self):
         panel = cube([self.width, self.height, self.thk], center="xy")
@@ -36,7 +29,7 @@ class VentSlots(Component):
         slots = []
         for i in range(self.slot_count):
             y = -self.height / 2 + spacing * (i + 1) - self.slot_height / 2
-            slot = cube([self.slot_width, self.slot_height, self.thk + 0.02])
-            slots.append(slot.translate([-self.slot_width / 2, y, -0.01]))
+            slot = cube([self.slot_width, self.slot_height, self.thk])
+            slots.append(slot.translate([-self.slot_width / 2, y, 0]))
 
-        return difference(panel, union(*slots))
+        return difference(panel, union(*slots).through(panel))

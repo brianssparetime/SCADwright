@@ -6,7 +6,9 @@ $fn = 24;
 // FilletRing
 difference() {
     cylinder(h=5.7735, r1=10, r2=0, center=false);
-    translate([0, 0, -0.02]) {
-        cylinder(h=2.92675, r=5, center=false);
+    translate([0, 0, -0.01]) {
+        scale([1, 1, 1.00346]) {
+            cylinder(h=2.88675, r=5, center=false);
+        }
     }
 }
