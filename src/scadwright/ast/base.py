@@ -826,7 +826,7 @@ class Node:
         """
         from scadwright.ast.csg import Difference
         from scadwright.api._vectors import _vec_from_args
-        from scadwright.api.factories import cube as _cube
+        from scadwright.primitives import cube as _cube
         from scadwright.errors import ValidationError
 
         loc = SourceLocation.from_caller()

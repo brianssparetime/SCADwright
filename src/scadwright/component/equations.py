@@ -239,7 +239,10 @@ def _filter_by_validators(
             for v in p.validators:
                 try:
                     v(value)
-                except Exception:
+                except ValidationError:
+                    # Only ValidationError signals "this candidate is invalid";
+                    # other exceptions mean the validator itself is buggy and
+                    # should surface, not silently drop the candidate.
                     ok = False
                     break
             if not ok:

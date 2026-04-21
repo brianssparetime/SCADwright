@@ -115,13 +115,12 @@ class SCADEmitter(Emitter):
         stack: list[Node] = [node]
         while stack:
             n = stack.pop()
-            # Resolve a Component to its built tree.
+            # Resolve a Component to its built tree. Let build failures
+            # propagate — hiding them here just defers the same crash to
+            # the real emit walk with less context.
             from scadwright.component.base import Component
             if isinstance(n, Component):
-                try:
-                    n = n._get_built_tree()
-                except Exception:
-                    continue
+                n = n._get_built_tree()
             # Resolve an inline Custom to its expansion (same as flattening).
             resolved = self._resolve_inline_custom(n)
             if resolved is not n:
@@ -711,7 +710,9 @@ def emit(
     size = None
     try:
         size = out.tell()
-    except Exception:
+    except (OSError, ValueError):
+        # Best-effort size for logging; non-seekable streams (pipes, some
+        # StringIO configurations) raise OSError or ValueError on tell().
         pass
     if size is not None:
         _log.info("emitted %d chars in %.2fms", size, elapsed_ms)

@@ -168,7 +168,7 @@ def _make_stl(path, bbox):
 def test_stl_hint_smaller_than_actual_warns(tmp_path):
     import warnings
     from scadwright._stl import stl_bbox
-    from scadwright.api.factories import _scad_import_hint_warned
+    from scadwright.primitives import _scad_import_hint_warned
 
     stl_bbox.cache_clear()
     _scad_import_hint_warned.clear()
@@ -187,7 +187,7 @@ def test_stl_hint_smaller_than_actual_warns(tmp_path):
 def test_stl_hint_matching_or_larger_does_not_warn(tmp_path):
     import warnings
     from scadwright._stl import stl_bbox
-    from scadwright.api.factories import _scad_import_hint_warned
+    from scadwright.primitives import _scad_import_hint_warned
 
     stl_bbox.cache_clear()
     _scad_import_hint_warned.clear()
@@ -205,7 +205,7 @@ def test_stl_hint_matching_or_larger_does_not_warn(tmp_path):
 def test_stl_hint_check_skipped_for_missing_file(tmp_path):
     import warnings
     from scadwright._stl import stl_bbox
-    from scadwright.api.factories import _scad_import_hint_warned
+    from scadwright.primitives import _scad_import_hint_warned
 
     stl_bbox.cache_clear()
     _scad_import_hint_warned.clear()
@@ -217,7 +217,7 @@ def test_stl_hint_check_skipped_for_missing_file(tmp_path):
 
 def test_stl_hint_check_skipped_for_non_stl_extension(tmp_path):
     import warnings
-    from scadwright.api.factories import _scad_import_hint_warned
+    from scadwright.primitives import _scad_import_hint_warned
 
     _scad_import_hint_warned.clear()
     # Non-STL extension: even an absurd hint doesn't trigger the STL check.

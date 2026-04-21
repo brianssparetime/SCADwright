@@ -492,7 +492,9 @@ def _bbox_with_context(node, ctx: Matrix) -> BBox:
         local = _bbox_with_context(node._get_built_tree(), Matrix.identity())
         try:
             object.__setattr__(node, "_bbox_cache", local)
-        except Exception:
+        except AttributeError:
+            # Some Node subclasses freeze their instance dict; skipping the
+            # cache is harmless — we'll just recompute on the next access.
             pass
         return local.transformed(ctx)
 

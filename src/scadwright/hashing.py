@@ -32,7 +32,8 @@ def tree_hash(node) -> str:
         h = hashlib.sha1(repr(_canonicalize(node)).encode("utf-8")).hexdigest()[:16]
         try:
             node._tree_hash_cache = h
-        except Exception:
+        except AttributeError:
+            # Frozen nodes reject attribute assignment; recompute on next call.
             pass
         return h
 
