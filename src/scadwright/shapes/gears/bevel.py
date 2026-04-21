@@ -8,7 +8,7 @@ from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import polygon
-from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
+from scadwright.shapes.gears.involute import involute_tooth_profile
 
 
 class BevelGear(Component):
@@ -28,15 +28,12 @@ class BevelGear(Component):
         "pressure_angle <= 45",
         "cone_angle > 0",
         "cone_angle < 90",
+        "pitch_r == module * teeth / 2",
+        "outer_r == pitch_r + module",
     ]
     teeth = Param(int, min=6)
     pressure_angle = Param(float, default=20.0)
     cone_angle = Param(float, default=45.0)
-
-    def setup(self):                                    # framework hook: optional
-        pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
-        self.pitch_r = pr
-        self.outer_r = otr
 
     def build(self):
         # Build the spur gear profile at full size, extrude with linear

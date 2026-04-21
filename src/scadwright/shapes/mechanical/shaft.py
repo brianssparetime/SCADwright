@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import math
 
-from scadwright.boolops import difference, intersection
+from scadwright.boolops import difference
 from scadwright.component.base import Component
-from scadwright.primitives import circle, cube, square
+from scadwright.primitives import circle, square
 
 
 class DShaft(Component):

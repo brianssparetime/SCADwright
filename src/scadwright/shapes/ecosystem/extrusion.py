@@ -5,7 +5,7 @@ from __future__ import annotations
 from scadwright.boolops import difference, union
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.primitives import circle, cube, square
+from scadwright.primitives import circle, square
 
 
 class ExtrusionProfile(Component):

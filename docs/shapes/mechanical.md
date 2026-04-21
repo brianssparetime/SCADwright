@@ -9,14 +9,16 @@ from scadwright.shapes import (
 )
 ```
 
-## `Bearing(series=)` or `Bearing(id=, od=, width=)`
+## `Bearing(series=)` or `Bearing(spec=)`
 
-Ball bearing dummy for fit-check and visualization. Look up by series number or specify dimensions directly.
+Ball bearing dummy for fit-check and visualization. Look up by series number or pass a `BearingSpec` for non-standard sizes.
 
 ```python
-Bearing(series="608")                    # 8x22x7mm
-Bearing(series="625")                    # 5x16x5mm
-Bearing(id=10, od=30, width=9)           # custom
+from scadwright.shapes import Bearing, BearingSpec
+
+Bearing(series="608")                                 # 8x22x7mm
+Bearing(series="625")                                 # 5x16x5mm
+Bearing(spec=BearingSpec(id=10, od=30, width=9))      # custom
 ```
 
 Publishes `id`, `od`, `width`. Available series: 604-609, 623-626, 6000-6005, 6200-6205.

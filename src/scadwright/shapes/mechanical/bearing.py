@@ -7,6 +7,7 @@ from collections import namedtuple
 from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
+from scadwright.errors import ValidationError
 from scadwright.primitives import cylinder
 
 BearingSpec = namedtuple("BearingSpec", "id od width")
@@ -41,36 +42,34 @@ BEARING_DATA: dict[str, BearingSpec] = {
 class Bearing(Component):
     """Ball bearing dummy for fit-check and visualization.
 
-    Specify ``series`` (e.g. ``"608"``) to look up standard dimensions,
-    or provide ``id``, ``od``, ``width`` directly for non-standard sizes.
+    Specify ``series`` (e.g. ``"608"``) for standard dimensions, or
+    ``spec=BearingSpec(id=..., od=..., width=...)`` for non-standard
+    sizes. The bearing is centered on the origin, bore along z.
 
-    The bearing is centered on the origin, bore along z.
+    Publishes ``id``, ``od``, ``width`` for convenient dimension access.
     """
 
     series = Param(str, default=None)
-    id = Param(float, default=None)
-    od = Param(float, default=None)
-    width = Param(float, default=None)
+    spec = Param(BearingSpec, default=None)
 
     def setup(self):                                    # framework hook: optional
-        if self.series is not None:
-            spec = BEARING_DATA.get(self.series)
-            if spec is None:
-                from scadwright.errors import ValidationError
+        if self.spec is None and self.series is not None:
+            looked_up = BEARING_DATA.get(self.series)
+            if looked_up is None:
                 raise ValidationError(
                     f"Bearing: unknown series {self.series!r}. "
                     f"Available: {sorted(BEARING_DATA)}"
                 )
-            self.id = spec.id
-            self.od = spec.od
-            self.width = spec.width
-        if self.id is None or self.od is None or self.width is None:
-            from scadwright.errors import ValidationError
-            raise ValidationError(
-                "Bearing: specify series= or all of id=, od=, width="
-            )
+            self.spec = looked_up
+        if self.spec is None:
+            raise ValidationError("Bearing: specify series= or spec=")
+        # Publish individual dims for ergonomic access.
+        self.id = self.spec.id
+        self.od = self.spec.od
+        self.width = self.spec.width
 
     def build(self):
-        outer = cylinder(h=self.width, d=self.od)
-        bore = cylinder(h=self.width, d=self.id).through(outer)
+        s = self.spec
+        outer = cylinder(h=s.width, d=s.od)
+        bore = cylinder(h=s.width, d=s.id).through(outer)
         return difference(outer, bore)

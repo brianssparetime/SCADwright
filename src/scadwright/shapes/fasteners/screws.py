@@ -6,7 +6,6 @@ from scadwright.boolops import union
 from scadwright.component.base import Component
 from scadwright.component.anchors import anchor
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import cylinder
 from scadwright.shapes.fasteners.data import get_screw_spec
 from scadwright.shapes.two_d import regular_polygon

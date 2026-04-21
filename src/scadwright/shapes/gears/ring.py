@@ -9,7 +9,7 @@ from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import circle, polygon
-from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
+from scadwright.shapes.gears.involute import involute_tooth_profile
 
 
 class RingGear(Component):
@@ -23,15 +23,12 @@ class RingGear(Component):
         "module, h, rim_thk > 0",
         "pressure_angle > 0",
         "pressure_angle <= 45",
+        "pitch_r == module * teeth / 2",
+        "outer_r == pitch_r + module",
+        "root_r == pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=12)
     pressure_angle = Param(float, default=20.0)
-
-    def setup(self):                                    # framework hook: optional
-        pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
-        self.pitch_r = pr
-        self.outer_r = otr
-        self.root_r = rr
 
     def build(self):
         # The ring gear is a disc with the spur gear profile subtracted.

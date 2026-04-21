@@ -31,6 +31,7 @@ from scadwright.shapes.fasteners import (
 )
 from scadwright.shapes.mechanical import (
     Bearing,
+    BearingSpec,
     DShaft,
     GT2Pulley,
     HTDPulley,
@@ -89,6 +90,7 @@ __all__ = [
     # Components (capitalized)
     "Arc",
     "Bearing",
+    "BearingSpec",
     "BevelGear",
     "Bolt",
     "CaptiveNutPocket",

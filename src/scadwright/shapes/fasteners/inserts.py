@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scadwright.boolops import difference, union
+from scadwright.boolops import union
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.primitives import cube, cylinder

@@ -7,7 +7,6 @@ import math
 from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import cube, cylinder
 
 
@@ -23,17 +22,11 @@ class FilletMask(Component):
     """
 
     equations = ["r, length > 0"]
-    axis = Param(str, default="z")
-
-    def setup(self):
-        if self.axis.lower() not in ("x", "y", "z"):
-            raise ValidationError(
-                f"FilletMask: axis must be 'x', 'y', or 'z', got {self.axis!r}"
-            )
+    axis = Param(str, default="z", one_of=("x", "y", "z"))
 
     def build(self):
         r = self.r
-        ax = self.axis.lower()
+        ax = self.axis
 
         if ax == "z":
             block = cube([r, r, self.length])
@@ -60,17 +53,11 @@ class ChamferMask(Component):
     """
 
     equations = ["size, length > 0"]
-    axis = Param(str, default="z")
-
-    def setup(self):
-        if self.axis.lower() not in ("x", "y", "z"):
-            raise ValidationError(
-                f"ChamferMask: axis must be 'x', 'y', or 'z', got {self.axis!r}"
-            )
+    axis = Param(str, default="z", one_of=("x", "y", "z"))
 
     def build(self):
         s = self.size
-        ax = self.axis.lower()
+        ax = self.axis
 
         # Build a triangular prism by subtracting a rotated cube from a
         # square cross-section block.

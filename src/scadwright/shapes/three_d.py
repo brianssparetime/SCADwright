@@ -95,18 +95,17 @@ class FilletRing(Component):
     parallel cone surfaces for equal (id, od, base_angle).
     """
 
-    params = "base_angle"
-    equations = ["id, od > 0"]
+    equations = [
+        "id, od > 0",
+        "base_angle > 0",
+        "base_angle < 90",
+    ]
     slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
 
     def setup(self):
         if self.id >= self.od:
             raise ValidationError(
                 f"FilletRing: id ({self.id}) must be < od ({self.od})"
-            )
-        if not (0 < self.base_angle < 90):
-            raise ValidationError(
-                f"FilletRing: base_angle must be in (0, 90), got {self.base_angle}"
             )
 
     def build(self):

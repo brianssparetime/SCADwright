@@ -4,7 +4,7 @@ import pytest
 
 from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
-from scadwright.shapes import Bearing, DShaft, GT2Pulley, HTDPulley, KeyedShaft
+from scadwright.shapes import Bearing, BearingSpec, DShaft, GT2Pulley, HTDPulley, KeyedShaft
 
 
 # --- Bearing ---
@@ -18,7 +18,7 @@ def test_bearing_608():
 
 
 def test_bearing_custom_dims():
-    b = Bearing(id=10, od=30, width=9)
+    b = Bearing(spec=BearingSpec(id=10, od=30, width=9))
     bb = bbox(b)
     assert bb.size[0] == pytest.approx(30.0, abs=0.5)
 

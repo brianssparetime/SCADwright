@@ -8,7 +8,7 @@ from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.shapes.curves.paths import helix_path
 from scadwright.shapes.curves.sweep import path_extrude
-from scadwright.shapes.gears.involute import gear_dimensions, involute_tooth_profile
+from scadwright.shapes.gears.involute import involute_tooth_profile
 from scadwright.primitives import polygon
 from scadwright.extrusions import linear_extrude
 
@@ -68,14 +68,11 @@ class WormGear(Component):
         "module, h > 0",
         "pressure_angle > 0",
         "pressure_angle <= 45",
+        "pitch_r == module * teeth / 2",
+        "outer_r == pitch_r + module",
     ]
     teeth = Param(int, min=12)
     pressure_angle = Param(float, default=20.0)
-
-    def setup(self):                                    # framework hook: optional
-        pr, br, otr, rr = gear_dimensions(self.module, self.teeth, self.pressure_angle)
-        self.pitch_r = pr
-        self.outer_r = otr
 
     def build(self):
         tooth = involute_tooth_profile(
