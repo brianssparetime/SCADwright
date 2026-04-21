@@ -117,3 +117,4 @@ Shape-library Components ship with useful custom anchors:
 | `UShapeChannel`| `channel_opening` | Center of the open face         |
 | `Standoff`     | `mount_top`       | Top of the standoff column      |
 | `Bolt`         | `tip`             | Bottom of the shaft             |
+| `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
