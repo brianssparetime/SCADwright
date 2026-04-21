@@ -1,11 +1,10 @@
-"""Print joint Components: tab/slot, snap hook, grip tab."""
+"""Finger-joint Components: TabSlot, GripTab."""
 
 from __future__ import annotations
 
-from scadwright.boolops import union
 from scadwright.component.base import Component
 from scadwright.extrusions import linear_extrude
-from scadwright.primitives import cube, polyhedron, square
+from scadwright.primitives import cube, square
 
 
 class TabSlot(Component):
@@ -37,56 +36,6 @@ class TabSlot(Component):
     def slot(self):
         """Cutter cube sized for the matching slot, centered on the origin in xy."""
         return cube([self.slot_w, self.slot_d, self.slot_h], center="xy")
-
-
-class SnapHook(Component):
-    """Cantilever snap-fit hook with a ramped barb.
-
-    A vertical arm with a triangular barb on its +Y face near the top.
-    The barb has a flat catch (bottom face, perpendicular to the arm)
-    that grips a ledge, and a slanted ramp (top face) that deflects the
-    arm during insertion.
-
-    Arm: z=[0, arm_length], x=[-width/2, +width/2], y=[0, thk].
-    Barb: on the +Y face at the top; catch at z=arm_length-hook_height,
-    ramp terminating at z=arm_length, tip protruding to y=thk+hook_depth.
-
-    A 45° ramp (typical) is ``hook_height == hook_depth``.
-    """
-
-    equations = [
-        "arm_length, hook_depth, hook_height, thk, width > 0",
-        "hook_height <= arm_length",
-    ]
-
-    def build(self):
-        arm = cube([self.width, self.thk, self.arm_length], center="x")
-
-        # Triangular barb: prism with catch (bottom), ramp (slanted),
-        # and back face coincident with the arm's front. Small overlap
-        # into the arm (0.01) keeps the union manifold-clean.
-        y_back = self.thk - 0.01
-        y_tip = self.thk + self.hook_depth
-        z_bot = self.arm_length - self.hook_height
-        z_top = self.arm_length
-        x = self.width / 2
-        vertices = [
-            (-x, y_back, z_bot),   # 0 L back-bottom (catch level, at arm front)
-            (-x, y_tip, z_bot),    # 1 L tip (catch edge)
-            (-x, y_back, z_top),   # 2 L back-top (ramp terminus)
-            (+x, y_back, z_bot),   # 3 R back-bottom
-            (+x, y_tip, z_bot),    # 4 R tip
-            (+x, y_back, z_top),   # 5 R back-top
-        ]
-        faces = [
-            [0, 2, 1],        # left triangle (normal -x)
-            [3, 4, 5],        # right triangle (normal +x)
-            [0, 1, 4, 3],     # catch (bottom, normal -z)
-            [1, 2, 5, 4],     # ramp (slanted, normal toward +y+z)
-            [0, 3, 5, 2],     # back (overlaps into arm, normal -y)
-        ]
-        barb = polyhedron(points=vertices, faces=faces)
-        return union(arm, barb)
 
 
 class GripTab(Component):

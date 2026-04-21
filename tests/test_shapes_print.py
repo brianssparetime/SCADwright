@@ -1,4 +1,4 @@
-"""Tests for print-oriented shapes."""
+"""Tests for print-oriented shapes (infill, text, vents, print aids)."""
 
 import pytest
 
@@ -7,10 +7,8 @@ from scadwright.errors import ValidationError
 from scadwright.shapes import (
     EmbossedLabel,
     GridPanel,
-    GripTab,
     HoneycombPanel,
-    SnapHook,
-    TabSlot,
+    PolyHole,
     TextPlate,
     TriGridPanel,
     VentSlots,
@@ -102,66 +100,38 @@ def test_vent_slots_too_few_raises():
                   slot_height=1.5, slot_count=0)
 
 
-# --- TabSlot ---
+# --- PolyHole ---
 
 
-def test_tab_slot_builds():
-    t = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
-    scad = emit_str(t)
-    assert "cube" in scad
+def test_poly_hole_circumradius_compensated():
+    """The polygon's inscribed diameter must equal the nominal d."""
+    import math
+    p = PolyHole(d=6, h=10)
+    assert p.sides == 8  # default
+    inscribed_d = 2 * p.circumradius * math.cos(math.pi / p.sides)
+    assert inscribed_d == pytest.approx(6.0, abs=1e-9)
 
 
-def test_tab_slot_publishes_slot_dims():
-    t = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
-    assert t.slot_w == pytest.approx(5.4)
-    assert t.slot_d == pytest.approx(10.4)
+def test_poly_hole_circumradius_scales_with_sides():
+    # More sides -> less compensation needed -> smaller circumradius.
+    p8 = PolyHole(d=6, h=10, sides=8)
+    p32 = PolyHole(d=6, h=10, sides=32)
+    assert p8.circumradius > p32.circumradius
+    assert p32.circumradius > 3.0  # still strictly larger than d/2
 
 
-def test_tab_slot_slot_property_returns_cutter_with_correct_size():
-    t = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
-    bb = bbox(t.slot)
-    assert bb.size[0] == pytest.approx(t.slot_w)  # 5.4
-    assert bb.size[1] == pytest.approx(t.slot_d)  # 10.4
-    assert bb.size[2] == pytest.approx(t.slot_h)  # 3.2
+def test_poly_hole_emits_fn_override():
+    scad = emit_str(PolyHole(d=6, h=10, sides=6))
+    # Every PolyHole bakes its polygon count into the cylinder's $fn.
+    assert "$fn = 6" in scad or "$fn=6" in scad
+    assert "cylinder" in scad
 
 
-# --- SnapHook ---
+def test_poly_hole_bad_sides_raises():
+    with pytest.raises(ValidationError, match="sides"):
+        PolyHole(d=6, h=10, sides=1)
 
 
-def test_snap_hook_builds():
-    h = SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
-    scad = emit_str(h)
-    assert "union" in scad
-    assert "polyhedron" in scad  # barb is a polyhedron
-
-
-def test_snap_hook_geometry():
-    """Barb protrudes in +Y beyond the arm's thk; Z extent is arm_length."""
-    s = SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
-    bb = bbox(s)
-    assert bb.size[0] == pytest.approx(5.0, abs=0.01)    # width
-    assert bb.max[1] == pytest.approx(3.5, abs=0.02)     # thk + hook_depth
-    assert bb.min[1] == pytest.approx(0.0, abs=0.01)     # arm back face
-    assert bb.size[2] == pytest.approx(10.0, abs=0.01)   # arm_length
-
-
-def test_snap_hook_hook_height_cannot_exceed_arm_length():
-    with pytest.raises(ValidationError, match="hook_height"):
-        SnapHook(arm_length=5, hook_depth=2, hook_height=10, thk=1.5, width=5)
-
-
-# --- GripTab ---
-
-
-def test_grip_tab_builds():
-    g = GripTab(tab_w=6, tab_h=4, tab_d=8, taper=0.5)
-    scad = emit_str(g)
-    assert "linear_extrude" in scad
-
-
-def test_grip_tab_no_taper():
-    g = GripTab(tab_w=6, tab_h=4, tab_d=8, taper=0)
-    bb = bbox(g)
-    assert bb.size[0] == pytest.approx(6.0, abs=0.01)
-    assert bb.size[1] == pytest.approx(8.0, abs=0.01)
-    assert bb.size[2] == pytest.approx(4.0, abs=0.01)
+def test_poly_hole_bad_d_raises():
+    with pytest.raises(ValidationError, match="d"):
+        PolyHole(d=-1, h=10)

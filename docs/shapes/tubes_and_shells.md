@@ -3,7 +3,7 @@
 Parametric hollow shapes with equation-driven dimensions.
 
 ```python
-from scadwright.shapes import Tube, Funnel, RoundedBox, UShapeChannel
+from scadwright.shapes import Tube, Funnel, RoundedBox, UShapeChannel, RectTube
 ```
 
 ## `Tube(h, id|od|thk)`
@@ -56,3 +56,16 @@ UShapeChannel(wall_thk=2, channel_length=20, channel_width=10, n_shape=True)
 ```
 
 Publishes `bottom_width`, `outer_width`, `outer_height`. Declares a `channel_opening` anchor at the center of the open face.
+
+## `RectTube(outer_w, outer_d, inner_w, inner_d, wall_thk, h)`
+
+Rectangular hollow tube. Two cross-section equations couple outer and inner by `wall_thk`, so any combination that fixes both per-axis dimensions is sufficient (e.g. `outer_w + wall_thk` → inner solved; `inner_w + outer_w` → wall_thk solved).
+
+```python
+RectTube(outer_w=30, outer_d=20, wall_thk=2, h=10)      # inner solved
+RectTube(inner_w=20, inner_d=12, wall_thk=3, h=10)      # outer solved
+```
+
+![Rect tube](images/rect-tube.png)
+
+*`RectTube(outer_w=30, outer_d=20, wall_thk=2, h=10)` — rectangular sibling of `Tube`.*

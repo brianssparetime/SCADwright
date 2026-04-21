@@ -34,15 +34,15 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [2D profiles](profiles_2d.md)
 
-[`rounded_rect`](profiles_2d.md#rounded_rectx-y-r--fnnone), [`rounded_square`](profiles_2d.md#rounded_squaresize-r--fnnone), [`regular_polygon`](profiles_2d.md#regular_polygonsides-r), [`Sector`](profiles_2d.md#sectorr-angles-fnnone), [`Arc`](profiles_2d.md#arcr-angles-width-fnnone), [`RoundedEndsArc`](profiles_2d.md#roundedendsarcr-angles-width-end_r-fnnone), [`RoundedSlot`](profiles_2d.md#roundedslotlength-width-fnnone)
+[`rounded_rect`](profiles_2d.md#rounded_rectx-y-r--fnnone), [`rounded_square`](profiles_2d.md#rounded_squaresize-r--fnnone), [`regular_polygon`](profiles_2d.md#regular_polygonsides-r), [`Sector`](profiles_2d.md#sectorr-angles-fnnone), [`Arc`](profiles_2d.md#arcr-angles-width-fnnone), [`RoundedEndsArc`](profiles_2d.md#roundedendsarcr-angles-width-end_r-fnnone), [`RoundedSlot`](profiles_2d.md#roundedslotlength-width-fnnone), [`Teardrop`](profiles_2d.md#teardropr-tip_angle45-cap_hnone), [`Keyhole`](profiles_2d.md#keyholer_big-r_slot-slot_length)
 
 ### [Tubes and shells](tubes_and_shells.md)
 
-[`Tube`](tubes_and_shells.md#tubeh-idodthk), [`Funnel`](tubes_and_shells.md#funnelh-thk-top_-bot_), [`RoundedBox`](tubes_and_shells.md#roundedboxsize-r), [`UShapeChannel`](tubes_and_shells.md#ushapechannelchannel_width-channel_height-outer_width-outer_height-wall_thk-channel_length)
+[`Tube`](tubes_and_shells.md#tubeh-idodthk), [`Funnel`](tubes_and_shells.md#funnelh-thk-top_-bot_), [`RoundedBox`](tubes_and_shells.md#roundedboxsize-r), [`UShapeChannel`](tubes_and_shells.md#ushapechannelchannel_width-channel_height-outer_width-outer_height-wall_thk-channel_length), [`RectTube`](tubes_and_shells.md#recttubeouter_w-outer_d-inner_w-inner_d-wall_thk-h)
 
 ### [Polyhedra](polyhedra.md)
 
-[`Prism`](polyhedra.md#prismsides-r-h), [`Pyramid`](polyhedra.md#pyramidsides-r-h), [`Tetrahedron`, `Octahedron`, `Dodecahedron`, `Icosahedron`](polyhedra.md#platonic-solids), [`Torus`](polyhedra.md#torusmajor_r-minor_r), [`Dome`](polyhedra.md#domer), [`SphericalCap`](polyhedra.md#sphericalcapany-two-of-six-params)
+[`Prism`](polyhedra.md#prismsides-r-h), [`Pyramid`](polyhedra.md#pyramidsides-r-h), [`Prismoid`](polyhedra.md#prismoidbot_w-bot_d-top_w-top_d-h-shift0-0), [`Wedge`](polyhedra.md#wedgebase_w-base_h-thk-fillet0), [`Tetrahedron`, `Octahedron`, `Dodecahedron`, `Icosahedron`](polyhedra.md#platonic-solids), [`Torus`](polyhedra.md#torusmajor_r-minor_r), [`Dome`](polyhedra.md#domer), [`SphericalCap`](polyhedra.md#sphericalcapany-two-of-six-params), [`Capsule`](polyhedra.md#capsuler-length-axisz), [`PieSlice`](polyhedra.md#pieslicer-angles-h)
 
 ### [Fillets and chamfers](fillets.md)
 
@@ -58,7 +58,7 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [Mechanical components](mechanical.md)
 
-[`Bearing`](mechanical.md#bearingseries-or-bearingid-od-width) (608, 625, 6000-series, etc.), [`GT2Pulley`](mechanical.md#gt2pulleyteeth-bore_d-belt_width), [`HTDPulley`](mechanical.md#htdpulleyteeth-bore_d-belt_width-pitch), [`DShaft`](mechanical.md#dshaftd-flat_depth-2d), [`KeyedShaft`](mechanical.md#keyedshaftd-key_w-key_h-2d)
+[`Bearing`](mechanical.md#bearingseries-or-bearingspec) (608, 625, 6000-series, etc.), [`GT2Pulley`](mechanical.md#gt2pulleyteeth-bore_d-belt_width), [`HTDPulley`](mechanical.md#htdpulleyteeth-bore_d-belt_width-pitch), [`DShaft`](mechanical.md#dshaftd-flat_depth-2d), [`KeyedShaft`](mechanical.md#keyedshaftd-key_w-key_h-2d)
 
 ### [Curves and sweep](curves.md)
 
@@ -70,7 +70,11 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [Print-oriented shapes](print.md)
 
-[`HoneycombPanel`](print.md#honeycombpanelsize-cell_size-wall_thk), [`GridPanel`](print.md#gridpanelsize-cell_size-wall_thk), [`TriGridPanel`](print.md#trigridpanelsize-cell_size-wall_thk), [`TextPlate`](print.md#textplatelabel-plate_w-plate_h-plate_thk-depth-font_size), [`EmbossedLabel`](print.md#embossedlabellabel-plate_w-plate_h-plate_thk-depth-font_size), [`VentSlots`](print.md#ventslotswidth-height-thk-slot_width-slot_height-slot_count), [`TabSlot`](print.md#tabslottab_w-tab_h-tab_d-clearance), [`SnapHook`](print.md#snaphookarm_length-hook_depth-thk-width), [`GripTab`](print.md#griptabtab_w-tab_h-tab_d-taper)
+[`HoneycombPanel`](print.md#honeycombpanelsize-cell_size-wall_thk), [`GridPanel`](print.md#gridpanelsize-cell_size-wall_thk), [`TriGridPanel`](print.md#trigridpanelsize-cell_size-wall_thk), [`TextPlate`](print.md#textplatelabel-plate_w-plate_h-plate_thk-depth-font_size), [`EmbossedLabel`](print.md#embossedlabellabel-plate_w-plate_h-plate_thk-depth-font_size), [`VentSlots`](print.md#ventslotswidth-height-thk-slot_width-slot_height-slot_count), [`PolyHole`](print.md#polyholed-h-sides8)
+
+### [Joints](joints.md)
+
+[`TabSlot`](joints.md#tabslottab_w-tab_h-tab_d-clearance), [`GripTab`](joints.md#griptabtab_w-tab_h-tab_d-taper), [`SnapHook`](joints.md#snaphookarm_length-hook_depth-hook_height-thk-width), [`SnapPin`](joints.md#snappind-h-slot_width-slot_depth-barb_depth-barb_height), [`AlignmentPin`](joints.md#alignmentpind-h-lead_in), [`PressFitPeg`](joints.md#pressfitpegshaft_d-shaft_h-flange_d-flange_h-lead_in)
 
 ### [Ecosystem](ecosystem.md)
 

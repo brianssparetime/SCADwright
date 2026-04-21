@@ -24,11 +24,20 @@ ChamferedBox(size=(30, 20, 10), chamfer=2)    # 45-degree bevels
 
 ## `FilletMask(r, length, axis="z")`
 
-Subtractable concave fillet mask. Place at an edge and subtract to round it.
+Quarter-cylinder fillet piece along an axis-aligned edge. Same geometry, two uses:
+
+**Round an outside (convex) edge** — subtract from the parent:
 
 ```python
 mask = FilletMask(r=3, length=20)
 part = difference(box, mask.translate([box_x, box_y, 0]))
+```
+
+**Fill an inside (concave) corner** — union into the parent to smooth a re-entrant corner between two walls:
+
+```python
+bracket_inner_corner = FilletMask(r=2, length=40)
+bracket = union(wall_a, wall_b, bracket_inner_corner.translate([0, 0, 0]))
 ```
 
 `axis` is the edge direction: `"x"`, `"y"`, or `"z"`.

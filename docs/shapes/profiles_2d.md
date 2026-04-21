@@ -6,6 +6,7 @@ Factory functions and Components for common 2D shapes. Extrude them with `linear
 from scadwright.shapes import (
     rounded_rect, rounded_square, regular_polygon,
     Sector, Arc, RoundedEndsArc, RoundedSlot,
+    Teardrop, Keyhole,
 )
 ```
 
@@ -81,3 +82,29 @@ RoundedSlot(length=20, width=4, fn=16)
 ![Rounded slot](images/rounded-slot.png)
 
 *`RoundedSlot(length=30, width=6).linear_extrude(height=3)` — a stadium/capsule profile, extruded.*
+
+## `Teardrop(r, tip_angle=45, cap_h=None)`
+
+FDM-friendly teardrop for horizontal holes. A circle with a tangent-line cap rising to a point at +y; the side walls slope at `tip_angle` above horizontal so the hole prints without support. `tip_angle=45` is the classic printable-hole default. Pass `cap_h` to truncate the tip with a flat horizontal cut. Publishes `tip_height` (solved from `r` and `tip_angle`).
+
+```python
+Teardrop(r=3)                           # classic 45° tip
+Teardrop(r=3, tip_angle=30)             # shallower (more overhang, stronger print)
+Teardrop(r=3, cap_h=4).linear_extrude(height=20)   # truncated, extruded into a hole cutter
+```
+
+![Teardrop](images/teardrop.png)
+
+*`Teardrop(r=5)` — the canonical horizontal-hole profile.*
+
+## `Keyhole(r_big, r_slot, slot_length)`
+
+Classic keyhole profile: a head of radius `r_big` with a narrower slot of half-width `r_slot` extending in -y for `slot_length`. Use for wall-mount holes that accept a screw head through the head, then slide down the slot to catch on the shoulder.
+
+```python
+Keyhole(r_big=5, r_slot=2, slot_length=10)
+```
+
+![Keyhole](images/keyhole.png)
+
+*`Keyhole(r_big=5, r_slot=2, slot_length=10)` — slot extends downward so the part slides onto a protruding screw.*

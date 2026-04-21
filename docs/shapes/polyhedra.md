@@ -4,9 +4,9 @@ Prisms, pyramids, Platonic solids, torus, dome, and spherical cap.
 
 ```python
 from scadwright.shapes import (
-    Prism, Pyramid,
+    Prism, Pyramid, Prismoid, Wedge,
     Tetrahedron, Octahedron, Dodecahedron, Icosahedron,
-    Torus, Dome, SphericalCap,
+    Torus, Dome, SphericalCap, Capsule, PieSlice,
 )
 ```
 
@@ -35,6 +35,32 @@ Pyramid(sides=3, r=8, h=12)             # triangular
 ![Pyramid](images/pyramid.png)
 
 *`Pyramid(sides=4, r=12, h=20)` — a square pyramid with apex above the origin.*
+
+## `Prismoid(bot_w, bot_d, top_w, top_d, h, shift=(0, 0))`
+
+Rectangular frustum: a rectangle `bot_w` × `bot_d` on z=0 tapering to `top_w` × `top_d` at z=`h`. `shift=(dx, dy)` offsets the top face relative to the base center — useful for transition parts. For a pointed apex (rectangular pyramid), use `Pyramid` with `sides=4`.
+
+```python
+Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15)
+Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15, shift=(5, 0))
+```
+
+![Prismoid](images/prismoid.png)
+
+*`Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15)` — a truncated square pyramid.*
+
+## `Wedge(base_w, base_h, thk, fillet=0)`
+
+Right-triangular prism. Cross-section is a right triangle with legs along +x (`base_w`) and +y (`base_h`), extruded `thk` along +z; the right-angle vertex sits at the origin. Doubles as the library's rib / gusset shape. `fillet` (default 0) softens all three corners; note that rounding an acute corner shrinks the envelope by more than the fillet radius, so shallow triangles shrink noticeably.
+
+```python
+Wedge(base_w=10, base_h=6, thk=20)              # bare ramp / gusset
+Wedge(base_w=10, base_h=6, thk=20, fillet=1)    # rounded corners
+```
+
+![Wedge](images/wedge.png)
+
+*`Wedge(base_w=10, base_h=6, thk=20)` — triangular-prism ramp or rib.*
 
 ## Platonic solids
 
@@ -91,3 +117,28 @@ SphericalCap(cap_dia=30, cap_height=5)
 Parameters: `cap_height`, `cap_dia`, `cap_r`, `sphere_r`. All are published as readable attributes after construction.
 
 See [examples/convex-caliper.py](../examples/convex-caliper.py) for a worked example that defines this Component inline to demonstrate the equation solver.
+
+## `Capsule(r, length, axis="z")`
+
+Pill / stadium solid: a cylinder with hemispherical caps on both ends. `length` is the total end-to-end distance (hemispheres included); `r` is the radius of both the cylinder and the caps. The straight-section height is published as `straight_length`. `axis` picks which direction the capsule runs (default z).
+
+```python
+Capsule(r=3, length=20)               # vertical (z) pill
+Capsule(r=3, length=20, axis="x")     # horizontal along x
+```
+
+![Capsule](images/capsule.png)
+
+*`Capsule(r=3, length=20)` — cylinder plus hemispheres, a common handle/grip profile.*
+
+## `PieSlice(r, angles, h)`
+
+3D cylindrical sector: a `Sector` profile extruded along +z. `angles` is a `(start_deg, end_deg)` pair, same as `Sector`.
+
+```python
+PieSlice(r=10, angles=(0, 90), h=5)
+```
+
+![Pie slice](images/pie-slice.png)
+
+*`PieSlice(r=10, angles=(0, 90), h=5)` — a 90° cylindrical wedge.*

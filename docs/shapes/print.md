@@ -1,13 +1,13 @@
 # Print-oriented shapes
 
-Infill panels, text plates, vent slots, and mechanical joints for 3D-printed parts.
+Infill panels, text plates, vent slots, and print-process helpers. Mechanical joints (tabs, snaps, locators) live in their own page — see [Joints](joints.md).
 
 ```python
 from scadwright.shapes import (
     HoneycombPanel, GridPanel, TriGridPanel,
     TextPlate, EmbossedLabel,
     VentSlots,
-    TabSlot, SnapHook, GripTab,
+    PolyHole,
 )
 ```
 
@@ -73,33 +73,16 @@ Rectangular panel with evenly-spaced horizontal vent slots.
 VentSlots(width=30, height=20, thk=2, slot_width=20, slot_height=1.5, slot_count=5)
 ```
 
-## Joints
+## Print aids
 
-### `TabSlot(tab_w, tab_h, tab_d, clearance)`
+Shapes that compensate for FDM print-process artifacts.
 
-Finger joint tab. Publishes `slot_w`, `slot_h`, `slot_d` for the matching pocket (tab dimensions + clearance).
+### `PolyHole(d, h, sides=8)`
 
-```python
-tab = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
-pocket = cube([tab.slot_w, tab.slot_d, tab.slot_h])  # matching cutter
-```
-
-### `SnapHook(arm_length, hook_depth, hook_height, thk, width)`
-
-Cantilever snap-fit hook. Triangular barb at the top of the arm has a flat catch (bottom) and a slanted ramp (top). Typical ramp is 45° (`hook_height == hook_depth`).
+Laird-compensated polygonal hole cutter. OpenSCAD renders circles as n-gons, so a plain `cylinder(d=d)` used as a hole prints to an *inscribed* diameter smaller than `d`. `PolyHole` scales the polygon's circumradius so the inscribed circle matches the requested `d` exactly — the standard FDM drilled-fit fix. `sides` pins the cutter's `$fn` locally so a higher ambient resolution doesn't undo the compensation.
 
 ```python
-SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
+part = difference(plate, PolyHole(d=6, h=10).through(plate))
 ```
 
-![Snap hook](images/snap-hook.png)
-
-*`SnapHook(arm_length=12, hook_depth=2, hook_height=2, thk=1.5, width=5)` — cantilever with a ramped barb; the arm flexes on insertion, the catch grips a ledge.*
-
-### `GripTab(tab_w, tab_h, tab_d, taper)`
-
-Press-fit tab for joining separately-printed parts. `taper` widens the base for grip.
-
-```python
-GripTab(tab_w=6, tab_h=4, tab_d=8, taper=0.5)
-```
+Publishes `circumradius`.

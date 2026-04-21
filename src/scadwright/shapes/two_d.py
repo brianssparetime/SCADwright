@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from scadwright.boolops import difference, intersection, minkowski, union
+from scadwright.boolops import difference, hull, intersection, minkowski, union
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.errors import ValidationError
@@ -142,3 +142,73 @@ class RoundedSlot(Component):
             cap.right(rect_length / 2),
             cap.left(rect_length / 2),
         )
+
+
+class Teardrop(Component):
+    """FDM-friendly teardrop profile for horizontal holes.
+
+    A circle with a pointed tip at +y, tangent lines rising from the
+    circle at ``tip_angle`` above horizontal. The classic printable-
+    horizontal-hole shape: for ``tip_angle`` <= 45° every exterior
+    surface slopes steeply enough to print unsupported.
+
+    ``cap_h`` optionally truncates the tip with a horizontal cut
+    (useful when the remaining point is still unprintable overhead).
+    ``tip_height`` is published (solved from ``r`` and ``tip_angle``).
+    """
+
+    equations = [
+        "tip_height == r / cos(tip_angle * pi / 180)",
+        "r > 0",
+        "tip_angle > 0",
+        "tip_angle < 90",
+        "cap_h > r",
+        "cap_h < tip_height",
+    ]
+    tip_angle = Param(float, default=45.0)
+    cap_h = Param(float, default=None)
+
+    def build(self):
+        alpha = math.radians(self.tip_angle)
+        # Tangent points where the tip's tangent lines meet the circle.
+        tx = self.r * math.sin(alpha)
+        ty = self.r * math.cos(alpha)
+        cap = polygon(points=[
+            (-tx, ty),
+            (tx, ty),
+            (0.0, self.tip_height),
+        ])
+        shape = union(circle(r=self.r), cap)
+        if self.cap_h is not None:
+            # Clip everything above y = cap_h. Rectangle spans from y=-r (bottom
+            # of circle) up to y=cap_h, centered on x so tangent-side clipping
+            # stays symmetric.
+            height = self.cap_h + self.r
+            clip = square([3 * self.r, height], center=True).forward(
+                (self.cap_h - self.r) / 2
+            )
+            shape = intersection(shape, clip)
+        return shape
+
+
+class Keyhole(Component):
+    """Keyhole profile: circle (head) with a narrower slot extending in -y.
+
+    For wall-hanging mounts: a screw head passes through the head of
+    radius ``r_big``, then the part slides down so the shoulder catches
+    on the narrower ``r_slot`` slot. ``slot_length`` is the distance from
+    the head center to the slot-end cap center.
+    """
+
+    equations = [
+        "r_big, r_slot, slot_length > 0",
+        "r_slot < r_big",
+    ]
+
+    def build(self):
+        head = circle(r=self.r_big)
+        slot = hull(
+            circle(r=self.r_slot),
+            circle(r=self.r_slot).back(self.slot_length),
+        )
+        return union(head, slot)

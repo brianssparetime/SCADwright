@@ -44,7 +44,7 @@ MAC_DEFAULT = "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
 # stay consistent. Re-run with --hero after adding/removing shapes.
 HERO_DIR = Path("docs/shapes/images")
 HERO_OUTPUT = HERO_DIR / "hero.png"
-HERO_TILE = "7x5"              # 35 cells; extra trailing cells rendered as blanks
+HERO_TILE = "8x6"              # 48 cells; resize when the tile count changes
 HERO_GEOMETRY = "300x225+3+3"  # per-tile size + 3px gap
 HERO_BG = "#AAAAFF"            # matches the Metallic shots' lavender backdrop
 

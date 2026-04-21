@@ -11,11 +11,19 @@ from scadwright.primitives import cube, cylinder
 
 
 class FilletMask(Component):
-    """Subtractable fillet mask along an axis-aligned edge.
+    """Quarter-cylinder fillet piece for axis-aligned edges.
 
-    Place along an edge and subtract to round it. The mask is a cube
-    with a cylindrical quarter removed, producing a concave fillet when
-    subtracted from a parent.
+    The shape is an ``r`` x ``r`` x ``length`` prism with a quarter-
+    cylinder of radius ``r`` removed along its edge. The same geometry
+    serves two uses depending on how you combine it with a parent:
+
+    - **Round an outside (convex) edge** by subtracting: place along
+      the edge and ``difference()`` — the result is a rounded transition
+      where the sharp corner was.
+    - **Fill an inside (concave) corner** by unioning: place in the
+      corner and ``union()`` — the quarter-cylinder curve becomes a
+      smooth tangent between the two walls, relieving stress at the
+      re-entrant corner.
 
     ``axis`` is the edge direction: ``"x"``, ``"y"``, or ``"z"``.
     ``length`` is the extent along that axis.

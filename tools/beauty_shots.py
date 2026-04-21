@@ -21,10 +21,12 @@ Each EXAMPLES entry:
 from scadwright.boolops import union
 from scadwright.primitives import cube
 from scadwright.shapes import (
+    AlignmentPin,
     Arc,
     Bearing,
     BevelGear,
     Bolt,
+    Capsule,
     ChamferedBox,
     Counterbore,
     DShaft,
@@ -37,19 +39,28 @@ from scadwright.shapes import (
     HoneycombPanel,
     Icosahedron,
     KeyedShaft,
+    Keyhole,
+    PieSlice,
+    PolyHole,
+    PressFitPeg,
     Prism,
+    Prismoid,
     Pyramid,
     Rack,
+    RectTube,
     RoundedBox,
     RoundedSlot,
     Sector,
     SnapHook,
+    SnapPin,
     Spring,
     SpurGear,
     Standoff,
+    Teardrop,
     TextPlate,
     Torus,
     Tube,
+    Wedge,
     bezier_path,
     rounded_rect,
 )
@@ -71,6 +82,14 @@ def _2d_rounded_slot():
 
 def _2d_arc():
     return Arc(r=15, angles=(0, 120), width=3).linear_extrude(height=3)
+
+
+def _2d_teardrop():
+    return Teardrop(r=5).linear_extrude(height=3)
+
+
+def _2d_keyhole():
+    return Keyhole(r_big=5, r_slot=2, slot_length=10).linear_extrude(height=3)
 
 
 def _d_shaft():
@@ -99,6 +118,7 @@ COMPONENTS = [
     {"out": "docs/shapes/images/tube.png",        "component": Tube,       "kwargs": {"od": 20, "id": 16, "h": 30}},
     {"out": "docs/shapes/images/rounded-box.png", "component": RoundedBox, "kwargs": {"size": (40, 25, 15), "r": 3}},
     {"out": "docs/shapes/images/funnel.png",      "component": Funnel,     "kwargs": {"h": 30, "thk": 2, "bot_id": 8, "top_id": 30}},
+    {"out": "docs/shapes/images/rect-tube.png",   "component": RectTube,   "kwargs": {"outer_w": 30, "outer_d": 20, "wall_thk": 2, "h": 10}},
 
     # curves.md
     {"out": "docs/shapes/images/helix.png",  "component": Helix,  "kwargs": {"r": 10, "wire_r": 1.5, "pitch": 5, "turns": 4}},
@@ -116,7 +136,13 @@ COMPONENTS = [
     # print.md
     {"out": "docs/shapes/images/honeycomb-panel.png", "component": HoneycombPanel, "kwargs": {"size": (80, 60, 3), "cell_size": 8, "wall_thk": 1}},
     {"out": "docs/shapes/images/text-plate.png",      "component": TextPlate,      "kwargs": {"label": "HELLO", "plate_w": 40, "plate_h": 15, "plate_thk": 2, "depth": 0.8, "font_size": 8}},
+    {"out": "docs/shapes/images/poly-hole.png",       "component": PolyHole,       "kwargs": {"d": 10, "h": 20, "sides": 8}},
+
+    # joints.md
     {"out": "docs/shapes/images/snap-hook.png",       "component": SnapHook,       "kwargs": {"arm_length": 12, "hook_depth": 2, "hook_height": 2, "thk": 1.5, "width": 5}},
+    {"out": "docs/shapes/images/snap-pin.png",        "component": SnapPin,        "kwargs": {"d": 8, "h": 22, "slot_width": 1.5, "slot_depth": 15, "barb_depth": 1.2, "barb_height": 2.5}},
+    {"out": "docs/shapes/images/alignment-pin.png",   "component": AlignmentPin,   "kwargs": {"d": 6, "h": 16, "lead_in": 2}},
+    {"out": "docs/shapes/images/press-fit-peg.png",   "component": PressFitPeg,    "kwargs": {"shaft_d": 4, "shaft_h": 12, "flange_d": 9, "flange_h": 2, "lead_in": 1.2}},
 
     # transforms.md
     {"out": "docs/shapes/images/bend.png",        "build": _transform_bend,        "name": "bend"},
@@ -137,6 +163,8 @@ COMPONENTS = [
     {"out": "docs/shapes/images/sector.png",       "build": _2d_sector,       "name": "sector"},
     {"out": "docs/shapes/images/rounded-slot.png", "build": _2d_rounded_slot, "name": "rounded-slot"},
     {"out": "docs/shapes/images/arc.png",          "build": _2d_arc,          "name": "arc"},
+    {"out": "docs/shapes/images/teardrop.png",     "build": _2d_teardrop,     "name": "teardrop"},
+    {"out": "docs/shapes/images/keyhole.png",      "build": _2d_keyhole,      "name": "keyhole"},
 
     # fillets.md
     {"out": "docs/shapes/images/chamfered-box.png", "component": ChamferedBox, "kwargs": {"size": (30, 20, 10), "fillet": 2}},
@@ -145,9 +173,13 @@ COMPONENTS = [
     # polyhedra.md
     {"out": "docs/shapes/images/prism.png",       "component": Prism,       "kwargs": {"sides": 6, "r": 12, "h": 20}},
     {"out": "docs/shapes/images/pyramid.png",     "component": Pyramid,     "kwargs": {"sides": 4, "r": 12, "h": 20}},
+    {"out": "docs/shapes/images/prismoid.png",    "component": Prismoid,    "kwargs": {"bot_w": 25, "bot_d": 25, "top_w": 12, "top_d": 12, "h": 18}},
+    {"out": "docs/shapes/images/wedge.png",       "component": Wedge,       "kwargs": {"base_w": 20, "base_h": 12, "thk": 30}},
     {"out": "docs/shapes/images/icosahedron.png", "component": Icosahedron, "kwargs": {"r": 15}},
     {"out": "docs/shapes/images/torus.png",       "component": Torus,       "kwargs": {"major_r": 20, "minor_r": 5}},
     {"out": "docs/shapes/images/dome.png",        "component": Dome,        "kwargs": {"r": 15, "thk": 2}},
+    {"out": "docs/shapes/images/capsule.png",     "component": Capsule,     "kwargs": {"r": 6, "length": 30}},
+    {"out": "docs/shapes/images/pie-slice.png",   "component": PieSlice,    "kwargs": {"r": 15, "angles": (0, 120), "h": 8}},
 ]
 
 

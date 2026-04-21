@@ -234,12 +234,17 @@ Tube(h=10, id=8, thk=1)                           # hollow cylinder, od solved
 Funnel(h=20, thk=2, bot_id=10, top_od=18)         # tapered tube
 RoundedBox(size=(20, 10, 5), r=1)                 # minkowski-rounded box
 UShapeChannel(wall_thk=2, channel_length=50, channel_width=10)
+RectTube(outer_w=30, outer_d=20, wall_thk=2, h=10)   # rect sibling of Tube
 
-# Polyhedra:
+# Polyhedra and basic 3D shapes:
 Prism(sides=6, r=10, h=20)                        # hex prism (or frustum with top_r=)
+Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15)    # rect frustum (+ shift=)
+Wedge(base_w=10, base_h=6, thk=20)                # triangular-prism ramp/rib (+ fillet=)
 Torus(major_r=20, minor_r=5)                      # donut (partial with angle=)
 Dome(r=15, thk=2)                                 # hollow hemisphere
 SphericalCap(sphere_r=20, cap_height=8)           # equation-solved cap
+Capsule(r=3, length=20)                           # cylinder + hemisphere caps (axis=)
+PieSlice(r=10, angles=(0, 90), h=5)               # cylindrical sector
 
 # Fillets:
 ChamferedBox(size=(30, 20, 10), fillet=2)         # rounded edges (or chamfer=)
@@ -268,13 +273,22 @@ Spring(r=8, wire_r=0.5, pitch=3, turns=5)         # with flat ends
 # Print:
 HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.5, font_size=8)
-TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
+PolyHole(d=6, h=10)                               # Laird-compensated FDM hole
+
+# Joints:
+TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)      # finger joint (.slot cutter)
+SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
+SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5)
+AlignmentPin(d=4, h=8, lead_in=1)                        # locator pin (.socket cutter)
+PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)
 
 # 2D profiles:
 rounded_rect(20, 10, r=2)                         # rounded rectangle
 regular_polygon(sides=6, r=5)                     # n-gon
 Arc(r=10, angles=(0, 90), width=2)                # ring segment
 RoundedSlot(length=20, width=4)                   # capsule/stadium
+Teardrop(r=3)                                     # FDM horizontal-hole profile
+Keyhole(r_big=5, r_slot=2, slot_length=10)        # wall-mount keyhole
 ```
 
 ## Resolution (smoothness) &nbsp; &nbsp;[→ full](resolution.md)
