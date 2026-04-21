@@ -59,9 +59,20 @@ def test_chamfered_box_fillet():
 
 
 def test_chamfered_box_chamfer():
+    """Chamfer via minkowski with an octahedron — produces 45° bevels.
+
+    Outer dimensions are preserved (inner cube + octahedron radius
+    sums back to size). The previous cylinder-intersection formula
+    was broken (cylinders too large to clip the box at all).
+    """
     b = ChamferedBox(size=(20, 15, 10), chamfer=2)
     scad = emit_str(b)
-    assert "intersection" in scad
+    assert "minkowski" in scad
+    assert "polyhedron" in scad
+    bb = bbox(b)
+    assert bb.size[0] == pytest.approx(20.0, abs=0.01)
+    assert bb.size[1] == pytest.approx(15.0, abs=0.01)
+    assert bb.size[2] == pytest.approx(10.0, abs=0.01)
 
 
 def test_chamfered_box_both_raises():

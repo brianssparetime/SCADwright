@@ -51,8 +51,7 @@ def path_extrude(
 
     # Build faces connecting adjacent cross-sections.
     faces = []
-    sections = n_path if not closed else n_path
-    for i in range(sections - 1 if not closed else sections):
+    for i in range(n_path - 1 if not closed else n_path):
         i_next = (i + 1) % n_path
         base = i * n_profile
         base_next = i_next * n_profile

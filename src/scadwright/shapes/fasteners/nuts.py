@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.primitives import cube, cylinder
@@ -30,7 +31,6 @@ class HexNut(Component):
         hex_profile = regular_polygon(sides=6, r=s.af / 2)
         outer = hex_profile.linear_extrude(height=s.h)
         hole = cylinder(h=s.h, d=s.d).through(outer)
-        from scadwright.boolops import difference
         return difference(outer, hole)
 
 
@@ -54,5 +54,4 @@ class SquareNut(Component):
         s = self._spec
         outer = cube([s.af, s.af, s.h], center="xy")
         hole = cylinder(h=s.h, d=s.d).through(outer)
-        from scadwright.boolops import difference
         return difference(outer, hole)

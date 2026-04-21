@@ -3,6 +3,7 @@
 import pytest
 
 from scadwright import bbox, emit_str
+from scadwright.errors import ValidationError
 from scadwright.shapes import (
     Bolt,
     CaptiveNutPocket,
@@ -32,7 +33,7 @@ def test_screw_spec_button():
 
 
 def test_screw_spec_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown screw size"):
+    with pytest.raises(ValidationError, match="Unknown screw size"):
         get_screw_spec("M99")
 
 
@@ -66,6 +67,14 @@ def test_bolt_button_head():
     b = Bolt(size="M5", length=15, head="button")
     scad = emit_str(b)
     assert "cylinder" in scad
+
+
+def test_bolt_socket_vs_button_head_distinct_height():
+    """Socket and button heads have different head_h, so total height differs."""
+    socket = Bolt(size="M5", length=15, head="socket")  # M5 socket head_h=5.0
+    button = Bolt(size="M5", length=15, head="button")  # M5 button head_h=2.8
+    assert bbox(socket).size[2] == pytest.approx(20.0, abs=0.1)
+    assert bbox(button).size[2] == pytest.approx(17.8, abs=0.1)
 
 
 def test_bolt_attributes():

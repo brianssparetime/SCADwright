@@ -161,8 +161,19 @@ def _try_solve(parsed: ParsedEquations, given: dict[str, float]) -> dict[str, fl
         return {}
 
     subs = {parsed.symbol_cache[k]: sp.sympify(v) for k, v in given.items()}
+    # `.evalf()` after substitution: forces numeric reduction of any
+    # transcendental terms (cos, sin, etc.) before sp.solve sees them.
+    # Without it, sympy attempts symbolic simplification on
+    # `cos(some_float * pi / 180)` for non-special angles, which can
+    # take tens of seconds (e.g. pressure_angle=14.5 vs the trivial
+    # pressure_angle=20). Skip evalf on BooleanTrue/False since those
+    # are already fully reduced sentinels.
+    def _sub(eq):
+        s = eq.subs(subs)
+        return s if s is sp.true or s is sp.false else s.evalf()
+
     substituted = []
-    for orig, eq in zip(parsed.equations, [eq.subs(subs) for eq in parsed.equations]):
+    for orig, eq in zip(parsed.equations, [_sub(eq) for eq in parsed.equations]):
         # sympy reduces fully-substituted equations to BooleanTrue/False.
         if eq is sp.true:
             continue  # auto-satisfied; drop from the system

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from collections import namedtuple
 
+from scadwright.errors import ValidationError
+
 ScrewSpec = namedtuple("ScrewSpec", "d pitch head_d head_h clearance_d tap_d")
 NutSpec = namedtuple("NutSpec", "d af h")  # af = across-flats (wrench size)
 InsertSpec = namedtuple("InsertSpec", "d od h hole_d hole_depth")
@@ -72,10 +74,10 @@ def get_screw_spec(size: str, head: str = "socket") -> ScrewSpec:
     }
     table = tables.get(head)
     if table is None:
-        raise ValueError(f"Unknown head type {head!r}. Use 'socket' or 'button'.")
+        raise ValidationError(f"Unknown head type {head!r}. Use 'socket' or 'button'.")
     spec = table.get(size.upper())
     if spec is None:
-        raise ValueError(f"Unknown screw size {size!r} for head={head!r}. Available: {sorted(table)}")
+        raise ValidationError(f"Unknown screw size {size!r} for head={head!r}. Available: {sorted(table)}")
     return spec
 
 
@@ -83,7 +85,7 @@ def get_nut_spec(size: str) -> NutSpec:
     """Look up hex nut dimensions by size string."""
     spec = METRIC_HEX_NUT.get(size.upper())
     if spec is None:
-        raise ValueError(f"Unknown nut size {size!r}. Available: {sorted(METRIC_HEX_NUT)}")
+        raise ValidationError(f"Unknown nut size {size!r}. Available: {sorted(METRIC_HEX_NUT)}")
     return spec
 
 
@@ -91,5 +93,5 @@ def get_insert_spec(size: str) -> InsertSpec:
     """Look up heat-set insert dimensions by size string."""
     spec = HEAT_SET_INSERT.get(size.upper())
     if spec is None:
-        raise ValueError(f"Unknown insert size {size!r}. Available: {sorted(HEAT_SET_INSERT)}")
+        raise ValidationError(f"Unknown insert size {size!r}. Available: {sorted(HEAT_SET_INSERT)}")
     return spec

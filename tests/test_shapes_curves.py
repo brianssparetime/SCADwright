@@ -168,3 +168,13 @@ def test_spring_no_flat_ends():
     s = Spring(r=8, wire_r=0.5, pitch=3, turns=5, flat_ends=False)
     scad = emit_str(s)
     assert "polyhedron" in scad
+
+
+def test_spring_flat_ends_geometry_differs():
+    """flat_ends adds material at the top/bottom; same params should
+    nonetheless produce a different geometry tree."""
+    from scadwright import tree_hash
+
+    flat = Spring(r=8, wire_r=0.5, pitch=3, turns=5, flat_ends=True)
+    nopad = Spring(r=8, wire_r=0.5, pitch=3, turns=5, flat_ends=False)
+    assert tree_hash(flat) != tree_hash(nopad)

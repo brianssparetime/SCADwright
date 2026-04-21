@@ -1,6 +1,8 @@
+import math
+
 import pytest
 
-from scadwright import emit_str
+from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
 from scadwright.shapes import FilletRing, UShapeChannel
 
@@ -29,6 +31,22 @@ def test_fillet_ring_inwards_differs_from_outwards():
     outer = emit_str(FilletRing(id=10, od=20, base_angle=30, slant="outwards"))
     inner = emit_str(FilletRing(id=10, od=20, base_angle=30, slant="inwards"))
     assert outer != inner
+
+
+def test_fillet_ring_outwards_height_matches_full_cone():
+    """Outwards slant = cone-minus-inner-cylinder; height extends all
+    the way to the cone apex: `tan(base_angle) * od/2`."""
+    r = FilletRing(id=10, od=20, base_angle=30, fn=64)
+    expected_h = math.tan(math.radians(30)) * 20 / 2  # ≈ 5.774
+    assert bbox(r).size[2] == pytest.approx(expected_h, abs=0.05)
+
+
+def test_fillet_ring_inwards_height_is_wedge_only():
+    """Inwards slant is just the wedge between id and od; height is
+    `tan(base_angle) * (od - id) / 2`."""
+    r = FilletRing(id=10, od=20, base_angle=30, slant="inwards", fn=64)
+    expected_h = math.tan(math.radians(30)) * (20 - 10) / 2  # ≈ 2.887
+    assert bbox(r).size[2] == pytest.approx(expected_h, abs=0.05)
 
 
 def test_fillet_ring_bad_slant_raises():

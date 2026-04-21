@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from scadwright.boolops import intersection, minkowski
+from scadwright.boolops import minkowski
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.errors import ValidationError
-from scadwright.primitives import cube, cylinder, sphere
+from scadwright.primitives import cube, polyhedron, sphere
 
 
 class ChamferedBox(Component):
@@ -53,13 +53,22 @@ class ChamferedBox(Component):
             )
             return minkowski(inner, sphere(r=r))
 
-        # Chamfer: intersection of the box with three axis-aligned
-        # cylinders whose diameter matches the box diagonal on each
-        # face pair. This clips the corners and edges at 45 degrees.
+        # Chamfer via Minkowski sum with a regular octahedron of "radius" c
+        # (vertices at ±c on each axis). The octahedron's eight triangular
+        # faces are 45° to all three principal axes, so the sum produces
+        # the documented 45-degree bevels of depth c on every cube edge.
+        # Mirrors the fillet branch's minkowski(cube, sphere) pattern.
         c = self.chamfer
-        base = cube([x, y, z], center=True)
-        # Cylinders along each axis, sized to clip the chamfer depth.
-        cx = cylinder(h=x + 0.02, r=(min(y, z) / 2 - c) / (2**0.5 - 1) + min(y, z) / 2, center=True).rotate([0, 90, 0])
-        cy = cylinder(h=y + 0.02, r=(min(x, z) / 2 - c) / (2**0.5 - 1) + min(x, z) / 2, center=True).rotate([90, 0, 0])
-        cz = cylinder(h=z + 0.02, r=(min(x, y) / 2 - c) / (2**0.5 - 1) + min(x, y) / 2, center=True)
-        return intersection(base, cx, cy, cz)
+        inner = cube([x - 2 * c, y - 2 * c, z - 2 * c], center=True)
+        oct = polyhedron(
+            points=[
+                (c, 0, 0), (-c, 0, 0),
+                (0, c, 0), (0, -c, 0),
+                (0, 0, c), (0, 0, -c),
+            ],
+            faces=[
+                [0, 2, 4], [0, 4, 3], [0, 3, 5], [0, 5, 2],
+                [1, 4, 2], [1, 2, 5], [1, 5, 3], [1, 3, 4],
+            ],
+        )
+        return minkowski(inner, oct)

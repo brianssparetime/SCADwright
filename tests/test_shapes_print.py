@@ -61,6 +61,21 @@ def test_text_plate_builds():
     assert "text" in scad
 
 
+def test_text_plate_emit_contains_literal_label():
+    """The emitted SCAD must contain the actual label text, not just `text(`."""
+    p = TextPlate(label="SCADwright", plate_w=60, plate_h=15, plate_thk=2,
+                  depth=0.5, font_size=8)
+    scad = emit_str(p)
+    assert '"SCADwright"' in scad
+
+
+def test_text_plate_uses_specified_font():
+    p = TextPlate(label="X", plate_w=20, plate_h=10, plate_thk=1,
+                  depth=0.3, font_size=5, font="DejaVu Sans")
+    scad = emit_str(p)
+    assert "DejaVu Sans" in scad
+
+
 # --- EmbossedLabel ---
 
 
@@ -130,5 +145,7 @@ def test_grip_tab_builds():
 
 def test_grip_tab_no_taper():
     g = GripTab(tab_w=6, tab_h=4, tab_d=8, taper=0)
-    scad = emit_str(g)
-    assert "cube" in scad
+    bb = bbox(g)
+    assert bb.size[0] == pytest.approx(6.0, abs=0.01)
+    assert bb.size[1] == pytest.approx(8.0, abs=0.01)
+    assert bb.size[2] == pytest.approx(4.0, abs=0.01)

@@ -90,9 +90,12 @@ class FilletRing(Component):
     - `"inwards"` — outer wall is straight at od/2, inner wall slopes
       outward from id/2 at z=0 to od/2 at z=h.
 
-    Both variants have height `tan(base_angle) * (od - id) / 2` and a
-    matching slope of `base_angle` degrees from horizontal, so they lie on
-    parallel cone surfaces for equal (id, od, base_angle).
+    Both variants share the same `base_angle` slope on the matching
+    cone surface, so they lie on parallel cones for equal
+    (id, od, base_angle). They differ in height: the outwards form
+    extends the cone all the way to the apex (height
+    `tan(base_angle) * od/2`); the inwards form is just the wedge between
+    id and od (height `tan(base_angle) * (od - id) / 2`).
     """
 
     equations = [

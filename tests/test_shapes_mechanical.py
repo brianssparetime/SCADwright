@@ -23,6 +23,16 @@ def test_bearing_custom_dims():
     assert bb.size[0] == pytest.approx(30.0, abs=0.5)
 
 
+def test_bearing_custom_dims_publishes_all_attrs():
+    """Custom-spec Bearings expose id/od/width as instance attrs."""
+    b = Bearing(spec=BearingSpec(id=10, od=30, width=9))
+    assert b.id == 10
+    assert b.od == 30
+    assert b.width == 9
+    bb = bbox(b)
+    assert bb.size[2] == pytest.approx(9.0, abs=0.1)
+
+
 def test_bearing_unknown_series_raises():
     with pytest.raises(ValidationError, match="unknown series"):
         Bearing(series="9999")

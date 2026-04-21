@@ -5,7 +5,8 @@ from __future__ import annotations
 import math
 
 from scadwright.bbox import bbox as _bbox
-from scadwright.boolops import union
+from scadwright.boolops import intersection, union
+from scadwright.primitives import cube
 from scadwright.transforms import transform
 
 
@@ -110,9 +111,6 @@ def bend(node, *, radius, axis="z"):
         z_lo = bb.min[ax] + i * segment_height
         z_hi = z_lo + segment_height
 
-        from scadwright.boolops import intersection
-        from scadwright.primitives import cube
-
         # Clip to this segment's z-range.
         clip_size = [bb.size[0] + 0.02, bb.size[1] + 0.02, bb.size[2] + 0.02]
         clip_pos = [bb.min[0] - 0.01, bb.min[1] - 0.01, bb.min[2] - 0.01]
@@ -131,14 +129,11 @@ def bend(node, *, radius, axis="z"):
 
         # Translate outward by radius, then rotate.
         if ax == 2:
-            segment = segment.translate([radius, 0, 0])
-            segment = segment.rotate([0, 0, mid_angle])
+            segment = segment.right(radius).rotate([0, 0, mid_angle])
         elif ax == 0:
-            segment = segment.translate([0, radius, 0])
-            segment = segment.rotate([mid_angle, 0, 0])
+            segment = segment.back(radius).rotate([mid_angle, 0, 0])
         else:
-            segment = segment.translate([0, 0, radius])
-            segment = segment.rotate([0, mid_angle, 0])
+            segment = segment.up(radius).rotate([0, mid_angle, 0])
 
         copies.append(segment)
 

@@ -9,6 +9,14 @@ from scadwright.component.params import Param
 from scadwright.primitives import polyhedron
 
 
+def _ring_points(n: int, r: float, z: float) -> list[tuple[float, float, float]]:
+    """``n`` evenly-spaced points on a circle of radius ``r`` at height ``z``."""
+    return [
+        (r * math.cos(2 * math.pi * i / n), r * math.sin(2 * math.pi * i / n), z)
+        for i in range(n)
+    ]
+
+
 class Prism(Component):
     """N-sided prism (or frustum when top_r differs from r).
 
@@ -23,20 +31,9 @@ class Prism(Component):
 
     def build(self):
         n = self.sides
-        r_bot = self.r
         r_top = self.top_r if self.top_r is not None else self.r
-        h = self.h
 
-        # Bottom and top vertex rings.
-        points = []
-        for i in range(n):
-            angle = 2 * math.pi * i / n
-            c, s = math.cos(angle), math.sin(angle)
-            points.append((r_bot * c, r_bot * s, 0.0))
-        for i in range(n):
-            angle = 2 * math.pi * i / n
-            c, s = math.cos(angle), math.sin(angle)
-            points.append((r_top * c, r_top * s, h))
+        points = _ring_points(n, self.r, 0.0) + _ring_points(n, r_top, self.h)
 
         faces = []
         # Bottom face (reversed winding).
@@ -62,10 +59,7 @@ class Pyramid(Component):
 
     def build(self):
         n = self.sides
-        points = []
-        for i in range(n):
-            angle = 2 * math.pi * i / n
-            points.append((self.r * math.cos(angle), self.r * math.sin(angle), 0.0))
+        points = _ring_points(n, self.r, 0.0)
         apex = len(points)
         points.append((0.0, 0.0, self.h))
 

@@ -7,8 +7,9 @@ import math
 from scadwright.boolops import difference, union
 from scadwright.component.base import Component
 from scadwright.component.params import Param
+from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
-from scadwright.primitives import cube
+from scadwright.primitives import cube, polygon
 
 
 class HoneycombPanel(Component):
@@ -24,7 +25,6 @@ class HoneycombPanel(Component):
 
     def setup(self):                                    # framework hook: optional
         if len(self.size) != 3:
-            from scadwright.errors import ValidationError
             raise ValidationError(
                 f"HoneycombPanel: size must be a 3-tuple, got {self.size!r}"
             )
@@ -45,7 +45,6 @@ class HoneycombPanel(Component):
              hex_r * math.sin(math.pi / 6 + i * math.pi / 3))
             for i in range(6)
         ]
-        from scadwright.primitives import polygon
         hex_profile = polygon(points=hex_pts)
         hex_cutter = linear_extrude(hex_profile, height=z)
 
@@ -77,7 +76,6 @@ class GridPanel(Component):
 
     def setup(self):                                    # framework hook: optional
         if len(self.size) != 3:
-            from scadwright.errors import ValidationError
             raise ValidationError(
                 f"GridPanel: size must be a 3-tuple, got {self.size!r}"
             )
@@ -118,7 +116,6 @@ class TriGridPanel(Component):
 
     def setup(self):                                    # framework hook: optional
         if len(self.size) != 3:
-            from scadwright.errors import ValidationError
             raise ValidationError(
                 f"TriGridPanel: size must be a 3-tuple, got {self.size!r}"
             )
@@ -133,8 +130,6 @@ class TriGridPanel(Component):
         h_tri = cs * math.sqrt(3) / 2
         pitch_x = cs + wt
         pitch_y = h_tri + wt
-
-        from scadwright.primitives import polygon
 
         cutters = []
         cols = int(x / pitch_x) + 2

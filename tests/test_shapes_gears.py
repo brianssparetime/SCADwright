@@ -43,6 +43,18 @@ def test_spur_gear_publishes_radii():
     assert g.outer_r == pytest.approx(22.0)
 
 
+def test_spur_gear_published_radii_match_formula():
+    """pitch_r = m·n/2; outer_r = pitch_r + m; root_r = pitch_r - 1.25m;
+    base_r = pitch_r * cos(pressure_angle°)."""
+    for module, teeth, pa in [(1, 20, 20.0), (1.5, 32, 14.5), (3, 12, 25.0)]:
+        g = SpurGear(module=module, teeth=teeth, h=5, pressure_angle=pa)
+        pitch_r = module * teeth / 2
+        assert g.pitch_r == pytest.approx(pitch_r)
+        assert g.outer_r == pytest.approx(pitch_r + module)
+        assert g.root_r == pytest.approx(pitch_r - 1.25 * module)
+        assert g.base_r == pytest.approx(pitch_r * math.cos(math.radians(pa)))
+
+
 def test_spur_gear_bbox_reasonable():
     g = SpurGear(module=2, teeth=20, h=5)
     bb = bbox(g)
@@ -173,3 +185,45 @@ def test_worm_gear_builds():
     wg = WormGear(module=2, teeth=30, h=5)
     scad = emit_str(wg)
     assert "linear_extrude" in scad
+
+
+# --- pure-math: involute_point, involute_intersect_angle, gear_dimensions ---
+
+
+def test_involute_point_starts_at_base_circle():
+    """At t=0, the involute originates at (base_r, 0)."""
+    from scadwright.shapes.gears.involute import involute_point
+
+    x, y = involute_point(base_r=10.0, angle=0.0)
+    assert x == pytest.approx(10.0)
+    assert y == pytest.approx(0.0)
+
+
+def test_involute_intersect_angle_clamps_at_base_circle():
+    """Targets at or inside the base circle return 0 — the involute
+    can't intersect any radius smaller than the base."""
+    from scadwright.shapes.gears.involute import involute_intersect_angle
+
+    assert involute_intersect_angle(base_r=10.0, target_r=10.0) == 0.0
+    assert involute_intersect_angle(base_r=10.0, target_r=5.0) == 0.0
+
+
+def test_involute_intersect_angle_known_value():
+    """t = sqrt((target/base)^2 - 1). For target=2*base, t = sqrt(3)."""
+    from scadwright.shapes.gears.involute import involute_intersect_angle
+
+    assert involute_intersect_angle(base_r=10.0, target_r=20.0) == pytest.approx(math.sqrt(3))
+
+
+def test_gear_dimensions_pitch_r_scales_linearly_in_module_and_teeth():
+    pr_base, _, _, _ = gear_dimensions(module=1, teeth=20)
+    pr_mod2, _, _, _ = gear_dimensions(module=2, teeth=20)
+    pr_t40, _, _, _ = gear_dimensions(module=1, teeth=40)
+    assert pr_mod2 == pytest.approx(2 * pr_base)
+    assert pr_t40 == pytest.approx(2 * pr_base)
+
+
+def test_gear_dimensions_base_pitch_ratio_is_cos_pressure_angle():
+    for pa in (14.5, 20.0, 25.0):
+        pr, br, _, _ = gear_dimensions(module=1, teeth=20, pressure_angle=pa)
+        assert br / pr == pytest.approx(math.cos(math.radians(pa)))

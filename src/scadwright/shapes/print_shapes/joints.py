@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from scadwright.boolops import union
 from scadwright.component.base import Component
-from scadwright.primitives import cube
+from scadwright.extrusions import linear_extrude
+from scadwright.primitives import cube, square
 
 
 class TabSlot(Component):
@@ -74,13 +75,14 @@ class GripTab(Component):
     equations = ["tab_w, tab_h, tab_d, taper >= 0"]
 
     def build(self):
-        # Simple rectangular tab; taper is applied as a slight scale.
-        if self.taper <= 0:
-            return cube([self.tab_w, self.tab_d, self.tab_h], center="xy")
-
-        from scadwright.extrusions import linear_extrude
-        from scadwright.primitives import square
-
-        base = square([self.tab_w + 2 * self.taper, self.tab_d], center=True)
-        scale = self.tab_w / (self.tab_w + 2 * self.taper)
-        return linear_extrude(base, height=self.tab_h, scale=scale)
+        # Tapered (or straight, when taper == 0) prism via linear_extrude
+        # with a scaled top. base_w is wider than tab_w by 2*taper at z=0;
+        # the top scales down to tab_w. With taper=0 this collapses to a
+        # plain rectangular prism.
+        base_w = self.tab_w + 2 * self.taper
+        scale = self.tab_w / base_w
+        return linear_extrude(
+            square([base_w, self.tab_d], center=True),
+            height=self.tab_h,
+            scale=scale,
+        )
