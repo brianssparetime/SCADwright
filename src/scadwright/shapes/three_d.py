@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 
 from scadwright.boolops import difference, hull, minkowski, union
+from scadwright.component.anchors import anchor
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.errors import ValidationError
@@ -139,15 +140,14 @@ class FilletRing(Component):
 class Capsule(Component):
     """Pill / stadium solid: a cylinder with hemispherical caps on both ends.
 
-    ``length`` is the total end-to-end distance along the chosen axis
-    (hemispheres included); ``r`` is the radius of the hemispheres and the
-    cylindrical body. The straight-section height ``straight_length`` is
-    published (solved from ``length`` and ``r``).
+    ``length`` is the total end-to-end distance along +z (hemispheres
+    included); ``r`` is the radius of the hemispheres and the cylindrical
+    body. The straight-section height ``straight_length`` is published
+    (solved from ``length`` and ``r``). ``base`` at z=0 and ``tip`` at
+    z=length are published as anchors, pointing outward in ±z.
 
-    The default axis is z. Pass ``axis="x"`` or ``"y"`` to lay the capsule
-    along a different direction; the body's geometric center stays at the
-    origin of the cylindrical axis, with one cap at origin and the other
-    at distance ``length`` along ``+axis``.
+    Always built along z, like Tube/Funnel/Helix/etc. For a horizontal
+    capsule, rotate the result: ``Capsule(r=3, length=20).rotate([0, 90, 0])``.
     """
 
     equations = [
@@ -155,18 +155,15 @@ class Capsule(Component):
         "r, length > 0",
         "straight_length > 0",
     ]
-    axis = Param(str, default="z", one_of=("x", "y", "z"))
+
+    base = anchor(at=(0, 0, 0), normal=(0, 0, -1))
+    tip = anchor(at="0, 0, length", normal=(0, 0, 1))
 
     def build(self):
         body = cylinder(h=self.straight_length, r=self.r).up(self.r)
         bot = sphere(r=self.r).up(self.r)
         top = sphere(r=self.r).up(self.r + self.straight_length)
-        shape = union(body, bot, top)
-        if self.axis == "x":
-            shape = shape.rotate([0, 90, 0])
-        elif self.axis == "y":
-            shape = shape.rotate([-90, 0, 0])
-        return shape
+        return union(body, bot, top)
 
 
 class RectTube(Component):
@@ -200,6 +197,10 @@ class Prismoid(Component):
     ``shift=(0, 0)`` is the common case; an offset top is useful for
     transition parts between off-axis features.
 
+    Publishes a ``top_face`` anchor at the geometric center of the top
+    face (shift-aware), distinct from the bbox-derived ``top`` anchor
+    which would mislead when ``shift`` is non-zero.
+
     For a rectangular pyramid (pointed apex), use ``Pyramid`` with
     ``sides=4`` — ``Prismoid`` requires positive top dimensions to avoid
     degenerate polyhedron faces.
@@ -209,6 +210,8 @@ class Prismoid(Component):
         "bot_w, bot_d, top_w, top_d, h > 0",
     ]
     shift = Param(tuple, default=(0.0, 0.0))
+
+    top_face = anchor(at="shift[0], shift[1], h", normal=(0, 0, 1))
 
     def build(self):
         x_b, y_b = self.bot_w / 2.0, self.bot_d / 2.0
@@ -243,7 +246,7 @@ class Wedge(Component):
     +y (``base_h``); extruded ``thk`` along +z with the right-angle vertex
     at the origin.
 
-    ``fillet`` (default 0) softens all three corners. Note that rounding an
+    Pass ``fillet=r`` to soften all three corners. Note that rounding an
     acute corner by radius *r* pulls the tangent point back by roughly
     *r* / sin(α/2) from the vertex, so for a shallow wedge (large
     base_w / base_h ratio) even a small fillet visibly shrinks the x and y
@@ -251,16 +254,18 @@ class Wedge(Component):
     full ``base_w`` / ``base_h`` corners (rib gussets, ramp edges).
     """
 
+    # `fillet > 0` is a per-Param constraint that fires only when the value
+    # is non-None, matching the ChamferedBox opt-out pattern.
     equations = [
         "base_w, base_h, thk > 0",
-        "fillet >= 0",
+        "fillet > 0",
         "fillet < base_w / 2",
         "fillet < base_h / 2",
     ]
-    fillet = Param(float, default=0.0)
+    fillet = Param(float, default=None)
 
     def build(self):
-        if self.fillet == 0:
+        if self.fillet is None:
             profile = polygon(points=[
                 (0.0, 0.0),
                 (self.base_w, 0.0),

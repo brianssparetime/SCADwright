@@ -42,7 +42,7 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [Polyhedra](polyhedra.md)
 
-[`Prism`](polyhedra.md#prismsides-r-h), [`Pyramid`](polyhedra.md#pyramidsides-r-h), [`Prismoid`](polyhedra.md#prismoidbot_w-bot_d-top_w-top_d-h-shift0-0), [`Wedge`](polyhedra.md#wedgebase_w-base_h-thk-fillet0), [`Tetrahedron`, `Octahedron`, `Dodecahedron`, `Icosahedron`](polyhedra.md#platonic-solids), [`Torus`](polyhedra.md#torusmajor_r-minor_r), [`Dome`](polyhedra.md#domer), [`SphericalCap`](polyhedra.md#sphericalcapany-two-of-six-params), [`Capsule`](polyhedra.md#capsuler-length-axisz), [`PieSlice`](polyhedra.md#pieslicer-angles-h)
+[`Prism`](polyhedra.md#prismsides-r-h), [`Pyramid`](polyhedra.md#pyramidsides-r-h), [`Prismoid`](polyhedra.md#prismoidbot_w-bot_d-top_w-top_d-h-shift0-0), [`Wedge`](polyhedra.md#wedgebase_w-base_h-thk-fillet0), [`Tetrahedron`, `Octahedron`, `Dodecahedron`, `Icosahedron`](polyhedra.md#platonic-solids), [`Torus`](polyhedra.md#torusmajor_r-minor_r), [`Dome`](polyhedra.md#domer), [`SphericalCap`](polyhedra.md#sphericalcapany-two-of-six-params), [`Capsule`](polyhedra.md#capsuler-length), [`PieSlice`](polyhedra.md#pieslicer-angles-h)
 
 ### [Fillets and chamfers](fillets.md)
 
@@ -70,11 +70,11 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [Print-oriented shapes](print.md)
 
-[`HoneycombPanel`](print.md#honeycombpanelsize-cell_size-wall_thk), [`GridPanel`](print.md#gridpanelsize-cell_size-wall_thk), [`TriGridPanel`](print.md#trigridpanelsize-cell_size-wall_thk), [`TextPlate`](print.md#textplatelabel-plate_w-plate_h-plate_thk-depth-font_size), [`EmbossedLabel`](print.md#embossedlabellabel-plate_w-plate_h-plate_thk-depth-font_size), [`VentSlots`](print.md#ventslotswidth-height-thk-slot_width-slot_height-slot_count), [`PolyHole`](print.md#polyholed-h-sides8)
+[`HoneycombPanel`](print.md#honeycombpanelsize-cell_size-wall_thk), [`GridPanel`](print.md#gridpanelsize-cell_size-wall_thk), [`TriGridPanel`](print.md#trigridpanelsize-cell_size-wall_thk), [`TextPlate`](print.md#textplatelabel-plate_w-plate_h-plate_thk-depth-font_size), [`EmbossedLabel`](print.md#embossedlabellabel-plate_w-plate_h-plate_thk-depth-font_size), [`VentSlots`](print.md#ventslotswidth-height-thk-slot_width-slot_height-slot_count), [`PolyHole`](print.md#polyholed-h-sides)
 
 ### [Joints](joints.md)
 
-[`TabSlot`](joints.md#tabslottab_w-tab_h-tab_d-clearance), [`GripTab`](joints.md#griptabtab_w-tab_h-tab_d-taper), [`SnapHook`](joints.md#snaphookarm_length-hook_depth-hook_height-thk-width), [`SnapPin`](joints.md#snappind-h-slot_width-slot_depth-barb_depth-barb_height), [`AlignmentPin`](joints.md#alignmentpind-h-lead_in), [`PressFitPeg`](joints.md#pressfitpegshaft_d-shaft_h-flange_d-flange_h-lead_in)
+[`TabSlot`](joints.md#tabslottab_w-tab_h-tab_d-clearance), [`GripTab`](joints.md#griptabtab_w-tab_h-tab_d-taper), [`SnapHook`](joints.md#snaphookarm_length-hook_depth-hook_height-thk-width), [`SnapPin`](joints.md#snappind-h-slot_width-slot_depth-barb_depth-barb_height-clearance), [`AlignmentPin`](joints.md#alignmentpind-h-lead_in-clearance), [`PressFitPeg`](joints.md#pressfitpegshaft_d-shaft_h-flange_d-flange_h-lead_in-interference)
 
 ### [Ecosystem](ecosystem.md)
 

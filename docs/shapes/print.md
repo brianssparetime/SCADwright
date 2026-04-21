@@ -77,12 +77,12 @@ VentSlots(width=30, height=20, thk=2, slot_width=20, slot_height=1.5, slot_count
 
 Shapes that compensate for FDM print-process artifacts.
 
-### `PolyHole(d, h, sides=8)`
+### `PolyHole(d, h, sides)`
 
-Laird-compensated polygonal hole cutter. OpenSCAD renders circles as n-gons, so a plain `cylinder(d=d)` used as a hole prints to an *inscribed* diameter smaller than `d`. `PolyHole` scales the polygon's circumradius so the inscribed circle matches the requested `d` exactly — the standard FDM drilled-fit fix. `sides` pins the cutter's `$fn` locally so a higher ambient resolution doesn't undo the compensation.
+Laird-compensated polygonal hole cutter. OpenSCAD renders circles as n-gons, so a plain `cylinder(d=d)` used as a hole prints to an *inscribed* diameter smaller than `d`. `PolyHole` scales the polygon's circumradius so the inscribed circle matches the requested `d` exactly — the standard FDM drilled-fit fix. `sides` pins the cutter's `$fn` locally so a higher ambient resolution doesn't undo the compensation. Typical FDM values are 6 or 8.
 
 ```python
-part = difference(plate, PolyHole(d=6, h=10).through(plate))
+part = difference(plate, PolyHole(d=6, h=10, sides=8).through(plate))
 ```
 
-Publishes `circumradius`.
+`self.d` is the as-printed (inscribed) diameter; `self.circumradius` is the internal polygon measure.

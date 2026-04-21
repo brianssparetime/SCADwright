@@ -118,13 +118,13 @@ Parameters: `cap_height`, `cap_dia`, `cap_r`, `sphere_r`. All are published as r
 
 See [examples/convex-caliper.py](../examples/convex-caliper.py) for a worked example that defines this Component inline to demonstrate the equation solver.
 
-## `Capsule(r, length, axis="z")`
+## `Capsule(r, length)`
 
-Pill / stadium solid: a cylinder with hemispherical caps on both ends. `length` is the total end-to-end distance (hemispheres included); `r` is the radius of both the cylinder and the caps. The straight-section height is published as `straight_length`. `axis` picks which direction the capsule runs (default z).
+Pill / stadium solid: a cylinder with hemispherical caps on both ends. `length` is the total end-to-end distance along +z (hemispheres included); `r` is the radius of both the cylinder and the caps. The straight-section height is published as `straight_length`. `base` and `tip` anchors at z=0 and z=length point outward. For a horizontal capsule, rotate the result.
 
 ```python
-Capsule(r=3, length=20)               # vertical (z) pill
-Capsule(r=3, length=20, axis="x")     # horizontal along x
+Capsule(r=3, length=20)                             # vertical (z) pill
+Capsule(r=3, length=20).rotate([0, 90, 0])          # horizontal along x
 ```
 
 ![Capsule](images/capsule.png)

@@ -75,19 +75,18 @@ class SnapPin(Component):
     ``barb_height`` of z-extent at the tip.
 
     Publishes ``socket_d`` (= ``d`` + 2*``clearance``) and a ``.socket``
-    @property returning the matching through-hole cutter.
+    @property returning the matching through-hole cutter. ``clearance``
+    is print-process dependent — typical FDM values are 0.1–0.3 mm.
     """
 
     equations = [
-        "d, h, slot_width, slot_depth, barb_depth, barb_height > 0",
-        "clearance >= 0",
+        "d, h, slot_width, slot_depth, barb_depth, barb_height, clearance > 0",
         "socket_d == d + 2 * clearance",
         "slot_depth < h",
         "barb_height <= slot_depth",
         "slot_width < d",
         "barb_depth < d / 2",
     ]
-    clearance = Param(float, default=0.2)
 
     base = anchor(at=(0, 0, 0), normal=(0, 0, -1))
     tip = anchor(at="0, 0, h", normal=(0, 0, 1))
@@ -95,15 +94,16 @@ class SnapPin(Component):
     def build(self):
         body = cylinder(h=self.h, r=self.d / 2)
 
-        # Slot: cube-cutter spanning the full diameter in y, width slot_width
-        # in x, depth slot_depth in z from the top. EPS on y so the cutter
-        # protrudes past the cylinder surface (through() can't detect the
-        # y-axis coincidence when the parent is a cylinder).
-        eps = 0.1
-        slot_cutter = cube(
-            [self.slot_width, self.d + 2 * eps, self.slot_depth],
-            center="x",
-        ).translate([0, -(self.d / 2 + eps), self.h - self.slot_depth])
+        # Slot cutter: cube sized to the cylinder's diameter in y and the
+        # requested depth in z. Its ±y faces land on the cylinder's ±d/2
+        # bbox faces and its top face on z=h, so through(body) extends
+        # those faces automatically — no manual EPS.
+        slot_cutter = (
+            cube([self.slot_width, self.d, self.slot_depth], center="x")
+            .back(self.d / 2)
+            .up(self.h - self.slot_depth)
+            .through(body)
+        )
         pin = difference(body, slot_cutter)
 
         barb_right = self._barb()

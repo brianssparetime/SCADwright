@@ -106,8 +106,7 @@ def test_vent_slots_too_few_raises():
 def test_poly_hole_circumradius_compensated():
     """The polygon's inscribed diameter must equal the nominal d."""
     import math
-    p = PolyHole(d=6, h=10)
-    assert p.sides == 8  # default
+    p = PolyHole(d=6, h=10, sides=8)
     inscribed_d = 2 * p.circumradius * math.cos(math.pi / p.sides)
     assert inscribed_d == pytest.approx(6.0, abs=1e-9)
 
@@ -134,4 +133,9 @@ def test_poly_hole_bad_sides_raises():
 
 def test_poly_hole_bad_d_raises():
     with pytest.raises(ValidationError, match="d"):
-        PolyHole(d=-1, h=10)
+        PolyHole(d=-1, h=10, sides=8)
+
+
+def test_poly_hole_sides_required():
+    with pytest.raises(ValidationError):
+        PolyHole(d=6, h=10)

@@ -19,17 +19,16 @@ class AlignmentPin(Component):
 
     Sits on z=0 with its tip at z=``h``. Publishes ``socket_d``
     (= ``d`` + 2*``clearance``) and a ``.socket`` @property returning
-    the matching blind-hole cutter.
+    the matching blind-hole cutter. ``clearance`` is print-process
+    dependent — typical FDM values are 0.05–0.2 mm per side.
     """
 
     equations = [
-        "d, h, lead_in > 0",
-        "clearance >= 0",
+        "d, h, lead_in, clearance > 0",
         "socket_d == d + 2 * clearance",
         "lead_in < h",
         "lead_in < d / 2",
     ]
-    clearance = Param(float, default=0.1)
 
     base = anchor(at=(0, 0, 0), normal=(0, 0, -1))
     tip = anchor(at="0, 0, h", normal=(0, 0, 1))
@@ -62,18 +61,17 @@ class PressFitPeg(Component):
     Flange sits on z=0; the shaft rises from z=``flange_h``; the tip is
     at z=``flange_h`` + ``shaft_h``. Publishes ``socket_d``
     (= ``shaft_d`` - 2*``interference``) and a ``.socket`` @property
-    returning the matching through-hole cutter.
+    returning the matching through-hole cutter. ``interference`` is
+    print-process dependent — typical FDM values are 0.05–0.15 mm.
     """
 
     equations = [
-        "shaft_d, shaft_h, flange_d, flange_h, lead_in > 0",
-        "interference >= 0",
+        "shaft_d, shaft_h, flange_d, flange_h, lead_in, interference > 0",
         "socket_d == shaft_d - 2 * interference",
         "flange_d > shaft_d",
         "lead_in < shaft_h",
         "lead_in < shaft_d / 2",
     ]
-    interference = Param(float, default=0.1)
 
     seat = anchor(at="0, 0, flange_h", normal=(0, 0, -1))
     tip = anchor(at="0, 0, flange_h + shaft_h", normal=(0, 0, 1))

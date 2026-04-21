@@ -243,7 +243,7 @@ Wedge(base_w=10, base_h=6, thk=20)                # triangular-prism ramp/rib (+
 Torus(major_r=20, minor_r=5)                      # donut (partial with angle=)
 Dome(r=15, thk=2)                                 # hollow hemisphere
 SphericalCap(sphere_r=20, cap_height=8)           # equation-solved cap
-Capsule(r=3, length=20)                           # cylinder + hemisphere caps (axis=)
+Capsule(r=3, length=20)                           # cylinder + hemisphere caps (z-axis)
 PieSlice(r=10, angles=(0, 90), h=5)               # cylindrical sector
 
 # Fillets:
@@ -273,14 +273,16 @@ Spring(r=8, wire_r=0.5, pitch=3, turns=5)         # with flat ends
 # Print:
 HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.5, font_size=8)
-PolyHole(d=6, h=10)                               # Laird-compensated FDM hole
+PolyHole(d=6, h=10, sides=8)                      # Laird-compensated FDM hole
 
 # Joints:
 TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)      # finger joint (.slot cutter)
 SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
-SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5)
-AlignmentPin(d=4, h=8, lead_in=1)                        # locator pin (.socket cutter)
-PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)
+SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5,
+        clearance=0.2)
+AlignmentPin(d=4, h=8, lead_in=1, clearance=0.1)         # locator pin (.socket cutter)
+PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5,
+            interference=0.1)
 
 # 2D profiles:
 rounded_rect(20, 10, r=2)                         # rounded rectangle

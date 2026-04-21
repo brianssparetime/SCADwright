@@ -17,26 +17,12 @@ def test_capsule_straight_length_solved():
     assert c.straight_length == pytest.approx(14.0)
 
 
-def test_capsule_bbox_z_axis():
+def test_capsule_bbox():
     c = Capsule(r=3, length=20, fn=64)
     bb = bbox(c)
     assert bb.size[0] == pytest.approx(6.0, abs=0.2)
     assert bb.size[1] == pytest.approx(6.0, abs=0.2)
     assert bb.size[2] == pytest.approx(20.0, abs=0.2)
-
-
-def test_capsule_bbox_x_axis():
-    c = Capsule(r=3, length=20, axis="x", fn=64)
-    bb = bbox(c)
-    assert bb.size[0] == pytest.approx(20.0, abs=0.2)
-    assert bb.size[2] == pytest.approx(6.0, abs=0.2)
-
-
-def test_capsule_bbox_y_axis():
-    c = Capsule(r=3, length=20, axis="y", fn=64)
-    bb = bbox(c)
-    assert bb.size[1] == pytest.approx(20.0, abs=0.2)
-    assert bb.size[0] == pytest.approx(6.0, abs=0.2)
 
 
 def test_capsule_emits_union():
@@ -52,9 +38,13 @@ def test_capsule_too_short_raises():
         Capsule(r=5, length=5)
 
 
-def test_capsule_bad_axis_raises():
-    with pytest.raises(ValidationError):
-        Capsule(r=3, length=20, axis="w")
+def test_capsule_anchors():
+    c = Capsule(r=3, length=20)
+    anchors = c.get_anchors()
+    assert anchors["base"].position == pytest.approx((0.0, 0.0, 0.0))
+    assert anchors["base"].normal == pytest.approx((0.0, 0.0, -1.0))
+    assert anchors["tip"].position == pytest.approx((0.0, 0.0, 20.0))
+    assert anchors["tip"].normal == pytest.approx((0.0, 0.0, 1.0))
 
 
 # --- RectTube ---
@@ -119,6 +109,16 @@ def test_prismoid_emits_polyhedron():
 def test_prismoid_zero_top_raises():
     with pytest.raises(ValidationError, match="top_w"):
         Prismoid(bot_w=20, bot_d=20, top_w=0, top_d=10, h=15)
+
+
+def test_prismoid_top_face_anchor_default():
+    p = Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15)
+    assert p.get_anchors()["top_face"].position == pytest.approx((0.0, 0.0, 15.0))
+
+
+def test_prismoid_top_face_anchor_respects_shift():
+    p = Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15, shift=(5, 3))
+    assert p.get_anchors()["top_face"].position == pytest.approx((5.0, 3.0, 15.0))
 
 
 # --- Wedge ---

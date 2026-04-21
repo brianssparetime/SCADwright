@@ -43,12 +43,13 @@ SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
 
 *`SnapHook(arm_length=12, hook_depth=2, hook_height=2, thk=1.5, width=5)` — cantilever with a ramped barb; the arm flexes on insertion, the catch grips a ledge.*
 
-### `SnapPin(d, h, slot_width, slot_depth, barb_depth, barb_height)`
+### `SnapPin(d, h, slot_width, slot_depth, barb_depth, barb_height, clearance)`
 
-Split-tined compliant pin. A cylindrical pin with a vertical slot cut through its tip, dividing the top portion into two flexible tines. Each tine carries an outward barb near the top; the barbs compress inward during insertion through a matching hole, then spring back to retain the pin on the far side. Publishes `socket_d` and a `.socket` @property returning the through-hole cutter (sized to `d + 2*clearance`, default `clearance=0.2`).
+Split-tined compliant pin. A cylindrical pin with a vertical slot cut through its tip, dividing the top portion into two flexible tines. Each tine carries an outward barb near the top; the barbs compress inward during insertion through a matching hole, then spring back to retain the pin on the far side. Publishes `socket_d` (= `d + 2*clearance`) and a `.socket` @property returning the through-hole cutter. `clearance` is print-process dependent — typical FDM values are 0.1–0.3 mm.
 
 ```python
-pin = SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5)
+pin = SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5,
+              clearance=0.2)
 sheet = difference(sheet, pin.socket.translate([x, y, 0]).through(sheet))
 ```
 
@@ -58,12 +59,12 @@ sheet = difference(sheet, pin.socket.translate([x, y, 0]).through(sheet))
 
 ## Locators
 
-### `AlignmentPin(d, h, lead_in)`
+### `AlignmentPin(d, h, lead_in, clearance)`
 
-Cylindrical pin with a tapered lead-in tip. For location only (not load-bearing): used in pairs at well-defined positions to constrain two parts' relative orientation while other features (screws, clips) provide retention. Publishes `socket_d` (= `d + 2*clearance`, default `clearance=0.1`) and a `.socket` @property returning the matching blind-hole cutter.
+Cylindrical pin with a tapered lead-in tip. For location only (not load-bearing): used in pairs at well-defined positions to constrain two parts' relative orientation while other features (screws, clips) provide retention. Publishes `socket_d` (= `d + 2*clearance`) and a `.socket` @property returning the matching blind-hole cutter. `clearance` is print-process dependent — typical FDM values are 0.05–0.2 mm per side.
 
 ```python
-pin = AlignmentPin(d=4, h=8, lead_in=1)
+pin = AlignmentPin(d=4, h=8, lead_in=1, clearance=0.1)
 mating_part = difference(mating_part, pin.socket.translate([x, y, 0]))
 ```
 
@@ -71,12 +72,13 @@ mating_part = difference(mating_part, pin.socket.translate([x, y, 0]))
 
 *`AlignmentPin(d=4, h=8, lead_in=1)` — locator with a tapered tip for easy engagement.*
 
-### `PressFitPeg(shaft_d, shaft_h, flange_d, flange_h, lead_in)`
+### `PressFitPeg(shaft_d, shaft_h, flange_d, flange_h, lead_in, interference)`
 
-Flanged press-fit peg. A shaft with a broader flange at its base and a tapered lead-in at its tip. The flange seats against one sheet; the shaft passes through a matching hole in the opposing sheet and holds by friction. Publishes `socket_d` (= `shaft_d - 2*interference`, default `interference=0.1`) and a `.socket` @property returning the through-hole cutter — note the socket is *smaller* than the shaft, not larger.
+Flanged press-fit peg. A shaft with a broader flange at its base and a tapered lead-in at its tip. The flange seats against one sheet; the shaft passes through a matching hole in the opposing sheet and holds by friction. Publishes `socket_d` (= `shaft_d - 2*interference`) and a `.socket` @property returning the through-hole cutter — note the socket is *smaller* than the shaft, not larger. `interference` is print-process dependent — typical FDM values are 0.05–0.15 mm.
 
 ```python
-peg = PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)
+peg = PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5,
+                  interference=0.1)
 mating_sheet = difference(mating_sheet, peg.socket.translate([x, y, 0]).through(mating_sheet))
 ```
 
