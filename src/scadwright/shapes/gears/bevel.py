@@ -28,7 +28,9 @@ class BevelGear(Component):
         "cone_angle > 0",
         "cone_angle < 90",
         "pitch_r == module * teeth / 2",
+        "base_r == pitch_r * cos(pressure_angle * pi / 180)",
         "outer_r == pitch_r + module",
+        "root_r == pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=6)
     pressure_angle = Param(float, default=20.0)

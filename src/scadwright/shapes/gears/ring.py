@@ -22,6 +22,7 @@ class RingGear(Component):
         "pressure_angle > 0",
         "pressure_angle <= 45",
         "pitch_r == module * teeth / 2",
+        "base_r == pitch_r * cos(pressure_angle * pi / 180)",
         "outer_r == pitch_r + module",
         "root_r == pitch_r - 1.25 * module",
     ]

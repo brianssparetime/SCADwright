@@ -149,6 +149,15 @@ def test_ring_gear_publishes_radii():
     assert rg.pitch_r == pytest.approx(30.0)
 
 
+def test_ring_gear_publishes_full_radius_set():
+    """RingGear should publish the same four radii as SpurGear for consistency."""
+    rg = RingGear(module=2, teeth=30, h=5, rim_thk=3)
+    assert rg.pitch_r == pytest.approx(30.0)
+    assert rg.outer_r == pytest.approx(32.0)
+    assert rg.root_r == pytest.approx(30.0 - 1.25 * 2)
+    assert rg.base_r == pytest.approx(30.0 * math.cos(math.radians(20)))
+
+
 # --- BevelGear ---
 
 
@@ -162,6 +171,14 @@ def test_bevel_gear_builds():
 def test_bevel_gear_publishes_radii():
     bg = BevelGear(module=2, teeth=20, h=5)
     assert bg.pitch_r == pytest.approx(20.0)
+
+
+def test_bevel_gear_publishes_full_radius_set():
+    bg = BevelGear(module=2, teeth=20, h=5)
+    assert bg.pitch_r == pytest.approx(20.0)
+    assert bg.outer_r == pytest.approx(22.0)
+    assert bg.root_r == pytest.approx(20.0 - 1.25 * 2)
+    assert bg.base_r == pytest.approx(20.0 * math.cos(math.radians(20)))
 
 
 # --- Worm ---

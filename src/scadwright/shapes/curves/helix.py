@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.shapes.curves.paths import helix_path
@@ -44,8 +46,6 @@ class Spring(Component):
     points_per_turn = Param(int, default=36)
 
     def build(self):
-        import math
-
         ppt = self.points_per_turn
         profile = circle_profile(self.wire_r, segments=max(8, ppt // 3))
 

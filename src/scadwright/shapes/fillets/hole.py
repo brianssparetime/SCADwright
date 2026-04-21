@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from scadwright.boolops import union
 from scadwright.component.base import Component
+from scadwright.component.anchors import anchor
 from scadwright.primitives import cylinder
 from scadwright.shapes.fasteners.data import get_screw_spec
 
@@ -15,12 +16,17 @@ class Countersink(Component):
     parent. The cone sits at z=0 opening downward (into the part);
     the shaft extends upward.
 
+    Publishes a ``tip`` anchor at z=0 pointing -z, matching the
+    convention on ``Bolt`` — useful for ``part.attach(hole.tip)``.
+
     Use ``.through(parent)`` to auto-extend for clean cuts.
     """
 
     equations = [
         "shaft_d, head_d, head_depth, shaft_depth > 0",
     ]
+
+    tip = anchor(at=(0, 0, 0), normal=(0, 0, -1))
 
     def build(self):
         shaft = cylinder(h=self.shaft_depth, d=self.shaft_d)
@@ -38,12 +44,17 @@ class Counterbore(Component):
     Produces a stepped cylinder: narrow shaft + wider bore. The shaft
     starts at z=0; the bore sits on top.
 
+    Publishes a ``tip`` anchor at z=0 pointing -z, matching the
+    convention on ``Bolt`` — useful for ``part.attach(hole.tip)``.
+
     Use ``.through(parent)`` to auto-extend for clean cuts.
     """
 
     equations = [
         "shaft_d, head_d, head_depth, shaft_depth > 0",
     ]
+
+    tip = anchor(at=(0, 0, 0), normal=(0, 0, -1))
 
     def build(self):
         shaft = cylinder(h=self.shaft_depth, d=self.shaft_d)

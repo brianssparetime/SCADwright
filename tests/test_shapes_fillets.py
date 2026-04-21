@@ -152,3 +152,22 @@ def test_countersink_for_screw_pulls_dims_from_spec():
 def test_factory_returns_correct_type():
     assert isinstance(counterbore_for_screw("M3", 10), Counterbore)
     assert isinstance(countersink_for_screw("M3", 10), Countersink)
+
+
+# --- tip anchor (consistency with Bolt.tip) ---
+
+
+def test_counterbore_publishes_tip_anchor():
+    c = Counterbore(shaft_d=3, head_d=6, head_depth=3, shaft_depth=10)
+    anchors = c.get_anchors()
+    assert "tip" in anchors
+    assert anchors["tip"].position == (0, 0, 0)
+    assert anchors["tip"].normal == (0, 0, -1)
+
+
+def test_countersink_publishes_tip_anchor():
+    c = Countersink(shaft_d=3, head_d=6, head_depth=2, shaft_depth=10)
+    anchors = c.get_anchors()
+    assert "tip" in anchors
+    assert anchors["tip"].position == (0, 0, 0)
+    assert anchors["tip"].normal == (0, 0, -1)

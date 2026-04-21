@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from scadwright.boolops import difference, minkowski
 from scadwright.component.base import Component
 from scadwright.component.params import Param
@@ -107,20 +109,20 @@ class FilletRing(Component):
     slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
 
     def build(self):
-        import math as _m
-
-        angle_rad = _m.radians(self.base_angle)
-        eps = 0.001 * max(self.od, 1.0)
+        angle_rad = math.radians(self.base_angle)
 
         if self.slant == "outwards":
-            cone_h = _m.tan(angle_rad) * (self.od / 2.0)
+            cone_h = math.tan(angle_rad) * (self.od / 2.0)
             cone = cylinder(h=cone_h, r1=self.od / 2.0, r2=0)
-            cut_h = _m.tan(angle_rad) * (self.id / 2.0)
+            cut_h = math.tan(angle_rad) * (self.id / 2.0)
             cutter = cylinder(h=cut_h, r=self.id / 2.0).through(cone)
             return difference(cone, cutter)
 
-        # slant == "inwards"
-        h = _m.tan(angle_rad) * (self.od - self.id) / 2.0
+        # slant == "inwards": manual EPS here is the style-guide-allowed
+        # "non-axis-aligned cutter" edge case — cutter's side face is
+        # slanted, so through() can't detect the coincident faces.
+        eps = 0.001 * max(self.od, 1.0)
+        h = math.tan(angle_rad) * (self.od - self.id) / 2.0
         outer = cylinder(h=h, r=self.od / 2.0)
         cutter = cylinder(
             h=h + 2 * eps,

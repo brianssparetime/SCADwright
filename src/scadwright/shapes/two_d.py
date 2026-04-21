@@ -8,7 +8,7 @@ Naming convention:
 
 from __future__ import annotations
 
-import math as _m
+import math
 
 from scadwright.boolops import difference, intersection, minkowski, union
 from scadwright.component.base import Component
@@ -46,7 +46,7 @@ def regular_polygon(sides: int, r: float):
     if sides < 3:
         raise ValidationError(f"regular_polygon: sides must be >= 3, got {sides}")
     points = [
-        (r * _m.cos(2 * _m.pi * i / sides), r * _m.sin(2 * _m.pi * i / sides))
+        (r * math.cos(2 * math.pi * i / sides), r * math.sin(2 * math.pi * i / sides))
         for i in range(sides)
     ]
     return polygon(points=points)
@@ -72,7 +72,7 @@ class Sector(Component):
         verts = [(0.0, 0.0)]
         for i in range(steps + 1):
             t = start + (end - start) * (i / steps)
-            verts.append((self.r * _m.cos(_m.radians(t)), self.r * _m.sin(_m.radians(t))))
+            verts.append((self.r * math.cos(math.radians(t)), self.r * math.sin(math.radians(t))))
         wedge = polygon(points=verts)
         return intersection(circle(r=self.r), wedge)
 
@@ -105,8 +105,8 @@ class RoundedEndsArc(Component):
         start, end = float(self.angles[0]), float(self.angles[1])
         endpoints = []
         for theta in (start, end):
-            x = self.r * _m.cos(_m.radians(theta))
-            y = self.r * _m.sin(_m.radians(theta))
+            x = self.r * math.cos(math.radians(theta))
+            y = self.r * math.sin(math.radians(theta))
             endpoints.append(
                 circle(r=self.end_r).translate([x, y, 0])
             )

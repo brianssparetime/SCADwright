@@ -7,6 +7,7 @@ from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.primitives import cube, cylinder
 from scadwright.shapes.fasteners.data import get_insert_spec, get_nut_spec
+from scadwright.shapes.two_d import regular_polygon
 
 
 class HeatSetPocket(Component):
@@ -50,8 +51,6 @@ class CaptiveNutPocket(Component):
         self.af = spec.af
 
     def build(self):
-        from scadwright.shapes.two_d import regular_polygon
-
         s = self._spec
         hex_pocket = regular_polygon(sides=6, r=s.af / 2).linear_extrude(
             height=self.depth
