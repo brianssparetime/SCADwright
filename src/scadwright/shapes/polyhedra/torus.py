@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import rotate_extrude
 from scadwright.primitives import circle
 
@@ -21,14 +20,9 @@ class Torus(Component):
         "major_r, minor_r > 0",
         "angle > 0",
         "angle <= 360",
+        "minor_r < major_r",
     ]
     angle = Param(float, default=360.0)
-
-    def setup(self):
-        if self.minor_r >= self.major_r:
-            raise ValidationError(
-                f"Torus: minor_r ({self.minor_r}) must be < major_r ({self.major_r})"
-            )
 
     def build(self):
         cross = circle(r=self.minor_r).right(self.major_r)

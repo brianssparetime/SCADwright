@@ -99,14 +99,9 @@ class FilletRing(Component):
         "id, od > 0",
         "base_angle > 0",
         "base_angle < 90",
+        "id < od",
     ]
     slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
-
-    def setup(self):
-        if self.id >= self.od:
-            raise ValidationError(
-                f"FilletRing: id ({self.id}) must be < od ({self.od})"
-            )
 
     def build(self):
         import math as _m

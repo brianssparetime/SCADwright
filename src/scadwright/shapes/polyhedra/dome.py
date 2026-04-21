@@ -20,6 +20,8 @@ class Dome(Component):
     thk = Param(float, default=None)
 
     def setup(self):
+        # `thk` can't go in equations because of the None sentinel
+        # (solid vs hollow). Validate inline when present.
         if self.thk is not None:
             if self.thk <= 0:
                 raise ValidationError(
@@ -56,14 +58,8 @@ class SphericalCap(Component):
         "cap_r == cap_dia / 2",
         "cap_r**2 == cap_height * (2 * sphere_r - cap_height)",
         "cap_height, cap_dia, cap_r, sphere_r > 0",
+        "cap_height <= 2 * sphere_r",
     ]
-
-    def setup(self):
-        if self.cap_height > 2 * self.sphere_r:
-            raise ValidationError(
-                f"SphericalCap: cap_height ({self.cap_height}) cannot exceed "
-                f"the sphere diameter ({2 * self.sphere_r})"
-            )
 
     def build(self):
         s = sphere(r=self.sphere_r).up(self.sphere_r - self.cap_height)

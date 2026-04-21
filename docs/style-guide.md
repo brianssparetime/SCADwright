@@ -33,6 +33,12 @@ class Tube(Component):
 
 Specify any two of (id, od, thk) and the solver fills in the third. Constraints (`> 0`) attach validators automatically.
 
+`equations` accepts three forms:
+
+- **Equalities** (`"od == id + 2*thk"`): drive the solver. Sympy functions like `cos`, `sqrt`, `pi` are available — useful for trig (`"base_r == pitch_r * cos(pressure_angle * pi / 180)"`).
+- **Per-Param constraints** (`"x > 0"`, `"x, y, z >= -5"`): RHS is a numeric literal; compile to validators on the listed Params and fire on assignment.
+- **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): RHS references other Params or expressions; evaluated after all Params are set, before `setup()` runs. Use these instead of writing var-vs-var checks in `setup()`.
+
 ### Declare standalone float parameters with `params`
 
 Floats that don't appear in any equation but need no special type or validators (but prefer constraints and equatiosn when feasible):

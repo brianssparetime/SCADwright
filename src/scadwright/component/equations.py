@@ -283,17 +283,29 @@ def _sufficient_subsets_with_defaults(
 
 
 def classify_equation(eq_str: str) -> str:
-    """Return ``"equality"`` or ``"constraint"`` for an equation string.
+    """Return ``"equality"``, ``"constraint"``, or ``"cross_constraint"``.
 
-    Equalities contain ``==`` (or a single ``=`` that is not ``>=``/``<=``).
-    Constraints contain ``>``, ``>=``, ``<``, or ``<=`` without ``==``.
+    - Equalities contain ``==`` (or a single ``=`` that is not ``>=``/``<=``).
+    - Constraints have an inequality operator with a numeric RHS — they
+      compile to a per-Param validator (``"x > 0"``, ``"x, y >= -5"``).
+    - Cross-constraints have an inequality with a non-numeric RHS — they
+      reference other Params or expressions (``"id < od"``,
+      ``"cap_height < 2 * sphere_r"``) and are evaluated after all Params
+      are set.
     """
+    import re as _re
+
     s = eq_str.strip()
     if "==" in s:
         return "equality"
-    # Check for inequality operators (must come before single-= check).
-    if ">=" in s or "<=" in s or ">" in s or "<" in s:
-        return "constraint"
+    m = _re.search(r'(>=|<=|>|<)', s)
+    if m:
+        rhs_part = s[m.end():].strip()
+        try:
+            float(rhs_part)
+            return "constraint"
+        except ValueError:
+            return "cross_constraint"
     if "=" in s:
         return "equality"
     raise ValidationError(
@@ -429,6 +441,131 @@ def parse_constraints(
             result.setdefault(name, []).append(validator)
 
     return result
+
+
+def parse_cross_constraints(
+    cross_strs: Sequence[str], declared_params: Iterable[str]
+) -> tuple[list[tuple], set[str]]:
+    """Parse var-vs-var inequality constraints into evaluable sympy form.
+
+    Returns (compiled, referenced_symbols) where ``compiled`` is a list of
+    ``(lhs_expr, op, rhs_expr, raw_str)`` tuples ready for runtime
+    evaluation, and ``referenced_symbols`` is the set of identifier names
+    appearing on either side (caller uses this to auto-declare any
+    undeclared Params).
+    """
+    _require_sympy()
+    import re as _re
+    import sympy as sp
+
+    declared = set(declared_params)
+    compiled: list[tuple] = []
+    referenced: set[str] = set()
+    constants = {sp.pi, sp.E, sp.I, sp.oo, sp.zoo, sp.nan, sp.EulerGamma, sp.Catalan}
+    _sympy_funcs = {"sin", "cos", "tan", "sqrt", "log", "exp", "abs",
+                    "asin", "acos", "atan", "atan2", "pi", "E", "I",
+                    "ceiling", "floor", "Abs", "sign", "Max", "Min"}
+
+    for raw in cross_strs:
+        s = raw.strip()
+        m = _re.search(r'(>=|<=|>|<)', s)
+        if not m:
+            raise ValidationError(
+                f"cross-constraint missing inequality operator: {raw!r}"
+            )
+        op = m.group(1)
+        lhs_part = s[:m.start()].strip()
+        rhs_part = s[m.end():].strip()
+
+        # Build a symbol-locals dict covering every identifier in the
+        # expression, so e.g. `id` resolves to a Symbol rather than the
+        # Python builtin.
+        idents = set(_re.findall(r'\b([a-zA-Z_]\w*)\b', lhs_part + " " + rhs_part))
+        symbol_cache = {n: sp.Symbol(n) for n in idents if n not in _sympy_funcs}
+        for name in declared:
+            symbol_cache.setdefault(name, sp.Symbol(name))
+
+        try:
+            rhs = sp.sympify(rhs_part, locals=symbol_cache)
+        except (sp.SympifyError, SyntaxError, TypeError) as exc:
+            raise ValidationError(
+                f"cross-constraint cannot parse RHS {rhs_part!r} in {raw!r}: {exc}"
+            ) from exc
+
+        # LHS may be comma-expanded: `"a, b < c"` → two constraints.
+        lhs_chunks = [
+            n.strip()
+            for n in lhs_part.replace(" ", ",").split(",")
+            if n.strip()
+        ]
+        if not lhs_chunks:
+            raise ValidationError(
+                f"cross-constraint has no LHS in {raw!r}"
+            )
+
+        for chunk in lhs_chunks:
+            try:
+                lhs = sp.sympify(chunk, locals=symbol_cache)
+            except (sp.SympifyError, SyntaxError, TypeError) as exc:
+                raise ValidationError(
+                    f"cross-constraint cannot parse LHS {chunk!r} in {raw!r}: {exc}"
+                ) from exc
+            compiled.append((lhs, op, rhs, raw))
+            for sym in lhs.free_symbols | rhs.free_symbols:
+                if sym not in constants:
+                    referenced.add(sym.name)
+
+    return compiled, referenced
+
+
+def evaluate_cross_constraints(
+    compiled: list[tuple],
+    values: dict[str, Any],
+    component_name: str,
+) -> None:
+    """Evaluate compiled cross-constraints with the populated Param values.
+
+    Raises ``ValidationError`` on the first violated constraint, with a
+    message naming the constraint and the offending values.
+    """
+    if not compiled:
+        return
+    import sympy as sp
+
+    # Only numeric Params can be substituted into a sympy expression.
+    # String/bool/object Params (like a `slant="outwards"`) are skipped.
+    subs = {
+        sp.Symbol(k): float(v)
+        for k, v in values.items()
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+    }
+
+    for lhs, op, rhs, raw in compiled:
+        try:
+            lhs_v = float(lhs.evalf(subs=subs))
+            rhs_v = float(rhs.evalf(subs=subs))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                f"{component_name}: cross-constraint {raw!r} cannot be "
+                f"evaluated (missing values?): {exc}"
+            ) from exc
+
+        ok = {
+            ">":  lhs_v >  rhs_v,
+            ">=": lhs_v >= rhs_v,
+            "<":  lhs_v <  rhs_v,
+            "<=": lhs_v <= rhs_v,
+        }[op]
+        if not ok:
+            ref_names = sorted({s.name for s in (lhs.free_symbols | rhs.free_symbols)})
+            details = ", ".join(
+                f"{n}={values[n]}" for n in ref_names if n in values
+            )
+            # Show the expanded form (e.g. `a < c` from raw `a, b < c`).
+            expanded = f"{sp.sstr(lhs)} {op} {sp.sstr(rhs)}"
+            raise ValidationError(
+                f"{component_name}: constraint violated: {expanded} (with {details})"
+            )
 
 
 def solve_instance(

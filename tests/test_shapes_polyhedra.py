@@ -117,7 +117,7 @@ def test_torus_partial():
 
 
 def test_torus_minor_ge_major_raises():
-    with pytest.raises(ValidationError, match="minor_r.*must be < major_r"):
+    with pytest.raises(ValidationError, match="minor_r < major_r"):
         Torus(major_r=5, minor_r=5)
 
 

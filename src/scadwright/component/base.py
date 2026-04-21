@@ -145,15 +145,19 @@ class Component(Node):
                 classify_equation,
                 extract_equality_symbols,
                 parse_constraints,
+                parse_cross_constraints,
                 parse_equations,
             )
 
             equalities = []
             constraints = []
+            cross_strs = []
             for s in all_eq_strs:
                 kind = classify_equation(s)
                 if kind == "equality":
                     equalities.append(s)
+                elif kind == "cross_constraint":
+                    cross_strs.append(s)
                 else:
                     constraints.append(s)
 
@@ -181,10 +185,29 @@ class Component(Node):
                     param = params[name]
                     param.validators = tuple(param.validators) + tuple(validators)
 
+            # Parse cross-constraints (var-vs-var inequalities). These get
+            # evaluated at instance-init time once all Params are set, so
+            # the parser also reports any new symbols to auto-declare.
+            cross_compiled: list = []
+            if cross_strs:
+                cross_compiled, cross_syms = parse_cross_constraints(
+                    cross_strs, params.keys()
+                )
+                for sym_name in cross_syms:
+                    if sym_name not in params:
+                        p = Param(float)
+                        p.__set_name__(cls, sym_name)
+                        setattr(cls, sym_name, p)
+                        params[sym_name] = p
+
             cls._parsed_equations = parse_equations(equalities, params.keys()) if equalities else None
             cls._has_equations = bool(equalities)
+            cls._cross_constraints = cross_compiled
+            cls._has_cross_constraints = bool(cross_compiled)
         elif not hasattr(cls, "_has_equations"):
             cls._has_equations = False
+            cls._has_cross_constraints = False
+            cls._cross_constraints = []
 
         cls.__params__ = params
 
@@ -443,6 +466,17 @@ def _make_param_init(cls, params: dict[str, Param]):
         for _impl_name in _IMPLICIT:
             if _impl_name in kwargs:
                 object.__setattr__(self, _impl_name, kwargs[_impl_name])
+
+        # Evaluate cross-constraints (var-vs-var inequalities) now that
+        # all Params are set. These run before setup() so violations are
+        # caught at the input-validation layer, before any computation.
+        if getattr(cls, "_has_cross_constraints", False):
+            from scadwright.component.equations import evaluate_cross_constraints
+
+            values = {name: getattr(self, name, None) for name in params}
+            evaluate_cross_constraints(
+                cls._cross_constraints, values, type(self).__name__
+            )
 
         # Resolve class-scope anchor defs into real anchors.
         _resolve_anchor_defs(self)
