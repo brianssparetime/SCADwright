@@ -28,9 +28,11 @@ class Custom(Node):
     child: Node
 
     def __post_init__(self):
+        from scadwright.errors import ValidationError
+
         names = [name for name, _ in self.kwargs]
         if names != sorted(names):
-            raise ValueError(
+            raise ValidationError(
                 f"Custom.kwargs must be sorted by name for stable "
                 f"module-hoisting hashes. Got: {names!r}. "
                 f"Use tuple(sorted(kwargs.items())) when constructing Custom directly."

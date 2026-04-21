@@ -5,6 +5,7 @@ import math
 import pytest
 
 from scadwright import bbox, emit_str
+from scadwright.errors import ValidationError
 from scadwright.shapes.curves import (
     Helix,
     Spring,
@@ -43,7 +44,7 @@ def test_bezier_path_endpoints():
 
 
 def test_bezier_path_wrong_count_raises():
-    with pytest.raises(ValueError, match="exactly 4"):
+    with pytest.raises(ValidationError, match="exactly 4"):
         bezier_path([(0, 0, 0), (1, 0, 0)])
 
 
@@ -64,7 +65,7 @@ def test_catmull_rom_two_points():
 
 
 def test_catmull_rom_too_few_raises():
-    with pytest.raises(ValueError, match="at least 2"):
+    with pytest.raises(ValidationError, match="at least 2"):
         catmull_rom_path([(0, 0, 0)])
 
 
@@ -111,12 +112,12 @@ def test_path_extrude_closed():
 
 
 def test_path_extrude_too_few_profile_raises():
-    with pytest.raises(ValueError, match="at least 3"):
+    with pytest.raises(ValidationError, match="at least 3"):
         path_extrude([(0, 0), (1, 0)], [(0, 0, 0), (0, 0, 1)])
 
 
 def test_path_extrude_too_few_path_raises():
-    with pytest.raises(ValueError, match="at least 2"):
+    with pytest.raises(ValidationError, match="at least 2"):
         path_extrude([(1, 0), (0, 1), (-1, 0)], [(0, 0, 0)])
 
 

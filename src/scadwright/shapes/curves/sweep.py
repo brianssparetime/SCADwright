@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 
+from scadwright.errors import ValidationError
 from scadwright.primitives import polyhedron as _polyhedron
 
 
@@ -32,9 +33,13 @@ def path_extrude(
     torus-like shapes). When False, flat end-caps are generated.
     """
     if len(profile) < 3:
-        raise ValueError(f"path_extrude: profile needs at least 3 points, got {len(profile)}")
+        raise ValidationError(
+            f"path_extrude: profile needs at least 3 points, got {len(profile)}"
+        )
     if len(path) < 2:
-        raise ValueError(f"path_extrude: path needs at least 2 points, got {len(path)}")
+        raise ValidationError(
+            f"path_extrude: path needs at least 2 points, got {len(path)}"
+        )
 
     frames = _compute_frames(path, closed)
     n_profile = len(profile)

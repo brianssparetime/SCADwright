@@ -6,6 +6,7 @@ import pytest
 
 from scadwright import Variant, current_variant, register_variants, variant
 from scadwright.api.variant import _reset_for_testing
+from scadwright.errors import ValidationError
 
 
 @pytest.fixture(autouse=True)
@@ -98,9 +99,9 @@ def test_variant_hashable():
 
 
 def test_register_variants_rejects_bad_input():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         register_variants("")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         register_variants(42)
 
 

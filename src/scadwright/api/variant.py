@@ -113,9 +113,12 @@ def current_variant() -> Variant:
 def register_variants(*names: str) -> None:
     """Declare variant names this project uses, enabling typo-detection for
     comparisons against names that may not have been activated yet."""
+    from scadwright.errors import ValidationError
     for n in names:
         if not isinstance(n, str) or not n:
-            raise ValueError(f"register_variants: names must be non-empty strings, got {n!r}")
+            raise ValidationError(
+                f"register_variants: names must be non-empty strings, got {n!r}"
+            )
         _known_variants.add(n)
 
 

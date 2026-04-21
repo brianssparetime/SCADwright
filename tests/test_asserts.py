@@ -2,6 +2,7 @@ import pytest
 
 from scadwright import BBox
 from scadwright.asserts import assert_bbox_equal, assert_contains, assert_fits_in, assert_no_collision
+from scadwright.errors import ValidationError
 from scadwright.primitives import cube
 # --- assert_fits_in ---
 
@@ -21,7 +22,7 @@ def test_fits_in_bbox_envelope():
 
 
 def test_fits_in_bad_envelope_size():
-    with pytest.raises(ValueError, match="3 elements"):
+    with pytest.raises(ValidationError, match="3 elements"):
         assert_fits_in(cube(1), [10, 10])
 
 

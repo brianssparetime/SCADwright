@@ -18,7 +18,7 @@ from scadwright._custom_transforms.base import unregister
 
 
 def test_custom_rejects_unsorted_kwargs():
-    with pytest.raises(ValueError, match="sorted by name"):
+    with pytest.raises(ValidationError, match="sorted by name"):
         Custom(name="x", kwargs=(("z", 1), ("a", 2)), child=cube(1))
 
 

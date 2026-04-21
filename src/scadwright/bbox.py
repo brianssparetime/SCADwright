@@ -554,10 +554,11 @@ def _bbox_with_context(node, ctx: Matrix) -> BBox:
     # Custom: expand and recurse.
     if isinstance(node, Custom):
         from scadwright._custom_transforms.base import get_transform
+        from scadwright.errors import BuildError
 
         t = get_transform(node.name)
         if t is None:
-            raise ValueError(f"bbox: unregistered custom transform {node.name!r}")
+            raise BuildError(f"bbox: unregistered custom transform {node.name!r}")
         expanded = t.expand(node.child, **node.kwargs_dict())
         return _bbox_with_context(expanded, ctx)
 

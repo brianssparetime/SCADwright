@@ -84,5 +84,6 @@ def test_cross_unit_vectors():
 
 
 def test_cross_dimension_check():
-    with pytest.raises(ValueError):
+    from scadwright.errors import ValidationError
+    with pytest.raises(ValidationError):
         scmath.cross([1, 0], [0, 1])

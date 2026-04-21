@@ -137,10 +137,11 @@ def __builtins_sum_of_squares(v) -> float:
 
 def cross(a, b) -> tuple[float, float, float]:
     """3D cross product."""
+    from scadwright.errors import ValidationError
     a = tuple(float(x) for x in a)
     b = tuple(float(x) for x in b)
     if len(a) != 3 or len(b) != 3:
-        raise ValueError("cross requires 3-vectors")
+        raise ValidationError("cross requires 3-vectors")
     return (
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],

@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 
 from scadwright.bbox import BBox, bbox as _bbox
+from scadwright.errors import ValidationError
 
 
 def _coerce_envelope(envelope) -> BBox:
@@ -18,9 +19,11 @@ def _coerce_envelope(envelope) -> BBox:
     try:
         items = list(envelope)
     except TypeError:
-        raise TypeError(f"envelope must be a BBox or 3-element size, got {type(envelope).__name__}")
+        raise ValidationError(
+            f"envelope must be a BBox or 3-element size, got {type(envelope).__name__}"
+        ) from None
     if len(items) != 3:
-        raise ValueError(f"envelope size must have 3 elements, got {len(items)}")
+        raise ValidationError(f"envelope size must have 3 elements, got {len(items)}")
     x, y, z = (float(v) for v in items)
     return BBox(min=(-x / 2.0, -y / 2.0, -z / 2.0), max=(x / 2.0, y / 2.0, z / 2.0))
 

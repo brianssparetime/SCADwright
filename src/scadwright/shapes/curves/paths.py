@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import math
 
+from scadwright.errors import ValidationError
+
 
 def helix_path(
     r: float,
@@ -46,7 +48,7 @@ def bezier_path(
     control2, end. For longer curves, chain multiple calls.
     """
     if len(control_points) != 4:
-        raise ValueError(
+        raise ValidationError(
             f"bezier_path requires exactly 4 control points, got {len(control_points)}"
         )
     p0, p1, p2, p3 = control_points
@@ -74,7 +76,7 @@ def catmull_rom_path(
     """
     n = len(points)
     if n < 2:
-        raise ValueError(
+        raise ValidationError(
             f"catmull_rom_path requires at least 2 points, got {n}"
         )
     if n == 2:
