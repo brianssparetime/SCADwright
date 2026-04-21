@@ -39,6 +39,8 @@ Specify any two of (id, od, thk) and the solver fills in the third. Constraints 
 - **Per-Param constraints** (`"x > 0"`, `"x, y, z >= -5"`): RHS is a numeric literal; compile to validators on the listed Params and fire on assignment.
 - **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): RHS references other Params or expressions; evaluated after all Params are set, before `setup()` runs. Use these instead of writing var-vs-var checks in `setup()`.
 
+Optional Params (declared with `default=None`) opt out of validation when unset — both per-Param validators and cross-constraints skip silently if a referenced value is `None`. So `Param(float, default=None)` coexists cleanly with `equations = ["x > 0", "x < y"]`: when `x` is omitted, neither fires.
+
 ### Declare standalone float parameters with `params`
 
 Floats that don't appear in any equation but need no special type or validators (but prefer constraints and equatiosn when feasible):

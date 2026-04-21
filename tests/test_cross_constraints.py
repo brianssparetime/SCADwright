@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from scadwright import Component
+from scadwright import Component, Param
 from scadwright.errors import ValidationError
 from scadwright.primitives import cube
 
@@ -88,3 +88,44 @@ def test_cross_constraint_expression_rhs_fails():
     # 25 not < 2*10 = 20
     with pytest.raises(ValidationError, match=r"cap_height < 2\*sphere_r"):
         _ExpressionRhs(cap_height=25, sphere_r=10)
+
+
+# --- None-skip behavior for optional Params ---
+
+
+class _OptionalThk(Component):
+    """Optional thk: when None, no thk constraints fire."""
+
+    equations = [
+        "r > 0",
+        "thk > 0",
+        "thk < r",
+    ]
+    thk = Param(float, default=None)
+
+    def build(self):
+        return cube([self.r, self.r, 1])
+
+
+def test_optional_param_skips_per_param_validator_when_none():
+    # thk omitted → defaults to None → `thk > 0` validator does NOT fire.
+    obj = _OptionalThk(r=10)
+    assert obj.thk is None
+
+
+def test_optional_param_skips_cross_constraint_when_none():
+    # thk omitted → `thk < r` cross-constraint does NOT fire.
+    obj = _OptionalThk(r=10)
+    assert obj.thk is None
+
+
+def test_optional_param_validates_when_provided():
+    # thk = -1 → `thk > 0` validator fires.
+    with pytest.raises(ValidationError, match="thk: must be positive"):
+        _OptionalThk(r=10, thk=-1)
+
+
+def test_optional_param_cross_constraint_fires_when_provided():
+    # thk = 11, r = 10 → `thk < r` cross-constraint fires.
+    with pytest.raises(ValidationError, match="thk < r"):
+        _OptionalThk(r=10, thk=11)

@@ -138,7 +138,7 @@ def test_dome_hollow():
 
 
 def test_dome_thk_too_large_raises():
-    with pytest.raises(ValidationError, match="thk.*must be < r"):
+    with pytest.raises(ValidationError, match="thk < r"):
         Dome(r=10, thk=10)
 
 

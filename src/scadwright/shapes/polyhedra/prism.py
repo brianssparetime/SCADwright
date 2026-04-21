@@ -6,7 +6,6 @@ import math
 
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import polyhedron
 
 
@@ -18,15 +17,9 @@ class Prism(Component):
     from ``r``, the result is a frustum (tapered prism).
     """
 
-    equations = ["r, h > 0"]
+    equations = ["r, h > 0", "top_r >= 0"]
     sides = Param(int, min=3)
     top_r = Param(float, default=None)
-
-    def setup(self):
-        if self.top_r is not None and self.top_r < 0:
-            raise ValidationError(
-                f"Prism: top_r must be >= 0, got {self.top_r}"
-            )
 
     def build(self):
         n = self.sides

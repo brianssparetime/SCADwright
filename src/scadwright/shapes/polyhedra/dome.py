@@ -5,7 +5,6 @@ from __future__ import annotations
 from scadwright.boolops import difference, intersection
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import cylinder, sphere
 
 
@@ -16,21 +15,12 @@ class Dome(Component):
     is given (the inner sphere has radius ``r - thk``).
     """
 
-    equations = ["r > 0"]
+    equations = [
+        "r > 0",
+        "thk > 0",
+        "thk < r",
+    ]
     thk = Param(float, default=None)
-
-    def setup(self):
-        # `thk` can't go in equations because of the None sentinel
-        # (solid vs hollow). Validate inline when present.
-        if self.thk is not None:
-            if self.thk <= 0:
-                raise ValidationError(
-                    f"Dome: thk must be > 0, got {self.thk}"
-                )
-            if self.thk >= self.r:
-                raise ValidationError(
-                    f"Dome: thk ({self.thk}) must be < r ({self.r})"
-                )
 
     def build(self):
         # Full sphere clipped to z >= 0.

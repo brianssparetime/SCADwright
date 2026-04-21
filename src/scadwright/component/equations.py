@@ -541,6 +541,11 @@ def evaluate_cross_constraints(
     }
 
     for lhs, op, rhs, raw in compiled:
+        # Skip constraints whose referenced Params are opt-out (None) —
+        # mirrors the behavior of per-Param validators on optional Params.
+        refs = {s.name for s in (lhs.free_symbols | rhs.free_symbols)}
+        if any(values.get(name) is None for name in refs):
+            continue
         try:
             lhs_v = float(lhs.evalf(subs=subs))
             rhs_v = float(rhs.evalf(subs=subs))

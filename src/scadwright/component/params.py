@@ -85,19 +85,22 @@ class Param:
         # the assignment came from auto-init, post_params, or user code.
         loc = SourceLocation.from_caller()
         coerced = self._coerce(value, instance, loc)
-        for v in self.validators:
-            try:
-                v(coerced)
-            except ValidationError as exc:
-                raise ValidationError(
-                    f"{type(instance).__name__}.{self._name}: {exc}",
-                    source_location=loc,
-                ) from exc
-            except Exception as exc:
-                raise ValidationError(
-                    f"{type(instance).__name__}.{self._name}: {exc}",
-                    source_location=loc,
-                ) from exc
+        # Optional Params (default=None) opt out of validation when unset.
+        # This lets `Param(float, default=None)` coexist with `equations = ["x > 0"]`.
+        if coerced is not None:
+            for v in self.validators:
+                try:
+                    v(coerced)
+                except ValidationError as exc:
+                    raise ValidationError(
+                        f"{type(instance).__name__}.{self._name}: {exc}",
+                        source_location=loc,
+                    ) from exc
+                except Exception as exc:
+                    raise ValidationError(
+                        f"{type(instance).__name__}.{self._name}: {exc}",
+                        source_location=loc,
+                    ) from exc
         instance.__dict__[self._name] = coerced
         # Invalidate cached build/bbox/hash so a subsequent access sees the new value.
         invalidate = getattr(instance, "_invalidate", None)
