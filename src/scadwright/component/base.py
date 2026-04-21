@@ -31,6 +31,143 @@ from scadwright._logging import get_logger
 _log = get_logger("scadwright.component")
 
 
+# --- __init_subclass__ helpers ---
+
+
+def _collect_params_from_mro(cls) -> dict[str, Param]:
+    """Gather every ``Param`` descriptor from ``cls`` and its bases."""
+    params: dict[str, Param] = {}
+    for base in reversed(cls.__mro__):
+        for name, value in vars(base).items():
+            if isinstance(value, Param):
+                params[name] = value
+    return params
+
+
+def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
+    """Re-install any inherited Param that a concrete subclass has shadowed.
+
+    When a subclass writes ``w = 20`` over an inherited ``w = Param(float)``,
+    we clone the Param with the new default so instance assignment still
+    runs the original validators — otherwise ``w = 20`` would just be a
+    class attribute and no validation would fire on that subclass.
+    """
+    import copy as _copy
+
+    for name in list(params.keys()):
+        override = cls.__dict__.get(name, _MISSING)
+        if override is _MISSING or isinstance(override, Param):
+            continue
+        cloned = _copy.copy(params[name])
+        cloned.default = override
+        params[name] = cloned
+        setattr(cls, name, cloned)
+        # copy.copy preserves _name; call __set_name__ defensively in case
+        # a Param variant relies on it.
+        if hasattr(cloned, "__set_name__"):
+            cloned.__set_name__(cls, name)
+
+
+def _parse_params_string(cls, params: dict[str, Param]) -> None:
+    """Auto-create ``Param(float)`` for each name listed in ``params = "..."``."""
+    params_str = cls.__dict__.get("params", None)
+    if not isinstance(params_str, str):
+        return
+    tokens = [n.strip() for n in params_str.replace(",", " ").split() if n.strip()]
+    for tok in tokens:
+        if tok not in params:
+            p = Param(float)
+            p.__set_name__(cls, tok)
+            setattr(cls, tok, p)
+            params[tok] = p
+
+
+def _register_equations(cls, params: dict[str, Param]) -> None:
+    """Parse ``equations = [...]`` and attach the resulting machinery to ``cls``.
+
+    Classifies each entry as an equality, a per-Param constraint, or a
+    cross-constraint. Auto-creates ``Param(float)`` for any new symbol.
+    Sets ``cls._has_equations``, ``cls._parsed_equations``,
+    ``cls._has_cross_constraints``, ``cls._cross_constraints``.
+    """
+    all_eq_strs = list(cls.__dict__.get("equations", None) or [])
+    if not all_eq_strs:
+        if not hasattr(cls, "_has_equations"):
+            cls._has_equations = False
+            cls._has_cross_constraints = False
+            cls._cross_constraints = []
+        return
+
+    from scadwright.component.equations import (
+        classify_equation,
+        extract_equality_symbols,
+        parse_constraints,
+        parse_cross_constraints,
+        parse_equations,
+    )
+
+    equalities: list[str] = []
+    constraints: list[str] = []
+    cross_strs: list[str] = []
+    for s in all_eq_strs:
+        kind = classify_equation(s)
+        if kind == "equality":
+            equalities.append(s)
+        elif kind == "cross_constraint":
+            cross_strs.append(s)
+        else:
+            constraints.append(s)
+
+    def _declare_float_param(name: str) -> None:
+        p = Param(float)
+        p.__set_name__(cls, name)
+        setattr(cls, name, p)
+        params[name] = p
+
+    # Auto-create Param(float) for symbols introduced by equalities.
+    for eq_s in equalities:
+        for sym_name in extract_equality_symbols(eq_s, params.keys()):
+            if sym_name not in params:
+                _declare_float_param(sym_name)
+
+    # Parse constraint inequalities and attach validators to Params.
+    if constraints:
+        constraint_map = parse_constraints(constraints)
+        for name, validators in constraint_map.items():
+            if name not in params:
+                _declare_float_param(name)
+            param = params[name]
+            param.validators = tuple(param.validators) + tuple(validators)
+
+    # Parse cross-constraints (var-vs-var inequalities) — evaluated at
+    # instance-init time once all Params are set.
+    cross_compiled: list = []
+    if cross_strs:
+        cross_compiled, cross_syms = parse_cross_constraints(cross_strs, params.keys())
+        for sym_name in cross_syms:
+            if sym_name not in params:
+                _declare_float_param(sym_name)
+
+    cls._parsed_equations = (
+        parse_equations(equalities, params.keys()) if equalities else None
+    )
+    cls._has_equations = bool(equalities)
+    cls._cross_constraints = cross_compiled
+    cls._has_cross_constraints = bool(cross_compiled)
+
+
+def _collect_anchor_defs(cls) -> dict:
+    """Gather every ``AnchorDef`` declared at class scope across the MRO."""
+    from scadwright.component.anchors import AnchorDef
+
+    anchor_defs: dict = {}
+    for base in reversed(cls.__mro__):
+        for name, value in vars(base).items():
+            if isinstance(value, AnchorDef):
+                anchor_defs[name] = value
+    return anchor_defs
+
+
 class Component(Node):
     """Base for user-defined parametric parts.
 
@@ -96,135 +233,15 @@ class Component(Node):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        import copy as _copy
-
-        # Collect Params declared on this subclass (and inherited from bases).
-        params: dict[str, Param] = {}
-        for base in reversed(cls.__mro__):
-            for name, value in vars(base).items():
-                if isinstance(value, Param):
-                    params[name] = value
-
-        # Class-attr overrides: if a subclass shadows an inherited Param with
-        # a plain value (e.g. `class MyBox(Box): outer_size = (60, 40, 40)`),
-        # treat that value as the Param's default in this subclass. We clone
-        # the inherited Param with the new default and reinstall the clone
-        # as a descriptor so instance assignment still runs validators.
-        for name in list(params.keys()):
-            override = cls.__dict__.get(name, _MISSING)
-            if override is _MISSING or isinstance(override, Param):
-                continue
-            cloned = _copy.copy(params[name])
-            cloned.default = override
-            params[name] = cloned
-            setattr(cls, name, cloned)
-            # copy.copy preserves _name, but call __set_name__ defensively
-            # in case a Param variant relies on it.
-            if hasattr(cloned, "__set_name__"):
-                cloned.__set_name__(cls, name)
-
-        # Process `params = "..."` class attribute: auto-create Param(float)
-        # for each name listed.
-        params_str = cls.__dict__.get("params", None)
-        if isinstance(params_str, str):
-            tokens = [n.strip() for n in params_str.replace(",", " ").split()
-                      if n.strip()]
-            for tok in tokens:
-                if tok not in params:
-                    p = Param(float)
-                    p.__set_name__(cls, tok)
-                    setattr(cls, tok, p)
-                    params[tok] = p
-
-        # Process `equations = [...]` class attribute: auto-create Params for
-        # equation symbols and attach constraint validators.
-        all_eq_strs = list(cls.__dict__.get("equations", None) or [])
-
-        if all_eq_strs:
-            from scadwright.component.equations import (
-                classify_equation,
-                extract_equality_symbols,
-                parse_constraints,
-                parse_cross_constraints,
-                parse_equations,
-            )
-
-            equalities = []
-            constraints = []
-            cross_strs = []
-            for s in all_eq_strs:
-                kind = classify_equation(s)
-                if kind == "equality":
-                    equalities.append(s)
-                elif kind == "cross_constraint":
-                    cross_strs.append(s)
-                else:
-                    constraints.append(s)
-
-            # Auto-create Param(float) for equation symbols not already declared.
-            for eq_s in equalities:
-                for sym_name in extract_equality_symbols(eq_s, params.keys()):
-                    if sym_name not in params:
-                        p = Param(float)
-                        p.__set_name__(cls, sym_name)
-                        setattr(cls, sym_name, p)
-                        params[sym_name] = p
-
-            # Parse constraint inequalities and attach validators to Params.
-            if constraints:
-                constraint_map = parse_constraints(constraints)
-                for name, validators in constraint_map.items():
-                    if name not in params:
-                        # Constraint references a variable not in any equation
-                        # or params -- auto-create it.
-                        p = Param(float)
-                        p.__set_name__(cls, name)
-                        setattr(cls, name, p)
-                        params[name] = p
-                    # Append constraint validators to the Param.
-                    param = params[name]
-                    param.validators = tuple(param.validators) + tuple(validators)
-
-            # Parse cross-constraints (var-vs-var inequalities). These get
-            # evaluated at instance-init time once all Params are set, so
-            # the parser also reports any new symbols to auto-declare.
-            cross_compiled: list = []
-            if cross_strs:
-                cross_compiled, cross_syms = parse_cross_constraints(
-                    cross_strs, params.keys()
-                )
-                for sym_name in cross_syms:
-                    if sym_name not in params:
-                        p = Param(float)
-                        p.__set_name__(cls, sym_name)
-                        setattr(cls, sym_name, p)
-                        params[sym_name] = p
-
-            cls._parsed_equations = parse_equations(equalities, params.keys()) if equalities else None
-            cls._has_equations = bool(equalities)
-            cls._cross_constraints = cross_compiled
-            cls._has_cross_constraints = bool(cross_compiled)
-        elif not hasattr(cls, "_has_equations"):
-            cls._has_equations = False
-            cls._has_cross_constraints = False
-            cls._cross_constraints = []
-
+        params = _collect_params_from_mro(cls)
+        _apply_class_attr_overrides(cls, params)
+        _parse_params_string(cls, params)
+        _register_equations(cls, params)
         cls.__params__ = params
-
-        # Collect AnchorDef descriptors declared at class scope.
-        from scadwright.component.anchors import AnchorDef
-
-        anchor_defs: dict[str, AnchorDef] = {}
-        for base in reversed(cls.__mro__):
-            for name, value in vars(base).items():
-                if isinstance(value, AnchorDef):
-                    anchor_defs[name] = value
-        cls.__anchor_defs__ = anchor_defs
-
-        # If the subclass didn't define its own __init__, and it has Params
-        # or anchor defs, generate one that takes the params as kwargs-only
-        # and resolves anchor defs after construction.
-        if (params or anchor_defs) and "__init__" not in cls.__dict__:
+        cls.__anchor_defs__ = _collect_anchor_defs(cls)
+        # Generate __init__ only if the subclass didn't define one, and
+        # it has either Params or anchor defs that need wiring.
+        if (params or cls.__anchor_defs__) and "__init__" not in cls.__dict__:
             cls.__init__ = _make_param_init(cls, params)
 
     def build(self) -> Node:
@@ -396,6 +413,40 @@ def _resolve_anchor_defs(instance):
         instance._anchors[name] = _Anchor(position=pos, normal=adef.normal)
 
 
+# Implicit kwargs accepted by every Component's auto-init in addition to
+# the declared Params. These flow into the build's resolution context or
+# are used for origin control. Add a new name here when introducing a new
+# framework-level kwarg.
+_IMPLICIT_KWARGS = frozenset({"fn", "fa", "fs", "center"})
+
+
+def _solve_equation_vars(cls, params: dict[str, Param], kwargs: dict) -> None:
+    """Invoke the equation solver for a Component's equation-vars, merging
+    any solved values into ``kwargs`` in place. Leaves non-equation kwargs
+    untouched. Wraps the solver's ``ValidationError`` with the class name
+    for nicer error context.
+    """
+    from scadwright.component.equations import solve_instance
+
+    parsed = cls._parsed_equations
+    given = {k: float(v) for k, v in kwargs.items() if k in parsed.equation_vars}
+    defaults = {
+        name: params[name].default
+        for name in parsed.equation_vars
+        if name not in kwargs
+        and params[name].has_default()
+        and params[name].default is not None
+    }
+    try:
+        solved = solve_instance(parsed, given, defaults, params)
+    except ValidationError as exc:
+        raise ValidationError(f"{cls.__name__}: {exc}") from exc
+    # Solved output contains both newly-solved values and any defaults the
+    # solver applied on the user's behalf; both become assignments.
+    for name, value in solved.items():
+        kwargs.setdefault(name, value)
+
+
 def _make_param_init(cls, params: dict[str, Param]):
     """Build an auto-generated kwargs-only __init__ for a Component subclass.
 
@@ -410,38 +461,16 @@ def _make_param_init(cls, params: dict[str, Param]):
         # Capture caller's frame BEFORE running setters (which may push frames).
         loc = SourceLocation.from_caller()
 
-        # Validate kwargs: must be declared params or implicit kwargs.
-        _IMPLICIT = {"fn", "fa", "fs", "center"}
-        unknown = set(kwargs) - set(params) - _IMPLICIT
+        unknown = set(kwargs) - set(params) - _IMPLICIT_KWARGS
         if unknown:
             raise ValidationError(
                 f"{type(self).__name__}: unknown parameter(s): {sorted(unknown)}"
             )
 
-        # If the class has equations, solve for missing equation-variables
-        # before checking for missing required params.
+        # Solve equation-vars BEFORE the missing-required check, so solved
+        # values count as "provided."
         if getattr(cls, "_has_equations", False):
-            from scadwright.component.equations import solve_instance
-
-            parsed = cls._parsed_equations
-            given = {k: float(v) for k, v in kwargs.items() if k in parsed.equation_vars}
-            defaults = {
-                name: params[name].default
-                for name in parsed.equation_vars
-                if name not in kwargs
-                and params[name].has_default()
-                and params[name].default is not None
-            }
-            try:
-                solved = solve_instance(parsed, given, defaults, params)
-            except ValidationError as exc:
-                raise ValidationError(
-                    f"{type(self).__name__}: {exc}"
-                ) from exc
-            # Solver may return either newly-solved values or defaults it
-            # applied on the user's behalf; both go into kwargs for assignment.
-            for name, value in solved.items():
-                kwargs.setdefault(name, value)
+            _solve_equation_vars(cls, params, kwargs)
 
         missing = [n for n in required if n not in kwargs]
         if missing:
@@ -452,24 +481,19 @@ def _make_param_init(cls, params: dict[str, Param]):
         # Initialize the Component base (sets source_location and _built_tree).
         Component.__init__(self, _source_location=loc)
 
-        # Apply each param: provided value or default.
+        # Apply each param via Param.__set__ (which coerces and validates).
         for name in required + optional:
-            if name in kwargs:
-                value = kwargs[name]
-            else:
-                value = params[name].default
-            # Goes through Param.__set__ → coerce + validate.
+            value = kwargs[name] if name in kwargs else params[name].default
             setattr(self, name, value)
 
-        # Store implicit kwargs (fn/fa/fs/center) as instance attrs so
-        # _get_built_tree() picks them up.
-        for _impl_name in _IMPLICIT:
-            if _impl_name in kwargs:
-                object.__setattr__(self, _impl_name, kwargs[_impl_name])
+        # Store implicit kwargs as instance attrs so _get_built_tree picks them up.
+        for impl in _IMPLICIT_KWARGS:
+            if impl in kwargs:
+                object.__setattr__(self, impl, kwargs[impl])
 
-        # Evaluate cross-constraints (var-vs-var inequalities) now that
-        # all Params are set. These run before setup() so violations are
-        # caught at the input-validation layer, before any computation.
+        # Cross-constraints (var-vs-var inequalities) run now that every
+        # Param is set, before setup(), so violations surface at the
+        # input-validation layer rather than mid-build.
         if getattr(cls, "_has_cross_constraints", False):
             from scadwright.component.equations import evaluate_cross_constraints
 
@@ -478,10 +502,8 @@ def _make_param_init(cls, params: dict[str, Param]):
                 cls._cross_constraints, values, type(self).__name__
             )
 
-        # Resolve class-scope anchor defs into real anchors.
         _resolve_anchor_defs(self)
 
-        # Optional post-params hook.
         post = getattr(self, "setup", None)
         if callable(post):
             post()

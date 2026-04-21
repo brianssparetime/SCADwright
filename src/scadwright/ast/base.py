@@ -101,6 +101,196 @@ class SourceLocation:
         return None
 
 
+# --- through() helpers ---
+
+
+_AXIS_MAP = {"x": 0, "y": 1, "z": 2}
+
+
+def _detect_through_axis(self_bb, parent_bb, explicit_axis: str | None, loc) -> int:
+    """Pick the cut axis for ``through()``.
+
+    Returns the axis index (0/1/2). If ``explicit_axis`` is given, parses
+    it. Otherwise auto-detects: prefers axes where the cutter has a
+    face coincident with the parent (picking the most-spanning one if
+    several match), and falls back to the axis where the cutter's size
+    most closely matches the parent's.
+    """
+    from scadwright.errors import ValidationError
+
+    if explicit_axis is not None:
+        ax = _AXIS_MAP.get(explicit_axis.lower())
+        if ax is None:
+            raise ValidationError(
+                f"through: axis must be 'x', 'y', or 'z', got {explicit_axis!r}",
+                source_location=loc,
+            )
+        return ax
+
+    tol_detect = 1e-4
+    candidates = [
+        i for i in range(3)
+        if abs(self_bb.min[i] - parent_bb.min[i]) < tol_detect
+        or abs(self_bb.max[i] - parent_bb.max[i]) < tol_detect
+    ]
+    parent_size = parent_bb.size
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        # Multiple coincident axes — pick the one where the cutter spans
+        # the most of the parent.
+        best = candidates[0]
+        best_ratio = 0.0
+        for i in candidates:
+            if parent_size[i] > 1e-10:
+                r = self_bb.size[i] / parent_size[i]
+                if r > best_ratio:
+                    best_ratio = r
+                    best = i
+        return best
+    # No coincident faces — fall back to the closest size match.
+    self_size = self_bb.size
+    ratios = [
+        float("inf") if parent_size[i] < 1e-10
+        else abs(self_size[i] / parent_size[i] - 1.0)
+        for i in range(3)
+    ]
+    return ratios.index(min(ratios))
+
+
+def _extend_through_faces(self, self_bb, parent_bb, ax: int, eps: float, loc):
+    """Wrap ``self`` in the Scale+Translate that extends it across whichever
+    of its ``ax``-faces are coincident with ``parent``'s. Returns ``self``
+    unchanged when no face matches (the call site's no-op contract).
+    Raises ValidationError if the cutter doesn't overlap the parent on
+    the cut axis at all.
+    """
+    from scadwright.ast.transforms import Scale, Translate
+    from scadwright.errors import ValidationError
+
+    tol = 1e-4
+    if (self_bb.max[ax] < parent_bb.min[ax] - tol
+            or self_bb.min[ax] > parent_bb.max[ax] + tol):
+        raise ValidationError(
+            f"through: cutter does not overlap parent on the "
+            f"{'xyz'[ax]}-axis. Call through() after positioning the cutter.",
+            source_location=loc,
+        )
+
+    min_coincident = abs(self_bb.min[ax] - parent_bb.min[ax]) < tol
+    max_coincident = abs(self_bb.max[ax] - parent_bb.max[ax]) < tol
+    if not min_coincident and not max_coincident:
+        return self
+
+    new_min = (parent_bb.min[ax] - eps) if min_coincident else self_bb.min[ax]
+    new_max = (parent_bb.max[ax] + eps) if max_coincident else self_bb.max[ax]
+
+    orig_size = self_bb.max[ax] - self_bb.min[ax]
+    if orig_size < 1e-10:
+        return self  # zero-thickness shape can't be scaled
+
+    scale_factor = (new_max - new_min) / orig_size
+    # Scale-from-origin + translate yields: new_pos = old_pos * s + delta
+    # where delta shifts the scaled center onto the target center.
+    old_center = (self_bb.min[ax] + self_bb.max[ax]) / 2.0
+    new_center = (new_min + new_max) / 2.0
+    delta = new_center - old_center * scale_factor
+
+    factor = [1.0, 1.0, 1.0]
+    factor[ax] = scale_factor
+    offset = [0.0, 0.0, 0.0]
+    offset[ax] = delta
+    return Translate(
+        v=tuple(offset),
+        child=Scale(factor=tuple(factor), child=self, source_location=loc),
+        source_location=loc,
+    )
+
+
+# --- attach() helpers ---
+
+
+def _resolve_attach_anchor(node, name: str, role: str, loc):
+    """Look up a named anchor on ``node``; raise ValidationError with a
+    diagnostic message (custom-anchor vs. standard-face hint) on miss.
+    """
+    from scadwright.anchor import FACE_NAMES, get_node_anchors, resolve_face_name
+    from scadwright.errors import ValidationError
+
+    anchors = get_node_anchors(node)
+    if name not in anchors:
+        if name in FACE_NAMES:
+            resolve_face_name(name)  # pragma: no cover — sanity path
+        available = sorted(anchors)
+        # Components publish more than the 12 bbox defaults; use that as the
+        # heuristic for whether a "custom anchor missing" message applies.
+        if len(available) > 12:
+            raise ValidationError(
+                f"attach: no anchor {name!r} on {role}. Available: {available}",
+                source_location=loc,
+            )
+        raise ValidationError(
+            f"attach: custom anchor {name!r} is only available on Components. "
+            f"Primitives support the standard face names: top, bottom, front, "
+            f"back, lside, rside (or +z, -z, -y, +y, -x, +x).",
+            source_location=loc,
+        )
+    return anchors[name]
+
+
+def _shift_for_anchors(self_anchor, other_anchor, fuse: bool, eps: float):
+    """Translation vector that puts ``self_anchor`` on ``other_anchor``.
+
+    When ``fuse`` is set, offset by ``eps`` along the other-anchor normal
+    (into the contact face) to eliminate coincident-surface seams in
+    unions.
+    """
+    shift = [
+        other_anchor.position[i] - self_anchor.position[i] for i in range(3)
+    ]
+    if fuse:
+        fn = other_anchor.normal
+        for i in range(3):
+            shift[i] -= fn[i] * eps
+    return (shift[0], shift[1], shift[2])
+
+
+def _orient_child_to_normal(child, self_normal, target_normal, loc):
+    """Return ``child`` wrapped in the Rotate that takes ``self_normal`` to
+    ``target_normal``. Picks the right branch (general, already-aligned,
+    or 180° flip) based on the dot/cross of the two unit normals.
+    """
+    import math as _math
+
+    from scadwright.ast.transforms import Rotate
+
+    def _dot(a, b):
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+    def _cross(a, b):
+        return (
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        )
+
+    def _length(v):
+        return _math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+
+    d = _dot(self_normal, target_normal)
+    axis = _cross(self_normal, target_normal)
+    if _length(axis) > 1e-10:
+        # General case: rotate around the cross-product axis.
+        angle_deg = _math.degrees(_math.acos(max(-1.0, min(1.0, d))))
+        return Rotate(a=angle_deg, v=axis, child=child, source_location=loc)
+    if d < -0.5:
+        # Normals already opposite (touching-aligned) — no rotation.
+        return child
+    # Normals coincide (d ~ +1); 180° flip around any perpendicular axis.
+    perp = _cross(self_normal, (1, 0, 0) if abs(self_normal[0]) < 0.9 else (0, 1, 0))
+    return Rotate(a=180.0, v=perp, child=child, source_location=loc)
+
+
 @dataclass(frozen=True)
 class Node(
     _DirectionalMixin,
@@ -404,133 +594,29 @@ class Node(
 
             peg.attach(plate).right(10)
         """
-        import math as _math
-
-        from scadwright.anchor import (
-            FACE_NAMES,
-            anchors_from_bbox,
-            get_node_anchors,
-            resolve_face_name,
-        )
+        from scadwright.anchor import anchors_from_bbox
         from scadwright.bbox import bbox as _bbox
-        from scadwright.ast.transforms import Rotate, Translate
-        from scadwright.errors import ValidationError
+        from scadwright.ast.transforms import Translate
 
         loc = SourceLocation.from_caller()
-
-        def _get_anchor(node, name, role):
-            """Return the Anchor for *name* on *node*, validating."""
-            anchors = get_node_anchors(node)
-            if name not in anchors:
-                if name in FACE_NAMES:
-                    resolve_face_name(name)  # pragma: no cover
-                else:
-                    available = sorted(anchors)
-                    # Check if the node has any custom anchors (Component or
-                    # transform-wrapped Component).
-                    has_custom = len(available) > 12
-                    if has_custom:
-                        raise ValidationError(
-                            f"attach: no anchor {name!r} on {role}. "
-                            f"Available: {available}",
-                            source_location=loc,
-                        )
-                    else:
-                        raise ValidationError(
-                            f"attach: custom anchor {name!r} is only available "
-                            f"on Components. Primitives support the standard "
-                            f"face names: top, bottom, front, back, lside, rside "
-                            f"(or +z, -z, -y, +y, -x, +x).",
-                            source_location=loc,
-                        )
-            return anchors[name]
-
-        other_anchor = _get_anchor(other, face, "other")
-        self_anchor = _get_anchor(self, at, "self")
-
-        def _apply_fuse(shift_list):
-            """Push self EPS into other along the face normal."""
-            if not fuse:
-                return
-            # Face normal points outward from other. To push self INTO
-            # other, move in the opposite direction of the face normal.
-            fn = other_anchor.normal
-            shift_list[0] -= fn[0] * eps
-            shift_list[1] -= fn[1] * eps
-            shift_list[2] -= fn[2] * eps
+        other_anchor = _resolve_attach_anchor(other, face, "other", loc)
+        self_anchor = _resolve_attach_anchor(self, at, "self", loc)
 
         if not orient:
-            shift = [
-                other_anchor.position[0] - self_anchor.position[0],
-                other_anchor.position[1] - self_anchor.position[1],
-                other_anchor.position[2] - self_anchor.position[2],
-            ]
-            _apply_fuse(shift)
-            return Translate(v=(shift[0], shift[1], shift[2]), child=self, source_location=loc)
+            shift = _shift_for_anchors(self_anchor, other_anchor, fuse, eps)
+            return Translate(v=shift, child=self, source_location=loc)
 
         # orient=True: rotate self so at-normal opposes face-normal, then translate.
-        an = self_anchor.normal
-        # Target: at-normal should point opposite to face-normal (faces touching).
-        tn = (
-            -other_anchor.normal[0],
-            -other_anchor.normal[1],
-            -other_anchor.normal[2],
-        )
-
-        def _dot(a, b):
-            return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-
-        def _cross(a, b):
-            return (
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            )
-
-        def _length(v):
-            return _math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
-
-        d = _dot(an, tn)
-        axis = _cross(an, tn)
-        axis_len = _length(axis)
-
-        child = self
-        if axis_len > 1e-10:
-            # General case: rotate around the cross-product axis.
-            angle_deg = _math.degrees(_math.acos(max(-1.0, min(1.0, d))))
-            child = Rotate(
-                a=angle_deg,
-                v=axis,
-                child=child,
-                source_location=loc,
-            )
-        elif d < -0.5:
-            # Normals are opposite (already aligned for touching) -- no rotation.
-            pass
-        else:
-            # Normals are the same direction (d ~ +1) -- need 180-degree flip.
-            # Pick a perpendicular axis.
-            if abs(an[0]) < 0.9:
-                perp = _cross(an, (1, 0, 0))
-            else:
-                perp = _cross(an, (0, 1, 0))
-            child = Rotate(a=180.0, v=perp, child=child, source_location=loc)
+        target_normal = tuple(-c for c in other_anchor.normal)
+        child = _orient_child_to_normal(self, self_anchor.normal, target_normal, loc)
 
         # Recompute self's anchor position after rotation.
-        rotated_bb = _bbox(child)
-        rotated_anchors = anchors_from_bbox(rotated_bb)
-        if at in rotated_anchors:
-            rotated_self_anchor = rotated_anchors[at]
-        else:
-            rotated_self_anchor = rotated_anchors.get("bottom", self_anchor)
-
-        shift = [
-            other_anchor.position[0] - rotated_self_anchor.position[0],
-            other_anchor.position[1] - rotated_self_anchor.position[1],
-            other_anchor.position[2] - rotated_self_anchor.position[2],
-        ]
-        _apply_fuse(shift)
-        return Translate(v=(shift[0], shift[1], shift[2]), child=child, source_location=loc)
+        rotated_anchors = anchors_from_bbox(_bbox(child))
+        rotated_self_anchor = rotated_anchors.get(
+            at, rotated_anchors.get("bottom", self_anchor)
+        )
+        shift = _shift_for_anchors(rotated_self_anchor, other_anchor, fuse, eps)
+        return Translate(v=shift, child=child, source_location=loc)
 
     def through(
         self,
@@ -557,116 +643,12 @@ class Node(
         ``.up()``, ``.translate()``, ``.attach()`` calls).
         """
         from scadwright.bbox import bbox as _bbox
-        from scadwright.ast.transforms import Scale, Translate
-        from scadwright.errors import ValidationError
 
         loc = SourceLocation.from_caller()
         self_bb = _bbox(self)
         parent_bb = _bbox(parent)
-
-        # Determine cut axis.
-        axis_map = {"x": 0, "y": 1, "z": 2}
-        if axis is not None:
-            ax = axis_map.get(axis.lower())
-            if ax is None:
-                raise ValidationError(
-                    f"through: axis must be 'x', 'y', or 'z', got {axis!r}",
-                    source_location=loc,
-                )
-        else:
-            # Auto-detect: prefer an axis where the cutter has at least
-            # one face coincident with the parent. Among those, pick the
-            # axis where the cutter spans the most of the parent.
-            tol_detect = 1e-4
-            candidates = []
-            for i in range(3):
-                lo_match = abs(self_bb.min[i] - parent_bb.min[i]) < tol_detect
-                hi_match = abs(self_bb.max[i] - parent_bb.max[i]) < tol_detect
-                if lo_match or hi_match:
-                    candidates.append(i)
-            if len(candidates) == 1:
-                ax = candidates[0]
-            elif len(candidates) > 1:
-                # Multiple axes have coincident faces; pick the one where
-                # the cutter spans the most of the parent.
-                parent_size = parent_bb.size
-                best = candidates[0]
-                best_ratio = 0.0
-                for i in candidates:
-                    if parent_size[i] > 1e-10:
-                        r = self_bb.size[i] / parent_size[i]
-                        if r > best_ratio:
-                            best_ratio = r
-                            best = i
-                ax = best
-            else:
-                # No coincident faces on any axis — fall back to the axis
-                # where the cutter most closely spans the parent.
-                parent_size = parent_bb.size
-                self_size = self_bb.size
-                ratios = []
-                for i in range(3):
-                    if parent_size[i] < 1e-10:
-                        ratios.append(float("inf"))
-                    else:
-                        ratios.append(abs(self_size[i] / parent_size[i] - 1.0))
-                ax = ratios.index(min(ratios))
-
-        tol = 1e-4
-
-        # Check the cutter overlaps the parent on the cut axis at all.
-        if (self_bb.max[ax] < parent_bb.min[ax] - tol or
-                self_bb.min[ax] > parent_bb.max[ax] + tol):
-            raise ValidationError(
-                f"through: cutter does not overlap parent on the "
-                f"{'xyz'[ax]}-axis. Call through() after positioning "
-                f"the cutter.",
-                source_location=loc,
-            )
-
-        # Detect coincident faces.
-        min_coincident = abs(self_bb.min[ax] - parent_bb.min[ax]) < tol
-        max_coincident = abs(self_bb.max[ax] - parent_bb.max[ax]) < tol
-
-        if not min_coincident and not max_coincident:
-            return self  # No coincident faces; no-op.
-
-        # Compute extended bounds on the cut axis.
-        new_min = (parent_bb.min[ax] - eps) if min_coincident else self_bb.min[ax]
-        new_max = (parent_bb.max[ax] + eps) if max_coincident else self_bb.max[ax]
-
-        orig_size = self_bb.max[ax] - self_bb.min[ax]
-        if orig_size < 1e-10:
-            return self  # Zero-thickness shape; can't scale.
-
-        new_size = new_max - new_min
-        scale_factor = new_size / orig_size
-
-        # Scale along the cut axis from the cutter's center, then
-        # translate to the new center.
-        old_center = (self_bb.min[ax] + self_bb.max[ax]) / 2.0
-        new_center = (new_min + new_max) / 2.0
-
-        # To scale from center: translate to origin, scale, translate back.
-        # Combined: new_pos = (old_pos - old_center) * scale + new_center
-        # As a single translate after scale:
-        #   delta = new_center - old_center * scale_factor
-        delta = new_center - old_center * scale_factor
-
-        factor = [1.0, 1.0, 1.0]
-        factor[ax] = scale_factor
-        offset = [0.0, 0.0, 0.0]
-        offset[ax] = delta
-
-        return Translate(
-            v=(offset[0], offset[1], offset[2]),
-            child=Scale(
-                factor=(factor[0], factor[1], factor[2]),
-                child=self,
-                source_location=loc,
-            ),
-            source_location=loc,
-        )
+        ax = _detect_through_axis(self_bb, parent_bb, axis, loc)
+        return _extend_through_faces(self, self_bb, parent_bb, ax, eps, loc)
 
     # --- boolean operators ---
 

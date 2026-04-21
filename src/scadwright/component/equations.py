@@ -144,6 +144,58 @@ def _check_consistency(parsed: ParsedEquations, values: dict[str, float]) -> Non
             )
 
 
+def _substitute_and_reduce(parsed: ParsedEquations, given: dict[str, float]) -> list:
+    """Substitute known values into each equation and numerically reduce.
+
+    Returns the equations that still contain unknowns. Drops equations
+    that evaluated to ``True`` (auto-satisfied by the substitution) and
+    raises ``ValidationError`` for any that evaluated to ``False`` (the
+    user's inputs are mutually inconsistent).
+
+    The ``.evalf()`` step forces numeric reduction of transcendental
+    terms (cos, sin, etc.) before ``sp.solve`` sees them. Without it,
+    sympy attempts symbolic simplification on ``cos(some_float * pi /
+    180)`` for non-special angles, which can take tens of seconds
+    (pressure_angle=14.5 vs. the trivial pressure_angle=20). Skip
+    evalf on ``BooleanTrue``/``False`` since those are already fully
+    reduced sentinels.
+    """
+    import sympy as sp
+
+    subs = {parsed.symbol_cache[k]: sp.sympify(v) for k, v in given.items()}
+
+    def _sub(eq):
+        s = eq.subs(subs)
+        return s if s is sp.true or s is sp.false else s.evalf()
+
+    substituted = []
+    for orig, eq in zip(parsed.equations, [_sub(eq) for eq in parsed.equations]):
+        if eq is sp.true:
+            continue  # auto-satisfied; drop from the system
+        if eq is sp.false:
+            details = ", ".join(f"{k}={v}" for k, v in given.items())
+            raise ValidationError(
+                f"equation violated: `{_format_eq(orig)}` (given {details})"
+            )
+        substituted.append(eq)
+    return substituted
+
+
+def _extract_numeric_solutions(solutions: list) -> list[dict[str, float]]:
+    """Convert sympy's ``solve(..., dict=True)`` output to ``{name: float}``
+    dicts. Drops solutions that don't reduce to concrete floats (treated
+    as underdetermined by the caller).
+    """
+    numeric_solutions = []
+    for sol in solutions:
+        try:
+            numeric = {sym.name: float(val.evalf()) for sym, val in sol.items()}
+            numeric_solutions.append(numeric)
+        except (TypeError, AttributeError):
+            continue
+    return numeric_solutions
+
+
 def _try_solve(parsed: ParsedEquations, given: dict[str, float]) -> dict[str, float] | None:
     """Attempt to solve for the unknowns given the provided values.
 
@@ -155,39 +207,13 @@ def _try_solve(parsed: ParsedEquations, given: dict[str, float]) -> dict[str, fl
 
     unknowns = [parsed.symbol_cache[n] for n in parsed.equation_vars if n not in given]
     if not unknowns:
-        # All equation vars given — just consistency-check; return empty (nothing to solve).
-        full = dict(given)
-        _check_consistency(parsed, full)
+        # All equation vars given — consistency-check and return.
+        _check_consistency(parsed, dict(given))
         return {}
 
-    subs = {parsed.symbol_cache[k]: sp.sympify(v) for k, v in given.items()}
-    # `.evalf()` after substitution: forces numeric reduction of any
-    # transcendental terms (cos, sin, etc.) before sp.solve sees them.
-    # Without it, sympy attempts symbolic simplification on
-    # `cos(some_float * pi / 180)` for non-special angles, which can
-    # take tens of seconds (e.g. pressure_angle=14.5 vs the trivial
-    # pressure_angle=20). Skip evalf on BooleanTrue/False since those
-    # are already fully reduced sentinels.
-    def _sub(eq):
-        s = eq.subs(subs)
-        return s if s is sp.true or s is sp.false else s.evalf()
-
-    substituted = []
-    for orig, eq in zip(parsed.equations, [_sub(eq) for eq in parsed.equations]):
-        # sympy reduces fully-substituted equations to BooleanTrue/False.
-        if eq is sp.true:
-            continue  # auto-satisfied; drop from the system
-        if eq is sp.false:
-            # All relevant values given and they violate this equation.
-            details = ", ".join(f"{k}={v}" for k, v in given.items())
-            raise ValidationError(
-                f"equation violated: `{_format_eq(orig)}` (given {details})"
-            )
-        substituted.append(eq)
-
+    substituted = _substitute_and_reduce(parsed, given)
     if not substituted:
-        # All equations auto-satisfied after substitution.
-        return {} if not unknowns else None
+        return None  # unknowns exist but every equation auto-satisfied
 
     try:
         solutions = sp.solve(substituted, unknowns, dict=True)
@@ -205,22 +231,11 @@ def _try_solve(parsed: ParsedEquations, given: dict[str, float]) -> dict[str, fl
                 )
         return None
 
-    # Filter solutions to concrete numeric ones.
-    numeric_solutions = []
-    for sol in solutions:
-        try:
-            numeric = {sym.name: float(val.evalf()) for sym, val in sol.items()}
-            numeric_solutions.append(numeric)
-        except (TypeError, AttributeError):
-            # Non-numeric symbolic result — treat as underdetermined.
-            continue
-
+    numeric_solutions = _extract_numeric_solutions(solutions)
     if not numeric_solutions:
         return None
-
     if len(numeric_solutions) == 1:
         return numeric_solutions[0]
-
     # Multiple numeric solutions — caller filters by validators.
     return {"__multi__": numeric_solutions}  # type: ignore[dict-item]
 
