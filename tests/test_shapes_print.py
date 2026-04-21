@@ -129,9 +129,25 @@ def test_tab_slot_slot_property_returns_cutter_with_correct_size():
 
 
 def test_snap_hook_builds():
-    h = SnapHook(arm_length=10, hook_depth=2, thk=1.5, width=5)
+    h = SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
     scad = emit_str(h)
     assert "union" in scad
+    assert "polyhedron" in scad  # barb is a polyhedron
+
+
+def test_snap_hook_geometry():
+    """Barb protrudes in +Y beyond the arm's thk; Z extent is arm_length."""
+    s = SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
+    bb = bbox(s)
+    assert bb.size[0] == pytest.approx(5.0, abs=0.01)    # width
+    assert bb.max[1] == pytest.approx(3.5, abs=0.02)     # thk + hook_depth
+    assert bb.min[1] == pytest.approx(0.0, abs=0.01)     # arm back face
+    assert bb.size[2] == pytest.approx(10.0, abs=0.01)   # arm_length
+
+
+def test_snap_hook_hook_height_cannot_exceed_arm_length():
+    with pytest.raises(ValidationError, match="hook_height"):
+        SnapHook(arm_length=5, hook_depth=2, hook_height=10, thk=1.5, width=5)
 
 
 # --- GripTab ---

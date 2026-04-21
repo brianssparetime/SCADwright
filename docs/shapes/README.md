@@ -74,4 +74,4 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [Ecosystem](ecosystem.md)
 
-[`GridfinityBase`](ecosystem.md#gridfinitybasegrid_x-grid_y), [`GridfinityBin`](ecosystem.md#gridfinitybingrid_x-grid_y-height_units), [`ExtrusionProfile`](ecosystem.md#extrusionprofilesize-2d)
+[`GridfinityBase`](ecosystem.md#gridfinitybasegrid_x-grid_y), [`GridfinityBin`](ecosystem.md#gridfinitybingrid_x-grid_y-height_units)

@@ -11,7 +11,6 @@ from scadwright.shapes.curves import (
 )
 from scadwright.shapes.ecosystem import (
     STANDARD_GRIDFINITY,
-    ExtrusionProfile,
     GridfinityBase,
     GridfinityBin,
     GridfinitySpec,
@@ -104,7 +103,6 @@ __all__ = [
     "Dodecahedron",
     "Dome",
     "EmbossedLabel",
-    "ExtrusionProfile",
     "FilletMask",
     "FilletRing",
     "Funnel",

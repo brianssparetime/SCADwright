@@ -1,6 +1,5 @@
-"""Ecosystem components: Gridfinity, aluminum extrusion profiles."""
+"""Ecosystem components: Gridfinity storage system."""
 
-from scadwright.shapes.ecosystem.extrusion import ExtrusionProfile
 from scadwright.shapes.ecosystem.gridfinity import (
     STANDARD_GRIDFINITY,
     GridfinityBase,
@@ -9,7 +8,6 @@ from scadwright.shapes.ecosystem.gridfinity import (
 )
 
 __all__ = [
-    "ExtrusionProfile",
     "GridfinityBase",
     "GridfinityBin",
     "GridfinitySpec",

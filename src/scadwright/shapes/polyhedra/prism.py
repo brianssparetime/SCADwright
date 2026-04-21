@@ -16,7 +16,7 @@ class Prism(Component):
     from ``r``, the result is a frustum (tapered prism).
     """
 
-    equations = ["r, h > 0", "top_r >= 0"]
+    equations = ["r, h > 0", "top_r > 0"]
     sides = Param(int, min=3)
     top_r = Param(float, default=None)
 

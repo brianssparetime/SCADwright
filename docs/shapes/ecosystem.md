@@ -1,9 +1,9 @@
 # Ecosystem components
 
-Gridfinity storage system and aluminum extrusion profiles.
+Gridfinity storage system.
 
 ```python
-from scadwright.shapes import GridfinityBase, GridfinityBin, ExtrusionProfile
+from scadwright.shapes import GridfinityBase, GridfinityBin
 ```
 
 ## Gridfinity
@@ -47,18 +47,3 @@ from scadwright.shapes import GridfinitySpec, STANDARD_GRIDFINITY, GridfinityBas
 HALF_SCALE = STANDARD_GRIDFINITY._replace(grid_unit=21.0, magnet_d=3.0, magnet_h=1.2)
 base = GridfinityBase(grid_x=4, grid_y=3, spec=HALF_SCALE)
 ```
-
-## `ExtrusionProfile(size)` (2D)
-
-T-slot aluminum extrusion cross-section (2020/2040 style). Extrude for a 3D rail.
-
-```python
-ExtrusionProfile(size=20).linear_extrude(height=200)    # 2020 rail
-ExtrusionProfile(size=40, slots=2).linear_extrude(height=300)  # 2040 rail
-```
-
-`slots` controls T-slot channels per face (default 1).
-
-![Extrusion profile](images/extrusion-profile.png)
-
-*`ExtrusionProfile(size=20).linear_extrude(height=80)` — 2020-style aluminum rail cross-section.*

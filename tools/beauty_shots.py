@@ -29,7 +29,6 @@ from scadwright.shapes import (
     Counterbore,
     DShaft,
     Dome,
-    ExtrusionProfile,
     Funnel,
     GT2Pulley,
     GridfinityBase,
@@ -72,10 +71,6 @@ def _2d_rounded_slot():
 
 def _2d_arc():
     return Arc(r=15, angles=(0, 120), width=3).linear_extrude(height=3)
-
-
-def _extrusion_profile():
-    return ExtrusionProfile(size=20).linear_extrude(height=80)
 
 
 def _d_shaft():
@@ -121,7 +116,7 @@ COMPONENTS = [
     # print.md
     {"out": "docs/shapes/images/honeycomb-panel.png", "component": HoneycombPanel, "kwargs": {"size": (80, 60, 3), "cell_size": 8, "wall_thk": 1}},
     {"out": "docs/shapes/images/text-plate.png",      "component": TextPlate,      "kwargs": {"label": "HELLO", "plate_w": 40, "plate_h": 15, "plate_thk": 2, "depth": 0.8, "font_size": 8}},
-    {"out": "docs/shapes/images/snap-hook.png",       "component": SnapHook,       "kwargs": {"arm_length": 12, "hook_depth": 2, "thk": 1.5, "width": 5}},
+    {"out": "docs/shapes/images/snap-hook.png",       "component": SnapHook,       "kwargs": {"arm_length": 12, "hook_depth": 2, "hook_height": 2, "thk": 1.5, "width": 5}},
 
     # transforms.md
     {"out": "docs/shapes/images/bend.png",        "build": _transform_bend,        "name": "bend"},
@@ -131,8 +126,6 @@ COMPONENTS = [
     # ecosystem.md
     {"out": "docs/shapes/images/gridfinity-base.png",   "component": GridfinityBase, "kwargs": {"grid_x": 3, "grid_y": 2}},
     {"out": "docs/shapes/images/gridfinity-bin.png",    "component": GridfinityBin,  "kwargs": {"grid_x": 2, "grid_y": 1, "height_units": 4}},
-    {"out": "docs/shapes/images/extrusion-profile.png", "build": _extrusion_profile, "name": "extrusion-profile"},
-
     # mechanical.md
     {"out": "docs/shapes/images/bearing.png",      "component": Bearing,    "kwargs": {"series": "608"}},
     {"out": "docs/shapes/images/gt2-pulley.png",   "component": GT2Pulley,  "kwargs": {"teeth": 20, "bore_d": 5, "belt_width": 6}},

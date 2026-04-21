@@ -84,17 +84,17 @@ tab = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
 pocket = cube([tab.slot_w, tab.slot_d, tab.slot_h])  # matching cutter
 ```
 
-### `SnapHook(arm_length, hook_depth, thk, width)`
+### `SnapHook(arm_length, hook_depth, hook_height, thk, width)`
 
-Cantilever snap-fit hook. Arm flexes to snap over a ledge.
+Cantilever snap-fit hook. Triangular barb at the top of the arm has a flat catch (bottom) and a slanted ramp (top). Typical ramp is 45° (`hook_height == hook_depth`).
 
 ```python
-SnapHook(arm_length=10, hook_depth=2, thk=1.5, width=5)
+SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
 ```
 
 ![Snap hook](images/snap-hook.png)
 
-*`SnapHook(arm_length=12, hook_depth=2, thk=1.5, width=5)` — cantilever snap-fit that flexes to clip over a ledge.*
+*`SnapHook(arm_length=12, hook_depth=2, hook_height=2, thk=1.5, width=5)` — cantilever with a ramped barb; the arm flexes on insertion, the catch grips a ledge.*
 
 ### `GripTab(tab_w, tab_h, tab_d, taper)`
 

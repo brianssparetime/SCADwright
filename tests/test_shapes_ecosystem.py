@@ -4,7 +4,7 @@ import pytest
 
 from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
-from scadwright.shapes import ExtrusionProfile, GridfinityBase, GridfinityBin
+from scadwright.shapes import GridfinityBase, GridfinityBin
 
 
 # --- GridfinityBase ---
@@ -53,25 +53,3 @@ def test_gridfinity_bin_publishes_dims():
     b = GridfinityBin(grid_x=2, grid_y=1, height_units=3)
     assert b.outer_w == pytest.approx(83.5, abs=0.5)
     assert b.total_h == pytest.approx(25.4, abs=0.5)
-
-
-# --- ExtrusionProfile ---
-
-
-def test_extrusion_profile_2020():
-    p = ExtrusionProfile(size=20)
-    scad = emit_str(p)
-    assert "difference" in scad
-
-
-def test_extrusion_profile_bbox():
-    p = ExtrusionProfile(size=20)
-    bb = bbox(p)
-    assert bb.size[0] == pytest.approx(20.0, abs=0.1)
-    assert bb.size[1] == pytest.approx(20.0, abs=0.1)
-
-
-def test_extrusion_profile_multi_slot():
-    p = ExtrusionProfile(size=40, slots=2)
-    scad = emit_str(p)
-    assert "difference" in scad
