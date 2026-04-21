@@ -10,13 +10,13 @@ But OpenSCAD is limited in ways that rapidly get annoying once your project grow
 
 **SCADwright keeps the basic OpenSCAD model** — the same shapes, the same transforms, the same boolean operations — and lets you write them in Python.
 
-However, **SCADwright goes way beyond just a python wrapper for OpenSCAD**: you get the ability to add new components and transforms to the language, components that publish their dimensions to callers, a rich library of reusable shapes out of the box, scripts you can parametrize from the command line, real error messages with line numbers, and automated tests.
+However, **SCADwright goes way beyond just a python wrapper for OpenSCAD**: you get the ability to add new components and transforms to the language, components that publish their dimensions to callers, a rich library of reusable shapes out of the box, auto-EPS, surface-attachment and smart centering, scripts you can parametrize from the command line, real error messages with line numbers, and automated tests.
 
 While simple projects very strongly resemeble OpenSCAD code (easy to be productive immediately), as your projects grows in complexity, **SCADwright allows a graceful transition to more complex features**, without any hard syntactic or conceptual boundaries. **Styles can be mixed and matched in the same project.**
 
 I have put significant effort into refining the UX of SCADwright:  the more advanced constructs use a syntax 
-that's neither quite OpenSCAD nor quite standard object-oriented python. Instead, the goal is to ruthlessly 
-elimate boiler plate, and make constructs simple to use in common cases for those with little background in
+that's neither OpenSCAD nor quite standard object-oriented python. Instead, the goal is to **ruthlessly 
+elimate boiler plate,** and make constructs simple to use in common cases for those with little background in
 object-oriented python or advanced OpenSCAD, while retaining full python capabilities and a low-level interface
 for exceptional cases.
 
@@ -26,7 +26,6 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
-![Shape library](docs/shapes/images/hero.png)
 
 ## SCADwright systematically addresses the most painful aspects of OpenSCAD:
 
@@ -119,6 +118,8 @@ part = difference(box, cylinder(h=10, r=3).through(box))     # through-hole, no 
 OpenSCAD has no module library. Every project starts with reinventing tubes, rounded rectangles, and screw holes. Need an M3 bolt? Look up the head diameter, compute the hex profile, get the clearance hole size right. Need a gear? That's a week.
 
 SCADwright ships a shape library with 50+ ready-made Components across mechanical, fastener, gear, and print-oriented categories:
+
+![Shape library](docs/shapes/images/hero.png)
 
 ```python
 from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bearing
