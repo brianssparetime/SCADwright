@@ -9,7 +9,13 @@ from scadwright.shapes.curves import (
     helix_path,
     path_extrude,
 )
-from scadwright.shapes.ecosystem import ExtrusionProfile, GridfinityBase, GridfinityBin
+from scadwright.shapes.ecosystem import (
+    STANDARD_GRIDFINITY,
+    ExtrusionProfile,
+    GridfinityBase,
+    GridfinityBin,
+    GridfinitySpec,
+)
 from scadwright.shapes.fasteners import (
     Bolt,
     CaptiveNutPocket,
@@ -101,6 +107,8 @@ __all__ = [
     "GridPanel",
     "GridfinityBase",
     "GridfinityBin",
+    "GridfinitySpec",
+    "STANDARD_GRIDFINITY",
     "GripTab",
     "GT2Pulley",
     "HTDPulley",

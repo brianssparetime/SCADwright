@@ -37,6 +37,17 @@ Publishes `outer_w`, `outer_l`, `total_h`.
 
 *`GridfinityBin(grid_x=2, grid_y=1, height_units=4)` — a 2×1 bin that drops onto the base.*
 
+### Customizing the spec
+
+Geometry is driven by a `GridfinitySpec` namedtuple — grid unit, wall thickness, magnet/screw sizes, etc. The default `STANDARD_GRIDFINITY` matches the standard 42mm system. Override `spec` to produce half-scale, double-wall, or any other non-standard variant:
+
+```python
+from scadwright.shapes import GridfinitySpec, STANDARD_GRIDFINITY, GridfinityBase
+
+HALF_SCALE = STANDARD_GRIDFINITY._replace(grid_unit=21.0, magnet_d=3.0, magnet_h=1.2)
+base = GridfinityBase(grid_x=4, grid_y=3, spec=HALF_SCALE)
+```
+
 ## `ExtrusionProfile(size)` (2D)
 
 T-slot aluminum extrusion cross-section (2020/2040 style). Extrude for a 3D rail.

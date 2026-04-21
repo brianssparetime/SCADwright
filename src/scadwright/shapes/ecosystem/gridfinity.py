@@ -2,10 +2,18 @@
 
 Gridfinity is a modular storage system with a standardized 42mm grid.
 These Components generate bases and bins compatible with the standard.
+
+Geometry is driven by a `GridfinitySpec` namedtuple. Subclass a Component
+and override `spec` to produce half-scale, double-wall, or any other
+non-standard variant:
+
+    class HalfScaleBase(GridfinityBase):
+        spec = GridfinitySpec(grid_unit=21.0, ...)
 """
 
 from __future__ import annotations
 
+from collections import namedtuple
 
 from scadwright.boolops import difference, union
 from scadwright.component.base import Component
@@ -13,17 +21,27 @@ from scadwright.component.params import Param
 from scadwright.primitives import cube, cylinder
 
 
-# Gridfinity standard dimensions (mm).
-GRID_UNIT = 42.0
-BASE_HEIGHT = 5.0
-MAGNET_D = 6.0
-MAGNET_H = 2.4
-SCREW_D = 3.0
-SCREW_H = 6.0
-LIP_HEIGHT = 4.4
-WALL_THK = 1.2
-BOTTOM_THK = 1.0
-FILLET_R = 0.8
+GridfinitySpec = namedtuple(
+    "GridfinitySpec",
+    "grid_unit base_height magnet_d magnet_h magnet_inset screw_d screw_h "
+    "lip_height wall_thk bottom_thk height_unit bin_clearance",
+)
+
+
+STANDARD_GRIDFINITY = GridfinitySpec(
+    grid_unit=42.0,
+    base_height=5.0,
+    magnet_d=6.0,
+    magnet_h=2.4,
+    magnet_inset=4.0,
+    screw_d=3.0,
+    screw_h=6.0,
+    lip_height=4.4,
+    wall_thk=1.2,
+    bottom_thk=1.0,
+    height_unit=7.0,
+    bin_clearance=0.5,
+)
 
 
 class GridfinityBase(Component):
@@ -31,37 +49,41 @@ class GridfinityBase(Component):
 
     ``grid_x`` and ``grid_y`` set the grid size (in units, e.g. 3x2).
     The base has magnet holes at each grid intersection and screw
-    holes in the center of each cell.
+    holes in the center of each cell. Override ``spec`` for non-standard
+    grid sizes or custom magnet/screw dimensions.
     """
 
     grid_x = Param(int, min=1)
     grid_y = Param(int, min=1)
+    spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
 
     def setup(self):                                    # framework hook: optional
-        self.outer_w = self.grid_x * GRID_UNIT
-        self.outer_l = self.grid_y * GRID_UNIT
+        s = self.spec
+        self.outer_w = self.grid_x * s.grid_unit
+        self.outer_l = self.grid_y * s.grid_unit
 
     def build(self):
-        plate = cube([self.outer_w, self.outer_l, BASE_HEIGHT])
+        s = self.spec
+        plate = cube([self.outer_w, self.outer_l, s.base_height])
         cutters = []
 
         for gx in range(self.grid_x):
             for gy in range(self.grid_y):
-                cx = (gx + 0.5) * GRID_UNIT
-                cy = (gy + 0.5) * GRID_UNIT
+                cx = (gx + 0.5) * s.grid_unit
+                cy = (gy + 0.5) * s.grid_unit
 
                 # Screw hole in center of each cell.
                 cutters.append(
-                    cylinder(h=SCREW_H, d=SCREW_D).translate([cx, cy, 0])
+                    cylinder(h=s.screw_h, d=s.screw_d).translate([cx, cy, 0])
                 )
 
                 # Magnet holes at each corner of each cell.
                 for dx in (-1, 1):
                     for dy in (-1, 1):
-                        mx = cx + dx * (GRID_UNIT / 2 - 4.0)
-                        my = cy + dy * (GRID_UNIT / 2 - 4.0)
+                        mx = cx + dx * (s.grid_unit / 2 - s.magnet_inset)
+                        my = cy + dy * (s.grid_unit / 2 - s.magnet_inset)
                         cutters.append(
-                            cylinder(h=MAGNET_H, d=MAGNET_D).translate([mx, my, 0])
+                            cylinder(h=s.magnet_h, d=s.magnet_d).translate([mx, my, 0])
                         )
 
         if cutters:
@@ -73,27 +95,31 @@ class GridfinityBin(Component):
     """Gridfinity storage bin.
 
     ``grid_x``, ``grid_y`` set the footprint in grid units.
-    ``height_units`` sets the bin height in 7mm increments (standard).
-    ``dividers_x`` splits the bin into compartments along x.
+    ``height_units`` sets the bin height in spec-defined increments
+    (standard: 7mm). ``dividers_x`` splits the bin into compartments
+    along x. Override ``spec`` for non-standard variants.
     """
 
     grid_x = Param(int, min=1)
     grid_y = Param(int, min=1)
     height_units = Param(int, min=1)
     dividers_x = Param(int, default=1, min=1)
+    spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
 
     def setup(self):                                    # framework hook: optional
-        self.outer_w = self.grid_x * GRID_UNIT - 0.5  # slight clearance
-        self.outer_l = self.grid_y * GRID_UNIT - 0.5
-        self.total_h = self.height_units * 7.0 + LIP_HEIGHT
+        s = self.spec
+        self.outer_w = self.grid_x * s.grid_unit - s.bin_clearance
+        self.outer_l = self.grid_y * s.grid_unit - s.bin_clearance
+        self.total_h = self.height_units * s.height_unit + s.lip_height
 
     def build(self):
+        s = self.spec
         outer = cube([self.outer_w, self.outer_l, self.total_h])
-        inner_w = self.outer_w - 2 * WALL_THK
-        inner_l = self.outer_l - 2 * WALL_THK
-        inner_h = self.total_h - BOTTOM_THK
+        inner_w = self.outer_w - 2 * s.wall_thk
+        inner_l = self.outer_l - 2 * s.wall_thk
+        inner_h = self.total_h - s.bottom_thk
         inner = cube([inner_w, inner_l, inner_h]).translate(
-            [WALL_THK, WALL_THK, BOTTOM_THK]
+            [s.wall_thk, s.wall_thk, s.bottom_thk]
         )
         shell = difference(outer, inner.through(outer))
 
@@ -101,9 +127,11 @@ class GridfinityBin(Component):
             divider_spacing = inner_w / self.dividers_x
             dividers = []
             for i in range(1, self.dividers_x):
-                x = WALL_THK + i * divider_spacing - WALL_THK / 2
+                x = s.wall_thk + i * divider_spacing - s.wall_thk / 2
                 dividers.append(
-                    cube([WALL_THK, inner_l, inner_h]).translate([x, WALL_THK, BOTTOM_THK])
+                    cube([s.wall_thk, inner_l, inner_h]).translate(
+                        [x, s.wall_thk, s.bottom_thk]
+                    )
                 )
             return union(shell, *dividers)
 
