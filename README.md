@@ -26,6 +26,7 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
+![Shape library](docs/shapes/images/hero.png)
 
 ## SCADwright systematically addresses the most painful aspects of OpenSCAD:
 
