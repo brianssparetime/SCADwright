@@ -52,6 +52,8 @@ from scadwright.shapes.fillets import (
     Counterbore,
     Countersink,
     FilletMask,
+    counterbore_for_screw,
+    countersink_for_screw,
 )
 from scadwright.shapes.print_shapes import (
     EmbossedLabel,
@@ -146,6 +148,8 @@ __all__ = [
     "Worm",
     "WormGear",
     # Functions (lowercase)
+    "counterbore_for_screw",
+    "countersink_for_screw",
     "gear_dimensions",
     "bezier_path",
     "catmull_rom_path",

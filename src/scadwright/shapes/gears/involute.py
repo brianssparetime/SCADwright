@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import math
 
+from scadwright.primitives import polygon
+
 
 def involute_point(base_r: float, angle: float) -> tuple[float, float]:
     """Point on an involute curve at parameter ``angle`` (radians)."""
@@ -124,3 +126,19 @@ def involute_tooth_profile(
         points.append((root_r * math.cos(a), root_r * math.sin(a)))
 
     return points
+
+
+def spur_profile(module: float, teeth: int, pressure_angle: float = 20.0):
+    """Build the full 2D polygon for a spur gear by stamping ``teeth``
+    rotated copies of the involute tooth profile.
+
+    Returns a 2D polygon Node ready for ``linear_extrude``. Used by
+    SpurGear, RingGear, BevelGear, and WormGear.
+    """
+    tooth = involute_tooth_profile(module, teeth, pressure_angle)
+    period = 2 * math.pi / teeth
+    pts = []
+    for i in range(teeth):
+        c, s = math.cos(i * period), math.sin(i * period)
+        pts.extend((x * c - y * s, x * s + y * c) for x, y in tooth)
+    return polygon(points=pts)

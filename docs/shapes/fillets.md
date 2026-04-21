@@ -64,6 +64,18 @@ part = difference(plate, hole.through(plate))
 
 *`Counterbore(shaft_d=4, head_d=7, head_depth=4, shaft_depth=12)` — the solid mask; subtract it from a part for a socket-head pocket.*
 
+## `counterbore_for_screw(size, shaft_depth, head="socket")` and `countersink_for_screw(...)`
+
+Factories that build a `Counterbore` / `Countersink` sized for a standard ISO metric screw. Pulls `clearance_d`, `head_d`, and `head_h` from the [ScrewSpec](fasteners.md) for the given size.
+
+```python
+from scadwright.shapes import counterbore_for_screw, countersink_for_screw
+
+pocket = counterbore_for_screw("M3", shaft_depth=10)
+sink = countersink_for_screw("M5", shaft_depth=20, head="button")
+part = difference(plate, pocket.through(plate))
+```
+
 ## `FilletRing(id, od, base_angle)`
 
 Right-triangle-cross-section ring for flange fillets. `slant="outwards"` (default) slopes the outer wall; `"inwards"` slopes the inner wall.

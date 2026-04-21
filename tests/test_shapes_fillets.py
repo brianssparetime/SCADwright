@@ -10,6 +10,8 @@ from scadwright.shapes import (
     Counterbore,
     Countersink,
     FilletMask,
+    counterbore_for_screw,
+    countersink_for_screw,
 )
 
 
@@ -107,3 +109,35 @@ def test_counterbore_bbox():
     bb = bbox(c)
     assert bb.size[2] == pytest.approx(13.0, abs=0.1)
     assert bb.max[0] == pytest.approx(3.0, abs=0.1)  # head_d/2
+
+
+# --- Screw-spec factories ---
+
+
+def test_counterbore_for_screw_pulls_dims_from_spec():
+    # M3 socket: clearance_d=3.4, head_d=5.5, head_h=3.0
+    c = counterbore_for_screw("M3", shaft_depth=10)
+    assert c.shaft_d == pytest.approx(3.4)
+    assert c.head_d == pytest.approx(5.5)
+    assert c.head_depth == pytest.approx(3.0)
+    assert c.shaft_depth == 10
+
+
+def test_counterbore_for_screw_button_head_differs():
+    # M3 button: head_d=5.7, head_h=1.5 (vs socket 5.5/3.0)
+    c = counterbore_for_screw("M3", shaft_depth=10, head="button")
+    assert c.head_d == pytest.approx(5.7)
+    assert c.head_depth == pytest.approx(1.5)
+
+
+def test_countersink_for_screw_pulls_dims_from_spec():
+    c = countersink_for_screw("M5", shaft_depth=20)
+    # M5 socket: clearance_d=5.5, head_d=8.5, head_h=5.0
+    assert c.shaft_d == pytest.approx(5.5)
+    assert c.head_d == pytest.approx(8.5)
+    assert c.head_depth == pytest.approx(5.0)
+
+
+def test_factory_returns_correct_type():
+    assert isinstance(counterbore_for_screw("M3", 10), Counterbore)
+    assert isinstance(countersink_for_screw("M3", 10), Countersink)

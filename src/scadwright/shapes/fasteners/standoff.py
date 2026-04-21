@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.anchors import anchor
-from scadwright.primitives import cylinder
+from scadwright.shapes.three_d import Tube
 
 
 class Standoff(Component):
@@ -22,5 +21,4 @@ class Standoff(Component):
     mount_top = anchor(at="0, 0, h", normal=(0, 0, 1))
 
     def build(self):
-        outer = cylinder(h=self.h, d=self.od)
-        return difference(outer, cylinder(h=self.h, d=self.id).through(outer))
+        return Tube(h=self.h, od=self.od, id=self.id)

@@ -7,8 +7,7 @@ import math
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.extrusions import linear_extrude
-from scadwright.primitives import polygon
-from scadwright.shapes.gears.involute import involute_tooth_profile
+from scadwright.shapes.gears.involute import spur_profile
 
 
 class SpurGear(Component):
@@ -42,21 +41,7 @@ class SpurGear(Component):
     helix_angle = Param(float, default=0.0)
 
     def build(self):
-        # Generate one tooth-period polygon and rotate N copies.
-        tooth = involute_tooth_profile(
-            self.module, self.teeth, self.pressure_angle,
-        )
-        period = 2 * math.pi / self.teeth
-
-        # Build the full gear profile by rotating the tooth polygon.
-        all_points = []
-        for i in range(self.teeth):
-            angle = i * period
-            c, s = math.cos(angle), math.sin(angle)
-            for x, y in tooth:
-                all_points.append((x * c - y * s, x * s + y * c))
-
-        profile = polygon(points=all_points)
+        profile = spur_profile(self.module, self.teeth, self.pressure_angle)
 
         if self.helix_angle != 0:
             # Helical gear: lead L = pi * d / tan(beta) is the axial

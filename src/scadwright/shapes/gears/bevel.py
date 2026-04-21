@@ -7,8 +7,7 @@ import math
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.extrusions import linear_extrude
-from scadwright.primitives import polygon
-from scadwright.shapes.gears.involute import involute_tooth_profile
+from scadwright.shapes.gears.involute import spur_profile
 
 
 class BevelGear(Component):
@@ -36,23 +35,8 @@ class BevelGear(Component):
     cone_angle = Param(float, default=45.0)
 
     def build(self):
-        # Build the spur gear profile at full size, extrude with linear
-        # taper using scale parameter.
-        tooth = involute_tooth_profile(
-            self.module, self.teeth, self.pressure_angle,
-        )
-        period = 2 * math.pi / self.teeth
-        all_points = []
-        for i in range(self.teeth):
-            angle = i * period
-            c, s = math.cos(angle), math.sin(angle)
-            for x, y in tooth:
-                all_points.append((x * c - y * s, x * s + y * c))
-
-        profile = polygon(points=all_points)
-
+        profile = spur_profile(self.module, self.teeth, self.pressure_angle)
         # Taper: scale at the top is reduced by the cone geometry.
         scale_top = 1 - self.h * math.tan(math.radians(self.cone_angle)) / self.pitch_r
         scale_top = max(0.01, scale_top)
-
         return linear_extrude(profile, height=self.h, scale=scale_top)

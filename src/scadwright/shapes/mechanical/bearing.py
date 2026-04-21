@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections import namedtuple
 
-from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.errors import ValidationError
-from scadwright.primitives import cylinder
+from scadwright.shapes.three_d import Tube
 
 BearingSpec = namedtuple("BearingSpec", "id od width")
 
@@ -70,6 +69,4 @@ class Bearing(Component):
 
     def build(self):
         s = self.spec
-        outer = cylinder(h=s.width, d=s.od)
-        bore = cylinder(h=s.width, d=s.id).through(outer)
-        return difference(outer, bore)
+        return Tube(h=s.width, od=s.od, id=s.id)
