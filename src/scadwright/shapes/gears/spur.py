@@ -58,9 +58,13 @@ class SpurGear(Component):
 
         profile = polygon(points=all_points)
 
-        twist = self.helix_angle if self.helix_angle != 0 else None
-        if twist is not None:
-            # Twist per unit height: tan(helix_angle) * 360 / (pi * pitch_d)
-            # Simplified: twist the full height by helix_angle degrees.
-            return linear_extrude(profile, height=self.h, twist=twist)
+        if self.helix_angle != 0:
+            # Helical gear: lead L = pi * d / tan(beta) is the axial
+            # distance per revolution; total twist over height h is
+            # 360 * h / L = 360 * h * tan(beta) / (pi * d), with beta
+            # in radians for tan().
+            beta_rad = math.radians(self.helix_angle)
+            pitch_d = 2 * self.pitch_r
+            total_twist = 360.0 * self.h * math.tan(beta_rad) / (math.pi * pitch_d)
+            return linear_extrude(profile, height=self.h, twist=total_twist)
         return linear_extrude(profile, height=self.h)

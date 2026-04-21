@@ -9,10 +9,10 @@ from scadwright.primitives import cylinder
 
 
 class Standoff(Component):
-    """Screw-mount standoff column with optional base flange.
+    """Screw-mount standoff column.
 
-    A hollow cylinder (the post) with an optional wider base disc.
-    Centered on the origin, base on z=0.
+    A hollow cylinder centered on the origin, base on z=0. Publishes
+    a ``mount_top`` anchor at the top face for attaching mounted parts.
     """
 
     equations = [

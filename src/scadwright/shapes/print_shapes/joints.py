@@ -10,12 +10,16 @@ from scadwright.primitives import cube
 class TabSlot(Component):
     """Finger joint tab-and-slot pair.
 
-    Produces a tab (positive) and slot (negative) that interlock.
-    ``tab_w``, ``tab_h``, ``tab_d`` are the tab dimensions.
-    ``clearance`` adds play around the slot for print tolerance.
+    The Component itself emits the tab (positive). For the matching
+    slot cutter, read the ``.slot`` property — a cube sized to ``tab + clearance``
+    that you position at the receiving part and subtract:
 
-    The tab sits at z=0 extending upward. The slot is a matching
-    cutout (use the ``slot`` attribute to get just the cutter).
+        tab = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
+        wall = difference(wall, tab.slot.translate([x, y, z]).through(wall))
+
+    ``tab_w``, ``tab_h``, ``tab_d`` are the tab dimensions; ``clearance``
+    adds play around the slot for print tolerance. Slot dimensions are
+    published as ``slot_w``, ``slot_h``, ``slot_d``.
     """
 
     equations = [
@@ -27,6 +31,11 @@ class TabSlot(Component):
 
     def build(self):
         return cube([self.tab_w, self.tab_d, self.tab_h], center="xy")
+
+    @property
+    def slot(self):
+        """Cutter cube sized for the matching slot, centered on the origin in xy."""
+        return cube([self.slot_w, self.slot_d, self.slot_h], center="xy")
 
 
 class SnapHook(Component):

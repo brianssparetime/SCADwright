@@ -57,6 +57,51 @@ def test_spur_gear_helical():
     assert "twist" in scad
 
 
+def _extract_twist(scad: str) -> float:
+    """Pull the numeric twist value out of a linear_extrude SCAD line."""
+    import re
+
+    m = re.search(r"twist\s*=\s*(-?\d+\.?\d*)", scad)
+    assert m, f"no twist= in SCAD output:\n{scad}"
+    return float(m.group(1))
+
+
+def test_spur_gear_helical_twist_value_correct():
+    """Twist must be 360 * h * tan(beta) / (pi * pitch_d), not just helix_angle."""
+    # m=2, teeth=20 -> pitch_d=40. h=10, beta=15 deg.
+    # Expected: 360 * 10 * tan(15 deg) / (pi * 40) = 7.6727...
+    g = SpurGear(module=2, teeth=20, h=10, helix_angle=15)
+    twist = _extract_twist(emit_str(g))
+    expected = 360.0 * 10 * math.tan(math.radians(15)) / (math.pi * 40)
+    assert twist == pytest.approx(expected, rel=1e-4)
+    assert twist == pytest.approx(7.6727, abs=0.01)  # sanity
+
+
+def test_spur_gear_helical_twist_scales_with_height():
+    """Doubling h should double the total twist."""
+    g_short = SpurGear(module=2, teeth=20, h=10, helix_angle=15)
+    g_tall = SpurGear(module=2, teeth=20, h=20, helix_angle=15)
+    twist_short = _extract_twist(emit_str(g_short))
+    twist_tall = _extract_twist(emit_str(g_tall))
+    assert twist_tall == pytest.approx(2 * twist_short, rel=1e-4)
+
+
+def test_spur_gear_helical_twist_depends_on_pitch_d():
+    """Larger pitch_d (more teeth) gives smaller twist for same h, beta."""
+    g_small = SpurGear(module=2, teeth=20, h=10, helix_angle=15)  # pitch_d = 40
+    g_large = SpurGear(module=2, teeth=40, h=10, helix_angle=15)  # pitch_d = 80
+    twist_small = _extract_twist(emit_str(g_small))
+    twist_large = _extract_twist(emit_str(g_large))
+    # 2x pitch_d -> half the twist.
+    assert twist_large == pytest.approx(twist_small / 2, rel=1e-4)
+
+
+def test_spur_gear_negative_helix_angle_gives_negative_twist():
+    g = SpurGear(module=2, teeth=20, h=10, helix_angle=-15)
+    twist = _extract_twist(emit_str(g))
+    assert twist < 0
+
+
 def test_spur_gear_too_few_teeth_raises():
     with pytest.raises(ValidationError, match="teeth: must be >= 6"):
         SpurGear(module=1, teeth=3, h=5)

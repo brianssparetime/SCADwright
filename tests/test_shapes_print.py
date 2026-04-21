@@ -102,6 +102,14 @@ def test_tab_slot_publishes_slot_dims():
     assert t.slot_d == pytest.approx(10.4)
 
 
+def test_tab_slot_slot_property_returns_cutter_with_correct_size():
+    t = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
+    bb = bbox(t.slot)
+    assert bb.size[0] == pytest.approx(t.slot_w)  # 5.4
+    assert bb.size[1] == pytest.approx(t.slot_d)  # 10.4
+    assert bb.size[2] == pytest.approx(t.slot_h)  # 3.2
+
+
 # --- SnapHook ---
 
 
