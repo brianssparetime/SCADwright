@@ -461,7 +461,7 @@ Is there AI generated code in here?  Yes.  It's 2026.
 
 Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands, of incremental iterations, and a fair amount of hand-coding and human-writing (including this bit right here).
 
-Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intutive and naively simple, and working through hard trade-offs in detail though examples.  I've been writing code since the late 90s, and I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
+Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intutive and naively simple, and working through hard trade-offs in detail though examples.  I've been writing code longer than Python has been a language (and I've been writing serious code longer than Python has been a serious language) - I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
 
 In parallel, I'm actually using this framework for my current 3d printing projects: the [Bronica S2 lens housing](/examples/lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) both leverage this 
 framework and motivated its completion.
