@@ -85,10 +85,11 @@ def _parse_params_string(cls, params: dict[str, Param]) -> None:
 def _register_equations(cls, params: dict[str, Param]) -> None:
     """Parse ``equations = [...]`` and attach the resulting machinery to ``cls``.
 
-    Classifies each entry as an equality, a per-Param constraint, or a
-    cross-constraint. Auto-creates ``Param(float)`` for any new symbol.
-    Sets ``cls._has_equations``, ``cls._parsed_equations``,
-    ``cls._has_cross_constraints``, ``cls._cross_constraints``.
+    Classifies each entry as an equality, a per-Param constraint, a
+    cross-constraint, a derivation, or a predicate. Auto-creates
+    ``Param(float)`` for any new symbol introduced by an equality or
+    constraint. Stores compiled derivations/predicates for instance-time
+    evaluation.
     """
     all_eq_strs = list(cls.__dict__.get("equations", None) or [])
     if not all_eq_strs:
@@ -96,6 +97,11 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
             cls._has_equations = False
             cls._has_cross_constraints = False
             cls._cross_constraints = []
+            cls._has_derivations = False
+            cls._derivations = []
+            cls._derivation_names = frozenset()
+            cls._has_predicates = False
+            cls._predicates = []
         return
 
     from scadwright.component.equations import (
@@ -103,18 +109,31 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         extract_equality_symbols,
         parse_constraints,
         parse_cross_constraints,
+        parse_derivations,
         parse_equations,
+        parse_predicates,
     )
 
     equalities: list[str] = []
     constraints: list[str] = []
     cross_strs: list[str] = []
-    for s in all_eq_strs:
-        kind = classify_equation(s)
+    derivation_asts: list[tuple] = []
+    predicate_asts: list[tuple] = []
+    for i, s in enumerate(all_eq_strs):
+        try:
+            kind, stmt = classify_equation(s)
+        except ValidationError as exc:
+            raise ValidationError(
+                f"{cls.__name__}.equations[{i}]: {exc}"
+            ) from exc
         if kind == "equality":
             equalities.append(s)
         elif kind == "cross_constraint":
             cross_strs.append(s)
+        elif kind == "derivation":
+            derivation_asts.append((stmt, s))
+        elif kind == "predicate":
+            predicate_asts.append((stmt, s))
         else:
             constraints.append(s)
 
@@ -148,12 +167,46 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
             if sym_name not in params:
                 _declare_float_param(sym_name)
 
+    # Parse derivations. LHS can't collide with a Param (including Params
+    # auto-declared from equality free symbols) or with an earlier derivation.
+    compiled_derivations: list = []
+    derivation_names: set[str] = set()
+    if derivation_asts:
+        compiled_derivations = parse_derivations(
+            derivation_asts, extra_allowed_names=params.keys()
+        )
+        for name, _, raw in compiled_derivations:
+            if name in params:
+                raise ValidationError(
+                    f"{cls.__name__}: derivation `{raw}` LHS {name!r} "
+                    f"collides with Param of same name"
+                )
+            if name in derivation_names:
+                raise ValidationError(
+                    f"{cls.__name__}: derivation `{raw}` LHS {name!r} "
+                    f"declared twice"
+                )
+            derivation_names.add(name)
+
+    compiled_predicates: list = (
+        parse_predicates(
+            predicate_asts,
+            extra_allowed_names=set(params.keys()) | derivation_names,
+        )
+        if predicate_asts else []
+    )
+
     cls._parsed_equations = (
         parse_equations(equalities, params.keys()) if equalities else None
     )
     cls._has_equations = bool(equalities)
     cls._cross_constraints = cross_compiled
     cls._has_cross_constraints = bool(cross_compiled)
+    cls._derivations = compiled_derivations
+    cls._has_derivations = bool(compiled_derivations)
+    cls._derivation_names = frozenset(derivation_names)
+    cls._predicates = compiled_predicates
+    cls._has_predicates = bool(compiled_predicates)
 
 
 def _collect_anchor_defs(cls) -> dict:
@@ -198,17 +251,18 @@ class Component(Node):
     __params__: dict[str, Param] = {}
 
     def __setattr__(self, name, value):
-        # Equation-using Components freeze after construction: Param writes
-        # would desync from the solved values, so we refuse them.
-        if (
-            getattr(self, "_frozen", False)
-            and name in type(self).__params__
-        ):
-            raise ValidationError(
-                f"{type(self).__name__} uses equations and is frozen after "
-                f"construction; cannot reassign Param {name!r}. "
-                f"Create a new instance instead."
-            )
+        # Frozen Components refuse writes to any name whose value is
+        # part of the construction contract: Params (solver inputs or user
+        # inputs) and derivation outputs (derived from those inputs). Letting
+        # either be reassigned after __init__ would desync the instance from
+        # the equations that produced it.
+        if getattr(self, "_frozen", False):
+            cls = type(self)
+            if name in cls.__params__ or name in getattr(cls, "_derivation_names", ()):
+                raise ValidationError(
+                    f"{cls.__name__} is frozen after construction; cannot "
+                    f"reassign {name!r}. Create a new instance instead."
+                )
         # Bypass the frozen __setattr__ inherited from Node, making Component
         # and its subclasses behave like normal Python classes.
         object.__setattr__(self, name, value)
@@ -523,8 +577,8 @@ def _make_param_init(cls, params: dict[str, Param]):
                 object.__setattr__(self, impl, kwargs[impl])
 
         # Cross-constraints (var-vs-var inequalities) run now that every
-        # Param is set, before setup(), so violations surface at the
-        # input-validation layer rather than mid-build.
+        # Param is set, before derivations/predicates/setup, so violations
+        # surface at the input-validation layer rather than mid-build.
         if getattr(cls, "_has_cross_constraints", False):
             from scadwright.component.equations import evaluate_cross_constraints
 
@@ -535,13 +589,35 @@ def _make_param_init(cls, params: dict[str, Param]):
 
         _resolve_anchor_defs(self)
 
+        # Derivations publish computed values onto the instance. They see all
+        # Params (incl. solver-resolved), all earlier derivations, and namedtuple
+        # fields via attribute access. Runs before predicates so predicates can
+        # reference derived names.
+        if getattr(cls, "_has_derivations", False):
+            from scadwright.component.equations import evaluate_derivations
+
+            evaluate_derivations(cls._derivations, self, type(self).__name__)
+
+        # Predicates validate arbitrary Python truths about the instance.
+        # Runs after derivations, before setup(), so user-facing validation
+        # failures are reported before any framework-internal setup work.
+        if getattr(cls, "_has_predicates", False):
+            from scadwright.component.equations import evaluate_predicates
+
+            evaluate_predicates(cls._predicates, self, type(self).__name__)
+
         post = getattr(self, "setup", None)
         if callable(post):
             post()
 
-        # Freeze equation-using instances so post-construction Param writes
-        # can't desync from the solved values.
-        if getattr(cls, "_has_equations", False):
+        # Freeze instances whose state is tied to the user-input contract
+        # (equations, derivations, or predicates). Prevents post-construction
+        # Param or derivation writes from desynchronizing the instance.
+        if (
+            getattr(cls, "_has_equations", False)
+            or getattr(cls, "_has_derivations", False)
+            or getattr(cls, "_has_predicates", False)
+        ):
             self._frozen = True
 
     __init__.__qualname__ = f"{cls.__qualname__}.__init__"

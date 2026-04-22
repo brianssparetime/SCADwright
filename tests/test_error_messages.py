@@ -298,3 +298,81 @@ def test_missing_build_caught_at_render_time():
     msg = str(exc_info.value)
     assert "NoBuild" in msg
     assert "build" in msg
+
+
+# =============================================================================
+# Derivations and predicates
+# =============================================================================
+
+
+def test_derivation_collision_with_param_names_param():
+    with pytest.raises(ValidationError) as exc_info:
+        class C(Component):
+            x = Param(float)
+            equations = ["x = 5"]
+            def build(self): return cube([1, 1, 1])
+    msg = str(exc_info.value)
+    assert "collides with Param" in msg
+    assert "'x'" in msg
+
+
+def test_derivation_undefined_name_message_includes_raw():
+    class C(Component):
+        equations = ["a > 0", "b = a + unknown"]
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError) as exc_info:
+        C(a=5)
+    msg = str(exc_info.value)
+    assert "derivation" in msg
+    assert "b = a + unknown" in msg
+    assert "unknown" in msg
+
+
+def test_derivation_syntax_error_class_def_time():
+    with pytest.raises(ValidationError) as exc_info:
+        class C(Component):
+            equations = ["pitch = (incomplete"]
+            def build(self): return cube([1, 1, 1])
+    assert "cannot parse" in str(exc_info.value)
+
+
+def test_predicate_failure_compare_shows_values():
+    from collections import namedtuple
+    Spec = namedtuple("Spec", "length")
+    class C(Component):
+        spec = Param(Spec)
+        equations = ["depth > 0", "depth < spec.length"]
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError) as exc_info:
+        C(spec=Spec(length=40.0), depth=50.0)
+    msg = str(exc_info.value)
+    assert "depth < spec.length" in msg
+    assert "left=50.0" in msg
+    assert "right=40.0" in msg
+
+
+def test_predicate_failure_all_shows_offending_index():
+    from collections import namedtuple
+    E = namedtuple("E", "dia")
+    class C(Component):
+        elements = Param(tuple)
+        cap = Param(float, positive=True)
+        equations = ["all(e.dia <= cap for e in elements)"]
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError) as exc_info:
+        C(elements=(E(5.0), E(8.0), E(20.0)), cap=10.0)
+    msg = str(exc_info.value)
+    assert "index 2" in msg
+    assert "left=20.0" in msg
+    assert "right=10.0" in msg
+
+
+def test_predicate_not_boolean_shape_rejected_at_class_def():
+    with pytest.raises(ValidationError) as exc_info:
+        class C(Component):
+            equations = ["len(size)"]  # no comparison — ambiguous as a predicate
+            def build(self): return cube([1, 1, 1])
+    assert "not a boolean predicate" in str(exc_info.value)
