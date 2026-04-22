@@ -221,18 +221,21 @@ def _resolve_attach_anchor(node, name: str, role: str, loc):
     if name not in anchors:
         if name in FACE_NAMES:
             resolve_face_name(name)  # pragma: no cover — sanity path
+        type_name = type(node).__name__
         available = sorted(anchors)
         # Components publish more than the 12 bbox defaults; use that as the
         # heuristic for whether a "custom anchor missing" message applies.
         if len(available) > 12:
             raise ValidationError(
-                f"attach: no anchor {name!r} on {role}. Available: {available}",
+                f"attach: no anchor {name!r} on {role} ({type_name}). "
+                f"Available: {available}",
                 source_location=loc,
             )
         raise ValidationError(
-            f"attach: custom anchor {name!r} is only available on Components. "
-            f"Primitives support the standard face names: top, bottom, front, "
-            f"back, lside, rside (or +z, -z, -y, +y, -x, +x).",
+            f"attach: custom anchor {name!r} on {role} ({type_name}) — "
+            f"custom anchors are only available on Components. Primitives "
+            f"support the standard face names: top, bottom, front, back, "
+            f"lside, rside (or +z, -z, -y, +y, -x, +x).",
             source_location=loc,
         )
     return anchors[name]
