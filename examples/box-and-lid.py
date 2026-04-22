@@ -73,8 +73,9 @@ class Box(Component):
         "inner_l == outer_l - 2 * wall_thk",
         "inner_h == height - floor_thk",
         "outer_w, outer_l, inner_w, inner_l, inner_h > 0",
-        "wall_thk, floor_thk, height, pylon_od, corner_inset > 0",
+        "wall_thk, floor_thk, height, pylon_od, corner_inset, lip_thk > 0",
         "corner_r, chamfer, lip_height, lip_clearance >= 0",
+        "lip_thk < wall_thk",
     ]
     screw = Param(ScrewSpec)
 
@@ -122,16 +123,27 @@ class Box(Component):
                 .translate([px, py, self.floor_thk])
             )
 
-        # Centering lip at the rim.
+        # Centering lip: a hollow rectangular frame rising from the inner
+        # edge of the wall. Its outer footprint matches the inner cavity
+        # (inner_w x inner_l), so it's fused to the wall rather than
+        # floating over the opening. A matching recess in the lid captures
+        # it with `lip_clearance` slack, keeping the lid from sliding.
         if self.lip_height > 0:
-            lc = self.lip_clearance
-            lip_r = max(self.inner_corner_r - lc, 0.5)
-            lip = (
-                rounded_rect(self.inner_w - 2 * lc, self.inner_l - 2 * lc, r=lip_r)
+            ir = self.inner_corner_r
+            solid = (
+                rounded_rect(self.inner_w, self.inner_l, r=ir)
                 .linear_extrude(height=self.lip_height)
-                .up(h - EPS)
             )
-            yield lip
+            hole = (
+                rounded_rect(
+                    self.inner_w - 2 * self.lip_thk,
+                    self.inner_l - 2 * self.lip_thk,
+                    r=max(ir - self.lip_thk, 0.5),
+                )
+                .linear_extrude(height=self.lip_height)
+                .through(solid)
+            )
+            yield difference(solid, hole).up(h - EPS)
 
 
 class Lid(Component):
@@ -163,16 +175,18 @@ class Lid(Component):
         else:
             outer = rounded_rect(w, l, r=r).linear_extrude(height=h)
 
-        # Underside cavity to receive the box's lip.
+        # Underside recess sized to capture the box's lip with lip_clearance
+        # slack all around.
         if b.lip_height > 0:
             lc = b.lip_clearance
-            cavity_w = b.inner_w - 2 * lc + 2 * lc   # same as inner_w: lip fits inside
-            cavity_l = b.inner_l - 2 * lc + 2 * lc
-            cavity_r = b.inner_corner_r
             cavity = (
-                rounded_rect(cavity_w, cavity_l, r=cavity_r)
-                .linear_extrude(height=b.lip_height + EPS)
-                .down(EPS)
+                rounded_rect(
+                    b.inner_w + 2 * lc,
+                    b.inner_l + 2 * lc,
+                    r=b.inner_corner_r + lc,
+                )
+                .linear_extrude(height=b.lip_height)
+                .through(outer, axis="z")
             )
             outer = difference(outer, cavity)
 
@@ -210,6 +224,7 @@ class MyBox(Box):
     screw = M3
     corner_inset = 8
     lip_height = 2
+    lip_thk = 1.2
     lip_clearance = 0.3
 
 
