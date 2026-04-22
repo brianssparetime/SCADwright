@@ -235,9 +235,11 @@ class BoxAndLid(Design):
 
     @variant(fn=48)
     def display(self):
+        # Lid floats one lid-height above the box so the box's centering
+        # lip is visible between them.
         return union(
             self.box,
-            self.lid.up(self.box.height),
+            self.lid.up(self.box.height + self.lid.height),
         )
 
 
