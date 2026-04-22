@@ -19,7 +19,9 @@ lives in `scadwright.component.base`.
 
 from __future__ import annotations
 
+import ast
 import difflib
+import math
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Any, Iterable, Sequence
@@ -324,35 +326,449 @@ def _sufficient_subsets_with_defaults(
     return minimal
 
 
-def classify_equation(eq_str: str) -> str:
-    """Return ``"equality"``, ``"constraint"``, or ``"cross_constraint"``.
+# =============================================================================
+# AST-based classification and derivation/predicate support
+# =============================================================================
 
-    - Equalities contain ``==`` (or a single ``=`` that is not ``>=``/``<=``).
-    - Constraints have an inequality operator with a numeric RHS — they
-      compile to a per-Param validator (``"x > 0"``, ``"x, y >= -5"``).
-    - Cross-constraints have an inequality with a non-numeric RHS — they
-      reference other Params or expressions (``"id < od"``,
-      ``"cap_height < 2 * sphere_r"``) and are evaluated after all Params
-      are set.
+
+# Functions that produce algebraic results from algebraic inputs. A line
+# containing only these calls (plus arithmetic) can be handed to sympy.
+_ALGEBRAIC_FUNCTION_NAMES = frozenset({
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "sqrt", "log", "exp", "abs", "ceil", "floor",
+    "min", "max", "Min", "Max",
+})
+
+
+def _is_algebraic_ast(node: ast.AST) -> bool:
+    """True if this expression is pure algebra over names and numeric constants.
+
+    Allowed: ``Name``, numeric ``Constant``, ``BinOp``, ``UnaryOp``, ``Tuple``
+    of Names (for comma-expanded constraint LHS), and ``Call`` to a function
+    in the algebraic allowlist. Anything else — attribute access, subscript,
+    list/dict/set literals, comprehensions, non-algebraic calls — disqualifies
+    the expression and forces predicate classification.
     """
-    import re as _re
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.BinOp):
+        return _is_algebraic_ast(node.left) and _is_algebraic_ast(node.right)
+    if isinstance(node, ast.UnaryOp):
+        return _is_algebraic_ast(node.operand)
+    if isinstance(node, ast.Tuple):
+        # Comma-expanded constraint LHS: only Names are meaningful ("w, h > 0").
+        return all(isinstance(e, ast.Name) for e in node.elts)
+    if isinstance(node, ast.Call):
+        func = node.func
+        if not isinstance(func, ast.Name):
+            return False
+        if func.id not in _ALGEBRAIC_FUNCTION_NAMES:
+            return False
+        if node.keywords:
+            return False
+        return all(_is_algebraic_ast(a) for a in node.args)
+    return False
 
-    s = eq_str.strip()
-    if "==" in s:
-        return "equality"
-    m = _re.search(r'(>=|<=|>|<)', s)
-    if m:
-        rhs_part = s[m.end():].strip()
-        try:
-            float(rhs_part)
-            return "constraint"
-        except ValueError:
-            return "cross_constraint"
-    if "=" in s:
-        return "equality"
+
+def _is_predicate_shape(expr: ast.AST) -> bool:
+    """True if this expression, as an equations-list entry, carries boolean
+    intent. Used to reject raw names or arithmetic ("a + 5") at class-def
+    time, while accepting comparisons, boolean operators, `not`, membership,
+    and `all(...)` / `any(...)` calls.
+    """
+    if isinstance(expr, ast.Compare):
+        return True
+    if isinstance(expr, ast.BoolOp):  # And/Or
+        return True
+    if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
+        return True
+    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name):
+        if expr.func.id in ("all", "any", "isinstance"):
+            return True
+    return False
+
+
+def classify_equation(eq_str: str) -> tuple[str, ast.AST | None]:
+    """Classify a single equations-list string.
+
+    Returns ``(kind, stmt)`` where ``kind`` is one of:
+
+    - ``"equality"`` — ``==`` with both sides pure algebra; feeds the solver.
+    - ``"constraint"`` — ``>``/``<``/``>=``/``<=`` with Param-only LHS and a
+      numeric RHS; compiled to a per-Param validator.
+    - ``"cross_constraint"`` — ``>``/``<``/``>=``/``<=`` with algebraic
+      operands on both sides; evaluated at instance time via sympy.
+    - ``"derivation"`` — ``name = expr`` (single ``=``); RHS evaluated in a
+      restricted namespace, result stored on the instance.
+    - ``"predicate"`` — any remaining boolean expression; evaluated as
+      Python, must be truthy.
+
+    ``stmt`` is the top-level ``ast.stmt`` node (useful for derivations and
+    predicates, which re-compile from the AST). ``None`` for fast-path kinds
+    where downstream parsers re-parse the raw string.
+    """
+    try:
+        tree = ast.parse(eq_str.strip(), mode="exec")
+    except SyntaxError as exc:
+        raise ValidationError(
+            f"cannot parse equation {eq_str!r}: {exc}"
+        ) from exc
+
+    if len(tree.body) != 1:
+        raise ValidationError(
+            f"cannot parse equation {eq_str!r}: expected a single expression "
+            f"or assignment, got {len(tree.body)} statements"
+        )
+    stmt = tree.body[0]
+
+    # Derivation: `name = expr` with a bare-identifier LHS.
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+            raise ValidationError(
+                f"derivation {eq_str!r}: LHS must be a single identifier "
+                f"(not tuple-unpacking, chained, or attribute assignment)"
+            )
+        return ("derivation", stmt)
+
+    if not isinstance(stmt, ast.Expr):
+        raise ValidationError(
+            f"cannot parse equation {eq_str!r}: not an expression or "
+            f"assignment ({type(stmt).__name__})"
+        )
+
+    expr = stmt.value
+
+    # Python's comma operator has lower precedence than comparison, so
+    # `"a, b, c > 0"` parses as ``Tuple([a, b, Compare(c, Gt, 0)])`` rather
+    # than ``Compare(Tuple([a, b, c]), Gt, 0)``. Recognize that shape and
+    # rebuild a proper Compare so the rest of classification works uniformly.
+    if (
+        isinstance(expr, ast.Tuple)
+        and expr.elts
+        and isinstance(expr.elts[-1], ast.Compare)
+        and len(expr.elts[-1].ops) == 1
+        and isinstance(expr.elts[-1].left, ast.Name)
+        and all(isinstance(e, ast.Name) for e in expr.elts[:-1])
+    ):
+        tail = expr.elts[-1]
+        merged_lhs = ast.Tuple(
+            elts=list(expr.elts[:-1]) + [tail.left], ctx=ast.Load()
+        )
+        ast.copy_location(merged_lhs, expr)
+        expr = ast.Compare(
+            left=merged_lhs, ops=tail.ops, comparators=tail.comparators
+        )
+        ast.copy_location(expr, tail)
+
+    # Single-operator comparison: may be equality, constraint, cross-constraint,
+    # or a non-algebraic predicate (`len(size) == 3`, `spec.length > depth`).
+    if isinstance(expr, ast.Compare) and len(expr.ops) == 1:
+        op = expr.ops[0]
+        left = expr.left
+        right = expr.comparators[0]
+        if _is_algebraic_ast(left) and _is_algebraic_ast(right):
+            if isinstance(op, ast.Eq):
+                return ("equality", stmt)
+            if isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE)):
+                # Numeric-literal RHS → per-Param constraint fast path;
+                # otherwise cross-constraint.
+                if isinstance(right, ast.Constant) and isinstance(right.value, (int, float)):
+                    return ("constraint", stmt)
+                # A signed numeric literal parses as UnaryOp(USub, Constant):
+                # "-5" in `"x > -5"`. Still a numeric RHS.
+                if (
+                    isinstance(right, ast.UnaryOp)
+                    and isinstance(right.op, (ast.USub, ast.UAdd))
+                    and isinstance(right.operand, ast.Constant)
+                    and isinstance(right.operand.value, (int, float))
+                ):
+                    return ("constraint", stmt)
+                return ("cross_constraint", stmt)
+            # NotEq / Is / IsNot / In / NotIn — predicate.
+            return ("predicate", stmt)
+        # One side isn't pure algebra → predicate.
+        return ("predicate", stmt)
+
+    # Any other predicate-shaped expression.
+    if _is_predicate_shape(expr):
+        return ("predicate", stmt)
+
     raise ValidationError(
-        f"cannot classify equation (no operator found): {eq_str!r}"
+        f"equation {eq_str!r}: not a boolean predicate — did you mean a "
+        f"derivation (use `=`) or a comparison (use `==`, `>`, `<`, `in`)?"
     )
+
+
+# =============================================================================
+# Derivations and predicates
+# =============================================================================
+
+
+_CURATED_BUILTINS: dict[str, Any] = {
+    "range": range, "tuple": tuple, "list": list, "dict": dict,
+    "set": set, "frozenset": frozenset,
+    "zip": zip, "enumerate": enumerate,
+    "sum": sum, "abs": abs, "round": round, "len": len,
+    "min": min, "max": max,
+    "int": int, "float": float, "bool": bool, "str": str,
+    "all": all, "any": any,
+    "sorted": sorted, "reversed": reversed,
+    "True": True, "False": False, "None": None,
+}
+
+_CURATED_MATH: dict[str, Any] = {
+    "sin": math.sin, "cos": math.cos, "tan": math.tan,
+    "asin": math.asin, "acos": math.acos, "atan": math.atan, "atan2": math.atan2,
+    "sqrt": math.sqrt, "log": math.log, "exp": math.exp,
+    "ceil": math.ceil, "floor": math.floor,
+    "pi": math.pi, "e": math.e, "inf": math.inf,
+}
+
+
+def _restricted_namespace(instance) -> dict[str, Any]:
+    """Build the eval namespace for a derivation or predicate.
+
+    The returned dict is passed as ``globals`` (only) to ``eval`` — not as
+    separate globals/locals — because Python's comprehension and generator
+    scopes resolve free variables against the enclosing frame's globals but
+    not its locals. Using one dict means ``tuple(i * pitch for i in range(n))``
+    can see both ``pitch`` and ``n``.
+
+    ``__builtins__`` is set to ``{}`` to block imports, ``open``, ``exec``,
+    ``__import__``, and every other unvetted name. Only the curated builtins
+    and math names we populate explicitly are reachable.
+    """
+    ns: dict[str, Any] = {"__builtins__": {}}
+    ns.update(_CURATED_BUILTINS)
+    ns.update(_CURATED_MATH)
+    for k, v in vars(instance).items():
+        if not k.startswith("_"):
+            ns[k] = v
+    return ns
+
+
+def _compile_expr(node: ast.AST, filename: str):
+    """Compile a free-standing expression AST as ``mode="eval"``."""
+    expr = ast.Expression(body=node)
+    ast.copy_location(expr, node)
+    ast.fix_missing_locations(expr)
+    return compile(expr, filename, "eval")
+
+
+def _validate_call_names(
+    node: ast.AST, raw: str, extra_allowed: Iterable[str]
+) -> None:
+    """Reject bare-name function calls that can't resolve at eval time.
+
+    Catches typos (`snh(x)` instead of `sinh(x)`) at class-definition time
+    rather than letting them slip through to the first instantiation. Only
+    bare-name calls (``Call(Name, ...)``) are checked — attribute calls
+    (``spec.transform(...)``) are allowed since their callability depends
+    on instance state. Names in the curated math/builtin namespace plus
+    any Param/earlier-derivation names passed via ``extra_allowed`` pass.
+    """
+    allowed = set(_CURATED_BUILTINS) | set(_CURATED_MATH) | set(extra_allowed)
+    for n in ast.walk(node):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            if n.func.id not in allowed:
+                raise ValidationError(
+                    f"cannot parse equation {raw!r}: unknown function {n.func.id!r} "
+                    f"(not a Param, derivation, or curated math/builtin name)"
+                )
+
+
+def parse_derivations(
+    derivation_asts: Sequence[tuple[ast.Assign, str]],
+    extra_allowed_names: Iterable[str] = (),
+) -> list[tuple[str, Any, str]]:
+    """Compile each derivation's RHS for instance-time evaluation.
+
+    Returns a list of ``(name, compiled_code, raw_str)`` triples in the same
+    order as the input. The LHS identifier-ness has already been checked in
+    ``classify_equation``; collision checks against Params / earlier
+    derivations happen in the caller.
+    """
+    results: list[tuple[str, Any, str]] = []
+    seen_names: set[str] = set()
+    extra = set(extra_allowed_names)
+    for stmt, raw in derivation_asts:
+        name = stmt.targets[0].id  # classify_equation guarantees this shape
+        if not name.isidentifier():
+            raise ValidationError(
+                f"derivation `{raw}`: LHS must be a valid identifier, got {name!r}"
+            )
+        _validate_call_names(stmt.value, raw, extra | seen_names)
+        try:
+            code = _compile_expr(stmt.value, "<derivation>")
+        except SyntaxError as exc:
+            raise ValidationError(
+                f"derivation `{raw}`: cannot compile RHS: {exc}"
+            ) from exc
+        results.append((name, code, raw))
+        seen_names.add(name)
+    return results
+
+
+def parse_predicates(
+    predicate_asts: Sequence[tuple[ast.Expr, str]],
+    extra_allowed_names: Iterable[str] = (),
+) -> list[tuple[Any, str, ast.AST]]:
+    """Compile each predicate expression and keep its AST for error enrichment.
+
+    Returns a list of ``(compiled_code, raw_str, ast_node)`` triples.
+    """
+    results: list[tuple[Any, str, ast.AST]] = []
+    extra = set(extra_allowed_names)
+    for stmt, raw in predicate_asts:
+        _validate_call_names(stmt.value, raw, extra)
+        try:
+            code = _compile_expr(stmt.value, "<predicate>")
+        except SyntaxError as exc:
+            raise ValidationError(
+                f"predicate `{raw}`: cannot compile: {exc}"
+            ) from exc
+        results.append((code, raw, stmt.value))
+    return results
+
+
+def evaluate_derivations(
+    compiled: Sequence[tuple[str, Any, str]],
+    instance,
+    component_name: str,
+) -> None:
+    """Evaluate each derivation in order, assigning the result on the instance.
+
+    Each derivation sees all Params, earlier derivations, and the curated
+    namespace. Failures (NameError, TypeError, ZeroDivisionError, etc.) are
+    wrapped in ``ValidationError`` with the raw derivation string so users
+    can trace the failure without reading the framework internals.
+    """
+    if not compiled:
+        return
+    ns = _restricted_namespace(instance)
+    for name, code, raw in compiled:
+        try:
+            value = eval(code, ns)
+        except Exception as exc:
+            raise ValidationError(
+                f"{component_name}: derivation `{raw}` failed: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        object.__setattr__(instance, name, value)
+        ns[name] = value
+
+
+def evaluate_predicates(
+    compiled: Sequence[tuple[Any, str, ast.AST]],
+    instance,
+    component_name: str,
+) -> None:
+    """Evaluate each predicate; a falsy result raises ``ValidationError``.
+
+    On failure, ``_enrich_predicate_failure`` re-evaluates sub-expressions for
+    the two common shapes (top-level ``Compare``, ``all(... for e in seq)``)
+    to produce an actionable message with the offending values. Exotic shapes
+    fall back to a raw-string-only message.
+    """
+    if not compiled:
+        return
+    ns = _restricted_namespace(instance)
+    for code, raw, ast_node in compiled:
+        try:
+            result = eval(code, ns)
+        except Exception as exc:
+            raise ValidationError(
+                f"{component_name}: predicate `{raw}` failed to evaluate: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        if bool(result):
+            continue
+        detail = _enrich_predicate_failure(ast_node, ns)
+        msg = f"{component_name}: equation `{raw}` failed"
+        if detail:
+            msg += f": {detail}"
+        raise ValidationError(msg)
+
+
+def _enrich_predicate_failure(ast_node: ast.AST, ns: dict) -> str | None:
+    """Best-effort: turn a failed predicate AST into a message with values.
+
+    Returns ``None`` if the AST shape isn't one we enrich, leaving the
+    caller to use the raw-string-only message. All sub-evaluations are
+    wrapped in try/except so a buggy enrichment can't mask the user's
+    actual failure.
+    """
+    try:
+        # Top-level single-op Compare: show LHS and RHS values.
+        if isinstance(ast_node, ast.Compare) and len(ast_node.ops) == 1:
+            lhs_val = eval(_compile_expr(ast_node.left, "<enrich>"), ns)
+            rhs_val = eval(_compile_expr(ast_node.comparators[0], "<enrich>"), ns)
+            return f"left={lhs_val!r}, right={rhs_val!r}"
+
+        # all(<genexp>) with a single generator — find the first failure.
+        if (
+            isinstance(ast_node, ast.Call)
+            and isinstance(ast_node.func, ast.Name)
+            and ast_node.func.id == "all"
+            and len(ast_node.args) == 1
+            and isinstance(ast_node.args[0], ast.GeneratorExp)
+        ):
+            return _enrich_all_genexp(ast_node.args[0], ns)
+    except Exception:
+        return None
+    return None
+
+
+def _enrich_all_genexp(genexp: ast.GeneratorExp, ns: dict) -> str | None:
+    """For ``all(elt for var in iter if filter...)``, locate the first item
+    that makes ``elt`` false. Returns a message describing that item, or
+    None if the shape is too complex to enrich.
+    """
+    if len(genexp.generators) != 1:
+        return None
+    c = genexp.generators[0]
+    if not isinstance(c.target, ast.Name):
+        return None
+
+    var_name = c.target.id
+    try:
+        seq = eval(_compile_expr(c.iter, "<enrich>"), ns)
+    except Exception:
+        return None
+
+    elt_code = _compile_expr(genexp.elt, "<enrich>")
+    filter_codes = [_compile_expr(f, "<enrich>") for f in c.ifs]
+
+    for i, item in enumerate(seq):
+        local_ns = dict(ns)
+        local_ns[var_name] = item
+        try:
+            if not all(bool(eval(fc, local_ns)) for fc in filter_codes):
+                continue
+        except Exception:
+            continue
+        try:
+            elt_result = eval(elt_code, local_ns)
+        except Exception:
+            return f"failed at index {i} with {var_name}={item!r}"
+        if bool(elt_result):
+            continue
+        # This item is the offender. Enrich further if elt is a Compare.
+        if isinstance(genexp.elt, ast.Compare) and len(genexp.elt.ops) == 1:
+            try:
+                left = eval(_compile_expr(genexp.elt.left, "<enrich>"), local_ns)
+                right = eval(_compile_expr(genexp.elt.comparators[0], "<enrich>"), local_ns)
+                return (
+                    f"failed at index {i} with {var_name}={item!r}: "
+                    f"left={left!r}, right={right!r}"
+                )
+            except Exception:
+                pass
+        return f"failed at index {i} with {var_name}={item!r}"
+
+    return None
 
 
 def extract_equality_symbols(eq_str: str, known_params: Iterable[str] = ()) -> set[str]:
