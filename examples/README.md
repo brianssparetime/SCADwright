@@ -14,7 +14,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | --- | --- | --- |
 | Simple | [`simple-plate.py`](simple-plate.py) | Flat script, no Components -- primitives + booleans + render |
 | Intermediate | [`battery-holder.py`](battery-holder.py) | Custom transform per cradle, multi-instantiation, concrete subclass per battery type |
-| Intermediate | [`shelf-bracket.py`](shelf-bracket.py) | Equation solving with trig, three concrete brackets each specified via a different pair |
+| Intermediate | [`v-block.py`](v-block.py) | Equation solving with trig (sin/tan); three concrete blocks pinned by different pairs; no `setup()` |
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | Generator `build()`, cross-Component publishing, equations, print/display variants |
 | Intermediate | [`lens-housing.py`](lens-housing.py) | Multiple instantiation (element stack), `halve` for section view, equations |
 | Complex | [`electronics-case.py`](electronics-case.py) | Spec namedtuples, three custom transforms, multi-variant print-splitting |
@@ -43,26 +43,31 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 
 ---
 
-## 2. [`shelf-bracket.py`](shelf-bracket.py)
+## 2. [`v-block.py`](v-block.py)
 
-A right-triangular gusset bracket for supporting a wall shelf. Three concrete brackets of different sizes, each specified via a different pair of the four geometric variables.
+A machinist's V-block: a rectangular block with a V-shaped groove along its length, sized to cradle round stock tangent to both groove faces. Three concrete blocks, each pinned by a different pair of primary variables; the equations solve the rest.
 
-- Equation solving with trig -- four variables (`rise`, `run`, `hyp`, `angle`) constrained by two equations; specify any two, the framework solves the other two
-- Inequality constraints (`"rise, run, hyp, angle > 0"`)
-- Custom transform for mount holes
-- Three concrete subclasses each filling in a different pair: `(run, angle)`, `(rise, run)`, `(hyp, angle)`
+- Trig in `equations` -- `sin` relates groove angle to the rod diameter it cradles; `tan` derives the opening width at the top
+- All arithmetic lives in `equations`; **no `setup()`**, no `params=`, no explicit `Param`
+- Cross-constraints enforce physical bounds (`angle < 180`, `groove_depth < block_h`, `contact_width < block_w`)
+- Three concrete subclasses, each fixing a different pair: `(angle, max_d)`, `(angle, groove_depth)`, `(max_d, groove_depth)`
+- Chained `.through(parent, axis="x").through(parent, axis="z")` for the V-cutter -- no manual EPS, resolves coplanar faces at both ends and the top
 
 ```python
 equations = [
-    "rise**2 + run**2 == hyp**2",
-    "rise == run * tan(angle * pi / 180)",
-    "rise, run, hyp, angle, thk, mount_hole_d, mount_inset > 0",
+    "half_angle == angle / 2",
+    "max_d == 2 * groove_depth * sin(half_angle * pi / 180)",
+    "contact_width == 2 * groove_depth * tan(half_angle * pi / 180)",
+    "angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0",
+    "angle < 180",
+    "groove_depth < block_h",
+    "contact_width < block_w",
 ]
 ```
 
-![Bracket set](images/BracketSet-display.png)
+![V-block set](images/VBlockSet-display.png)
 
-*display variant -- three brackets, each specified by a different pair of (rise, run, hyp, angle), with the remaining two solved*
+*display variant -- three V-blocks laid out with a rod seated in each, showing that different specification pairs yield different angles, depths, and rod capacities*
 
 ---
 

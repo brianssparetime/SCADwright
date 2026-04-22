@@ -186,7 +186,8 @@ COMPONENTS = [
 EXAMPLES = [
     {"out": "examples/images/BatteryBox-display.png", "script": "examples/battery-holder.py",   "variant": "display"},
     {"out": "examples/images/BatteryBox-print.png",   "script": "examples/battery-holder.py",   "variant": "print"},
-    {"out": "examples/images/BracketSet-display.png", "script": "examples/shelf-bracket.py",    "variant": "display"},
+    {"out": "examples/images/VBlockSet-display.png",  "script": "examples/v-block.py",          "variant": "display"},
+    {"out": "examples/images/VBlockSet-print.png",    "script": "examples/v-block.py",          "variant": "print"},
     {"out": "examples/images/BoxAndLid-display.png",  "script": "examples/box-and-lid.py",      "variant": "display"},
     {"out": "examples/images/M57Lens-display.png",    "script": "examples/lens-housing.py",     "variant": "display"},
     {"out": "examples/images/ProjectBox-display.png", "script": "examples/electronics-case.py", "variant": "display"},
