@@ -1,6 +1,10 @@
 """Convex caliper: slips over a measuring caliper's jaws so the caliper
-can measure the distance between two concave surfaces -- a pipe's inner
-diameter, a counterbore, the cups of a ball joint.
+can span a part whose outer faces are both concave -- the central
+thickness of a biconcave lens, or the web of material left between two
+opposing countersunk holes drilled from each side of a plate. A plain
+jaw tip can't seat on either surface; the spherical-cap feeler nests
+into the concavity so the caliper ends up reading the distance between
+the feelers' outer domes.
 
 One primitive (`cylinder`) and two shape-library Components
 (`UShapeChannel` as the jaw clip, `SphericalCap` as the feeler tip)

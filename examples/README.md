@@ -30,7 +30,7 @@ A plate with two holes. No Components, no Design -- just primitives, booleans, a
 
 ## 1. [`convex-caliper.py`](convex-caliper.py)
 
-A tool that slips over the jaws of a measuring caliper so it can measure between two concave surfaces -- a pipe's inner diameter, a counterbore, the cups of a ball joint. One primitive (`cylinder`) and two shape-library Components (`UShapeChannel`, `SphericalCap`) stacked with `attach()`.
+A tool that slips over the jaws of a measuring caliper so it can span a part whose outer faces are both concave -- the central thickness of a biconcave lens, or the web left between two opposing countersunk holes drilled from each side of a plate. The spherical-cap feeler nests into each concavity so the caliper reads the distance between the feelers' outer domes. One primitive (`cylinder`) and two shape-library Components (`UShapeChannel`, `SphericalCap`) stacked with `attach()`.
 
 - Composition with `attach()` -- each piece auto-positions on top of the previous one, no manual z-offsets
 - Published attributes on shape-library Components (`clip.bottom_width`, `clip.outer_width`) drive downstream geometry
