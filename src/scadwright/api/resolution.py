@@ -1,4 +1,29 @@
-"""Resolution context (scoped $fn/$fa/$fs)."""
+"""Resolution context (scoped ``$fn`` / ``$fa`` / ``$fs``).
+
+Pipeline, following a value from user code down to emitted SCAD:
+
+1. **User input.** Either per-call kwargs (``sphere(r=5, fn=64)``) or a
+   scoped ``with resolution(fn=64): ...`` block.
+2. **Merge with context.** Factories call :func:`resolve`, which fills
+   ``None`` kwargs from the enclosing ``resolution(...)`` block's values.
+   Explicit kwargs always win; only ``None``\\ s inherit.
+3. **Validate.** Factories pass the merged tuple through
+   ``_require_resolution`` in ``api/_validate.py``, which rejects
+   non-positive values and surfaces a good error with the call site.
+4. **Store on the node.** The validated ``(fn, fa, fs)`` lands as fields
+   on the emitted AST node (``Sphere.fn`` etc.).
+5. **Hoist or inline at emit time.** ``SCADEmitter`` runs a pre-pass
+   (``_dominant_value_for``) that looks for uniform non-None values
+   across the whole tree: if every resolution-carrying node has the same
+   ``fn``, it's emitted once as a file-top ``$fn = N;`` global and
+   suppressed at call sites (``_fmt_fn_kwargs``). Disagreement forces
+   per-call emission.
+
+Component subclasses participate via class-level attributes (``fn = 64``
+on a Component class) and per-instance kwargs; their ``build()`` runs
+inside a ``resolution(...)`` scope automatically so the primitives it
+constructs pick up the right defaults.
+"""
 
 from __future__ import annotations
 

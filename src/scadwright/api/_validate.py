@@ -115,39 +115,23 @@ def _require_integer(value, name: str) -> int:
 
 
 def _require_vec(value, dim: int, name: str) -> tuple[float, ...]:
-    """Require an iterable of exactly `dim` finite numbers. Strings are rejected."""
-    if isinstance(value, str) or isinstance(value, Real):
-        raise ValidationError(
-            f"{name} must be a length-{dim} iterable of numbers, got {type(value).__name__}: {value!r}",
-            source_location=_loc(),
-        )
-    try:
-        items = list(value)
-    except TypeError:
-        raise ValidationError(
-            f"{name} must be iterable, got {type(value).__name__}: {value!r}",
-            source_location=_loc(),
-        ) from None
-    if len(items) != dim:
-        raise ValidationError(
-            f"{name} must have exactly {dim} elements, got {len(items)}: {items!r}",
-            source_location=_loc(),
-        )
-    out = []
-    for i, x in enumerate(items):
-        if isinstance(x, str) or not isinstance(x, Real) or isinstance(x, bool):
-            raise ValidationError(
-                f"{name}[{i}] must be a number, got {type(x).__name__}: {x!r}",
-                source_location=_loc(),
-            )
-        f = float(x)
-        if math.isnan(f) or math.isinf(f):
-            raise ValidationError(
-                f"{name}[{i}] must be finite, got {f}",
-                source_location=_loc(),
-            )
-        out.append(f)
-    return tuple(out)
+    """Require an iterable of exactly `dim` finite numbers. Strings, bools,
+    scalars, and symbolic expressions are rejected.
+
+    Delegates to ``_as_vec`` with the strictest flags — the shape-and-number
+    validation logic lives there, and keeping this wrapper means the two
+    call-site styles (``_require_vec3(p, "points[i]")`` in factories vs.
+    ``_as_vec3(v, default_scalar_broadcast=False, allow_symbolic=True)`` in
+    transforms) can share the same scanner.
+    """
+    from scadwright.api._vectors import _as_vec
+
+    return _as_vec(
+        value, dim,
+        name=name,
+        default_scalar_broadcast=False,
+        allow_symbolic=False,
+    )
 
 
 def _require_vec3(value, name: str) -> tuple[float, float, float]:
