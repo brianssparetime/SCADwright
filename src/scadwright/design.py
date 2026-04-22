@@ -68,6 +68,12 @@ def variant(
 
 
 # Registry of Design subclasses loaded in the current interpreter process.
+# Populated at class-definition time; never cleared outside
+# `_reset_for_testing()`. The list preserves definition order so CLI output
+# is deterministic. Guarded against duplicate registration so a script that
+# gets imported twice (hot-reload, re-import via `importlib.reload`) still
+# ends up with one entry per class. Assumes single-threaded import (normal
+# Python class-definition semantics).
 _designs: list[type] = []
 
 
@@ -95,7 +101,8 @@ class Design:
                 f"{cls.__name__}: multiple variants marked default=True: {defaults}"
             )
 
-        _designs.append(cls)
+        if cls not in _designs:
+            _designs.append(cls)
 
 
 def _reset_for_testing() -> None:

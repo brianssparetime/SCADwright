@@ -249,6 +249,9 @@ class Viewpoint:
     fov: object | None = None
 
 
+# ContextVar is per-thread / per-async-task, so nested `viewpoint(...)`
+# blocks in concurrent renders don't interfere. Users who render in
+# multiple threads each get their own effective viewpoint.
 _current_viewpoint: ContextVar[Viewpoint | None] = ContextVar(
     "scadwright_viewpoint", default=None
 )
