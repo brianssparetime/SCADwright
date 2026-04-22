@@ -251,12 +251,23 @@ class M57Lens(Design):
 
     @variant(fn=48, default=True)
     def print(self):
-        spread = self.housing.upper_housing_od * 1.5
+        # Bed-ready layout: two splayed housing halves + the inverted hood,
+        # spaced with a uniform gap between adjacent parts and Y-aligned on
+        # a shared baseline.
+        half = half_housing_splay(self.housing)
+        flipped_hood = self.hood.flip("z")   # wide flare on the print bed
+        half_bb = bbox(half)
+        hood_bb = bbox(flipped_hood)
+        gap = 25
+        half_w = half_bb.size[0]
+        hood_w = hood_bb.size[0]
+        y_align = half_bb.center[1] - hood_bb.center[1]
         return union(
-            half_housing_splay(self.housing),
-            half_housing_splay(self.housing).right(spread),
-            # Flip the hood to put its wide flare on the print bed.
-            self.hood.flip("z").left(spread),
+            half,
+            half.right(half_w + gap),
+            flipped_hood.translate(
+                [-(hood_w + half_w) / 2 - gap, y_align, 0]
+            ),
         )
 
     @variant(fn=48)
