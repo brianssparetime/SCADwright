@@ -75,9 +75,12 @@ class SnapPin(Component):
     ``barb_height`` of z-extent at the tip.
 
     Publishes ``socket_d`` (= ``d`` + 2*``clearance``) and a ``.socket``
-    @property returning the matching through-hole cutter. ``clearance``
-    is print-process dependent — typical FDM values are 0.1–0.3 mm.
+    @property returning the matching through-hole cutter. If not passed,
+    ``clearance`` resolves from the active scope or
+    ``DEFAULT_CLEARANCES.snap``. Typical FDM values are 0.1–0.3 mm.
     """
+
+    _clearance_category = "snap"
 
     equations = [
         "d, h, slot_width, slot_depth, barb_depth, barb_height, clearance > 0",

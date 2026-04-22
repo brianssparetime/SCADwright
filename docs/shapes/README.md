@@ -74,7 +74,7 @@ Both styles work -- the top-level `scadwright.shapes` re-exports everything.
 
 ### [Joints](joints.md)
 
-[`TabSlot`](joints.md#tabslottab_w-tab_h-tab_d-clearance), [`GripTab`](joints.md#griptabtab_w-tab_h-tab_d-taper), [`SnapHook`](joints.md#snaphookarm_length-hook_depth-hook_height-thk-width), [`SnapPin`](joints.md#snappind-h-slot_width-slot_depth-barb_depth-barb_height-clearance), [`AlignmentPin`](joints.md#alignmentpind-h-lead_in-clearance), [`PressFitPeg`](joints.md#pressfitpegshaft_d-shaft_h-flange_d-flange_h-lead_in-interference)
+[`TabSlot`](joints.md#tabslottab_w-tab_h-tab_d), [`GripTab`](joints.md#griptabtab_w-tab_h-tab_d-taper), [`SnapHook`](joints.md#snaphookarm_length-hook_depth-hook_height-thk-width), [`SnapPin`](joints.md#snappind-h-slot_width-slot_depth-barb_depth-barb_height), [`AlignmentPin`](joints.md#alignmentpind-h-lead_in), [`PressFitPeg`](joints.md#pressfitpegshaft_d-shaft_h-flange_d-flange_h-lead_in)
 
 ### [Ecosystem](ecosystem.md)
 

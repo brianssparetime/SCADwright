@@ -347,20 +347,28 @@ class Component(Node):
 
         If any of fn/fa/fs are set (instance attrs win over class attrs),
         build() runs inside an implicit resolution() context so primitives
-        created inside inherit those values.
+        created inside inherit those values. Same treatment for a
+        ``clearances`` class attribute — inner scope wins over any outer
+        ``with clearances(...)`` block, matching ``fn`` semantics.
         """
+        from contextlib import ExitStack
+
+        from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
+
         if self._built_tree is None:
             cls_name = type(self).__name__
             fn = getattr(self, "fn", None)
             fa = getattr(self, "fa", None)
             fs = getattr(self, "fs", None)
+            cls_clearances = getattr(type(self), "clearances", None)
             t0 = time.perf_counter()
             try:
-                if fn is None and fa is None and fs is None:
+                with ExitStack() as stack:
+                    if fn is not None or fa is not None or fs is not None:
+                        stack.enter_context(_resolution(fn=fn, fa=fa, fs=fs))
+                    if isinstance(cls_clearances, Clearances):
+                        stack.enter_context(_clearances_ctx(cls_clearances))
                     self._built_tree = self._invoke_build()
-                else:
-                    with _resolution(fn=fn, fa=fa, fs=fs):
-                        self._built_tree = self._invoke_build()
             except SCADwrightError as exc:
                 # Add a note showing which parent Component was being built,
                 # so nested failures produce a readable chain.
@@ -420,6 +428,24 @@ def _resolve_anchor_defs(instance):
 _IMPLICIT_KWARGS = frozenset({"fn", "fa", "fs", "center"})
 
 
+def _resolve_clearance_kwarg(cls, kwargs: dict) -> None:
+    """Inject ``clearance`` from the clearance-resolution chain when a
+    joint-like Component opts in via ``_clearance_category`` and the
+    user didn't pass it explicitly.
+
+    Runs BEFORE the equation solver so the resolved value flows through
+    as a "given" to sympy, same as any user-passed value. No-ops for
+    Components without a ``_clearance_category`` class attribute.
+    """
+    if "clearance" in kwargs:
+        return
+    category = getattr(cls, "_clearance_category", None)
+    if category is None:
+        return
+    from scadwright.api.clearances import resolve_clearance
+    kwargs["clearance"] = resolve_clearance(category)
+
+
 def _solve_equation_vars(cls, params: dict[str, Param], kwargs: dict) -> None:
     """Invoke the equation solver for a Component's equation-vars, merging
     any solved values into ``kwargs`` in place. Leaves non-equation kwargs
@@ -466,6 +492,11 @@ def _make_param_init(cls, params: dict[str, Param]):
             raise ValidationError(
                 f"{type(self).__name__}: unknown parameter(s): {sorted(unknown)}"
             )
+
+        # Clearance resolver runs before equation-solving so the resolved
+        # value flows through as a "given" to sympy, same as any explicit
+        # kwarg. Only joint Components with _clearance_category opt in.
+        _resolve_clearance_kwarg(cls, kwargs)
 
         # Solve equation-vars BEFORE the missing-required check, so solved
         # values count as "provided."

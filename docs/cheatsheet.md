@@ -11,6 +11,7 @@ from scadwright import (
     BBox, bbox, tight_bbox, tree_hash, Matrix, SourceLocation,
     emit, emit_str, render,
     resolution,
+    clearances, Clearances, DEFAULT_CLEARANCES,
     arg, parse_args,
 )
 from scadwright.primitives import (
@@ -275,14 +276,12 @@ HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.5, font_size=8)
 PolyHole(d=6, h=10, sides=8)                      # Laird-compensated FDM hole
 
-# Joints:
-TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)      # finger joint (.slot cutter)
+# Joints (clearance auto-resolves via the clearance chain; pass `clearance=` to override):
+TabSlot(tab_w=5, tab_h=3, tab_d=10)                      # finger joint (.slot cutter)
 SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
-SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5,
-        clearance=0.2)
-AlignmentPin(d=4, h=8, lead_in=1, clearance=0.1)         # locator pin (.socket cutter)
-PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5,
-            interference=0.1)
+SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5)
+AlignmentPin(d=4, h=8, lead_in=1)                        # locator pin (.socket cutter)
+PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)
 
 # 2D profiles:
 rounded_rect(20, 10, r=2)                         # rounded rectangle
@@ -308,6 +307,28 @@ class Gear(Component):                    # class-level default
 ```
 
 **Precedence:** per-call > Component instance attr > Component class attr > outer `resolution()` context.
+
+## Clearances (joint fit tolerances) &nbsp; &nbsp;[→ full](clearances.md)
+
+```python
+from scadwright import Clearances, DEFAULT_CLEARANCES, clearances
+
+# Four named fit categories — sliding / press / snap / finger.
+DEFAULT_CLEARANCES               # Clearances(sliding=0.1, press=0.1, snap=0.2, finger=0.2)
+
+# Scope it:
+with clearances(Clearances(sliding=0.05)):
+    peg = AlignmentPin(d=4, h=8, lead_in=1)    # sliding=0.05
+
+# Project-wide:
+class MyProject(Design):
+    clearances = Clearances(sliding=0.05, press=0.08, snap=0.2, finger=0.2)
+
+# Per-call (highest priority):
+AlignmentPin(d=4, h=8, lead_in=1, clearance=0.3)
+```
+
+**Precedence:** per-call kwarg > Component class attr (inner scope during build) > `with clearances()` scope > Design class attr > `DEFAULT_CLEARANCES`. Partial `Clearances(...)` specs compose per-field.
 
 ## Animation and viewpoints &nbsp; &nbsp;[→ full](animation.md)
 

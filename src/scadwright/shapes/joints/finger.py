@@ -14,13 +14,17 @@ class TabSlot(Component):
     slot cutter, read the ``.slot`` property — a cube sized to ``tab + clearance``
     that you position at the receiving part and subtract:
 
-        tab = TabSlot(tab_w=5, tab_h=3, tab_d=10, clearance=0.2)
+        tab = TabSlot(tab_w=5, tab_h=3, tab_d=10)
         wall = difference(wall, tab.slot.translate([x, y, z]).through(wall))
 
     ``tab_w``, ``tab_h``, ``tab_d`` are the tab dimensions; ``clearance``
-    adds play around the slot for print tolerance. Slot dimensions are
-    published as ``slot_w``, ``slot_h``, ``slot_d``.
+    adds play around the slot for print tolerance. If not passed,
+    ``clearance`` resolves from the active scope (``with clearances(...)``,
+    Design/Component class attrs, or ``DEFAULT_CLEARANCES.finger``).
+    Slot dimensions are published as ``slot_w``, ``slot_h``, ``slot_d``.
     """
+
+    _clearance_category = "finger"
 
     equations = [
         "tab_w, tab_h, tab_d, clearance > 0",

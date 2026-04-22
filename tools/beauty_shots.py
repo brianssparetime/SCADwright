@@ -140,9 +140,9 @@ COMPONENTS = [
 
     # joints.md
     {"out": "docs/shapes/images/snap-hook.png",       "component": SnapHook,       "kwargs": {"arm_length": 12, "hook_depth": 2, "hook_height": 2, "thk": 1.5, "width": 5}},
-    {"out": "docs/shapes/images/snap-pin.png",        "component": SnapPin,        "kwargs": {"d": 8, "h": 22, "slot_width": 1.5, "slot_depth": 15, "barb_depth": 1.2, "barb_height": 2.5, "clearance": 0.2}},
-    {"out": "docs/shapes/images/alignment-pin.png",   "component": AlignmentPin,   "kwargs": {"d": 6, "h": 16, "lead_in": 2, "clearance": 0.1}},
-    {"out": "docs/shapes/images/press-fit-peg.png",   "component": PressFitPeg,    "kwargs": {"shaft_d": 4, "shaft_h": 12, "flange_d": 9, "flange_h": 2, "lead_in": 1.2, "interference": 0.1}},
+    {"out": "docs/shapes/images/snap-pin.png",        "component": SnapPin,        "kwargs": {"d": 8, "h": 22, "slot_width": 1.5, "slot_depth": 15, "barb_depth": 1.2, "barb_height": 2.5}},
+    {"out": "docs/shapes/images/alignment-pin.png",   "component": AlignmentPin,   "kwargs": {"d": 6, "h": 16, "lead_in": 2}},
+    {"out": "docs/shapes/images/press-fit-peg.png",   "component": PressFitPeg,    "kwargs": {"shaft_d": 4, "shaft_h": 12, "flange_d": 9, "flange_h": 2, "lead_in": 1.2}},
 
     # transforms.md
     {"out": "docs/shapes/images/bend.png",        "build": _transform_bend,        "name": "bend"},

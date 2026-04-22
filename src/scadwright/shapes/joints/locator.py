@@ -19,9 +19,13 @@ class AlignmentPin(Component):
 
     Sits on z=0 with its tip at z=``h``. Publishes ``socket_d``
     (= ``d`` + 2*``clearance``) and a ``.socket`` @property returning
-    the matching blind-hole cutter. ``clearance`` is print-process
-    dependent — typical FDM values are 0.05–0.2 mm per side.
+    the matching blind-hole cutter. If not passed, ``clearance``
+    resolves from the active scope (``with clearances(...)``,
+    Design/Component class attrs, or ``DEFAULT_CLEARANCES.sliding``).
+    Typical FDM values are 0.05–0.2 mm per side.
     """
+
+    _clearance_category = "sliding"
 
     equations = [
         "d, h, lead_in, clearance > 0",
@@ -55,19 +59,28 @@ class PressFitPeg(Component):
 
     A shaft with a broader flange at its base and a tapered lead-in at
     its tip. The flange seats against one sheet; the shaft passes through
-    a matching hole (sized ``interference`` smaller than the shaft on
-    each side) in the opposing sheet and holds by friction.
+    a matching hole in the opposing sheet and holds by friction.
+
+    Unlike the other joint Components, ``clearance`` here carries the
+    opposite sign: the socket is *smaller* than the shaft by
+    ``2 * clearance`` (``socket_d == shaft_d - 2 * clearance``). The
+    press-fit interference comes from the shaft being oversized relative
+    to the hole. The resolution machinery still calls the field
+    ``clearance`` so joints share one name across the library — the
+    sign convention lives in the equation above.
 
     Flange sits on z=0; the shaft rises from z=``flange_h``; the tip is
-    at z=``flange_h`` + ``shaft_h``. Publishes ``socket_d``
-    (= ``shaft_d`` - 2*``interference``) and a ``.socket`` @property
-    returning the matching through-hole cutter. ``interference`` is
-    print-process dependent — typical FDM values are 0.05–0.15 mm.
+    at z=``flange_h`` + ``shaft_h``. Publishes ``socket_d`` and a
+    ``.socket`` @property returning the matching through-hole cutter.
+    If not passed, ``clearance`` resolves from the active scope or
+    ``DEFAULT_CLEARANCES.press``. Typical FDM values are 0.05–0.15 mm.
     """
 
+    _clearance_category = "press"
+
     equations = [
-        "shaft_d, shaft_h, flange_d, flange_h, lead_in, interference > 0",
-        "socket_d == shaft_d - 2 * interference",
+        "shaft_d, shaft_h, flange_d, flange_h, lead_in, clearance > 0",
+        "socket_d == shaft_d - 2 * clearance",
         "flange_d > shaft_d",
         "lead_in < shaft_h",
         "lead_in < shaft_d / 2",

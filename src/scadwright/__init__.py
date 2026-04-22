@@ -35,6 +35,7 @@ from scadwright.component import (
     positive,
 )
 from scadwright.api.args import arg, parse_args
+from scadwright.api.clearances import DEFAULT_CLEARANCES, Clearances, clearances
 from scadwright.api.resolution import resolution
 from scadwright.api.variant import Variant, current_variant, register_variants, variant
 from scadwright.emit import emit, emit_str
@@ -73,6 +74,9 @@ __all__ = [
     "render",
     # Config
     "resolution",
+    "clearances",
+    "Clearances",
+    "DEFAULT_CLEARANCES",
     "variant",
     "current_variant",
     "register_variants",

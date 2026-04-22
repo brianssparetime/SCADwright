@@ -194,40 +194,37 @@ def _render_one(
     out_override: str | Path | None = None,
     cli_viewpoint: dict | None = None,
 ) -> Path:
-    from scadwright.render import render  # avoid import cycle
+    from contextlib import ExitStack
+
     from scadwright.animation import viewpoint as _viewpoint
+    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
+    from scadwright.render import render  # avoid import cycle
 
     instance = design_cls()
     method = getattr(instance, vname)
 
-    # Build the node inside resolution + viewpoint contexts as needed.
-    # Variant-level viewpoint is the outer context; CLI viewpoint (if any)
-    # is the inner context so it overrides.
+    # Build the node inside whatever contexts the variant / Design /
+    # CLI request. Variant-level viewpoint is the outer context;
+    # CLI viewpoint (if any) is the inner context so it overrides.
     has_res = meta.fn is not None or meta.fa is not None or meta.fs is not None
     has_vp = (meta.rotation is not None or meta.target is not None
               or meta.distance is not None or meta.fov is not None)
     has_cli_vp = bool(cli_viewpoint)
+    design_clearances = getattr(design_cls, "clearances", None)
 
-    def _call():
+    with ExitStack() as stack:
+        if has_res:
+            stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
+        if isinstance(design_clearances, Clearances):
+            stack.enter_context(_clearances_ctx(design_clearances))
+        if has_vp:
+            stack.enter_context(_viewpoint(
+                rotation=meta.rotation, target=meta.target,
+                distance=meta.distance, fov=meta.fov,
+            ))
         if has_cli_vp:
-            with _viewpoint(**cli_viewpoint):
-                return method()
-        return method()
-
-    if has_res and has_vp:
-        with _resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs):
-            with _viewpoint(rotation=meta.rotation, target=meta.target,
-                            distance=meta.distance, fov=meta.fov):
-                node = _call()
-    elif has_res:
-        with _resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs):
-            node = _call()
-    elif has_vp:
-        with _viewpoint(rotation=meta.rotation, target=meta.target,
-                        distance=meta.distance, fov=meta.fov):
-            node = _call()
-    else:
-        node = _call()
+            stack.enter_context(_viewpoint(**cli_viewpoint))
+        node = method()
 
     if out_override is not None:
         out_path = Path(out_override)
