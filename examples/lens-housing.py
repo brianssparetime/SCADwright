@@ -15,7 +15,7 @@ Run:
 from collections import namedtuple
 from math import inf, radians, tan
 
-from scadwright import Component, Param
+from scadwright import Component, Param, bbox
 from scadwright.boolops import difference, union
 from scadwright.composition_helpers import mirror_copy
 from scadwright.design import Design, run, variant
@@ -204,6 +204,7 @@ class LensHood(Component):
             id=self.housing_upper_od + self.hood_clr,
             od=self.housing_upper_od + self.hood_clr + 2 * self.wall_thk,
             base_angle=63,
+            slant="inwards",
         ).flip("z").up(self.hood_length)
 
         return union(top, fillet)
@@ -266,10 +267,15 @@ class M57Lens(Design):
 
     @variant(fn=48)
     def display(self):
+        # Lift the hood one coupler_overlap above the true housing top (which
+        # sits above upper_housing_len because of the front fillet ring) so
+        # the housing's upper rim is visible between the two parts.
+        housing_top_z = bbox(self.housing).max[2]
+        gap = self.hood.coupler_overlap
         return union(
             self.housing,
             self.hood.flip("z").up(
-                self.housing.upper_housing_len + self.hood.hood_length
+                housing_top_z + gap + self.hood.hood_length + self.hood.coupler_overlap
             ),
         )
 
