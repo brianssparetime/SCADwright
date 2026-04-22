@@ -52,9 +52,9 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 - Dimension derivation in `setup`; multi-instantiation from a computed `cradle_positions` list
 - Print and display `@variant`s
 
-![Battery holder](images/BatteryBox-display.png)
+![Battery holder](images/BatteryBox.png)
 
-*display variant -- six ghost AA cells seated in their cradles, tops protruding above an 80%-height tray, with the rounded-slot windows revealing the cells from the side*
+*left: display variant -- six ghost AA cells seated in their cradles, tops protruding above the tray; right: print variant -- the bare tray showing the cradle geometry*
 
 ---
 
@@ -80,9 +80,9 @@ equations = [
 ]
 ```
 
-![V-block set](images/VBlockSet-display.png)
+![V-block set](images/VBlockSet.png)
 
-*display variant -- three V-blocks laid out with a rod seated in each, showing that different specification pairs yield different angles, depths, and rod capacities*
+*left: display variant -- three V-blocks with a rod seated in each, showing that different specification pairs yield different angles, depths, and rod capacities; right: print variant -- single V-block*
 
 ---
 
@@ -96,9 +96,9 @@ A snap-on enclosure: a rounded-corner box with chamfered top/bottom edges and fo
 - Concrete subclasses (`MyBox`, `MyLid`) in the CONCRETE zone
 - `params` with inequality constraints for positive and non-negative groups
 
-![Box and lid](images/BoxAndLid-display.png)
+![Box and lid](images/BoxAndLid.png)
 
-*display variant -- lid seated on the box, its centering lip dropped into the mouth*
+*left: display variant -- lid floated above the box, centering lip and pylons visible through the gap; right: print variant -- box and inverted lid laid out on the bed*
 
 ---
 
@@ -112,9 +112,9 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 - Derived dimensions computed in `setup`
 - Concrete subclasses (`M57LensHousing`, `M57LensHood`); print-variant splay plus assembled display variant
 
-![Lens housing](images/M57Lens-display.png)
+![Lens housing](images/M57Lens.png)
 
-*display variant -- housing with clip-on hood mated on top, viewed from above*
+*left: display variant -- housing with clip-on hood floated above it; right: print variant -- housing halved and splayed for a section view alongside the hood*
 
 ---
 
@@ -128,9 +128,9 @@ A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at
 - Multi-variant print-splitting: `print_base` and `print_lid` are bed-ready orientations, `display` is the assembled view
 - Multi-instantiation driven by spec data (one standoff per mount hole, one port cutout per `PortSpec`)
 
-![Project box](images/ProjectBox-display.png)
+![Project box](images/ProjectBox.png)
 
-*display variant -- lid sitting on the assembled case, vents on top, PCB stand-in visible through the port cutouts on the sides*
+*left to right: display variant (assembled, PCB visible through the port cutouts), `print_base` (the tray alone, as it sits on the bed), `print_lid` (the lid flipped for the bed)*
 
 ---
 

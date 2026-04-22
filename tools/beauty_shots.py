@@ -184,12 +184,44 @@ COMPONENTS = [
 
 
 EXAMPLES = [
-    {"out": "examples/images/ConvexCaliper-print.png","script": "examples/convex-caliper.py",   "variant": "print"},
-    {"out": "examples/images/BatteryBox-display.png", "script": "examples/battery-holder.py",   "variant": "display"},
-    {"out": "examples/images/BatteryBox-print.png",   "script": "examples/battery-holder.py",   "variant": "print"},
-    {"out": "examples/images/VBlockSet-display.png",  "script": "examples/v-block.py",          "variant": "display"},
-    {"out": "examples/images/VBlockSet-print.png",    "script": "examples/v-block.py",          "variant": "print"},
-    {"out": "examples/images/BoxAndLid-display.png",  "script": "examples/box-and-lid.py",      "variant": "display"},
-    {"out": "examples/images/M57Lens-display.png",    "script": "examples/lens-housing.py",     "variant": "display"},
-    {"out": "examples/images/ProjectBox-display.png", "script": "examples/electronics-case.py", "variant": "display"},
+    {"out": "examples/images/ConvexCaliper-print.png",   "script": "examples/convex-caliper.py",   "variant": "print"},
+    {"out": "examples/images/BatteryBox-display.png",    "script": "examples/battery-holder.py",   "variant": "display"},
+    {"out": "examples/images/BatteryBox-print.png",      "script": "examples/battery-holder.py",   "variant": "print"},
+    {"out": "examples/images/VBlockSet-display.png",     "script": "examples/v-block.py",          "variant": "display"},
+    {"out": "examples/images/VBlockSet-print.png",       "script": "examples/v-block.py",          "variant": "print"},
+    {"out": "examples/images/BoxAndLid-display.png",     "script": "examples/box-and-lid.py",      "variant": "display"},
+    {"out": "examples/images/BoxAndLid-print.png",       "script": "examples/box-and-lid.py",      "variant": "print"},
+    {"out": "examples/images/M57Lens-display.png",       "script": "examples/lens-housing.py",     "variant": "display"},
+    {"out": "examples/images/M57Lens-print.png",         "script": "examples/lens-housing.py",     "variant": "print"},
+    {"out": "examples/images/ProjectBox-display.png",    "script": "examples/electronics-case.py", "variant": "display"},
+    {"out": "examples/images/ProjectBox-print_base.png", "script": "examples/electronics-case.py", "variant": "print_base"},
+    {"out": "examples/images/ProjectBox-print_lid.png",  "script": "examples/electronics-case.py", "variant": "print_lid"},
+]
+
+
+# Side-by-side composites via `magick montage`. Each composite rebuilds
+# automatically after its tile PNGs are rendered, so the README can
+# reference a single image per multi-variant example.
+COMPOSITES = [
+    {"out": "examples/images/BatteryBox.png", "tiles": [
+        "examples/images/BatteryBox-display.png",
+        "examples/images/BatteryBox-print.png",
+    ]},
+    {"out": "examples/images/VBlockSet.png", "tiles": [
+        "examples/images/VBlockSet-display.png",
+        "examples/images/VBlockSet-print.png",
+    ]},
+    {"out": "examples/images/BoxAndLid.png", "tiles": [
+        "examples/images/BoxAndLid-display.png",
+        "examples/images/BoxAndLid-print.png",
+    ]},
+    {"out": "examples/images/M57Lens.png", "tiles": [
+        "examples/images/M57Lens-display.png",
+        "examples/images/M57Lens-print.png",
+    ]},
+    {"out": "examples/images/ProjectBox.png", "tiles": [
+        "examples/images/ProjectBox-display.png",
+        "examples/images/ProjectBox-print_base.png",
+        "examples/images/ProjectBox-print_lid.png",
+    ]},
 ]

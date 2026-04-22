@@ -48,6 +48,9 @@ HERO_TILE = "8x6"              # 48 cells; resize when the tile count changes
 HERO_GEOMETRY = "300x225+3+3"  # per-tile size + 3px gap
 HERO_BG = "#AAAAFF"            # matches the Metallic shots' lavender backdrop
 
+# Per-tile size for multi-variant example composites.
+COMPOSITE_TILE_GEOMETRY = "800x600+5+5"
+
 
 def _resolve_openscad(explicit: str | None) -> str:
     candidate = explicit or os.environ.get("SCADWRIGHT_OPENSCAD") or "openscad"
@@ -137,6 +140,38 @@ def _render_hero() -> int:
     return 0
 
 
+def _render_composite(entry: dict) -> bool:
+    """Assemble a side-by-side composite from already-rendered tile PNGs.
+
+    Returns True on success, False if any tile is missing (skipped).
+    Requires ImageMagick.
+    """
+    magick = shutil.which("magick")
+    if not magick:
+        raise SystemExit(
+            "could not find 'magick' on PATH. Install ImageMagick (e.g. `brew install imagemagick`)."
+        )
+    tiles = [Path(t) for t in entry["tiles"]]
+    missing = [str(t) for t in tiles if not t.exists()]
+    if missing:
+        print(f"  [composite] skipping {entry['out']} (missing: {', '.join(missing)})", file=sys.stderr)
+        return False
+    out = Path(entry["out"])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    layout = f"{len(tiles)}x1"
+    cmd = [magick, "montage", *map(str, tiles),
+           "-tile", layout,
+           "-geometry", COMPOSITE_TILE_GEOMETRY,
+           "-background", HERO_BG,
+           str(out)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"magick montage failed for {out}:\n{result.stderr.strip() or result.stdout.strip()}"
+        )
+    return True
+
+
 def _render_example_entry(entry: dict, tmpdir: str, openscad: str, opts: dict) -> None:
     # Run `scadwright build` in a subprocess so each example imports in a
     # fresh interpreter — avoids collisions on module-level state like the
@@ -185,8 +220,9 @@ def main(argv: list[str] | None = None) -> int:
 
     components = [e for e in getattr(manifest, "COMPONENTS", []) if _match(e["out"])]
     examples = [e for e in getattr(manifest, "EXAMPLES", []) if _match(e["out"])]
+    composites = [e for e in getattr(manifest, "COMPOSITES", []) if _match(e["out"])]
     total = len(components) + len(examples)
-    if total == 0:
+    if total == 0 and not composites:
         print("no entries match the filter", file=sys.stderr)
         return 1
 
@@ -199,7 +235,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [example]   -> {e['out']}", file=sys.stderr)
             _render_example_entry(e, tmpdir, openscad, opts)
 
-    print(f"done: wrote {total} image(s)", file=sys.stderr)
+    composite_count = 0
+    for e in composites:
+        if _render_composite(e):
+            print(f"  [composite] -> {e['out']}", file=sys.stderr)
+            composite_count += 1
+
+    print(f"done: wrote {total + composite_count} image(s)", file=sys.stderr)
     return 0
 
 
