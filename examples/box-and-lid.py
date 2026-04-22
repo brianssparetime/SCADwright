@@ -25,27 +25,26 @@ from scadwright.transforms import transform
 
 
 # =============================================================================
-# GLOBALS
-# =============================================================================
-
-EPS = 0.01
-
-
-# =============================================================================
 # REUSABLE: custom transform + fastener spec
 # =============================================================================
 
 
 @transform("chamfer_top", inline=True)
 def chamfer_top(node, *, c):
-    """Chamfer the +z edges of a shape by `c` at 45 deg, using its bbox."""
+    """Chamfer the +z edges of a shape by `c` at 45 deg, using its bbox.
+
+    The three infinitesimally-thin slabs fed into `hull()` define the
+    ideal chamfered volume; `eps` is layer-thickness, not overlap EPS,
+    so through() doesn't apply here.
+    """
+    eps = 0.01
     b = bbox(node)
     w, l, _ = b.size
     cx, cy, _ = b.center
     big = max(w, l) + 10.0
-    bot = cube([big, big, EPS]).translate([cx - big / 2, cy - big / 2, b.min[2] - 0.5])
-    mid_top = cube([w, l, EPS]).translate([cx - w / 2, cy - l / 2, b.max[2] - c])
-    top = cube([w - 2 * c, l - 2 * c, EPS]).translate(
+    bot = cube([big, big, eps]).translate([cx - big / 2, cy - big / 2, b.min[2] - 0.5])
+    mid_top = cube([w, l, eps]).translate([cx - w / 2, cy - l / 2, b.max[2] - c])
+    top = cube([w - 2 * c, l - 2 * c, eps]).translate(
         [cx - (w - 2 * c) / 2, cy - (l - 2 * c) / 2, b.max[2]]
     )
     return intersection(node, hull(bot, mid_top, top))
@@ -88,11 +87,14 @@ class Box(Component):
         )
 
     def build(self):                                       # framework hook: required; returns the shape
+        # Local EPS for the hull-slab trick (layer thickness, not coplanar
+        # overlap) and for fusing the lip to the wall top.
+        eps = 0.01
         w, l, h = self.outer_w, self.outer_l, self.height
         r, c = self.corner_r, self.chamfer
 
         def slab(sw, sl, z):
-            return rounded_rect(sw, sl, r=r).linear_extrude(height=EPS).up(z)
+            return rounded_rect(sw, sl, r=r).linear_extrude(height=eps).up(z)
 
         # Outer shell: chamfered bottom, straight top (the top is open
         # and has a lip, so it needs a clean vertical rim).
@@ -100,7 +102,7 @@ class Box(Component):
             outer = hull(
                 slab(w - 2 * c, l - 2 * c, 0),
                 slab(w, l, c),
-                slab(w, l, h - EPS),
+                slab(w, l, h - eps),
             )
         else:
             outer = rounded_rect(w, l, r=r).linear_extrude(height=h)
@@ -143,7 +145,7 @@ class Box(Component):
                 .linear_extrude(height=self.lip_height)
                 .through(solid)
             )
-            yield difference(solid, hole).up(h - EPS)
+            yield difference(solid, hole).up(h - eps)
 
 
 class Lid(Component):
@@ -158,19 +160,21 @@ class Lid(Component):
     equations = ["height > 0"]
 
     def build(self):                                       # framework hook: required; returns the shape
+        # Local EPS for the hull-slab trick (layer thickness, not coplanar overlap).
+        eps = 0.01
         b = self.box
         w, l, h = b.outer_w, b.outer_l, self.height
         r, c = b.corner_r, b.chamfer
 
         def slab(sw, sl, z):
-            return rounded_rect(sw, sl, r=r).linear_extrude(height=EPS).up(z)
+            return rounded_rect(sw, sl, r=r).linear_extrude(height=eps).up(z)
 
         # Outer shell: straight bottom rim (mates against box), chamfered top.
         if c > 0:
             outer = hull(
                 slab(w, l, 0),
                 slab(w, l, h - c),
-                slab(w - 2 * c, l - 2 * c, h - EPS),
+                slab(w - 2 * c, l - 2 * c, h - eps),
             )
         else:
             outer = rounded_rect(w, l, r=r).linear_extrude(height=h)
@@ -194,14 +198,15 @@ class Lid(Component):
         s = b.screw
         cutters = []
         for px, py in b.pylon_positions:
-            # Through-shaft.
+            # Through-shaft; .through() extends past both top and bottom faces.
             cutters.append(
-                cylinder(h=h + 2, d=s.d).translate([px, py, -1])
+                cylinder(h=h, d=s.d).translate([px, py, 0]).through(outer, axis="z")
             )
-            # Countersunk head bore from the top.
+            # Countersunk head bore from the top face.
             cutters.append(
-                cylinder(h=s.head_depth + EPS, d=s.head_d)
+                cylinder(h=s.head_depth, d=s.head_d)
                 .translate([px, py, h - s.head_depth])
+                .through(outer, axis="z")
             )
 
         return difference(outer, *cutters)

@@ -139,7 +139,7 @@ class VBlockSet(Design):
         blocks = (self.pipe_block, self.shaft_block, self.deep_block)
         pitch = max(b.block_w for b in blocks) + 25
         return union(*[
-            union(b, _cradled_rod(b)).translate([0, (i - 1) * pitch, 0])
+            union(b, _cradled_rod(b)).forward((i - 1) * pitch)
             for i, b in enumerate(blocks)
         ])
 

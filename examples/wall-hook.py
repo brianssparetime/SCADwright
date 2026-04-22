@@ -50,7 +50,7 @@ class WallPlate(Component):
         for y in (+screw_y, -screw_y):
             cutters.append(
                 cylinder(h=self.thk, d=self.screw_d)
-                    .translate([0, y, 0])
+                    .forward(y)
                     .through(slab, axis="z")
             )
             cutters.append(

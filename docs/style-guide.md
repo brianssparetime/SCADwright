@@ -246,3 +246,22 @@ part.translate([0, 0, 5])
 # Right:
 part.up(5)
 ```
+
+---
+
+## Enforcement
+
+`tools/lint_scadwright.py` is an AST-only linter that catches the most common mechanical drift. It runs automatically as part of the test suite (`tests/test_lint_scadwright.py::test_repo_lints_clean`) and can also be invoked directly:
+
+```
+python tools/lint_scadwright.py              # default: examples/ + src/scadwright/shapes/
+python tools/lint_scadwright.py path/to.py   # lint a specific file or directory
+```
+
+Rules currently enforced:
+
+- `no-module-eps` — module-level `EPS = ...` assignments. Prefer `.through(parent)` for cutters or `.attach(fuse=True)` for joints; when a manual epsilon is genuinely unavoidable (non-axis-aligned cutters, hull-slab layer thickness), scope it locally inside the function that needs it.
+- `no-param-float` — `Param(float)` with no `default=` argument. Floats belong in `equations` or `params=`. `Param(float, default=None)` is the deliberate opt-out pattern and is allowed.
+- `translate-single-axis` — `.translate([x, 0, 0])` (or any permutation with two literal zeros). Use the `.right/.left/.up/.down/.forward/.back` directional helper.
+
+The linter is intentionally conservative: it only flags patterns that have a clear correct alternative. Style-guide rules that require semantic understanding (no baked-in defaults on *reusable* Components, setup() only as a last resort, etc.) aren't mechanically checkable and live as prose-only guidance.
