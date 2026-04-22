@@ -184,6 +184,7 @@ COMPONENTS = [
 
 
 EXAMPLES = [
+    {"out": "examples/images/ConvexCaliper-print.png","script": "examples/convex-caliper.py",   "variant": "print"},
     {"out": "examples/images/BatteryBox-display.png", "script": "examples/battery-holder.py",   "variant": "display"},
     {"out": "examples/images/BatteryBox-print.png",   "script": "examples/battery-holder.py",   "variant": "print"},
     {"out": "examples/images/VBlockSet-display.png",  "script": "examples/v-block.py",          "variant": "display"},

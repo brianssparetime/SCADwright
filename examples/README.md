@@ -13,6 +13,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Complexity | File | What it demonstrates |
 | --- | --- | --- |
 | Simple | [`simple-plate.py`](simple-plate.py) | Flat script, no Components -- primitives + booleans + render |
+| Simple | [`convex-caliper.py`](convex-caliper.py) | One primitive + two shape-library Components stacked with `attach()`; single print variant |
 | Intermediate | [`battery-holder.py`](battery-holder.py) | Custom transform per cradle, multi-instantiation, concrete subclass per battery type |
 | Intermediate | [`v-block.py`](v-block.py) | Equation solving with trig (sin/tan); three concrete blocks pinned by different pairs; no `setup()` |
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | Generator `build()`, cross-Component publishing, equations, print/display variants |
@@ -27,7 +28,21 @@ A plate with two holes. No Components, no Design -- just primitives, booleans, a
 
 ---
 
-## 1. [`battery-holder.py`](battery-holder.py)
+## 1. [`convex-caliper.py`](convex-caliper.py)
+
+A tool that slips over the jaws of a measuring caliper so it can measure between two concave surfaces -- a pipe's inner diameter, a counterbore, the cups of a ball joint. One primitive (`cylinder`) and two shape-library Components (`UShapeChannel`, `SphericalCap`) stacked with `attach()`.
+
+- Composition with `attach()` -- each piece auto-positions on top of the previous one, no manual z-offsets
+- Published attributes on shape-library Components (`clip.bottom_width`, `clip.outer_width`) drive downstream geometry
+- Single `Design` with one `print` variant laying a mirrored pair side-by-side for a single print job
+
+![Convex caliper](images/ConvexCaliper-print.png)
+
+*print variant -- two mirrored heads on the bed, one per caliper jaw*
+
+---
+
+## 2. [`battery-holder.py`](battery-holder.py)
 
 A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells along a rounded-corner tray. Each well has a tall rounded-slot finger window in the outer wall -- oriented along the battery's long axis -- so you can see the cell and pinch it out from the side.
 
@@ -43,7 +58,7 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 
 ---
 
-## 2. [`v-block.py`](v-block.py)
+## 3. [`v-block.py`](v-block.py)
 
 A machinist's V-block: a rectangular block with a V-shaped groove along its length, sized to cradle round stock tangent to both groove faces. Three concrete blocks, each pinned by a different pair of primary variables; the equations solve the rest.
 
@@ -71,7 +86,7 @@ equations = [
 
 ---
 
-## 3. [`box-and-lid.py`](box-and-lid.py)
+## 4. [`box-and-lid.py`](box-and-lid.py)
 
 A snap-on enclosure: a rounded-corner box with chamfered top/bottom edges and four interior screw pylons, plus a matching lid with countersunk corner holes and a centering lip that drops into the box mouth.
 
@@ -87,7 +102,7 @@ A snap-on enclosure: a rounded-corner box with chamfered top/bottom edges and fo
 
 ---
 
-## 4. [`lens-housing.py`](lens-housing.py)
+## 5. [`lens-housing.py`](lens-housing.py)
 
 An M57-threaded optical lens barrel: holds three stacked lens elements in grip-lip holders, with an expansion funnel for an element that's wider than the throat, a front fillet that continues the cone angle of a matching clip-on hood.
 
@@ -103,7 +118,7 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 
 ---
 
-## 5. [`electronics-case.py`](electronics-case.py)
+## 6. [`electronics-case.py`](electronics-case.py)
 
 A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at the PCB's mount holes, port cutouts for USB, HDMI, audio, and Ethernet connectors, and a screw-on lid with a ventilation slot array.
 
