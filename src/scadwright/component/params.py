@@ -120,6 +120,16 @@ class Param:
             )
         if isinstance(value, self.type):
             return value
+        # For int, reject non-integer numerics rather than silently truncating.
+        # `int(3.5)` in Python returns 3 — that's almost always a user bug,
+        # not an intent to round down.
+        if self.type is int and isinstance(value, float) and not value.is_integer():
+            raise ValidationError(
+                f"{type(instance).__name__}.{self._name}: expected int, "
+                f"got non-integer float {value!r} (would silently truncate to "
+                f"{int(value)}; pass an int or round explicitly if intended).",
+                source_location=loc,
+            )
         try:
             return self.type(value)
         except (TypeError, ValueError) as exc:

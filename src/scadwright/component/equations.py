@@ -221,14 +221,27 @@ def _try_solve(parsed: ParsedEquations, given: dict[str, float]) -> dict[str, fl
         return None  # sympy can't solve; treat as underdetermined
 
     if not solutions:
-        # Either inconsistent or underdetermined. If an equation became a
-        # non-trivial constant (e.g. 10 == 12 still in symbolic form), it's
-        # inconsistent; otherwise underdetermined.
+        # Either inconsistent or underdetermined. Distinguish:
+        # 1. A substituted equation is a non-trivial numeric constant
+        #    (e.g. `10 == 12`): inconsistent given the user's inputs.
+        # 2. There are at least as many remaining equations as unknowns
+        #    and solve() returned nothing: the equations themselves are
+        #    mutually inconsistent (e.g. `a == 1` AND `a == 2`).
+        # 3. Otherwise: genuinely underdetermined, return None and let
+        #    the caller produce the "need one of: {...}" error.
         for eq in substituted:
             if not eq.free_symbols and sp.simplify(sp.sympify(eq.lhs) - sp.sympify(eq.rhs)) != 0:
                 raise ValidationError(
                     f"equation violated after substitution: `{_format_eq(eq)}`"
                 )
+        if len(substituted) >= len(unknowns):
+            eqs_str = "; ".join(f"`{_format_eq(eq)}`" for eq in parsed.equations)
+            given_str = ", ".join(f"{k}={v}" for k, v in given.items()) or "(none)"
+            unknowns_str = ", ".join(sorted(str(u) for u in unknowns))
+            raise ValidationError(
+                f"equations are inconsistent: no value of {{{unknowns_str}}} "
+                f"satisfies all of {eqs_str} (given {given_str})."
+            )
         return None
 
     numeric_solutions = _extract_numeric_solutions(solutions)

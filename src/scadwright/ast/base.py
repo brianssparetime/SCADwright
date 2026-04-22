@@ -187,7 +187,13 @@ def _extend_through_faces(self, self_bb, parent_bb, ax: int, eps: float, loc):
 
     orig_size = self_bb.max[ax] - self_bb.min[ax]
     if orig_size < 1e-10:
-        return self  # zero-thickness shape can't be scaled
+        raise ValidationError(
+            f"through: cutter has zero extent on the {'xyz'[ax]}-axis. "
+            f"through() needs a 3D cutter with non-zero extent on the cut "
+            f"axis; a 2D profile must be linear_extrude()'d or "
+            f"rotate_extrude()'d before passing to through().",
+            source_location=loc,
+        )
 
     scale_factor = (new_max - new_min) / orig_size
     # Scale-from-origin + translate yields: new_pos = old_pos * s + delta
