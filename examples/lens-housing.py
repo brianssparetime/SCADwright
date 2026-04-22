@@ -258,7 +258,7 @@ class M57Lens(Design):
         flipped_hood = self.hood.flip("z")   # wide flare on the print bed
         half_bb = bbox(half)
         hood_bb = bbox(flipped_hood)
-        gap = 25
+        gap = self.housing.upper_housing_od   # ~one barrel-diameter of breathing room
         half_w = half_bb.size[0]
         hood_w = hood_bb.size[0]
         y_align = half_bb.center[1] - hood_bb.center[1]
