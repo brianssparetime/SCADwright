@@ -29,17 +29,17 @@ A plate with two holes. No Components, no Design -- just primitives, booleans, a
 
 ## 1. [`battery-holder.py`](battery-holder.py)
 
-A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells along a rounded-corner tray. Each well has a half-cylinder finger-scoop in the outer wall so you can pinch and lift a battery out.
+A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells along a rounded-corner tray. Each well has a tall rounded-slot finger window in the outer wall -- oriented along the battery's long axis -- so you can see the cell and pinch it out from the side.
 
+- Shape-library 2D profile (`RoundedSlot`) extruded into a custom cutter
 - Custom transform (`@transform("finger_scoop")`) applied once per cradle
-- `params` declaring six shared-type floats
 - Per-battery concrete subclasses (`AA6Holder`, `Holder18650x4`)
 - Dimension derivation in `setup`; multi-instantiation from a computed `cradle_positions` list
 - Print and display `@variant`s
 
 ![Battery holder](images/BatteryBox-display.png)
 
-*display variant -- six ghost AA cells protruding above the tray to illustrate how the finger-scoops line up*
+*display variant -- six ghost AA cells seated in their cradles, tops protruding above an 80%-height tray, with the rounded-slot windows revealing the cells from the side*
 
 ---
 

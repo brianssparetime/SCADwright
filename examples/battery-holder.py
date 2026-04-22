@@ -3,6 +3,7 @@ cells, sized to a given battery spec.
 
 Demonstrates (intermediate scope):
 - Equations solving for inter-related dimensions.
+- A shape-library 2D profile (`RoundedSlot`) extruded into a custom cutter.
 - A custom transform applied multiple times (one per cradle).
 - Multi-instantiation of the same cradle geometry.
 - Concrete subclass per battery type + count.
@@ -16,11 +17,11 @@ Run:
 
 from collections import namedtuple
 
-from scadwright import Component, Param, bbox
-from scadwright.boolops import difference, intersection, union
+from scadwright import Component, Param
+from scadwright.boolops import difference, union
 from scadwright.design import Design, run, variant
-from scadwright.primitives import cube, cylinder
-from scadwright.shapes import Tube, rounded_rect
+from scadwright.primitives import cylinder
+from scadwright.shapes import RoundedSlot, Tube, rounded_rect
 from scadwright.transforms import transform
 
 
@@ -47,25 +48,31 @@ CR123A  = BatterySpec(d=17.0, length=34.5, label="CR123A")
 
 
 @transform("finger_scoop", inline=True)
-def finger_scoop(node, *, at_x, tray_y, width, depth, top_z):
-    """Cut a semicircular notch into the top-front edge of the +y outer
-    wall, so the user can pinch the battery from the side and lift it out.
+def finger_scoop(node, *, at_x, tray_y, slot_w, slot_h, slot_depth, slot_top_z):
+    """Cut a vertical rounded-slot finger window through an outer wall,
+    aligned with the battery's long axis, so the user can see the cell
+    and pinch it out from the side.
 
-    For the scoop to be functional, `depth` must be greater than the wall
-    thickness between the cradle well and the outer wall — otherwise it
-    stops short and exposes no battery. Typical sizing: wall_thk +
-    clearance + 2-3mm of penetration into the well.
+    The cutter is a `RoundedSlot` (capsule) extruded normal to the wall.
+    Its long axis runs along z (the battery axis); its short axis runs
+    along x. It spans from `slot_top_z - slot_h` up to `slot_top_z`.
 
-    `at_x` is the x-position of the cradle (the scoop is centered on it).
+    For the window to actually expose the cell, `slot_depth` must exceed
+    the wall thickness between the cradle well and the outer wall
+    (`wall_thk + side_clearance` in the holder below) with a few mm of
+    margin to read as a visible cutout rather than a shallow notch.
+
+    `at_x` is the cradle's x-position (the slot is centered on it).
     `tray_y` is the outer-wall y-coordinate (the surface to notch).
-    `width` is scoop width along x. `depth` is radial depth of the cut
-    (penetration into the tray from the outer wall, and how far down from
-    `top_z` the notch extends). `top_z` is the z of the tray's top face.
+    `slot_w` / `slot_h` are the slot's width (x) and height (z).
+    `slot_depth` is penetration into the tray, measured from `tray_y`
+    inward. `slot_top_z` is the z-coordinate of the slot's top cap.
     """
     cutter = (
-        cylinder(h=width, r=depth, center=True)
-        .rotate([0, 90, 0])
-        .translate([at_x, tray_y, top_z])
+        RoundedSlot(length=slot_h, width=slot_w)
+        .linear_extrude(height=slot_depth + EPS)
+        .rotate([-90, -90, 0])  # local (length=X, width=Y, depth=Z) → world (width=X, depth=Y, length=Z)
+        .translate([at_x, tray_y - EPS, slot_top_z - slot_h / 2])
     )
     return difference(node, cutter)
 
@@ -77,7 +84,7 @@ class BatteryHolder(Component):
     spec = Param(BatterySpec)
     count = Param(int, positive=True)
     equations = [
-        "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_depth > 0",
+        "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_height, scoop_depth > 0",
         "corner_r >= 0",
     ]
 
@@ -116,9 +123,10 @@ class BatteryHolder(Component):
 
         for x in self.cradle_positions:
             carved = carved.finger_scoop(
-                at_x=x, tray_y=l / 2,
-                width=self.scoop_width, depth=self.scoop_depth,
-                top_z=h,
+                at_x=x, tray_y=-l / 2,
+                slot_w=self.scoop_width, slot_h=self.scoop_height,
+                slot_depth=self.scoop_depth,
+                slot_top_z=h - self.wall_thk,
             )
         return carved
 
@@ -143,10 +151,11 @@ class AA6Holder(BatteryHolder):
     end_clearance = 3.0
     side_clearance = 3.0
     floor_thk = 2.0
-    tray_depth = 28.0
+    tray_depth = 40.0
     corner_r = 3.0
-    scoop_width = 15.0
-    scoop_depth = 7.5
+    scoop_width = 10.0
+    scoop_height = 28.0
+    scoop_depth = 8.0
 
 
 class Holder18650x4(BatteryHolder):
@@ -157,10 +166,11 @@ class Holder18650x4(BatteryHolder):
     end_clearance = 4.0
     side_clearance = 4.0
     floor_thk = 2.5
-    tray_depth = 36.0
+    tray_depth = 52.0
     corner_r = 4.0
-    scoop_width = 18.0
-    scoop_depth = 9.0
+    scoop_width = 12.0
+    scoop_height = 38.0
+    scoop_depth = 10.0
 
 
 # =============================================================================
