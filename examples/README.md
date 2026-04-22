@@ -15,6 +15,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Simple | [`simple-plate.py`](simple-plate.py) | Flat script, no Components -- primitives + booleans + `render()` |
 | Simple | [`convex-caliper.py`](convex-caliper.py) | One primitive + two shape-library Components stacked with `attach()`; single-variant Design |
 | Intermediate | [`v-block.py`](v-block.py) | First real Component -- trig `equations` (`sin`/`tan`), cross-constraints, concrete subclasses pinned by different pairs, no `setup()` |
+| Intermediate | [`wall-hook.py`](wall-hook.py) | Class-scope `anchor()` declarations on two Components, `attach(parent, face="...", fuse=True)` for anchor-based assembly |
 | Intermediate | [`battery-holder.py`](battery-holder.py) | Custom transform, `setup()` with loop-based publishing, `Param(namedtuple)` for structured spec data, multi-instantiation |
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | Generator `build()`, cross-Component publishing (`Lid` takes a `Box` as a Param), `@transform` chained via `bbox()` |
 | Complex | [`electronics-case.py`](electronics-case.py) | Spec namedtuples as data contracts, three custom transforms, multi-variant print-splitting |
@@ -82,7 +83,24 @@ equations = [
 
 ---
 
-## 3. [`battery-holder.py`](battery-holder.py)
+## 3. [`wall-hook.py`](wall-hook.py)
+
+A wall-mount coat hook: a plate with two countersunk screw holes and a J-hook that attaches via a named anchor. Two small Components joined by `attach()` at a specific anchor on the parent -- no manual coordinate math.
+
+- Class-scope `anchor(at=..., normal=...)` declarations on both Components -- `WallPlate.hook_mount` and `JHook.base`
+- A second anchor (`WallPlate.top_edge`) published purely for extensibility, unused by this example but showing that a reusable Component can declare multiple attachment points
+- `attach(parent, face="hook_mount", fuse=True)` picks a specific anchor on the parent; the normals already oppose, so no `orient=True` is needed
+- `.through(parent, axis="z")` on both the screw-hole shafts and countersink cutters -- no manual EPS
+
+![Wall hook](images/CoatHook.png)
+
+*left: display variant -- plate with J-hook attached at `hook_mount`; right: print variant -- plate and hook laid flat on the bed*
+
+**Reference:** [anchors and attach()](../docs/anchors.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [variants](../docs/variants.md)
+
+---
+
+## 4. [`battery-holder.py`](battery-holder.py)
 
 A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells along a rounded-corner tray. Each well has a tall rounded-slot finger window in the outer wall -- oriented along the battery's long axis -- so you can see the cell and pinch it out from the side.
 
@@ -100,7 +118,7 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 
 ---
 
-## 4. [`box-and-lid.py`](box-and-lid.py)
+## 5. [`box-and-lid.py`](box-and-lid.py)
 
 A snap-on enclosure: a rounded-corner box with chamfered bottom edges and four interior screw pylons, plus a matching lid with countersunk corner holes and a centering lip that rises from the inner rim into a recess in the lid.
 
@@ -118,7 +136,7 @@ A snap-on enclosure: a rounded-corner box with chamfered bottom edges and four i
 
 ---
 
-## 5. [`electronics-case.py`](electronics-case.py)
+## 6. [`electronics-case.py`](electronics-case.py)
 
 A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at the PCB's mount holes, port cutouts for USB, HDMI, audio, and Ethernet connectors, and a screw-on lid with a ventilation slot array.
 
@@ -136,7 +154,7 @@ A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at
 
 ---
 
-## 6. [`lens-housing.py`](lens-housing.py)
+## 7. [`lens-housing.py`](lens-housing.py)
 
 An M57-threaded optical lens barrel: holds three stacked lens elements in grip-lip holders, with an expansion funnel for an element that's wider than the throat, a front fillet that continues the cone angle of a matching clip-on hood.
 

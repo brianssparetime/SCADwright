@@ -185,6 +185,8 @@ COMPONENTS = [
 
 EXAMPLES = [
     {"out": "examples/images/ConvexCaliper-print.png",   "script": "examples/convex-caliper.py",   "variant": "print"},
+    {"out": "examples/images/CoatHook-display.png",      "script": "examples/wall-hook.py",        "variant": "display"},
+    {"out": "examples/images/CoatHook-print.png",        "script": "examples/wall-hook.py",        "variant": "print"},
     {"out": "examples/images/BatteryBox-display.png",    "script": "examples/battery-holder.py",   "variant": "display"},
     {"out": "examples/images/BatteryBox-print.png",      "script": "examples/battery-holder.py",   "variant": "print"},
     {"out": "examples/images/VBlockSet-display.png",     "script": "examples/v-block.py",          "variant": "display"},
@@ -203,6 +205,10 @@ EXAMPLES = [
 # automatically after its tile PNGs are rendered, so the README can
 # reference a single image per multi-variant example.
 COMPOSITES = [
+    {"out": "examples/images/CoatHook.png", "tiles": [
+        "examples/images/CoatHook-display.png",
+        "examples/images/CoatHook-print.png",
+    ]},
     {"out": "examples/images/BatteryBox.png", "tiles": [
         "examples/images/BatteryBox-display.png",
         "examples/images/BatteryBox-print.png",
