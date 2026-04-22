@@ -140,6 +140,8 @@ panel = HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 
 Every shape is a Component -- you can read its computed dimensions, attach other parts to it, and pass it into boolean operations. See the [shape library docs](docs/shapes/) for the full catalog.
 
+Fit tolerances flow project-wide. Set `Clearances(sliding=0.05, press=0.08, snap=0.2, finger=0.2)` once on your `Design` class and every `AlignmentPin`, `PressFitPeg`, `SnapPin`, and `TabSlot` inherits automatically; override per-scope, per-Component, or per-call. See [Clearances](docs/clearances.md).
+
 ### 6. No clean separation between display and print variants
 
 Often the best way to print a part is very different from how you want to see it. A part might need supports, or to be re-oriented, or cut in half for printing. For display, you might want to see parts mated together or show stand-in hardware.
