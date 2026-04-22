@@ -9,7 +9,7 @@ Demonstrates (complex scope):
 - Cross-Component publishing: `CaseBase` exposes `mount_positions`,
   `outer_size`, `pcb_top_z`; `CaseLid` reads them to align.
 - Three custom transforms (`port_cutout`, `countersunk_hole`,
-  `vent_slot`) applied repeatedly.
+  `vent_slot_array`) applied repeatedly.
 - Multi-instantiation driven by spec data: N standoffs from
   `pcb.mount_holes`, M port cutouts from `pcb.ports`.
 - A `Design` with print and display variants — `print_base` and
@@ -30,13 +30,6 @@ from scadwright.design import Design, run, variant
 from scadwright.primitives import cube, cylinder
 from scadwright.shapes import Tube, rounded_rect
 from scadwright.transforms import transform
-
-
-# =============================================================================
-# GLOBALS
-# =============================================================================
-
-EPS = 0.01
 
 
 # =============================================================================
@@ -70,50 +63,61 @@ PI4 = PCBSpec(
 
 
 @transform("port_cutout", inline=True)
-def port_cutout(node, *, face, at_along, at_z, width, height):
-    """Cut a rectangular port through one wall of a box-like node."""
+def port_cutout(node, *, face, at_along, at_z, width, height, wall_thk):
+    """Cut a rectangular port through one wall of a box-like node.
+
+    The cutter is sized to `wall_thk` deep (matching the case wall) and
+    positioned flush against the chosen face. `through()` extends it
+    outward so the boolean is clean without touching the opposite wall.
+    """
     b = bbox(node)
-    bulk = max(b.size) + 20
     if face in ("+x", "-x"):
-        cutter = cube([bulk, width, height], center=True)
-        x_pos = b.max[0] if face == "+x" else b.min[0]
-        cutter = cutter.translate([x_pos, at_along, at_z])
+        cutter = cube([wall_thk, width, height])
+        x = b.max[0] - wall_thk if face == "+x" else b.min[0]
+        cutter = cutter.translate([x, at_along - width / 2, at_z - height / 2])
+        cutter = cutter.through(node, axis="x")
     elif face in ("+y", "-y"):
-        cutter = cube([width, bulk, height], center=True)
-        y_pos = b.max[1] if face == "+y" else b.min[1]
-        cutter = cutter.translate([at_along, y_pos, at_z])
+        cutter = cube([width, wall_thk, height])
+        y = b.max[1] - wall_thk if face == "+y" else b.min[1]
+        cutter = cutter.translate([at_along - width / 2, y, at_z - height / 2])
+        cutter = cutter.through(node, axis="y")
     else:
         raise ValueError(f"port_cutout: face must be +x/-x/+y/-y, got {face!r}")
     return difference(node, cutter)
 
 
 @transform("countersunk_hole", inline=True)
-def countersunk_hole(node, *, at, shaft_d, head_d, head_depth, length=200):
+def countersunk_hole(node, *, at, shaft_d, head_d, head_depth):
     """Drill a countersunk through-hole at `at=(x, y)` along the z-axis."""
     x, y = at
     b = bbox(node)
     shaft = (
-        cylinder(h=length, d=shaft_d, center=True)
-        .translate([x, y, b.center[2]])
+        cylinder(h=b.size[2], d=shaft_d)
+        .translate([x, y, b.min[2]])
+        .through(node, axis="z")
     )
-    head_top_z = b.max[2] + EPS
     head = (
-        cylinder(h=head_depth + EPS, d=head_d)
-        .translate([x, y, head_top_z - head_depth])
+        cylinder(h=head_depth, d=head_d)
+        .translate([x, y, b.max[2] - head_depth])
+        .through(node, axis="z")
     )
     return difference(node, shaft, head)
 
 
 @transform("vent_slot_array", inline=True)
-def vent_slot_array(node, *, count, slot_w, slot_l, spacing, z_thru=20):
-    """Cut an array of long thin ventilation slots through the +z face."""
+def vent_slot_array(node, *, count, slot_w, slot_l, spacing):
+    """Cut an array of long thin ventilation slots through the +z face.
+
+    Each slot is sized to the node's z-extent and extended via `through()`
+    so the boolean is clean on both top and bottom faces.
+    """
+    b = bbox(node)
     half = (count - 1) * spacing / 2
     slots = union(*[
-        cube([slot_w, slot_l, z_thru], center=True).translate([-half + i * spacing, 0, 0])
+        cube([slot_w, slot_l, b.size[2]], center="xy")
+            .translate([-half + i * spacing, 0, b.min[2]])
         for i in range(count)
-    ])
-    b = bbox(node)
-    slots = slots.up(b.max[2])
+    ]).through(node, axis="z")
     return difference(node, slots)
 
 
@@ -182,6 +186,7 @@ class CaseBase(Component):
                 at_z=self.pcb_top_z + port.z_above_pcb,
                 width=port.width,
                 height=port.height,
+                wall_thk=self.wall_thk,
             )
 
         return body
@@ -271,8 +276,7 @@ class ProjectBox(Design):
             .up(self.base.floor_thk + self.base.standoff_h)
             .color("darkgreen")
         )
-        lid_mounted = self.lid.up(self.base.outer_size[2] + EPS)
-        return union(self.base, pcb, lid_mounted)
+        return union(self.base, pcb, self.lid.attach(self.base, fuse=True))
 
 
 if __name__ == "__main__":
