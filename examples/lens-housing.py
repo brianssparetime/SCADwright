@@ -24,13 +24,6 @@ from scadwright.shapes import FilletRing, Funnel, Tube
 
 
 # =============================================================================
-# GLOBALS
-# =============================================================================
-
-EPS = 0.1   # z-lap to avoid coincident-face artifacts in CSG
-
-
-# =============================================================================
 # REUSABLE: generic Components, helpers, value types
 # =============================================================================
 
@@ -71,7 +64,7 @@ class ElementHolder(Component):
             h=0.5 * self.GRIP_WIDTH,
             od=self.od,
             id=e.dia - self.GRIP_DEPTH,
-        ).up(surround_h - EPS)
+        ).attach(surround, fuse=True)
         half = union(surround, gripper).flip("z")
         return mirror_copy(half, normal=[0, 0, 1]).up(e.spacing)
 
@@ -83,10 +76,15 @@ def trunc_fillet_ring(*, id, od, base_angle, slant="outwards", rim_width):
         raise ValueError("rim_width must be > 0")
     if rim_width >= (od - id) / 2:
         raise ValueError("rim_width must be less than the ring's radial extent")
+    # Radial eps: the chopper's outer cylindrical surface sits at d=od, same
+    # as the FilletRing's outer wall. through() handles planar-bbox coplanar
+    # faces but not cylinder-on-cylinder coincidence, so nudge the chopper
+    # outward by a hair.
+    eps = 0.01
     base = FilletRing(id=id, od=od, base_angle=base_angle, slant=slant)
     h_full = tan(radians(base_angle)) * (od - id) / 2
     z_t = tan(radians(base_angle)) * ((od - id) / 2 - rim_width)
-    chopper = cylinder(h=h_full - z_t + 2 * EPS, d=od + 2 * EPS).up(z_t)
+    chopper = cylinder(h=h_full - z_t, d=od + 2 * eps).up(z_t).through(base, axis="z")
     return difference(base, chopper)
 
 
@@ -95,6 +93,8 @@ class LensHousing(Component):
     or funnel-widened) + element holders + front fillet. Publishes outer
     dimensions and hood cone angle so a hood Component can mate without
     shared scope."""
+
+    FRONT_FILLET_OFFSET = 5.0   # aperture rim inset from the front element's grip ID
 
     equations = [
         "lower_housing_od == lower_housing_id + barrel_thk",
@@ -149,65 +149,58 @@ class LensHousing(Component):
                 h=funnel_len, thk=self.barrel_thk / 2,
                 bot_id=lower_id, top_id=self.max_upper_ele_dia,
             )
-            yield Tube(
+            upper = Tube(
                 h=self.upper_housing_len - funnel_len,
                 od=self.max_upper_ele_dia + self.barrel_thk,
                 id=self.max_upper_ele_dia,
             ).up(funnel_len)
         else:
-            yield Tube(
+            upper = Tube(
                 h=self.upper_housing_len, od=self.upper_housing_od, id=lower_id,
             )
+        yield upper
 
         for e in self.elements:
             holder_od = lower_id if ElementHolder.is_constricted_for(e) else upper_id
             yield ElementHolder(element=e, od=holder_od)
 
         front_ele_dia = max(self.elements, key=lambda e: e.spacing).dia
-        FRONT_FILLET_OFFSET = 5.0
         yield trunc_fillet_ring(
-            id=front_ele_dia - ElementHolder.GRIP_DEPTH + FRONT_FILLET_OFFSET,
+            id=front_ele_dia - ElementHolder.GRIP_DEPTH + self.FRONT_FILLET_OFFSET,
             od=self.upper_housing_od,
             base_angle=self.hood_base_angle,
             slant="inwards",
             rim_width=2,
-        ).up(self.upper_housing_len - EPS)
+        ).attach(upper, fuse=True)
 
 
 class LensHood(Component):
     """Generic clip-on hood sized by a paired housing. `housing_upper_od`
     and `hood_base_angle` come from the housing instance at construction
-    time; the rest are hood-specific."""
+    time; the rest are hood-specific. Built in its mounted orientation --
+    coupler at z=0, funnel flaring upward; the print variant flips it."""
 
     equations = [
         "housing_upper_od, hood_base_angle, wall_thk, hood_length, coupler_overlap > 0",
         "hood_clr >= 0",
+        "id_coupler == housing_upper_od + hood_clr",
+        "od_coupler == id_coupler + 2 * wall_thk",
+        "flare_od == housing_upper_od + 2 * hood_length * tan((90 - hood_base_angle) * pi / 180)",
     ]
 
-    def build(self):
-        od_bot = self.housing_upper_od
-        od_top = od_bot + 2 * self.hood_length * tan(radians(90 - self.hood_base_angle))
-        hood = Funnel(
-            h=self.hood_length, thk=self.wall_thk,
-            bot_od=od_bot, top_od=od_top,
-        ).up(self.coupler_overlap - EPS)
-
+    def build(self):                                       # framework hook: required; returns the shape
         coupler = Tube(
-            h=self.coupler_overlap,
-            id=self.housing_upper_od + self.hood_clr,
-            thk=self.wall_thk,
+            h=self.coupler_overlap, id=self.id_coupler, thk=self.wall_thk,
         )
-
-        top = union(hood, coupler).flip("z").up(self.hood_length + self.coupler_overlap)
-
-        fillet = FilletRing(
-            id=self.housing_upper_od + self.hood_clr,
-            od=self.housing_upper_od + self.hood_clr + 2 * self.wall_thk,
-            base_angle=63,
-            slant="inwards",
-        ).flip("z").up(self.hood_length)
-
-        return union(top, fillet)
+        yield coupler
+        yield Funnel(
+            h=self.hood_length, thk=self.wall_thk,
+            bot_od=self.housing_upper_od, top_od=self.flare_od,
+        ).attach(coupler, fuse=True)
+        yield FilletRing(
+            id=self.id_coupler, od=self.od_coupler,
+            base_angle=63, slant="inwards",
+        ).attach(coupler, fuse=True)
 
 
 def half_housing_splay(housing):
@@ -262,7 +255,8 @@ class M57Lens(Design):
         return union(
             half_housing_splay(self.housing),
             half_housing_splay(self.housing).right(spread),
-            self.hood.left(spread),
+            # Flip the hood to put its wide flare on the print bed.
+            self.hood.flip("z").left(spread),
         )
 
     @variant(fn=48)
@@ -274,9 +268,7 @@ class M57Lens(Design):
         gap = self.hood.coupler_overlap
         return union(
             self.housing,
-            self.hood.flip("z").up(
-                housing_top_z + gap + self.hood.hood_length + self.hood.coupler_overlap
-            ),
+            self.hood.up(housing_top_z + gap),
         )
 
 
