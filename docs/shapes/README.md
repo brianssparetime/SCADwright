@@ -19,6 +19,20 @@ t = Tube(h=10, id=8, thk=1)    # od solved = 10
 t.od                             # readable without rendering
 ```
 
+For a design where you'll reuse the same dimensions, specialize with a concrete subclass and reference it by name:
+
+```python
+class PowerSupplyStandoff(Standoff):
+    od = 7
+    id = 3
+    h = 12
+
+# Elsewhere in the design:
+base.attach(PowerSupplyStandoff())
+```
+
+See [Organizing a project](../organizing_a_project.md#concrete-subclasses) for the full REUSABLE / CONCRETE / DESIGN pattern.
+
 Shapes work with all the same operations as primitives: transforms, booleans, `attach()`, `through()`, `center=`, and `bbox()`.
 
 For shapes that take explicit imports by group:
