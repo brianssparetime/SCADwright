@@ -16,7 +16,7 @@ from scadwright import Component, anchor, bbox
 from scadwright.boolops import difference, union
 from scadwright.design import Design, run, variant
 from scadwright.primitives import cylinder
-from scadwright.shapes import rounded_rect
+from scadwright.shapes import Torus, rounded_rect
 
 
 # =============================================================================
@@ -62,23 +62,36 @@ class WallPlate(Component):
 
 
 class JHook(Component):
-    """A J-hook: vertical stem with a perpendicular tip at the top,
-    forming an inverted-L hook shape."""
+    """A J-hook: vertical stem, quarter-torus elbow, perpendicular tip."""
 
-    equations = ["stem_d, stem_len, tip_len > 0"]
+    equations = [
+        "stem_d, stem_len, tip_len, elbow_r > 0",
+        "elbow_r > stem_d / 2",                           # bend must clear the tube's inner edge
+    ]
 
     # Base of the stem, pointing -Z so attach() mates cleanly with a +Z
     # face anchor on the parent.
     base = anchor(at="0, 0, 0", normal=(0, 0, -1))
 
     def build(self):                                       # framework hook: required; returns the shape
+        R = self.elbow_r
         stem = cylinder(h=self.stem_len, d=self.stem_d)
+        # Quarter-torus elbow: Torus natively sweeps in the XY plane, so
+        # rotate it into the XZ plane and translate so its "stem" end lands
+        # at the top of the stem.
+        elbow = (
+            Torus(major_r=R, minor_r=self.stem_d / 2, angle=90)
+            .rotate([90, 0, 0])
+            .translate([-R, 0, self.stem_len])
+        )
+        # Tip continues the elbow's outgoing tangent (-X direction) from the
+        # far end of the bend.
         tip = (
             cylinder(h=self.tip_len, d=self.stem_d)
-            .rotate([0, 90, 0])                            # axis Z -> X
-            .up(self.stem_len - self.stem_d / 2)           # seat the tip flush with the stem's top
+            .rotate([0, -90, 0])
+            .translate([-R, 0, self.stem_len + R])
         )
-        return union(stem, tip)
+        return union(stem, elbow, tip)
 
 
 # =============================================================================
@@ -100,6 +113,7 @@ class MyJHook(JHook):
     stem_d = 6
     stem_len = 25
     tip_len = 18
+    elbow_r = 8
 
 
 # =============================================================================

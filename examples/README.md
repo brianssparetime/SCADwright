@@ -90,6 +90,7 @@ A wall-mount coat hook: a plate with two countersunk screw holes and a J-hook th
 - Class-scope `anchor(at=..., normal=...)` declarations on both Components -- `WallPlate.hook_mount` and `JHook.base`
 - A second anchor (`WallPlate.top_edge`) published purely for extensibility, unused by this example but showing that a reusable Component can declare multiple attachment points
 - `attach(parent, face="hook_mount", fuse=True)` picks a specific anchor on the parent; the normals already oppose, so no `orient=True` is needed
+- `Torus(angle=90)` from the shape library composes a smooth quarter-toroid elbow between the stem and tip
 - `.through(parent, axis="z")` on both the screw-hole shafts and countersink cutters -- no manual EPS
 
 ![Wall hook](images/CoatHook.png)
