@@ -36,9 +36,9 @@ Specify any two of (id, od, thk) and the solver fills in the third. Constraints 
 `equations` accepts five forms, distinguished by AST shape — the framework classifies each line automatically:
 
 - **Equalities** (`"od == id + 2*thk"`): drive the solver. Sympy functions like `cos`, `sqrt`, `pi` are available — useful for trig (`"base_r == pitch_r * cos(pressure_angle * pi / 180)"`).
-- **Per-Param constraints** (`"x > 0"`, `"x, y, z >= -5"`): RHS is a numeric literal; compile to validators on the listed Params and fire on assignment.
-- **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): RHS references other Params or expressions; evaluated after all Params are set.
-- **Derivations** (`"pitch = spec.d + 2 * (clearance + wall_thk)"`, single `=`, bare-identifier LHS): RHS evaluated in a restricted namespace at construction; result published as an instance attribute. Use for loop-generated tuples, namedtuple-field arithmetic, conditional scalars — anything a scalar sympy equation can't express.
+- **Per-Param constraints** (`"x > 0"`, `"x, y, z >= -5"`): a plain number on the right; compile to validators on the listed Params and fire on assignment.
+- **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): an expression (over other Params) on the right; evaluated after all Params are set.
+- **Derivations** (`"pitch = spec.d + 2 * (clearance + wall_thk)"`, single `=`, plain name on the left): the expression on the right is evaluated in a restricted namespace at construction; the result is stored on the instance. Use for loop-generated tuples, namedtuple-field arithmetic, conditional scalars — anything a scalar sympy equation can't express.
 - **Predicates** (`"len(size) == 3"`, `"spec.series in {...}"`, `"all(e.dia <= throat for e in elements)"`): arbitrary boolean Python; evaluated at construction, a falsy result raises `ValidationError`. Use for tuple-length checks, XOR between options, element-wise loops, or any check that sympy can't reason about.
 
 Optional inputs use the `?` sigil. Prefix any variable with `?` in the equations list (`"?fillet > 0"`) and the caller may omit it; when omitted, its value is `None` and any constraint referencing it skips. `?` is not allowed in `==` equalities or on the left side of a derivation. For the conditional idiom, write `?x if ?x else y` when the input has a positivity constraint; reach for the explicit `?x is None` form only when `0` is a legitimate value or you specifically need specified-ness (XOR predicates).

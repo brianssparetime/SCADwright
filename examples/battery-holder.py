@@ -85,7 +85,7 @@ class BatteryHolder(Component):
         "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_height, scoop_depth > 0",
         "corner_r >= 0",
         "tray_depth > floor_thk",
-        "tray_depth < spec.length",                                                          # predicate: RHS is a namedtuple field
+        "tray_depth < spec.length",                                                          # predicate: namedtuple field on the right
         "pitch = spec.d + 2 * (clearance + wall_thk)",                                       # derivation
         "outer_w = count * pitch + 2 * end_clearance",
         "outer_l = pitch + 2 * side_clearance",
