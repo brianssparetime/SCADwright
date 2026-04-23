@@ -162,13 +162,12 @@ class Teardrop(Component):
         "r > 0",
         "tip_angle > 0",
         "tip_angle < 90",
-        "cap_h > r",
-        "cap_h < tip_height",
+        "?cap_h > r",
+        "?cap_h < tip_height",
     ]
     # 45° is the canonical FDM-printability threshold: at that slope every
     # overhanging surface is steep enough to print unsupported.
     tip_angle = Param(float, default=45.0)
-    cap_h = Param(float, default=None)
 
     def build(self):
         alpha = math.radians(self.tip_angle)
