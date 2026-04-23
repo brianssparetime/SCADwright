@@ -29,12 +29,8 @@ class Bolt(Component):
 
     tip = anchor(at=(0, 0, 0), normal=(0, 0, -1))
 
-    def setup(self):                                    # framework hook: optional
-        spec = get_screw_spec(self.size, self.head)
-        self._spec = spec
-
     def build(self):
-        s = self._spec
+        s = get_screw_spec(self.size, self.head)
         shaft = cylinder(h=self.length, d=s.d)
         # Head: hex profile extruded for socket head, cylinder for button.
         if self.head == "socket":
