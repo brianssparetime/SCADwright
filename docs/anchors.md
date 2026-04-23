@@ -92,7 +92,7 @@ sensor = cube([8, 8, 4]).attach(Bracket(w=20, thk=3, depth=15), face="mount_face
 
 Custom anchors with the same name as a standard face (e.g. `"top"`) override the bbox-derived default. This lets a Component define a semantically meaningful "top" that differs from its bounding box top.
 
-For anchors that need conditional logic (e.g. position depends on a boolean Param), use `self.anchor()` in `setup()` instead -- it still works and overrides class-scope declarations of the same name.
+The `at=` string supports ternary expressions evaluated against instance attributes, so conditional positions don't need any special machinery: `anchor(at="0 if n_shape else h", normal=(0, 0, 1))`. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal is a framework-internal escape hatch (library Components only; not a user-facing pattern).
 
 ## Anchor propagation
 

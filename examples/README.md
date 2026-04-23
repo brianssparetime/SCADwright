@@ -14,12 +14,12 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | --- | --- | --- |
 | Simple | [`simple-plate.py`](simple-plate.py) | Flat script, no Components -- primitives + booleans + `render()` |
 | Simple | [`convex-caliper.py`](convex-caliper.py) | One primitive + two shape-library Components stacked with `attach()`; single-variant Design |
-| Intermediate | [`v-block.py`](v-block.py) | First real Component -- trig `equations` (`sin`/`tan`), cross-constraints, concrete subclasses pinned by different pairs, no `setup()` |
+| Intermediate | [`v-block.py`](v-block.py) | First real Component -- trig `equations` (`sin`/`tan`), cross-constraints, concrete subclasses pinned by different pairs |
 | Intermediate | [`wall-hook.py`](wall-hook.py) | Class-scope `anchor()` declarations on two Components, `attach(parent, face="...", fuse=True)` for anchor-based assembly |
-| Intermediate | [`battery-holder.py`](battery-holder.py) | Custom transform, `setup()` with loop-based publishing, `Param(namedtuple)` for structured spec data, multi-instantiation |
+| Intermediate | [`battery-holder.py`](battery-holder.py) | Custom transform, loop-based derivation in `equations`, namedtuple-field predicate, `Param(namedtuple)` for structured spec data, multi-instantiation |
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | Generator `build()`, cross-Component publishing (`Lid` takes a `Box` as a Param), `@transform` chained via `bbox()` |
-| Complex | [`electronics-case.py`](electronics-case.py) | Spec namedtuples as data contracts, three custom transforms, multi-variant print-splitting |
-| Complex | [`lens-housing.py`](lens-housing.py) | `@classmethod` pre-construction queries, conditional geometry, `halve()` section view, `attach(fuse=True)` + `bbox()` for assembly layout |
+| Complex | [`electronics-case.py`](electronics-case.py) | Spec namedtuples as data contracts, derivations that subscript and iterate namedtuple fields, three custom transforms, multi-variant print-splitting |
+| Complex | [`lens-housing.py`](lens-housing.py) | Element factory precomputing geometric fields, conditional-geometry derivations, single-line element-validation predicate, `halve()` section view, `attach(fuse=True)` + `bbox()` for assembly layout |
 
 ---
 
@@ -58,7 +58,7 @@ A tool that slips over the jaws of a measuring caliper so it can span a part who
 A machinist's V-block: a rectangular block with a V-shaped groove along its length, sized to cradle round stock tangent to both groove faces. Three concrete blocks, each pinned by a different pair of primary variables; the equations solve the rest.
 
 - Trig in `equations` -- `sin` relates groove angle to the rod diameter it cradles; `tan` derives the opening width at the top
-- All arithmetic lives in `equations`; **no `setup()`**, no `params=`, no explicit `Param`
+- All arithmetic lives in `equations`; no `params=`, no explicit `Param`
 - Cross-constraints enforce physical bounds (`angle < 180`, `groove_depth < block_h`, `contact_width < block_w`)
 - Three concrete subclasses, each fixing a different pair: `(angle, max_d)`, `(angle, groove_depth)`, `(max_d, groove_depth)`
 - Chained `.through(parent, axis="x").through(parent, axis="z")` for the V-cutter -- no manual EPS, resolves coplanar faces at both ends and the top
@@ -107,7 +107,8 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 
 - `Param(BatterySpec)` accepting a `namedtuple` as a structured spec -- all dimensions for one battery flow from a single value
 - Custom transform (`@transform("finger_scoop", inline=True)`) applied once per cradle, extruding a shape-library 2D profile (`RoundedSlot`) into the cutter
-- `setup()` computing loop-derived values (`cradle_positions`) that equations can't express
+- Derivations in `equations` compute `pitch`, `outer_w`, `outer_l`, `cradle_positions` (loop-generated tuple) directly from the spec and Params -- no `setup()`
+- Predicate (`"tray_depth < spec.length"`) validates against a namedtuple field the solver can't reach
 - Per-battery concrete subclasses (`AA6Holder`, `Holder18650x4`) with all dimensions as class attributes
 - Print and display `@variant`s
 
@@ -115,7 +116,7 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 
 *left: display variant -- six ghost AA cells seated in their cradles, tops protruding above the tray; right: print variant -- the bare tray showing the cradle geometry*
 
-**Reference:** [Param() for non-floats](../docs/components.md#declaring-parameters) · [custom transforms](../docs/custom_transforms.md) · [setup() hook](../docs/components.md#setup-hook) · [variants](../docs/variants.md) · [shape library](../docs/shapes/README.md)
+**Reference:** [Param() for non-floats](../docs/components.md#declaring-parameters) · [custom transforms](../docs/custom_transforms.md) · [derivations and predicates](../docs/components.md#derivations-loops-conditionals-namedtuple-fields) · [variants](../docs/variants.md) · [shape library](../docs/shapes/README.md)
 
 ---
 
@@ -159,9 +160,9 @@ A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at
 
 An M57-threaded optical lens barrel: holds three stacked lens elements in grip-lip holders, with an expansion funnel for an element that's wider than the throat, a front fillet that continues the cone angle of a matching clip-on hood.
 
-- `@classmethod` dispatch on `ElementHolder` queries per-element dimensions *before* instantiation -- the classic chicken-and-egg pattern when one Component's dimensions depend on another's
-- Conditional geometry: if any element is wider than the lower throat, the upper housing becomes a funnel-flared barrel; otherwise a straight tube
-- `Element` namedtuple driving multi-instantiation (one holder per element) with validation in `setup()`
+- `element(...)` factory precomputes each element's geometric fields (`face_z_top`, `face_z_bot`, `constricted`, `throat_dia_required`) so the housing's `equations` list can reason about them through attribute access alone
+- Conditional geometry: derivation `upper_housing_od = (max_upper_ele_dia + barrel_thk) if is_wide else flange_flange_od` picks between funnel-flared and straight barrel
+- `Element` namedtuple driving multi-instantiation; a single predicate (`"all(not e.constricted or e.throat_dia_required <= lower_housing_id for e in elements)"`) validates that every constricted element fits the throat
 - `halve(...).rotate(...)` composition producing a clean section view in the print variant
 - `attach(parent, fuse=True)` for stacking barrel segments; `bbox(self.housing)` in the display variant to get the true housing top (the front fillet extends beyond `upper_housing_len`)
 - Module-level `trunc_fillet_ring()` helper -- a custom-transform alternative that returns a composed Node directly
@@ -170,7 +171,7 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 
 *left: display variant -- housing with clip-on hood floated above it; right: print variant -- housing halved and splayed for a section view alongside the inverted hood*
 
-**Reference:** [@classmethod on Components](../docs/components.md) · [halve()](../docs/composition_helpers.md#halve) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [setup() validation](../docs/components.md#setup-hook)
+**Reference:** [derivations and predicates](../docs/components.md#derivations-loops-conditionals-namedtuple-fields) · [halve()](../docs/composition_helpers.md#halve) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes)
 
 ---
 
