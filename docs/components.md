@@ -56,42 +56,46 @@ This single block declares four float params (`h`, `id`, `od`, `thk`), sets up t
 
 Comma-separated names in inequalities expand into per-variable constraints: `"x, y, z > 0"` means all three must be positive.
 
-### 2. `params` -- additional floats not in equations
-
-Float parameters that don't participate in any equation can be listed in a `params` string:
+Most float parameters have a natural bound — a length is positive, an angle is between 0 and 180, a wall thickness is greater than zero. State the bound as a constraint; the variable is declared for free:
 
 ```python
-class Standoff(Component):
-    params = "base_w, base_l"
+class FilletRing(Component):
     equations = [
-        "od == id + 2*thk",
-        "h, id, od, thk, base_w, base_l > 0",
+        "id, od > 0",
+        "base_angle > 0",
+        "base_angle < 90",
+        "id < od",
     ]
 ```
 
-Here `base_w` and `base_l` appear in the constraint but not in any equality equation. The constraint auto-creates them, so `params` isn't needed in this case. `params` is only needed for float variables that don't appear in *any* equation at all:
+`base_angle` doesn't appear in any equality, but the constraint auto-creates it as `Param(float)` and installs the validator. No separate declaration needed.
+
+### 2. `params` -- for truly unbounded floats (rare)
+
+Reach for the `params = "..."` string only when a float genuinely has no natural bound *and* doesn't appear in any equation — a signed offset, a freely-scaling coefficient, or similar:
 
 ```python
-class Spacer(Component):
-    params = "gap"                     # not in any equation
-    equations = ["h, od > 0"]
+class Probe(Component):
+    params = "phase_offset"        # can be positive or negative; no natural bound
+    equations = ["amplitude, frequency > 0"]
 ```
+
+If you can express a bound, prefer the constraint form — it catches bad inputs as well as declaring the Param.
 
 ### 3. `Param(...)` -- escape hatch for non-floats, defaults, and special types
 
 Use `Param(...)` directly for anything that isn't a plain float: non-float types, params with defaults, or params with `one_of` constraints.
 
 ```python
-class FilletRing(Component):
-    params = "base_angle"
-    equations = ["id, od > 0"]
-    slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
-```
-
-```python
 class CaseBase(Component):
     pcb = Param(PCBSpec)               # non-float type
     equations = ["wall_thk, floor_thk > 0"]
+```
+
+```python
+class Tube(Component):
+    equations = ["od == id + 2*thk", "h, id, od, thk > 0"]
+    slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
 ```
 
 `Param` accepts:
@@ -106,8 +110,8 @@ class CaseBase(Component):
 | Situation | Use |
 | --- | --- |
 | Float param in a solving equation | `equations` only -- auto-declared |
-| Float param with a constraint (`> 0`, `>= 0`) | `equations` only -- auto-declared by the constraint |
-| Float param with no equation or constraint | `params` |
+| Float param with a constraint (`> 0`, `>= 0`, `< 90`) | `equations` only -- auto-declared by the constraint |
+| Float param that is genuinely unbounded | `params = "name"` (rare) |
 | Non-float type (`int`, `str`, `tuple`, custom) | `Param(type)` |
 | Any param with a default value | `Param(type, default=...)` |
 | Enum-style constraint | `Param(str, one_of=(...))` |

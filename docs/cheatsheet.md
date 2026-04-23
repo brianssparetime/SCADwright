@@ -210,12 +210,16 @@ Derivations and predicates see a curated namespace (`range`/`tuple`/`len`/`min`/
 
 ```python
 # 1. equations (primary) — auto-declares floats, solves, constrains
-equations = ["od == id + 2*thk", "h, id, od, thk > 0"]
+equations = [
+    "od == id + 2*thk",                # equality feeds the solver
+    "h, id, od, thk > 0",              # constraint auto-declares + validates
+    "base_angle > 0", "base_angle < 90",
+]
 
-# 2. params — additional floats not in any equation
-params = "base_w, base_l"
+# 2. params — only for unbounded floats that don't appear in any equation (rare)
+params = "phase_offset"
 
-# 3. Param — escape hatch for non-floats, defaults, enums
+# 3. Param — non-floats, defaults, enums
 label = Param(str)
 count = Param(int, positive=True)
 mode = Param(str, default="A", one_of=("A","B"))
