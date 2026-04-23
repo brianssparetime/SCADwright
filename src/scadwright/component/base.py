@@ -231,9 +231,9 @@ class Component(Node):
     1. **Plain `__init__`** — write your own `__init__`, call
        `super().__init__()`, set `self.x = ...`.
 
-    2. **`sc.Param` descriptors** — declare params at class scope. Auto-generated
-       kwargs-only `__init__` runs validators, then calls `setup()`
-       if defined.
+    2. **`sc.Param` descriptors** — declare params at class scope. An
+       auto-generated kwargs-only `__init__` validates inputs, solves
+       `equations`, evaluates derivations, and validates predicates.
 
     Class attributes `fn`/`fa`/`fs` act as default resolution for primitives
     built inside `build()`. Instance attributes of the same names override.
@@ -280,7 +280,9 @@ class Component(Node):
         self._bbox_cache = None
         # tree_hash cache, populated by sc.tree_hash() on first call.
         self._tree_hash_cache = None
-        # Custom anchors: populated from class-scope anchor() defs and/or self.anchor() in setup().
+        # Custom anchors: populated from class-scope anchor() defs during
+        # __init__. Also mutable at runtime via self.anchor(...) as a final
+        # escape hatch for Components that can't express an anchor declaratively.
         self._anchors: dict = {}
         # Freeze flag: set to True after __init__ for equation-using Components.
         self._frozen = False
@@ -316,12 +318,13 @@ class Component(Node):
         return bb.center
 
     def anchor(self, name: str, position: tuple, normal: tuple) -> None:
-        """Declare a named anchor on this Component.
+        """Declare a named anchor on this Component at runtime.
 
-        Prefer the class-scope ``anchor()`` descriptor for most anchors.
-        Use this method in ``setup()`` only when anchor position or normal
-        depends on conditional logic that can't be expressed as a string
-        expression.
+        Prefer the class-scope ``anchor()`` descriptor — both ``at=`` and
+        ``normal=`` accept string expressions, which cover conditional
+        positions and conditional normals. This method is the imperative
+        escape hatch for Components that genuinely can't express an anchor
+        declaratively.
         """
         from scadwright.anchor import Anchor
 
@@ -333,8 +336,9 @@ class Component(Node):
     def get_anchors(self) -> dict:
         """Return this Component's anchors: bbox-derived defaults merged with custom.
 
-        Custom anchors (declared via ``self.anchor()`` in ``setup()``) override
-        bbox-derived anchors when they share the same name.
+        Class-scope ``anchor()`` declarations and any runtime
+        ``self.anchor(...)`` calls override the bbox-derived defaults when
+        they share a name.
         """
         from scadwright.anchor import anchors_from_bbox
         from scadwright.bbox import bbox as _bbox
@@ -578,7 +582,7 @@ def _make_param_init(cls, params: dict[str, Param]):
                 object.__setattr__(self, impl, kwargs[impl])
 
         # Cross-constraints (var-vs-var inequalities) run now that every
-        # Param is set, before derivations/predicates/setup, so violations
+        # Param is set, before derivations and predicates, so violations
         # surface at the input-validation layer rather than mid-build.
         if getattr(cls, "_has_cross_constraints", False):
             from scadwright.component.equations import evaluate_cross_constraints
@@ -600,13 +604,16 @@ def _make_param_init(cls, params: dict[str, Param]):
             evaluate_derivations(cls._derivations, self, type(self).__name__)
 
         # Predicates validate arbitrary Python truths about the instance.
-        # Runs after derivations, before setup(), so user-facing validation
-        # failures are reported before any framework-internal setup work.
+        # Runs after derivations so predicates can reference derived names.
         if getattr(cls, "_has_predicates", False):
             from scadwright.component.equations import evaluate_predicates
 
             evaluate_predicates(cls._predicates, self, type(self).__name__)
 
+        # Framework escape hatch: a user-defined `setup()` method, if
+        # present, runs last. Not a user-facing pattern — every normal use
+        # case belongs in derivations or predicates — but retained as an
+        # internal hook for Components that genuinely need imperative work.
         post = getattr(self, "setup", None)
         if callable(post):
             post()
