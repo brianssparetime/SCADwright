@@ -7,7 +7,6 @@ import math
 from scadwright.boolops import difference, union
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import cube, polygon
 
@@ -21,13 +20,10 @@ class HoneycombPanel(Component):
     """
 
     size = Param(tuple)
-    equations = ["cell_size, wall_thk > 0"]
-
-    def setup(self):                                    # framework hook: optional
-        if len(self.size) != 3:
-            raise ValidationError(
-                f"HoneycombPanel: size must be a 3-tuple, got {self.size!r}"
-            )
+    equations = [
+        "cell_size, wall_thk > 0",
+        "len(size) == 3",
+    ]
 
     def build(self):
         x, y, z = self.size
@@ -72,13 +68,10 @@ class GridPanel(Component):
     """
 
     size = Param(tuple)
-    equations = ["cell_size, wall_thk > 0"]
-
-    def setup(self):                                    # framework hook: optional
-        if len(self.size) != 3:
-            raise ValidationError(
-                f"GridPanel: size must be a 3-tuple, got {self.size!r}"
-            )
+    equations = [
+        "cell_size, wall_thk > 0",
+        "len(size) == 3",
+    ]
 
     def build(self):
         x, y, z = self.size
@@ -112,13 +105,10 @@ class TriGridPanel(Component):
     """
 
     size = Param(tuple)
-    equations = ["cell_size, wall_thk > 0"]
-
-    def setup(self):                                    # framework hook: optional
-        if len(self.size) != 3:
-            raise ValidationError(
-                f"TriGridPanel: size must be a 3-tuple, got {self.size!r}"
-            )
+    equations = [
+        "cell_size, wall_thk > 0",
+        "len(size) == 3",
+    ]
 
     def build(self):
         x, y, z = self.size
