@@ -70,6 +70,10 @@ class FilletRing(Component):
 
 `base_angle` doesn't appear in any equality, but the constraint auto-creates it as `Param(float)` and installs the validator. No separate declaration needed.
 
+Every variable in `equations` is readable on the Component afterwards (`t.od`, `t.base_angle`).
+
+Don't start a name with an underscore (`_`); those are reserved for the framework.
+
 ### 2. `params` -- for truly unbounded floats (rare)
 
 Reach for the `params = "..."` string only when a float genuinely has no natural bound *and* doesn't appear in any equation — a signed offset, a freely-scaling coefficient, or similar:
@@ -288,12 +292,15 @@ class ChamferedBox(Component):
         "?chamfer > 0",
         "len(size) == 3",
         "(?fillet is None) != (?chamfer is None)",                         # XOR: exactly one must be set
-        "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",
+        "edge = ?fillet if ?fillet else ?chamfer",                         # active edge radius
+        "all(s > 2 * edge for s in size)",                                 # every side fits the edge
     ]
 
 ChamferedBox(size=(20, 15, 10), fillet=2)     # chamfer is None; the predicate skips
 ChamferedBox(size=(20, 15, 10), chamfer=3)    # fillet is None
 ```
+
+The `edge = ...` line is a **derivation** — a computed intermediate given a name. Naming it lets the size check below read as one idea ("every side fits the edge") rather than repeating the ternary inline. Whenever an equation starts carrying two ideas at once, pull the intermediate onto its own line; each string then narrates as a single sentence.
 
 Constraints and cross-constraints referencing an omitted value silently skip. Predicates and derivations see the value as `None`; write whatever check you need (`?x is None`, `?x if ?x else fallback`, etc.).
 
