@@ -245,7 +245,7 @@ cube([10, 20, 30]).center_bbox("xy")       # center X and Y, leave Z
 
 ### Derivations: loops, conditionals, namedtuple fields
 
-For computed values that *can't* be a scalar sympy equation -- anything that iterates, conditionally branches, or reaches into a namedtuple field -- write them as derivations in the same `equations` list. A derivation is a `name = expression` line (single `=`). The RHS is evaluated at construction time in a restricted namespace (curated Python builtins, curated math, plus instance attributes) and the result is stored on the instance.
+For computed values that *can't* be a scalar sympy equation -- anything that iterates, conditionally branches, or reaches into a namedtuple field -- write them as derivations in the same `equations` list. A derivation is a `name = expression` line (single `=`). The expression on the right of the `=` is evaluated at construction time in a restricted namespace (curated Python builtins, curated math, plus instance attributes) and the result is stored on the instance.
 
 ```python
 class BatteryHolder(Component):

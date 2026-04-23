@@ -188,13 +188,13 @@ render(t, "tube.scad")                    # build runs now, caches result
 # 1. Solver equality (drives sympy; any one missing is solved):
 "od == id + 2*thk"
 
-# 2. Per-Param constraint (numeric RHS; attaches a validator):
+# 2. Per-Param constraint (a number on the right; attaches a validator):
 "w, h, thk > 0"                            # comma-expansion OK
 
 # 3. Cross-constraint (Param-vs-Param inequality):
 "id < od"
 
-# 4. Derivation (single =, identifier LHS; arbitrary Python RHS):
+# 4. Derivation (single =, plain name on the left, any Python expression on the right):
 "pitch = spec.d + 2 * (clearance + wall_thk)"
 "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))"
 
@@ -205,7 +205,7 @@ render(t, "tube.scad")                    # build runs now, caches result
 
 # Optional input: prefix a variable with `?` to let the caller omit it.
 # When omitted, the value is None. Constraints skip; predicates/derivations see None.
-# Not allowed in `==` or on a derivation LHS.
+# Not allowed in `==` equalities or on the left of a derivation.
 "?fillet > 0"                                   # omit fillet and this skips
 "(?fillet is None) != (?chamfer is None)"       # XOR: exactly one must be set
 "edge = ?fillet if ?fillet else ?chamfer"       # pick whichever is set
