@@ -9,15 +9,15 @@ from scadwright.shapes import (
 )
 ```
 
-## `Bearing(series=)` or `Bearing(spec=)`
+## `Bearing.of(series)` or `Bearing(spec=)`
 
-Ball bearing dummy for fit-check and visualization. Look up by series number or pass a `BearingSpec` for non-standard sizes.
+Ball bearing dummy for fit-check and visualization. Use the `.of("608")` classmethod for canned 6xx-series sizes, or pass a `BearingSpec` for custom dimensions.
 
 ```python
 from scadwright.shapes import Bearing, BearingSpec
 
-Bearing(series="608")                                 # 8x22x7mm
-Bearing(series="625")                                 # 5x16x5mm
+Bearing.of("608")                                     # 8x22x7mm
+Bearing.of("625")                                     # 5x16x5mm
 Bearing(spec=BearingSpec(id=10, od=30, width=9))      # custom
 ```
 
@@ -25,7 +25,7 @@ Publishes `id`, `od`, `width`. Available series: 604-609, 623-626, 6000-6005, 62
 
 ![Bearing](images/bearing.png)
 
-*`Bearing(series="608")` — 608-series ball bearing (8×22×7 mm).*
+*`Bearing.of("608")` — 608-series ball bearing (8×22×7 mm).*
 
 ## `GT2Pulley(teeth, bore_d, belt_width)`
 

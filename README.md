@@ -134,7 +134,7 @@ from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bear
 cap = Tube(h=10, id=8, thk=1)                    # od solved: 10
 gear = SpurGear(module=2, teeth=20, h=5)          # involute profile, publishes pitch_r
 bolt = Bolt(size="M3", length=10)                 # ISO dimensions from data tables
-bearing = Bearing(series="608")                   # 8x22x7, ready for fit-check
+bearing = Bearing.of("608")                       # 8x22x7, ready for fit-check
 panel = HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 ```
 

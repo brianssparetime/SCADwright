@@ -276,9 +276,12 @@ ChamferedBox(size=(30, 20, 10), fillet=2)         # rounded edges (or chamfer=)
 FilletMask(r=3, length=20)                        # subtractable edge fillet
 FilletRing(id=20, od=30, base_angle=30)           # flange fillet ring
 
-# Fasteners:
+# Fasteners (spec-driven; .of(size) for canned ISO sizes):
 Bolt(size="M3", length=10)                        # ISO metric, socket or button head
-HexNut(size="M5")                                 # publishes .af, .h
+HexNut.of("M5")                                   # canned; publishes .af, .h, .d
+HexNut(spec=NutSpec(d=4, af=7, h=3))              # custom dims
+HeatSetPocket.of("M3")                            # publishes .hole_d, .hole_depth
+CaptiveNutPocket.of("M3", depth=3)
 clearance_hole("M3", depth=10)                    # sized for through-hole
 Standoff(od=7, id=3, h=8)                         # mount post with anchor
 
@@ -287,7 +290,8 @@ SpurGear(module=2, teeth=20, h=5)                 # involute profile
 Rack(module=2, teeth=10, length=63, h=5)          # linear gear
 
 # Mechanical:
-Bearing(series="608")                             # fit-check dummy
+Bearing.of("608")                                 # fit-check dummy; publishes .id, .od, .width
+Bearing(spec=BearingSpec(id=10, od=30, width=9))  # custom
 GT2Pulley(teeth=20, bore_d=5, belt_width=6)
 
 # Curves:
