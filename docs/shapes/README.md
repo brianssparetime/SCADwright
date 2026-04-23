@@ -92,13 +92,13 @@ One line per shape; click the name to jump to the full entry.
 
 ### [Fasteners and hardware](fasteners.md)
 
-ISO metric data tables for M2–M12; pass a size string like `"M5"`.
+ISO metric data tables for M2–M12. Spec-driven Components offer `Cls.of("M5")` for canned ISO sizes and `Cls(spec=...)` for custom dimensions; `Bolt` keeps the simpler `size=` API.
 
 - [`Bolt`](fasteners.md#boltsize-length) — ISO metric bolt with selectable head (socket, hex, flat, button, pan)
-- [`HexNut`, `SquareNut`](fasteners.md#hexnutsize--squarenutsize) — ISO metric hex nut and DIN 562 square nut
+- [`HexNut`, `SquareNut`](fasteners.md#hexnutofsize--squarenutofsize) — ISO metric hex nut and DIN 562 square nut
 - [`Standoff`](fasteners.md#standoffod-id-h) — screw-mount standoff column
-- [`HeatSetPocket`](fasteners.md#heatsetpocketsize) — pocket sized for a common brass heat-set insert
-- [`CaptiveNutPocket`](fasteners.md#captivenutpocketsize-depth) — hex pocket with insertion channel for a captive nut
+- [`HeatSetPocket`](fasteners.md#heatsetpocketofsize) — pocket sized for a common brass heat-set insert
+- [`CaptiveNutPocket`](fasteners.md#captivenutpocketofsize-depth) — hex pocket with insertion channel for a captive nut
 - [`clearance_hole`, `tap_hole`](fasteners.md#clearance_holesize-depth--tap_holesize-depth) — pre-sized clearance / tap-drill cylinders
 
 ### [Gears and motion](gears.md)
@@ -113,7 +113,7 @@ Involute tooth profiles with published pitch radii.
 
 ### [Mechanical components](mechanical.md)
 
-- [`Bearing`](mechanical.md#bearingseries-or-bearingspec) — ball-bearing dummy for fit-check (608, 625, 6000-series, etc.)
+- [`Bearing`](mechanical.md#bearingofseries-or-bearingspec) — ball-bearing dummy for fit-check (`Bearing.of("608")`, 6xx-series, etc.)
 - [`GT2Pulley`](mechanical.md#gt2pulleyteeth-bore_d-belt_width) — GT2 timing belt pulley
 - [`HTDPulley`](mechanical.md#htdpulleyteeth-bore_d-belt_width-pitch) — HTD (High Torque Drive) timing belt pulley
 - [`DShaft`](mechanical.md#dshaftd-flat_depth-2d) — D-shaped shaft cross-section (2D)
