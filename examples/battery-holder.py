@@ -81,16 +81,12 @@ class BatteryHolder(Component):
         "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_height, scoop_depth > 0",
         "corner_r >= 0",
         "tray_depth > floor_thk",
+        "tray_depth < spec.length",                                                          # predicate: RHS is a namedtuple field
+        "pitch = spec.d + 2 * (clearance + wall_thk)",                                       # derivation
+        "outer_w = count * pitch + 2 * end_clearance",
+        "outer_l = pitch + 2 * side_clearance",
+        "cradle_positions = tuple(-(count - 1) * pitch / 2 + i * pitch for i in range(count))",
     ]
-
-    def setup(self):                                       # framework hook: unpacks the namedtuple spec
-        self.pitch = self.spec.d + 2 * (self.clearance + self.wall_thk)
-        self.outer_w = self.count * self.pitch + 2 * self.end_clearance
-        self.outer_l = self.pitch + 2 * self.side_clearance
-        half_span = (self.count - 1) * self.pitch / 2
-        self.cradle_positions = tuple(
-            -half_span + i * self.pitch for i in range(self.count)
-        )
 
     def build(self):                                       # framework hook: required; returns the shape
         body = rounded_rect(self.outer_w, self.outer_l, r=self.corner_r).linear_extrude(height=self.tray_depth)
