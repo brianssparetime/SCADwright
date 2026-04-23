@@ -3,15 +3,15 @@
 Components can declare a list of equations relating their Params:
 
     class Tube(Component):
-        id  = Param(float, positive=True)
-        od  = Param(float, positive=True)
-        thk = Param(float, positive=True)
-        equations = ["od == id + 2*thk"]
+        equations = [
+            "od == id + 2*thk",
+            "h, id, od, thk > 0",
+        ]
 
-At instantiation, the framework solves for whichever Params the user didn't
-supply. Under-, over-, and inconsistent-specification all raise clear
-ValidationErrors. Params with defaults act as fallbacks when the solver needs
-more input.
+Every variable is auto-declared as `Param(float)` by the constraint line;
+no separate `Param(float, ...)` declarations are needed. At instantiation
+the framework solves for whichever values the user didn't supply. Under-,
+over-, and inconsistent-specification all raise clear ValidationErrors.
 
 This module is the pure logic layer — no Component coupling. The wiring
 lives in `scadwright.component.base`.

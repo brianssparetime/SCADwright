@@ -2,11 +2,10 @@
 
 Usage at class scope::
 
-    from scadwright import Component, Param, anchor
+    from scadwright import Component, anchor
 
     class Bracket(Component):
-        w = Param(float, default=20)
-        thk = Param(float, default=3)
+        equations = ["w, thk > 0"]
 
         mount_face = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
 
