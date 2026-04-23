@@ -166,10 +166,6 @@ spec = Param(BatterySpec)                  # object type
 slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
 ```
 
-### `self.anchor()` for conditional normals
-
-The `at=` string in class-scope `anchor()` supports ternaries (`"0 if n_shape else outer_height"`), so conditional positions don't need framework-hook machinery. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal must be installed imperatively (framework internals only; not a user-facing pattern).
-
 ### `.translate([x, y, z])` instead of directional helpers
 
 Use when the offset involves multiple axes simultaneously, or when the position comes from a variable/computation rather than a literal:
