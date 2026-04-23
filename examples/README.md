@@ -14,7 +14,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | --- | --- | --- |
 | Simple | [`simple-plate.py`](simple-plate.py) | Flat script, no Components -- primitives + booleans + `render()` |
 | Simple | [`convex-caliper.py`](convex-caliper.py) | One primitive + two shape-library Components stacked with `attach()`; single-variant Design |
-| Intermediate | [`v-block.py`](v-block.py) | First real Component -- trig `equations` (`sin`/`tan`), cross-constraints, concrete subclasses pinned by different pairs |
+| Intermediate | [`v-block.py`](v-block.py) | First real Component -- trig `equations` (`sin`/`tan`), cross-constraints for physical bounds, concrete subclasses pinned by different pairs |
 | Intermediate | [`wall-hook.py`](wall-hook.py) | Class-scope `anchor()` declarations on two Components, `attach(parent, face="...", fuse=True)` for anchor-based assembly |
 | Intermediate | [`battery-holder.py`](battery-holder.py) | Custom transform, loop-based derivation in `equations`, namedtuple-field predicate, `Param(namedtuple)` for structured spec data, multi-instantiation |
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | Generator `build()`, cross-Component publishing (`Lid` takes a `Box` as a Param), `@transform` chained via `bbox()` |

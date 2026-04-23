@@ -2,8 +2,10 @@
 vertical corners, centering lip, and 4 corner screws into pylons.
 
 Demonstrates:
-- Equations relating outer/inner dimensions so the user specifies
-  whichever they have and the framework solves the rest.
+- Equations relate outer/inner dimensions so the user specifies whichever
+  they have and the framework solves the rest.
+- Derivations compute `inner_corner_r` (a max-clamped value) and
+  `pylon_positions` (a double-loop comprehension) from the Params.
 - Cross-component dimension sharing: the `Lid` takes a `Box` instance
   as a Param and reads `box.outer_w`, `box.pylon_positions`, etc.
 - A custom transform `.chamfer_top(c=...)`.

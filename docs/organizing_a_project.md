@@ -76,6 +76,8 @@ render(plate, "plate.scad")
 
 The subclass reads like a parts list. Every measurement appears once, as a plain `name = value` line. No `self.x = self.x` repetition, no decorator. The generic `Plate` stays portable; the concrete `MyPlate` holds the project-specific numbers.
 
+As the Component gains computed values that aren't simple algebra — loop-generated tuples, namedtuple-field arithmetic, conditional scalars — write them as [derivations](components.md#derivations-loops-conditionals-namedtuple-fields) in the same `equations` list (single `=`). For boolean-valued checks sympy can't reason about (tuple length, XOR between options, all-of-elements), use [predicates](components.md#predicates-arbitrary-python-validation).
+
 ### Stage 3: Add a Design with variants
 
 When the project has multiple parts or needs different render arrangements (one for printing, one for display), add a [Design](components.md#multiple-variants-the-design-class) class. Parts are instantiated once and shared across variants:
