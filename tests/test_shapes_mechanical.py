@@ -11,7 +11,7 @@ from scadwright.shapes import Bearing, BearingSpec, DShaft, GT2Pulley, HTDPulley
 
 
 def test_bearing_608():
-    b = Bearing(series="608")
+    b = Bearing.of("608")
     bb = bbox(b)
     assert bb.size[0] == pytest.approx(22.0, abs=0.5)  # od
     assert bb.size[2] == pytest.approx(7.0, abs=0.1)   # width
@@ -34,12 +34,12 @@ def test_bearing_custom_dims_publishes_all_attrs():
 
 
 def test_bearing_unknown_series_raises():
-    with pytest.raises(ValidationError, match="unknown series"):
-        Bearing(series="9999")
+    with pytest.raises(ValidationError, match="unknown bearing series"):
+        Bearing.of("9999")
 
 
 def test_bearing_publishes_dims():
-    b = Bearing(series="625")
+    b = Bearing.of("625")
     assert b.id == 5
     assert b.od == 16
     assert b.width == 5

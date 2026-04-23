@@ -153,7 +153,7 @@ COMPONENTS = [
     {"out": "docs/shapes/images/gridfinity-base.png",   "component": GridfinityBase, "kwargs": {"grid_x": 3, "grid_y": 2}},
     {"out": "docs/shapes/images/gridfinity-bin.png",    "component": GridfinityBin,  "kwargs": {"grid_x": 2, "grid_y": 1, "height_units": 4}},
     # mechanical.md
-    {"out": "docs/shapes/images/bearing.png",      "component": Bearing,    "kwargs": {"series": "608"}},
+    {"out": "docs/shapes/images/bearing.png",      "build": lambda: Bearing.of("608"), "name": "bearing"},
     {"out": "docs/shapes/images/gt2-pulley.png",   "component": GT2Pulley,  "kwargs": {"teeth": 20, "bore_d": 5, "belt_width": 6}},
     {"out": "docs/shapes/images/d-shaft.png",      "build": _d_shaft,       "name": "d-shaft"},
     {"out": "docs/shapes/images/keyed-shaft.png",  "build": _keyed_shaft,   "name": "keyed-shaft"},
