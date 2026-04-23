@@ -6,52 +6,64 @@ from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.primitives import cube, cylinder
-from scadwright.shapes.fasteners.data import get_nut_spec
+from scadwright.shapes.fasteners.data import NutSpec, get_nut_spec
 from scadwright.shapes.two_d import regular_polygon
 
 
 class HexNut(Component):
     """ISO metric hex nut.
 
-    Specify ``size`` (e.g. ``"M3"``). Dimensions from ISO 4032.
-    Centered on the origin, flat faces on z=0 and z=h.
+    Specify ``spec=NutSpec(d=, af=, h=)`` for custom sizes, or use the
+    ``HexNut.of("M3")`` classmethod for canned ISO sizes. Dimensions
+    from ISO 4032. Centered on the origin, flat faces on z=0 and z=h.
+
+    Publishes ``af`` (across-flats), ``h`` (height), ``d`` (bore) for
+    convenient dimension access.
     """
 
-    size = Param(str)
+    spec = Param(NutSpec)
+    equations = [
+        "af = spec.af",
+        "h = spec.h",
+        "d = spec.d",
+    ]
 
-    def setup(self):                                    # framework hook: optional
-        spec = get_nut_spec(self.size)
-        self._spec = spec
-        self.af = spec.af
-        self.h = spec.h
-        self.d = spec.d
+    @classmethod
+    def of(cls, size: str, **kwargs):
+        """Build a HexNut from an ISO size string (e.g. ``"M3"``)."""
+        return cls(spec=get_nut_spec(size), **kwargs)
 
     def build(self):
-        s = self._spec
-        hex_profile = regular_polygon(sides=6, r=s.af / 2)
-        outer = hex_profile.linear_extrude(height=s.h)
-        hole = cylinder(h=s.h, d=s.d).through(outer)
+        hex_profile = regular_polygon(sides=6, r=self.af / 2)
+        outer = hex_profile.linear_extrude(height=self.h)
+        hole = cylinder(h=self.h, d=self.d).through(outer)
         return difference(outer, hole)
 
 
 class SquareNut(Component):
     """Square nut (DIN 562 style).
 
-    Specify ``size`` (e.g. ``"M3"``). Uses the same across-flats
-    dimension as the hex nut for that size, but square cross-section.
+    Specify ``spec=NutSpec(...)`` for custom, or ``SquareNut.of("M3")``
+    for canned ISO sizes (uses the same across-flats dimension as the
+    hex nut for that size, but square cross-section).
+
+    Publishes ``af`` (across-flats / side length), ``h`` (height),
+    ``d`` (bore).
     """
 
-    size = Param(str)
+    spec = Param(NutSpec)
+    equations = [
+        "af = spec.af",
+        "h = spec.h",
+        "d = spec.d",
+    ]
 
-    def setup(self):                                    # framework hook: optional
-        spec = get_nut_spec(self.size)
-        self._spec = spec
-        self.af = spec.af
-        self.h = spec.h
-        self.d = spec.d
+    @classmethod
+    def of(cls, size: str, **kwargs):
+        """Build a SquareNut from an ISO size string (e.g. ``"M3"``)."""
+        return cls(spec=get_nut_spec(size), **kwargs)
 
     def build(self):
-        s = self._spec
-        outer = cube([s.af, s.af, s.h], center="xy")
-        hole = cylinder(h=s.h, d=s.d).through(outer)
+        outer = cube([self.af, self.af, self.h], center="xy")
+        hole = cylinder(h=self.h, d=self.d).through(outer)
         return difference(outer, hole)

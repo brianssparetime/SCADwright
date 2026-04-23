@@ -1,10 +1,13 @@
 """Fasteners: bolts, nuts, inserts, standoffs, clearance/tap holes."""
 
 from scadwright.shapes.fasteners.data import (
-    METRIC_SOCKET_HEAD,
+    HEAT_SET_INSERT,
+    InsertSpec,
     METRIC_BUTTON_HEAD,
     METRIC_HEX_NUT,
-    HEAT_SET_INSERT,
+    METRIC_SOCKET_HEAD,
+    NutSpec,
+    ScrewSpec,
     get_insert_spec,
     get_nut_spec,
     get_screw_spec,
@@ -19,6 +22,9 @@ __all__ = [
     "CaptiveNutPocket",
     "HeatSetPocket",
     "HexNut",
+    "InsertSpec",
+    "NutSpec",
+    "ScrewSpec",
     "SquareNut",
     "Standoff",
     "clearance_hole",

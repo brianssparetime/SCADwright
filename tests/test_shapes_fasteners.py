@@ -102,22 +102,30 @@ def test_tap_hole_m3():
 
 
 def test_hex_nut_builds():
-    n = HexNut(size="M3")
+    n = HexNut.of("M3")
     scad = emit_str(n)
     assert "polygon" in scad or "circle" in scad  # from regular_polygon
 
 
 def test_hex_nut_publishes_af():
-    n = HexNut(size="M5")
+    n = HexNut.of("M5")
     assert n.af == 8.0
     assert n.h == 4.7
+
+
+def test_hex_nut_custom_spec():
+    """Pass a NutSpec directly for non-standard sizes."""
+    from scadwright.shapes import NutSpec
+    n = HexNut(spec=NutSpec(d=4, af=7, h=3))
+    assert n.af == 7
+    assert n.h == 3
 
 
 # --- SquareNut ---
 
 
 def test_square_nut_builds():
-    n = SquareNut(size="M4")
+    n = SquareNut.of("M4")
     scad = emit_str(n)
     assert "cube" in scad
 
@@ -126,22 +134,28 @@ def test_square_nut_builds():
 
 
 def test_heat_set_pocket():
-    p = HeatSetPocket(size="M3")
+    p = HeatSetPocket.of("M3")
     bb = bbox(p)
     assert bb.size[0] == pytest.approx(3.8, abs=0.2)
+
+
+def test_heat_set_pocket_publishes_dims():
+    p = HeatSetPocket.of("M3")
+    assert p.hole_d == 3.8
+    assert p.hole_depth == 4.5
 
 
 # --- CaptiveNutPocket ---
 
 
 def test_captive_nut_pocket():
-    p = CaptiveNutPocket(size="M3", depth=3)
+    p = CaptiveNutPocket.of("M3", depth=3)
     scad = emit_str(p)
     assert "union" in scad
 
 
 def test_captive_nut_pocket_y_axis():
-    p = CaptiveNutPocket(size="M3", depth=3, channel_axis="y")
+    p = CaptiveNutPocket.of("M3", depth=3, channel_axis="y")
     scad = emit_str(p)
     assert "union" in scad
 

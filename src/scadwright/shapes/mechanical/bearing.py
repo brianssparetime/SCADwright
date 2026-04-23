@@ -38,35 +38,38 @@ BEARING_DATA: dict[str, BearingSpec] = {
 }
 
 
+def get_bearing_spec(series: str) -> BearingSpec:
+    """Look up a BearingSpec by series number (e.g. ``"608"``)."""
+    spec = BEARING_DATA.get(series)
+    if spec is None:
+        raise ValidationError(
+            f"unknown bearing series {series!r}. "
+            f"Available: {sorted(BEARING_DATA)}"
+        )
+    return spec
+
+
 class Bearing(Component):
     """Ball bearing dummy for fit-check and visualization.
 
-    Specify ``series`` (e.g. ``"608"``) for standard dimensions, or
-    ``spec=BearingSpec(id=..., od=..., width=...)`` for non-standard
-    sizes. The bearing is centered on the origin, bore along z.
+    Specify ``spec=BearingSpec(id=, od=, width=)`` for custom sizes, or
+    use ``Bearing.of("608")`` for canned 6xx-series dimensions.
+    Centered on the origin, bore along z.
 
     Publishes ``id``, ``od``, ``width`` for convenient dimension access.
     """
 
-    series = Param(str, default=None)
-    spec = Param(BearingSpec, default=None)
+    spec = Param(BearingSpec)
+    equations = [
+        "id = spec.id",
+        "od = spec.od",
+        "width = spec.width",
+    ]
 
-    def setup(self):                                    # framework hook: optional
-        if self.spec is None and self.series is not None:
-            looked_up = BEARING_DATA.get(self.series)
-            if looked_up is None:
-                raise ValidationError(
-                    f"Bearing: unknown series {self.series!r}. "
-                    f"Available: {sorted(BEARING_DATA)}"
-                )
-            self.spec = looked_up
-        if self.spec is None:
-            raise ValidationError("Bearing: specify series= or spec=")
-        # Publish individual dims for ergonomic access.
-        self.id = self.spec.id
-        self.od = self.spec.od
-        self.width = self.spec.width
+    @classmethod
+    def of(cls, series: str, **kwargs):
+        """Build a Bearing from a 6xx-series string (e.g. ``"608"``)."""
+        return cls(spec=get_bearing_spec(series), **kwargs)
 
     def build(self):
-        s = self.spec
-        return Tube(h=s.width, od=s.od, id=s.id)
+        return Tube(h=self.width, od=self.od, id=self.id)
