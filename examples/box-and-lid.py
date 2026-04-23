@@ -75,16 +75,13 @@ class Box(Component):
         "wall_thk, floor_thk, height, pylon_od, corner_inset, lip_thk > 0",
         "corner_r, chamfer, lip_height, lip_clearance >= 0",
         "lip_thk < wall_thk",
+        "inner_corner_r = max(corner_r - wall_thk, 0.5)",                                   # derivation
+        "pylon_positions = tuple("                                                          # derivation
+        "    (sx * (outer_w / 2 - corner_inset), sy * (outer_l / 2 - corner_inset))"
+        "    for sx in (+1, -1) for sy in (+1, -1)"
+        ")",
     ]
     screw = Param(ScrewSpec)
-
-    def setup(self):                                       # framework hook: only for cross-Component published values
-        self.inner_corner_r = max(self.corner_r - self.wall_thk, 0.5)
-        i = self.corner_inset
-        self.pylon_positions = tuple(
-            (sx * (self.outer_w / 2 - i), sy * (self.outer_l / 2 - i))
-            for sx in (+1, -1) for sy in (+1, -1)
-        )
 
     def build(self):                                       # framework hook: required; returns the shape
         # Local EPS for the hull-slab trick (layer thickness, not coplanar
