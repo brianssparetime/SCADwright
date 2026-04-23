@@ -278,5 +278,6 @@ Rules currently enforced:
 - `no-module-eps` — module-level `EPS = ...` assignments. Prefer `.through(parent)` for cutters or `.attach(fuse=True)` for joints; when a manual epsilon is genuinely unavoidable (non-axis-aligned cutters, hull-slab layer thickness), scope it locally inside the function that needs it.
 - `no-param-float` — `Param(float)` with no `default=` argument. Floats belong in `equations` or `params=`. `Param(float, default=None)` is the deliberate opt-out pattern and is allowed.
 - `translate-single-axis` — `.translate([x, 0, 0])` (or any permutation with two literal zeros). Use the `.right/.left/.up/.down/.forward/.back` directional helper.
+- `no-component-setup` — `def setup(self):` on a `Component` subclass. Move computed values to derivations in `equations` (single `=`) and validation to predicates. The framework hook still exists as an internal escape; user-facing Components must be declarative.
 
 The linter is intentionally conservative: it only flags patterns that have a clear correct alternative. Style-guide rules that require semantic understanding (no baked-in defaults on *reusable* Components, preferring derivations over imperative helpers, etc.) aren't mechanically checkable and live as prose-only guidance.

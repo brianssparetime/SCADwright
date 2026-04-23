@@ -26,6 +26,13 @@ Rules currently enforced (see docs/style-guide.md for rationale):
   with two zero literals. Use the directional helper
   (``.right/.left/.up/.down/.forward/.back``) instead.
 
+- ``no-component-setup``: ``def setup(self):`` defined on a class whose
+  bases include ``Component``. Every normal case belongs in the
+  ``equations`` list — scalar relationships as equalities, computed
+  values as derivations (single ``=``), validation as predicates. The
+  framework-level hook still exists as an internal escape, but example
+  and shape-library code must stay declarative.
+
 The linter does not understand comments, so if you need to violate a
 rule deliberately, refactor rather than suppress.
 """
@@ -180,10 +187,68 @@ def check_translate_single_axis(path: Path, tree: ast.Module) -> list[Violation]
     return violations
 
 
+def check_component_setup(path: Path, tree: ast.Module) -> list[Violation]:
+    """Flag `def setup(self):` on any class whose bases include Component.
+
+    Detection is name-based (any base class named ``Component`` or ending in
+    ``Component``, whether bare-name or attribute access) so the rule fires
+    without import resolution. The framework hook still exists for internal
+    use; this rule enforces the convention that user-facing code stays
+    declarative — derivations and predicates cover every normal case.
+    """
+    violations: list[Violation] = []
+
+    def _inherits_from_component(cls: ast.ClassDef) -> bool:
+        for base in cls.bases:
+            # Bare name: `class X(Component):`
+            if isinstance(base, ast.Name) and (
+                base.id == "Component" or base.id.endswith("Component")
+            ):
+                return True
+            # Attribute: `class X(sc.Component):`, `class X(scadwright.Component):`
+            if isinstance(base, ast.Attribute) and (
+                base.attr == "Component" or base.attr.endswith("Component")
+            ):
+                return True
+        return False
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not _inherits_from_component(node):
+            continue
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef):
+                continue
+            if item.name != "setup":
+                continue
+            if not item.args.args:
+                continue
+            if item.args.args[0].arg != "self":
+                continue
+            violations.append(
+                Violation(
+                    path=path,
+                    line=item.lineno,
+                    col=item.col_offset,
+                    rule="no-component-setup",
+                    message=(
+                        f"`{node.name}.setup()` — move computed values to "
+                        f"derivations in `equations` (single `=`) and "
+                        f"validation to predicates. The setup() framework "
+                        f"hook stays for internal escape only; user-facing "
+                        f"Components must be declarative."
+                    ),
+                )
+            )
+    return violations
+
+
 RULES: list[Callable[[Path, ast.Module], list[Violation]]] = [
     check_module_level_eps,
     check_param_float,
     check_translate_single_axis,
+    check_component_setup,
 ]
 
 
