@@ -202,6 +202,13 @@ render(t, "tube.scad")                    # build runs now, caches result
 "len(size) == 3"
 "tray_depth < spec.length"
 "all(e.dia <= throat for e in elements)"
+
+# Optional-Param sigil: prefix `?` to auto-declare Param(float, default=None).
+# Constraints skip when unset; predicates/derivations see None.
+# Not allowed in `==` equalities or on derivation LHS.
+"?fillet > 0"
+"(?fillet is None) != (?chamfer is None)"
+"edge = ?fillet if ?fillet else ?chamfer"
 ```
 
 Derivations and predicates see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`/math funcs) plus instance Params and earlier derivations. Both run after the solver and cross-constraints; predicates run after derivations.
