@@ -242,6 +242,29 @@ equations = [
 
 Derivations cover loop-generated tuples, namedtuple-field arithmetic (`spec.d + ...`), and conditional scalars (`(a + b) if cond else c`). Reach for `equations` first.
 
+### Don't pack two ideas into one equation
+
+If a predicate or derivation is carrying both a computed value and a check on it, split them with a named derivation. Each string should narrate as a single sentence.
+
+```python
+# Wrong (one string, two ideas: which edge is active + every side fits it)
+equations = [
+    "?fillet > 0", "?chamfer > 0",
+    "(?fillet is None) != (?chamfer is None)",
+    "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",
+]
+
+# Right (derivation names the active edge; predicate checks size)
+equations = [
+    "?fillet > 0", "?chamfer > 0",
+    "(?fillet is None) != (?chamfer is None)",
+    "edge = ?fillet if ?fillet else ?chamfer",
+    "all(s > 2 * edge for s in size)",
+]
+```
+
+Adding a derivation is cheap — one more string, no boilerplate — and the DSL lives inside Python strings, so nesting doesn't get IDE support. Split any line where a reader would need to parse a sub-expression before they can parse the whole.
+
 ### Don't hand-code what a predicate does
 
 ```python

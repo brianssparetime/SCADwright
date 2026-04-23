@@ -20,40 +20,38 @@ class ChamferedBox(Component):
 
     size = Param(tuple)
     # `?fillet` / `?chamfer` auto-declare as Param(float, default=None); the
-    # positivity constraints skip silently when the value is unset, so they
-    # coexist with the XOR predicate below. The inner conditional uses
-    # truthy form (`?fillet if ?fillet else ?chamfer`) — safe because the
-    # positivity constraint rejects 0, leaving None as the only falsy value.
+    # positivity constraints skip when unset. The `edge` derivation names the
+    # active radius so the size check below reads as one idea ("every side
+    # fits the edge") instead of repeating the ternary inline. Truthy form
+    # (`?fillet if ?fillet else ?chamfer`) is safe because the positivity
+    # constraint rejects 0, leaving None as the only falsy value.
     equations = [
         "?fillet > 0",
         "?chamfer > 0",
         "len(size) == 3",
         "(?fillet is None) != (?chamfer is None)",                                 # XOR: exactly one
-        "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",
+        "edge = ?fillet if ?fillet else ?chamfer",                                 # active edge radius
+        "all(s > 2 * edge for s in size)",                                         # every side fits
     ]
 
     def build(self):
         x, y, z = self.size
+        r = self.edge
+        inner = cube([x - 2 * r, y - 2 * r, z - 2 * r], center=True)
 
         if self.fillet is not None:
-            r = self.fillet
-            inner = cube(
-                [x - 2 * r, y - 2 * r, z - 2 * r], center=True
-            )
             return minkowski(inner, sphere(r=r))
 
-        # Chamfer via Minkowski sum with a regular octahedron of "radius" c
-        # (vertices at ±c on each axis). The octahedron's eight triangular
+        # Chamfer via Minkowski sum with a regular octahedron of "radius" r
+        # (vertices at ±r on each axis). The octahedron's eight triangular
         # faces are 45° to all three principal axes, so the sum produces
-        # the documented 45-degree bevels of depth c on every cube edge.
+        # the documented 45-degree bevels of depth r on every cube edge.
         # Mirrors the fillet branch's minkowski(cube, sphere) pattern.
-        c = self.chamfer
-        inner = cube([x - 2 * c, y - 2 * c, z - 2 * c], center=True)
         oct = polyhedron(
             points=[
-                (c, 0, 0), (-c, 0, 0),
-                (0, c, 0), (0, -c, 0),
-                (0, 0, c), (0, 0, -c),
+                (r, 0, 0), (-r, 0, 0),
+                (0, r, 0), (0, -r, 0),
+                (0, 0, r), (0, 0, -r),
             ],
             faces=[
                 [0, 2, 4], [0, 4, 3], [0, 3, 5], [0, 5, 2],
