@@ -41,10 +41,24 @@ from scadwright.transforms import transform
 
 PortSpec = namedtuple("PortSpec", "face along z_above_pcb width height label", defaults=("",))
 
-PCBSpec = namedtuple("PCBSpec", "size mount_holes mount_hole_d ports component_clearance")
+# `width`, `length`, `thk` are precomputed by `pcb_spec(...)` so the case's
+# equations-list can reference them by name rather than indexing into `size`.
+PCBSpec = namedtuple(
+    "PCBSpec",
+    "size width length thk mount_holes mount_hole_d ports component_clearance",
+)
 
 
-PI4 = PCBSpec(
+def pcb_spec(*, size, mount_holes, mount_hole_d, ports, component_clearance):
+    """Build a PCBSpec with width/length/thk derived from `size`."""
+    return PCBSpec(
+        size=size, width=size[0], length=size[1], thk=size[2],
+        mount_holes=mount_holes, mount_hole_d=mount_hole_d,
+        ports=ports, component_clearance=component_clearance,
+    )
+
+
+PI4 = pcb_spec(
     size=(85.0, 56.0, 1.5),
     mount_holes=((3.5, 3.5), (61.0, 3.5), (3.5, 52.5), (61.0, 52.5)),
     mount_hole_d=2.7,
@@ -135,10 +149,10 @@ class CaseBase(Component):
     pcb = Param(PCBSpec)
     equations = [
         "wall_thk, floor_thk, standoff_h, wall_h, corner_r, clearance, standoff_outer_d > 0",
-        "inner_size = (pcb.size[0] + 2 * clearance, pcb.size[1] + 2 * clearance, standoff_h + pcb.component_clearance)",
+        "inner_size = (pcb.width + 2 * clearance, pcb.length + 2 * clearance, standoff_h + pcb.component_clearance)",
         "outer_size = (inner_size[0] + 2 * wall_thk, inner_size[1] + 2 * wall_thk, floor_thk + wall_h)",
-        "pcb_top_z = floor_thk + standoff_h + pcb.size[2]",
-        "mount_positions = tuple((x - pcb.size[0] / 2, y - pcb.size[1] / 2) for (x, y) in pcb.mount_holes)",
+        "pcb_top_z = floor_thk + standoff_h + pcb.thk",
+        "mount_positions = tuple((x - pcb.width / 2, y - pcb.length / 2) for (x, y) in pcb.mount_holes)",
     ]
 
     def build(self):                                       # framework hook: required; returns the shape
@@ -165,12 +179,12 @@ class CaseBase(Component):
 
         body = union(shell, standoffs)
 
-        pw, pl, _ = self.pcb.size
-        for port in self.pcb.ports:
+        pcb = self.pcb
+        for port in pcb.ports:
             if port.face in ("+y", "-y"):
-                at_along = port.along - pw / 2
+                at_along = port.along - pcb.width / 2
             else:
-                at_along = port.along - pl / 2
+                at_along = port.along - pcb.length / 2
             body = body.port_cutout(
                 face=port.face,
                 at_along=at_along,
@@ -261,9 +275,9 @@ class ProjectBox(Design):
 
     @variant(fn=48, default=True)
     def display(self):
-        pw, pl, pt = self.base.pcb.size
+        spec = self.base.pcb
         pcb = (
-            cube([pw, pl, pt], center="xy")
+            cube([spec.width, spec.length, spec.thk], center="xy")
             .up(self.base.floor_thk + self.base.standoff_h)
             .color("darkgreen")
         )
