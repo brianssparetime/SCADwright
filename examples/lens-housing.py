@@ -106,6 +106,7 @@ class LensHousing(Component):
 
     FRONT_FILLET_OFFSET = 5.0   # aperture rim inset from the front element's grip ID
 
+    elements = Param(tuple)
     equations = [
         "lower_housing_od == lower_housing_id + barrel_thk",
         "hood_base_angle == 90 - fov_angle / 2",
@@ -119,7 +120,6 @@ class LensHousing(Component):
         "upper_housing_od = (max_upper_ele_dia + barrel_thk) if is_wide else flange_flange_od",
         "all(not e.constricted or e.throat_dia_required <= lower_housing_id for e in elements)",
     ]
-    elements = Param(tuple)
 
     def build(self):
         lower_id = self.lower_housing_id
