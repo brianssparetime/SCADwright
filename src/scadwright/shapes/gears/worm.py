@@ -27,6 +27,8 @@ class Worm(Component):
         "thread_r == shaft_r + module",
     ]
     leads = Param(int, default=1, min=1)
+    # ISO 4033 convention — almost every gear-cutting application uses 20°;
+    # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
     pressure_angle = Param(float, default=20.0)
 
     def build(self):
@@ -73,6 +75,8 @@ class WormGear(Component):
         "root_r == pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=12)
+    # ISO 4033 convention — almost every gear-cutting application uses 20°;
+    # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
     pressure_angle = Param(float, default=20.0)
 
     def build(self):

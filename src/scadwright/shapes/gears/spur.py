@@ -37,6 +37,8 @@ class SpurGear(Component):
         "root_r == pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=6)
+    # ISO 4033 convention — almost every gear-cutting application uses 20°;
+    # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
     pressure_angle = Param(float, default=20.0)
     helix_angle = Param(float, default=0.0)
 

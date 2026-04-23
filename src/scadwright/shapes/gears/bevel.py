@@ -33,8 +33,9 @@ class BevelGear(Component):
         "root_r == pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=6)
+    # ISO 4033 convention — almost every gear-cutting application uses 20°;
+    # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
     pressure_angle = Param(float, default=20.0)
-    cone_angle = Param(float, default=45.0)
 
     def build(self):
         profile = spur_profile(self.module, self.teeth, self.pressure_angle)
