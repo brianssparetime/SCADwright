@@ -131,24 +131,13 @@ class CaseBase(Component):
     """
 
     pcb = Param(PCBSpec)
-    equations = ["wall_thk, floor_thk, standoff_h, wall_h, corner_r, clearance, standoff_outer_d > 0"]
-
-    def setup(self):                                       # framework hook: optional, runs after Params are set
-        pw, pl, _ = self.pcb.size
-        self.inner_size = (
-            pw + 2 * self.clearance,
-            pl + 2 * self.clearance,
-            self.standoff_h + self.pcb.component_clearance,
-        )
-        self.outer_size = (
-            self.inner_size[0] + 2 * self.wall_thk,
-            self.inner_size[1] + 2 * self.wall_thk,
-            self.floor_thk + self.wall_h,
-        )
-        self.pcb_top_z = self.floor_thk + self.standoff_h + self.pcb.size[2]
-        self.mount_positions = tuple(
-            (x - pw / 2, y - pl / 2) for (x, y) in self.pcb.mount_holes
-        )
+    equations = [
+        "wall_thk, floor_thk, standoff_h, wall_h, corner_r, clearance, standoff_outer_d > 0",
+        "inner_size = (pcb.size[0] + 2 * clearance, pcb.size[1] + 2 * clearance, standoff_h + pcb.component_clearance)",
+        "outer_size = (inner_size[0] + 2 * wall_thk, inner_size[1] + 2 * wall_thk, floor_thk + wall_h)",
+        "pcb_top_z = floor_thk + standoff_h + pcb.size[2]",
+        "mount_positions = tuple((x - pcb.size[0] / 2, y - pcb.size[1] / 2) for (x, y) in pcb.mount_holes)",
+    ]
 
     def build(self):                                       # framework hook: required; returns the shape
         w, l, h = self.outer_size
