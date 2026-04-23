@@ -5,7 +5,6 @@ from __future__ import annotations
 from scadwright.boolops import minkowski
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.primitives import cube, polyhedron, sphere
 
 
@@ -22,33 +21,16 @@ class ChamferedBox(Component):
     size = Param(tuple)
     # `fillet > 0` and `chamfer > 0` are per-Param constraints that fire
     # only when the value is non-None (optional-Param opt-out), so they
-    # coexist with the XOR selector below.
+    # coexist with the XOR predicate below.
     equations = [
         "fillet > 0",
         "chamfer > 0",
+        "len(size) == 3",
+        "(fillet is None) != (chamfer is None)",                                                 # XOR: exactly one
+        "all(s > 2 * (fillet if fillet is not None else chamfer) for s in size)",
     ]
     fillet = Param(float, default=None)
     chamfer = Param(float, default=None)
-
-    def setup(self):
-        if len(self.size) != 3:
-            raise ValidationError(
-                f"ChamferedBox: size must be a 3-tuple, got {self.size!r}"
-            )
-        if self.fillet is not None and self.chamfer is not None:
-            raise ValidationError(
-                "ChamferedBox: specify fillet or chamfer, not both"
-            )
-        if self.fillet is None and self.chamfer is None:
-            raise ValidationError(
-                "ChamferedBox: specify either fillet or chamfer"
-            )
-        edge = self.fillet if self.fillet is not None else self.chamfer
-        for i, s in enumerate(self.size):
-            if s <= 2 * edge:
-                raise ValidationError(
-                    f"ChamferedBox: size[{i}]={s} must be > 2*edge={2*edge}"
-                )
 
     def build(self):
         x, y, z = self.size

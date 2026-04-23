@@ -76,17 +76,17 @@ def test_chamfered_box_chamfer():
 
 
 def test_chamfered_box_both_raises():
-    with pytest.raises(ValidationError, match="fillet or chamfer, not both"):
+    with pytest.raises(ValidationError, match=r"fillet is None.*!=.*chamfer is None"):
         ChamferedBox(size=(20, 15, 10), fillet=2, chamfer=2)
 
 
 def test_chamfered_box_neither_raises():
-    with pytest.raises(ValidationError, match="specify either fillet or chamfer"):
+    with pytest.raises(ValidationError, match=r"fillet is None.*!=.*chamfer is None"):
         ChamferedBox(size=(20, 15, 10))
 
 
 def test_chamfered_box_too_small_raises():
-    with pytest.raises(ValidationError, match="must be >"):
+    with pytest.raises(ValidationError, match=r"all\(s > 2 \*"):
         ChamferedBox(size=(4, 4, 4), fillet=3)
 
 

@@ -56,11 +56,10 @@ class GridfinityBase(Component):
     grid_x = Param(int, min=1)
     grid_y = Param(int, min=1)
     spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
-
-    def setup(self):                                    # framework hook: optional
-        s = self.spec
-        self.outer_w = self.grid_x * s.grid_unit
-        self.outer_l = self.grid_y * s.grid_unit
+    equations = [
+        "outer_w = grid_x * spec.grid_unit",
+        "outer_l = grid_y * spec.grid_unit",
+    ]
 
     def build(self):
         s = self.spec
@@ -105,12 +104,11 @@ class GridfinityBin(Component):
     height_units = Param(int, min=1)
     dividers_x = Param(int, default=1, min=1)
     spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
-
-    def setup(self):                                    # framework hook: optional
-        s = self.spec
-        self.outer_w = self.grid_x * s.grid_unit - s.bin_clearance
-        self.outer_l = self.grid_y * s.grid_unit - s.bin_clearance
-        self.total_h = self.height_units * s.height_unit + s.lip_height
+    equations = [
+        "outer_w = grid_x * spec.grid_unit - spec.bin_clearance",
+        "outer_l = grid_y * spec.grid_unit - spec.bin_clearance",
+        "total_h = height_units * spec.height_unit + spec.lip_height",
+    ]
 
     def build(self):
         s = self.spec
