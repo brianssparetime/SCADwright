@@ -13,7 +13,7 @@ Run:
 """
 
 from collections import namedtuple
-from math import inf, radians, tan
+from math import radians, tan
 
 from scadwright import Component, Param, bbox
 from scadwright.boolops import difference, union
@@ -29,13 +29,17 @@ from scadwright.shapes import FilletRing, Funnel, Tube
 
 
 # spacing is from flange (z=0) to element center; +z = toward object.
-Element = namedtuple("Element", "dia edge_thk spacing")
+# `face_z_top`, `face_z_bot`, `constricted`, `throat_dia_required` are
+# precomputed by `element(...)` so the housing's equations-list can
+# reference them without calling methods.
+Element = namedtuple(
+    "Element",
+    "dia edge_thk spacing face_z_top face_z_bot constricted throat_dia_required",
+)
 
 
 class ElementHolder(Component):
-    """Two-sided clamp around one Element, symmetric about the element
-    center. Pre-construction queries are classmethods so housing code can
-    pick each holder's OD before constructing the holder."""
+    """Two-sided clamp around one Element, symmetric about the element center."""
 
     GRIP_DEPTH = 1.5
     GRIP_WIDTH = 1.0
@@ -44,17 +48,6 @@ class ElementHolder(Component):
 
     element = Param(Element)
     equations = ["od > 0"]
-
-    @classmethod
-    def face_z_for(cls, element, side):
-        """Z of the holder's top face (side=+1) or bottom face (side=-1)."""
-        half = (element.edge_thk + 2 * cls.GRIP_WIDTH) / 2
-        return element.spacing + side * half
-
-    @classmethod
-    def is_constricted_for(cls, element):
-        """True iff any part of the holder dips below the flange."""
-        return cls.face_z_for(element, -1) < 0
 
     def build(self):                                       # framework hook: required; returns the shape
         e = self.element
@@ -67,6 +60,23 @@ class ElementHolder(Component):
         ).attach(surround, fuse=True)
         half = union(surround, gripper).flip("z")
         return mirror_copy(half, normal=[0, 0, 1]).up(e.spacing)
+
+
+def element(*, dia, edge_thk, spacing):
+    """Build an `Element` with geometric derived fields populated.
+
+    Derived fields use `ElementHolder` grip geometry so the housing can reason
+    about each element purely through attribute access (keeping the lens
+    housing's equations list free of classmethod calls).
+    """
+    half = (edge_thk + 2 * ElementHolder.GRIP_WIDTH) / 2
+    return Element(
+        dia=dia, edge_thk=edge_thk, spacing=spacing,
+        face_z_top=spacing + half,
+        face_z_bot=spacing - half,
+        constricted=(spacing - half) < 0,
+        throat_dia_required=dia + ElementHolder.DIA_CLEAR,
+    )
 
 
 def trunc_fillet_ring(*, id, od, base_angle, slant="outwards", rim_width):
@@ -101,35 +111,15 @@ class LensHousing(Component):
         "hood_base_angle == 90 - fov_angle / 2",
         "lower_housing_od, lower_housing_id, lower_housing_len, barrel_thk > 0",
         "flange_flange_od, flange_flange_len, fov_angle, hood_base_angle > 0",
+        "unconstricted = tuple(e for e in elements if not e.constricted)",
+        "max_upper_ele_dia = max((e.dia for e in unconstricted), default=0.0)",
+        "is_wide = max_upper_ele_dia > lower_housing_id",
+        "expansion_funnel_len = min((e.face_z_bot for e in unconstricted), default=inf)",
+        "upper_housing_len = max(e.face_z_top for e in elements)",
+        "upper_housing_od = (max_upper_ele_dia + barrel_thk) if is_wide else flange_flange_od",
+        "all(not e.constricted or e.throat_dia_required <= lower_housing_id for e in elements)",
     ]
     elements = Param(tuple)
-
-    def setup(self):                                       # framework hook: element iteration needs loops + conditionals
-        unconstricted = [e for e in self.elements if not ElementHolder.is_constricted_for(e)]
-        self.max_upper_ele_dia = max((e.dia for e in unconstricted), default=0.0)
-        self.is_wide = self.max_upper_ele_dia > self.lower_housing_id
-        self.expansion_funnel_len = (
-            min(ElementHolder.face_z_for(e, -1) for e in unconstricted)
-            if unconstricted else inf
-        )
-        self.upper_housing_len = max(ElementHolder.face_z_for(e, +1) for e in self.elements)
-        self.upper_housing_od = (
-            self.max_upper_ele_dia + self.barrel_thk
-            if self.is_wide
-            else self.flange_flange_od
-        )
-
-        self._validate_elements()
-
-    def _validate_elements(self):
-        clr = ElementHolder.DIA_CLEAR
-        for i, e in enumerate(self.elements, start=1):
-            if ElementHolder.is_constricted_for(e) and e.dia + clr > self.lower_housing_id:
-                raise ValueError(
-                    f"Element #{i} is constricted (spacing {e.spacing}mm dips into "
-                    f"the throat) but its diameter {e.dia}mm + clearance "
-                    f"{clr}mm exceeds the throat ID {self.lower_housing_id}mm."
-                )
 
     def build(self):
         lower_id = self.lower_housing_id
@@ -161,7 +151,7 @@ class LensHousing(Component):
         yield upper
 
         for e in self.elements:
-            holder_od = lower_id if ElementHolder.is_constricted_for(e) else upper_id
+            holder_od = lower_id if e.constricted else upper_id
             yield ElementHolder(element=e, od=holder_od)
 
         front_ele_dia = max(self.elements, key=lambda e: e.spacing).dia
@@ -214,9 +204,9 @@ def half_housing_splay(housing):
 
 
 ELEMENTS = (
-    Element(dia=40.0, edge_thk=5, spacing=18),
-    Element(dia=50.0, edge_thk=2, spacing=-2),
-    Element(dia=38.5, edge_thk=2, spacing=-12),
+    element(dia=40.0, edge_thk=5, spacing=18),
+    element(dia=50.0, edge_thk=2, spacing=-2),
+    element(dia=38.5, edge_thk=2, spacing=-12),
 )
 
 
