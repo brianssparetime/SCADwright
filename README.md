@@ -84,6 +84,8 @@ Tube(h=10, id=8, thk=-1)     # ValidationError: thk must be positive
 
 One definition, every call site reads naturally for the dimensions the caller has on hand. The full dimensional contract -- relationships and constraints -- is visible at a glance.
 
+The same `equations` list also carries **derivations** (single-`=` lines like `"pitch = spec.d + 2 * (clearance + wall_thk)"`) for values sympy can't solve — loop-generated tuples, namedtuple-field arithmetic, conditional scalars — and **predicates** (boolean lines like `"all(e.dia <= throat for e in elements)"`) for arbitrary-Python validation. One declarative block describes everything true about the part.
+
 ### 3. You can't add new transforms or other "verbs"
 
 In OpenSCAD you can't write `cube(10).chamfer_top(depth=1)` — there's no way to add a transform that works on any shape.

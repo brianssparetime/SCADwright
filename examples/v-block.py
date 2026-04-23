@@ -6,12 +6,14 @@ is sized so a rod of diameter max_d sits tangent to both V faces with
 its center at the block's top surface.
 
 Demonstrates (intermediate scope):
-- Equations doing the heavy lifting: trig (sin, tan) relates groove
-  angle, rod diameter, groove depth, and opening width -- specify any
-  two primary vars, the rest are solved.
+- Trig equations do the heavy lifting: `sin` relates groove angle to
+  the cradled rod's diameter; `tan` derives the opening width. Specify
+  any two primary vars, the rest solve.
+- Cross-constraints encode physical bounds without a method.
 - Three concrete subclasses, each pinned by a different pair.
-- No `setup()`, no `params=`, no explicit `Param` -- every dimension
-  flows through `equations`.
+- Every dimension flows through the `equations` list — no intermediate
+  Param declarations, no derivations needed (all relationships are
+  scalar algebra).
 - Print and display `@variant`s.
 
 Run:

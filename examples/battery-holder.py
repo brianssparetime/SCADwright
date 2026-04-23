@@ -2,13 +2,17 @@
 cells, sized to a given battery spec.
 
 Demonstrates (intermediate scope):
-- Equations solving for inter-related dimensions.
+- `Param(namedtuple)` for structured spec data (one BatterySpec drives
+  all per-battery dimensions).
+- Derivations in `equations` compute `pitch`, `outer_w`, `outer_l`, and a
+  loop-generated `cradle_positions` tuple directly from the spec.
+- A predicate (`tray_depth < spec.length`) validates against a namedtuple
+  field that the solver can't reach.
 - A shape-library 2D profile (`RoundedSlot`) extruded into a custom cutter.
 - A custom transform applied multiple times (one per cradle).
-- Multi-instantiation of the same cradle geometry.
 - Concrete subclass per battery type + count.
-- Component publishing: the holder exposes `cradle_positions` and outer
-  dimensions so the display variant can read them.
+- Published derivations let the display variant read `cradle_positions`
+  without rebuilding.
 
 Run:
     python examples/battery-holder.py

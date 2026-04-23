@@ -111,6 +111,8 @@ class CaseBase(Component):
 | Non-float type (`int`, `str`, `tuple`, custom) | `Param(type)` |
 | Any param with a default value | `Param(type, default=...)` |
 | Enum-style constraint | `Param(str, one_of=(...))` |
+| Published derived attribute (loop, namedtuple field, conditional) | [derivation](#derivations-loops-conditionals-namedtuple-fields) in `equations` |
+| Arbitrary-Python validation (tuple length, XOR, membership, all-of) | [predicate](#predicates-arbitrary-python-validation) in `equations` |
 
 ### Structured data: namedtuple
 
@@ -143,6 +145,8 @@ All produce a `ValidationError` with enough context to act:
 - **Over-specified inconsistent** -- `Tube(h=10, id=8, od=10, thk=2)`: message quotes the offending equation and the values.
 - **No valid solution** -- `Tube(h=10, od=4, thk=3)` implies `id = -2`; the constraint rejects it.
 - **Multiple valid solutions** -- add a constraint (typically `> 0`) to disambiguate.
+- **Derivation fails at runtime** -- `ValidationError: X: derivation ``name = expr`` failed: {exception}`; covers `NameError`, `ZeroDivisionError`, `TypeError`, and friends with the raw source.
+- **Predicate evaluates to falsy** -- `ValidationError: X: equation ``expr`` failed`; enriched with left/right values for top-level `Compare` and with the offending index for `all(... for e in seq)`.
 
 ### Dependency
 

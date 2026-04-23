@@ -3,11 +3,13 @@ Pi, Arduino, etc.). Base with standoffs at the PCB mount holes, port
 cutouts matching the PCB's connectors, and a screw-on lid with vents.
 
 Demonstrates (complex scope):
-- Spec dataclasses (`PCBSpec`, `PortSpec`) as data contracts between a
+- Spec namedtuples (`PCBSpec`, `PortSpec`) as data contracts between a
   generic Component and a concrete design.
-- Equations relating case dimensions to PCB dimensions + clearances.
-- Cross-Component publishing: `CaseBase` exposes `mount_positions`,
-  `outer_size`, `pcb_top_z`; `CaseLid` reads them to align.
+- Constraint equations on case Params; derivations compute `inner_size`,
+  `outer_size`, `pcb_top_z`, and a loop-generated `mount_positions`
+  tuple from PCB fields and clearances — all in the `equations` list.
+- Cross-Component publishing: `CaseBase`'s derived attributes flow to
+  `CaseLid` through a `Param(CaseBase)`.
 - Three custom transforms (`port_cutout`, `countersunk_hole`,
   `vent_slot_array`) applied repeatedly.
 - Multi-instantiation driven by spec data: N standoffs from
