@@ -162,19 +162,19 @@ def test_ring_gear_publishes_full_radius_set():
 
 
 def test_bevel_gear_builds():
-    bg = BevelGear(module=2, teeth=20, h=5)
+    bg = BevelGear(module=2, teeth=20, h=5, cone_angle=45)
     scad = emit_str(bg)
     assert "linear_extrude" in scad
     assert "scale" in scad
 
 
 def test_bevel_gear_publishes_radii():
-    bg = BevelGear(module=2, teeth=20, h=5)
+    bg = BevelGear(module=2, teeth=20, h=5, cone_angle=45)
     assert bg.pitch_r == pytest.approx(20.0)
 
 
 def test_bevel_gear_publishes_full_radius_set():
-    bg = BevelGear(module=2, teeth=20, h=5)
+    bg = BevelGear(module=2, teeth=20, h=5, cone_angle=45)
     assert bg.pitch_r == pytest.approx(20.0)
     assert bg.outer_r == pytest.approx(22.0)
     assert bg.root_r == pytest.approx(20.0 - 1.25 * 2)
