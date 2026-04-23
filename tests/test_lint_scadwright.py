@@ -145,6 +145,78 @@ def test_translate_with_tuple_arg_flagged():
 
 
 # =============================================================================
+# no-component-setup
+# =============================================================================
+
+
+def test_setup_on_component_flagged():
+    src = (
+        "class Foo(Component):\n"
+        "    def setup(self):\n"
+        "        pass\n"
+    )
+    v = _violations(src, lint.check_component_setup)
+    assert len(v) == 1
+    assert v[0].rule == "no-component-setup"
+
+
+def test_setup_on_qualified_component_base_flagged():
+    src = (
+        "class Foo(sc.Component):\n"
+        "    def setup(self):\n"
+        "        pass\n"
+    )
+    v = _violations(src, lint.check_component_setup)
+    assert len(v) == 1
+
+
+def test_setup_on_subclass_of_component_subclass_flagged():
+    """A class inheriting from a library Component (ending in `Component`
+    or any direct subclass by naming convention) is treated the same."""
+    src = (
+        "class BigShape(BaseComponent):\n"
+        "    def setup(self):\n"
+        "        pass\n"
+    )
+    v = _violations(src, lint.check_component_setup)
+    assert len(v) == 1
+
+
+def test_setup_on_non_component_class_not_flagged():
+    src = (
+        "class Helper:\n"
+        "    def setup(self):\n"
+        "        pass\n"
+    )
+    v = _violations(src, lint.check_component_setup)
+    assert v == []
+
+
+def test_component_without_setup_not_flagged():
+    src = (
+        "class Foo(Component):\n"
+        "    equations = ['x > 0']\n"
+        "    def build(self):\n"
+        "        return cube(1)\n"
+    )
+    v = _violations(src, lint.check_component_setup)
+    assert v == []
+
+
+def test_component_with_non_self_setup_not_flagged():
+    """A classmethod/staticmethod named setup shouldn't trip the rule —
+    the signature check requires `self` as the first arg."""
+    src = (
+        "class Foo(Component):\n"
+        "    @staticmethod\n"
+        "    def setup():\n"
+        "        pass\n"
+    )
+    v = _violations(src, lint.check_component_setup)
+    assert v == []
+
+
+# =============================================================================
 # Integration: the repo should lint clean.
 # =============================================================================
 
