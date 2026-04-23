@@ -10,7 +10,6 @@ from scadwright.boolops import difference, hull, minkowski, union
 from scadwright.component.anchors import anchor
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import circle, cube, cylinder, polygon, polyhedron, sphere
 from scadwright.shapes.two_d import Sector
@@ -67,16 +66,11 @@ class RoundedBox(Component):
     """
 
     size = Param(tuple)  # (x, y, z)
-    equations = ["r > 0"]
-
-    def setup(self):
-        if len(self.size) != 3:
-            raise ValidationError(f"RoundedBox: size must be a 3-tuple, got {self.size!r}")
-        for i, s in enumerate(self.size):
-            if s <= 2 * self.r:
-                raise ValidationError(
-                    f"RoundedBox: size[{i}]={s} must be > 2*r={2*self.r}"
-                )
+    equations = [
+        "r > 0",
+        "len(size) == 3",
+        "all(s > 2 * r for s in size)",
+    ]
 
     def build(self):
         x, y, z = self.size

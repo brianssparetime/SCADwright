@@ -53,10 +53,10 @@ def test_rounded_box_basic():
 
 
 def test_rounded_box_radius_too_big_raises():
-    with pytest.raises(ValidationError, match="must be > 2"):
+    with pytest.raises(ValidationError, match=r"all\(s > 2 \* r"):
         RoundedBox(size=(10, 10, 1), r=1, fn=12)
 
 
 def test_rounded_box_bad_size_dim_raises():
-    with pytest.raises(ValidationError, match="3-tuple"):
+    with pytest.raises(ValidationError, match=r"len\(size\) == 3"):
         RoundedBox(size=(10, 10), r=1)
