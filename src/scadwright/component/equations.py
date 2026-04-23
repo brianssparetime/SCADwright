@@ -327,6 +327,84 @@ def _sufficient_subsets_with_defaults(
 
 
 # =============================================================================
+# Optional-parameter sigil: `?name`
+# =============================================================================
+
+
+def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
+    """Strip ``?name`` prefixes from an equations-list string.
+
+    Returns ``(cleaned, optional_names)`` — the cleaned string with every
+    ``?`` removed, and the set of names that were prefixed. The sigil marks
+    a Param as optional (auto-declared ``Param(float, default=None)``).
+
+    A hand-rolled scanner, not a regex, so string literals and ``#``
+    comments are respected — a literal ``?`` inside ``"..."`` or
+    ``'...'`` is left alone. Handles single-quote and double-quote
+    forms, triple-quoted strings (no escape processing inside, matching
+    Python semantics), and backslash escapes inside single-quoted
+    strings.
+    """
+    out: list[str] = []
+    optional: set[str] = set()
+    i = 0
+    n = len(eq_str)
+    while i < n:
+        c = eq_str[i]
+
+        # Triple-quoted string — copy through the matching closing triple.
+        if c in ("'", '"') and eq_str[i:i + 3] == c * 3:
+            end = eq_str.find(c * 3, i + 3)
+            if end == -1:
+                out.append(eq_str[i:])
+                return "".join(out), optional
+            out.append(eq_str[i:end + 3])
+            i = end + 3
+            continue
+
+        # Single-line string literal — copy through the matching quote,
+        # respecting backslash escapes.
+        if c in ("'", '"'):
+            quote = c
+            j = i + 1
+            while j < n and eq_str[j] != quote:
+                if eq_str[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            out.append(eq_str[i:min(j + 1, n)])
+            i = min(j + 1, n)
+            continue
+
+        # Comment — copy to end of line (rare in equations; handle anyway).
+        if c == "#":
+            eol = eq_str.find("\n", i)
+            if eol == -1:
+                out.append(eq_str[i:])
+                return "".join(out), optional
+            out.append(eq_str[i:eol])
+            i = eol
+            continue
+
+        # Optional sigil: `?` followed directly by an identifier start.
+        if c == "?" and i + 1 < n and (eq_str[i + 1].isalpha() or eq_str[i + 1] == "_"):
+            j = i + 1
+            while j < n and (eq_str[j].isalnum() or eq_str[j] == "_"):
+                j += 1
+            name = eq_str[i + 1:j]
+            optional.add(name)
+            out.append(name)
+            i = j
+            continue
+
+        # Plain character.
+        out.append(c)
+        i += 1
+
+    return "".join(out), optional
+
+
+# =============================================================================
 # AST-based classification and derivation/predicate support
 # =============================================================================
 

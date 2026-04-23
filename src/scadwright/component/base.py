@@ -105,6 +105,9 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         return
 
     from scadwright.component.equations import (
+        _CURATED_BUILTINS,
+        _CURATED_MATH,
+        _extract_optional_markers,
         classify_equation,
         extract_equality_symbols,
         parse_constraints,
@@ -114,34 +117,80 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         parse_predicates,
     )
 
+    # Preprocess the `?name` sigil: a name prefixed with `?` anywhere in
+    # the equations list is auto-declared as `Param(float, default=None)`
+    # (optional / opt-out). Strip the sigils before classification; track
+    # which names were marked optional so we can (a) auto-declare them
+    # before the other auto-decl paths, and (b) reject `?` in equalities
+    # and on derivation LHS where it can't mean what the user wants.
+    per_line: list[tuple[str, set[str]]] = []
+    optional_names: set[str] = set()
+    for raw in all_eq_strs:
+        cleaned, line_opt = _extract_optional_markers(raw)
+        per_line.append((cleaned, line_opt))
+        optional_names |= line_opt
+
+    reserved = optional_names & (set(_CURATED_BUILTINS) | set(_CURATED_MATH))
+    if reserved:
+        name = sorted(reserved)[0]
+        raise ValidationError(
+            f"{cls.__name__}: optional marker `?{name}` collides with a "
+            f"reserved name from the curated derivation/predicate namespace. "
+            f"Pick a different Param name."
+        )
+
+    def _declare_float_param(name: str, *, default=_MISSING) -> None:
+        p = Param(float, default=default) if default is not _MISSING else Param(float)
+        p.__set_name__(cls, name)
+        setattr(cls, name, p)
+        params[name] = p
+
+    # Auto-declare optional Params before any other auto-declaration path,
+    # so constraint-auto-decl sees them already present and attaches its
+    # validator to the default=None Param rather than creating a required
+    # one. Explicit user Params (already in `params` from the MRO walk)
+    # win — the sigil is a no-op when the name is already declared.
+    for name in optional_names:
+        if name not in params:
+            _declare_float_param(name, default=None)
+
     equalities: list[str] = []
     constraints: list[str] = []
     cross_strs: list[str] = []
     derivation_asts: list[tuple] = []
     predicate_asts: list[tuple] = []
-    for i, s in enumerate(all_eq_strs):
+    for i, (raw, (cleaned, line_opt)) in enumerate(zip(all_eq_strs, per_line)):
         try:
-            kind, stmt = classify_equation(s)
+            kind, stmt = classify_equation(cleaned)
         except ValidationError as exc:
             raise ValidationError(
                 f"{cls.__name__}.equations[{i}]: {exc}"
             ) from exc
+        if kind == "equality" and line_opt:
+            markers = ", ".join(f"`?{n}`" for n in sorted(line_opt))
+            raise ValidationError(
+                f"{cls.__name__}.equations[{i}]: optional markers {markers} "
+                f"cannot appear in an equality ({raw!r}) — sympy's solver "
+                f"requires concrete values. Move this to a constraint, "
+                f"predicate, or derivation."
+            )
+        if kind == "derivation" and stmt.targets[0].id in line_opt:
+            name = stmt.targets[0].id
+            raise ValidationError(
+                f"{cls.__name__}.equations[{i}]: derivation LHS cannot be "
+                f"marked optional — `?{name}` must be a Param, not a derived "
+                f"name. Got: {raw!r}"
+            )
         if kind == "equality":
-            equalities.append(s)
+            equalities.append(cleaned)
         elif kind == "cross_constraint":
-            cross_strs.append(s)
+            cross_strs.append(cleaned)
         elif kind == "derivation":
-            derivation_asts.append((stmt, s))
+            derivation_asts.append((stmt, cleaned))
         elif kind == "predicate":
-            predicate_asts.append((stmt, s))
+            predicate_asts.append((stmt, cleaned))
         else:
-            constraints.append(s)
-
-    def _declare_float_param(name: str) -> None:
-        p = Param(float)
-        p.__set_name__(cls, name)
-        setattr(cls, name, p)
-        params[name] = p
+            constraints.append(cleaned)
 
     # Auto-create Param(float) for symbols introduced by equalities.
     for eq_s in equalities:
