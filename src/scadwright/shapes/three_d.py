@@ -314,15 +314,13 @@ class UShapeChannel(Component):
     ]
     n_shape = Param(bool, default=False)
 
-    def setup(self):
-        # Channel opening: center of the open top (or bottom if n_shape).
-        open_z = 0.0 if self.n_shape else self.outer_height
-        open_normal = (0.0, 0.0, -1.0) if self.n_shape else (0.0, 0.0, 1.0)
-        self.anchor(
-            "channel_opening",
-            position=(self.outer_width / 2, self.channel_length / 2, open_z),
-            normal=open_normal,
-        )
+    # Channel opening: top by default, bottom when flipped via n_shape.
+    # Both position and normal switch on n_shape — the string-expression
+    # form for normal= is what makes this declarable at class scope.
+    channel_opening = anchor(
+        at="outer_width/2, channel_length/2, 0 if n_shape else outer_height",
+        normal="0, 0, -1 if n_shape else 1",
+    )
 
     def build(self):
         EPS = 0.02
