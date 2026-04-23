@@ -248,15 +248,14 @@ class Wedge(Component):
     full ``base_w`` / ``base_h`` corners (rib gussets, ramp edges).
     """
 
-    # `fillet > 0` is a per-Param constraint that fires only when the value
-    # is non-None, matching the ChamferedBox opt-out pattern.
+    # `?fillet` auto-declares as Param(float, default=None); the
+    # constraints skip silently when it is unset.
     equations = [
         "base_w, base_h, thk > 0",
-        "fillet > 0",
-        "fillet < base_w / 2",
-        "fillet < base_h / 2",
+        "?fillet > 0",
+        "?fillet < base_w / 2",
+        "?fillet < base_h / 2",
     ]
-    fillet = Param(float, default=None)
 
     def build(self):
         if self.fillet is None:

@@ -19,18 +19,18 @@ class ChamferedBox(Component):
     """
 
     size = Param(tuple)
-    # `fillet > 0` and `chamfer > 0` are per-Param constraints that fire
-    # only when the value is non-None (optional-Param opt-out), so they
-    # coexist with the XOR predicate below.
+    # `?fillet` / `?chamfer` auto-declare as Param(float, default=None); the
+    # positivity constraints skip silently when the value is unset, so they
+    # coexist with the XOR predicate below. The inner conditional uses
+    # truthy form (`?fillet if ?fillet else ?chamfer`) — safe because the
+    # positivity constraint rejects 0, leaving None as the only falsy value.
     equations = [
-        "fillet > 0",
-        "chamfer > 0",
+        "?fillet > 0",
+        "?chamfer > 0",
         "len(size) == 3",
-        "(fillet is None) != (chamfer is None)",                                                 # XOR: exactly one
-        "all(s > 2 * (fillet if fillet is not None else chamfer) for s in size)",
+        "(?fillet is None) != (?chamfer is None)",                                 # XOR: exactly one
+        "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",
     ]
-    fillet = Param(float, default=None)
-    chamfer = Param(float, default=None)
 
     def build(self):
         x, y, z = self.size

@@ -17,10 +17,9 @@ class Dome(Component):
 
     equations = [
         "r > 0",
-        "thk > 0",
-        "thk < r",
+        "?thk > 0",
+        "?thk < r",
     ]
-    thk = Param(float, default=None)
 
     def build(self):
         # Full sphere clipped to z >= 0.
