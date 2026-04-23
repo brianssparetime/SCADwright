@@ -33,11 +33,13 @@ class Tube(Component):
 
 Specify any two of (id, od, thk) and the solver fills in the third. Constraints (`> 0`) attach validators automatically.
 
-`equations` accepts three forms:
+`equations` accepts five forms, distinguished by AST shape — the framework classifies each line automatically:
 
 - **Equalities** (`"od == id + 2*thk"`): drive the solver. Sympy functions like `cos`, `sqrt`, `pi` are available — useful for trig (`"base_r == pitch_r * cos(pressure_angle * pi / 180)"`).
 - **Per-Param constraints** (`"x > 0"`, `"x, y, z >= -5"`): RHS is a numeric literal; compile to validators on the listed Params and fire on assignment.
-- **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): RHS references other Params or expressions; evaluated after all Params are set, before `setup()` runs. Use these instead of writing var-vs-var checks in `setup()`.
+- **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): RHS references other Params or expressions; evaluated after all Params are set.
+- **Derivations** (`"pitch = spec.d + 2 * (clearance + wall_thk)"`, single `=`, bare-identifier LHS): RHS evaluated in a restricted namespace at construction; result published as an instance attribute. Use for loop-generated tuples, namedtuple-field arithmetic, conditional scalars — anything a scalar sympy equation can't express.
+- **Predicates** (`"len(size) == 3"`, `"spec.series in {...}"`, `"all(e.dia <= throat for e in elements)"`): arbitrary boolean Python; evaluated at construction, a falsy result raises `ValidationError`. Use for tuple-length checks, XOR between options, element-wise loops, or any check that sympy can't reason about.
 
 Optional Params (declared with `default=None`) opt out of validation when unset — both per-Param validators and cross-constraints skip silently if a referenced value is `None`. So `Param(float, default=None)` coexists cleanly with `equations = ["x > 0", "x < y"]`: when `x` is omitted, neither fires.
 
@@ -129,7 +131,6 @@ Reusable Components have no project-specific defaults. Concrete subclasses fill 
 ### Comment framework hooks on first use
 
 ```python
-def setup(self):                                    # framework hook: optional
 def build(self):                                    # framework hook: returns the shape
 @variant(fn=48, default=True)
 def print(self):                                    # user-chosen variant name
@@ -165,13 +166,9 @@ spec = Param(BatterySpec)                  # object type
 slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
 ```
 
-### `self.anchor()` in `setup()` for conditional normals
+### `self.anchor()` for conditional normals
 
-The `at=` string in class-scope `anchor()` supports ternaries (`"0 if n_shape else outer_height"`), so conditional positions don't require `setup()`. The only case that does is when the **normal** itself changes based on a param, since `normal=` is a fixed tuple at class definition time.
-
-### `setup()` for computed values
-
-Last resort. Most computed values belong in equations. `setup()` is justified only when the computation genuinely can't be an equation (loops, conditionals, iterating a namedtuple spec) AND the result needs to be published for other Components to read. If you're reaching for `setup()`, first ask whether an equation, a `params=` declaration, or a class-scope `anchor()` can do the job instead.
+The `at=` string in class-scope `anchor()` supports ternaries (`"0 if n_shape else outer_height"`), so conditional positions don't need framework-hook machinery. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal must be installed imperatively (framework internals only; not a user-facing pattern).
 
 ### `.translate([x, y, z])` instead of directional helpers
 
@@ -226,15 +223,37 @@ equations = ["w, h > 0"]
 params = "w h"
 ```
 
-### Don't use `setup()` for simple arithmetic
+### Don't use a method where a derivation works
 
 ```python
-# Wrong:
-def setup(self):
-    self.inner_w = self.outer_w - 2 * self.wall_thk
+# Wrong (imperative loop in a helper method):
+def _compute_positions(self):
+    self.cradle_positions = tuple(
+        -(self.count-1) * self.pitch / 2 + i * self.pitch
+        for i in range(self.count)
+    )
 
-# Right:
-equations = ["inner_w == outer_w - 2 * wall_thk"]
+# Right (derivation in the equations list):
+equations = [
+    "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))",
+]
+```
+
+Derivations cover loop-generated tuples, namedtuple-field arithmetic (`spec.d + ...`), and conditional scalars (`(a + b) if cond else c`). Reach for `equations` first.
+
+### Don't hand-code what a predicate does
+
+```python
+# Wrong (imperative validation after construction):
+def _validate(self):
+    for e in self.elements:
+        if e.constricted and e.dia > self.throat:
+            raise ValueError(...)
+
+# Right (predicate in the equations list):
+equations = [
+    "all(not e.constricted or e.dia <= throat for e in elements)",
+]
 ```
 
 ### Don't use `.translate()` for single-axis offsets
@@ -264,4 +283,4 @@ Rules currently enforced:
 - `no-param-float` — `Param(float)` with no `default=` argument. Floats belong in `equations` or `params=`. `Param(float, default=None)` is the deliberate opt-out pattern and is allowed.
 - `translate-single-axis` — `.translate([x, 0, 0])` (or any permutation with two literal zeros). Use the `.right/.left/.up/.down/.forward/.back` directional helper.
 
-The linter is intentionally conservative: it only flags patterns that have a clear correct alternative. Style-guide rules that require semantic understanding (no baked-in defaults on *reusable* Components, setup() only as a last resort, etc.) aren't mechanically checkable and live as prose-only guidance.
+The linter is intentionally conservative: it only flags patterns that have a clear correct alternative. Style-guide rules that require semantic understanding (no baked-in defaults on *reusable* Components, preferring derivations over imperative helpers, etc.) aren't mechanically checkable and live as prose-only guidance.

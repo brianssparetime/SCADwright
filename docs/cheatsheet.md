@@ -167,8 +167,8 @@ part.only()                # !part — render ONLY this subtree
 ```python
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",                # variables auto-declared as floats
-        "h, id, od, thk > 0",              # inequality constraints
+        "od == id + 2*thk",                # solver equality; variables auto-declared as floats
+        "h, id, od, thk > 0",              # per-Param constraints
     ]
 
     def build(self):
@@ -181,6 +181,30 @@ t = Tube(h=10, id=8, thk=1)              # od solved = 10.0
 t.od                                      # readable without building
 render(t, "tube.scad")                    # build runs now, caches result
 ```
+
+### `equations` list — five forms, classified by AST shape
+
+```python
+# 1. Solver equality (drives sympy; any one missing is solved):
+"od == id + 2*thk"
+
+# 2. Per-Param constraint (numeric RHS; attaches a validator):
+"w, h, thk > 0"                            # comma-expansion OK
+
+# 3. Cross-constraint (Param-vs-Param inequality):
+"id < od"
+
+# 4. Derivation (single =, identifier LHS; arbitrary Python RHS):
+"pitch = spec.d + 2 * (clearance + wall_thk)"
+"cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))"
+
+# 5. Predicate (boolean; raises ValidationError if false):
+"len(size) == 3"
+"tray_depth < spec.length"
+"all(e.dia <= throat for e in elements)"
+```
+
+Derivations and predicates see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`/math funcs) plus instance Params and earlier derivations. Both run after the solver and cross-constraints; predicates run after derivations.
 
 ### Declaring params
 
@@ -201,7 +225,7 @@ mount = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
 tip   = anchor(at=(0, 0, 10), normal=(0, 0, 1))
 ```
 
-Equations require `pip install 'scadwright[equations]'` (sympy). Components with equations are frozen after construction.
+Equations require `pip install 'scadwright[equations]'` (sympy). Components with equations, derivations, or predicates are frozen after construction.
 
 ### Composite build(): yield parts, auto-unioned
 

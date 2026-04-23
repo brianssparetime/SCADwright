@@ -123,7 +123,7 @@ BatterySpec = namedtuple("BatterySpec", "d length label")
 AA = BatterySpec(d=14.5, length=50.5, label="AA")
 ```
 
-Pass these as `Param(BatterySpec)` on a Component that needs them. The Component can then read fields like `self.spec.d` in `setup()` or `build()`.
+Pass these as `Param(BatterySpec)` on a Component that needs them. The Component can then read fields like `self.spec.d` in derivations or `build()`.
 
 ## Equations
 
@@ -235,32 +235,40 @@ cube([10, 20, 30]).center_bbox("xy")       # center X and Y, leave Z
 
 ## Advanced
 
-### `setup()` hook
+### Derivations: loops, conditionals, namedtuple fields
 
-`setup()` runs after all params are set (including equation-solved values) but before `build()`. Use it for:
-
-- **Cross-param validation** that can't be expressed as an inequality equation (e.g. `if self.x > self.y`).
-- **Computed values that need loops or conditionals** (e.g. iterating over a namedtuple to compute positions).
-- **Publishing values** for other Components to read (e.g. `self.mount_positions`).
-- **Declaring conditional anchors** whose position or normal depends on runtime logic (see [Anchors and attachment](anchors.md)). For most anchors, prefer the class-scope `anchor()` descriptor instead.
+For computed values that *can't* be a scalar sympy equation -- anything that iterates, conditionally branches, or reaches into a namedtuple field -- write them as derivations in the same `equations` list. A derivation is a `name = expression` line (single `=`). The RHS is evaluated at construction time in a restricted namespace (curated Python builtins, curated math, plus instance attributes) and the result is stored on the instance.
 
 ```python
 class BatteryHolder(Component):
     spec = Param(BatterySpec)
     count = Param(int, positive=True)
-    equations = ["wall_thk, clearance, floor_thk, tray_depth > 0"]
-
-    def setup(self):
-        # pitch depends on spec.d (a namedtuple field, not a Param), so it
-        # can't be an equation.  cradle_positions needs a loop.
-        self.pitch = self.spec.d + 2 * (self.clearance + self.wall_thk)
-        half = (self.count - 1) * self.pitch / 2
-        self.cradle_positions = tuple(
-            -half + i * self.pitch for i in range(self.count)
-        )
+    equations = [
+        "wall_thk, clearance, floor_thk, tray_depth > 0",
+        "pitch = spec.d + 2 * (clearance + wall_thk)",                                # namedtuple field
+        "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))",  # loop
+    ]
 ```
 
-Do **not** use `setup()` for simple arithmetic that could be an equation. If `self.inner_w = self.outer_w - 2 * self.wall_thk`, write `"inner_w == outer_w - 2 * wall_thk"` instead -- the solver makes both directions work for free.
+Derivations see all Params and any earlier derivations. They run in declaration order, so `cradle_positions` above can reference `pitch`.
+
+Derivation names freeze along with Params after construction; reassigning one raises `ValidationError`. The curated namespace includes `range`, `tuple`, `list`, `dict`, `set`, `zip`, `enumerate`, `sum`, `abs`, `round`, `len`, `min`, `max`, `all`, `any`, `int`/`float`/`bool`/`str`, and math functions (`sin`, `cos`, `sqrt`, `pi`, etc.).
+
+### Predicates: arbitrary-Python validation
+
+Boolean expressions that sympy can't reason about -- `len(size) == 3`, `spec.series in {"AA", "AAA"}`, `all(e.dia <= throat for e in elements)`, XOR between optional Params -- are predicates. Drop them into the same `equations` list; the framework classifies each line by shape and routes predicates to the runtime evaluator.
+
+```python
+class RoundedBox(Component):
+    size = Param(tuple)
+    equations = [
+        "r > 0",
+        "len(size) == 3",                              # tuple-length validation
+        "all(s > 2 * r for s in size)",                # element-wise constraint
+    ]
+```
+
+A falsy predicate raises `ValidationError` with the raw source and, for the two common shapes (top-level `Compare`, `all(... for e in seq)`), per-value context showing which element or pair violated the check.
 
 ### Validators reference
 

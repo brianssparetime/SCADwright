@@ -205,7 +205,7 @@ class Bracket(Component):
 Bracket(width=40, height=20)
 ```
 
-Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry equations, `setup()`-computed attributes, validators, and cross-param invariants. See [Components](components.md).
+Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry equations, derivations, predicates, validators, and cross-param invariants. See [Components](components.md).
 
 ### User-defined functions
 
@@ -285,12 +285,13 @@ SCAD's `assert(condition, "message")` is a render-time check. SCADwright offers 
 
 ```python
 # 1. Equation constraints: declarative, runs at construction.
-equations = ["width > 0"]
+equations = ["width > 0", "width > thk"]
 
-# 2. Python assert in setup(): for cross-param checks that
-#    can't be expressed as simple inequalities.
-def setup(self):
-    assert self.width > self.thk, "width must exceed wall thickness"
+# 2. Predicates in `equations`: arbitrary-Python validation at construction.
+equations = [
+    "len(size) == 3",
+    "all(e.dia <= throat for e in elements)",
+]
 
 # 3. Geometry assertions: runs at bbox time, useful for assemblies.
 from scadwright.asserts import assert_fits_in
