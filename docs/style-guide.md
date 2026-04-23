@@ -41,7 +41,7 @@ Specify any two of (id, od, thk) and the solver fills in the third. Constraints 
 - **Derivations** (`"pitch = spec.d + 2 * (clearance + wall_thk)"`, single `=`, bare-identifier LHS): RHS evaluated in a restricted namespace at construction; result published as an instance attribute. Use for loop-generated tuples, namedtuple-field arithmetic, conditional scalars — anything a scalar sympy equation can't express.
 - **Predicates** (`"len(size) == 3"`, `"spec.series in {...}"`, `"all(e.dia <= throat for e in elements)"`): arbitrary boolean Python; evaluated at construction, a falsy result raises `ValidationError`. Use for tuple-length checks, XOR between options, element-wise loops, or any check that sympy can't reason about.
 
-Optional Params (declared with `default=None`) opt out of validation when unset — both per-Param validators and cross-constraints skip silently if a referenced value is `None`. So `Param(float, default=None)` coexists cleanly with `equations = ["x > 0", "x < y"]`: when `x` is omitted, neither fires.
+Optional Params use the `?` sigil: prefix a name with `?` anywhere in the equations list and the framework auto-declares it as `Param(float, default=None)`. Constraints and cross-constraints silently skip when the value is unset; predicates and derivations see `None` and the user's expression decides. `?` is rejected in `==` equalities (sympy can't handle `None` operands) and on derivation LHSes (derivations publish values, not optional inputs). Write `?x if ?x else y` when the Param has a positivity constraint (truthy form works because `0` is rejected) and the explicit `?x is None` form when specified-ness matters on its own (e.g., XOR predicates).
 
 ### Let constraints declare float parameters
 

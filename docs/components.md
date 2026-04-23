@@ -276,6 +276,32 @@ class RoundedBox(Component):
     ]
 ```
 
+### Optional Params: the `?` sigil
+
+Prefix a Param name with `?` anywhere in the equations list to mark it as optional. The framework auto-declares it as `Param(float, default=None)` — construction succeeds whether the caller supplies it or not. Constraints and cross-constraints silently skip when the value is `None`; predicates and derivations see the value as `None` and the user's expression decides what to do.
+
+```python
+class ChamferedBox(Component):
+    size = Param(tuple)
+    equations = [
+        "?fillet > 0",                                                      # constraint skips when unset
+        "?chamfer > 0",
+        "len(size) == 3",
+        "(?fillet is None) != (?chamfer is None)",                          # XOR
+        "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",   # pick whichever is set
+    ]
+```
+
+Rules:
+
+- `?` works in constraints (`>`, `<`, `>=`, `<=`), cross-constraints, predicates, and derivation RHSes.
+- `?` is rejected in equalities (`==`) at class-definition time — sympy's solver can't work with `None` operands.
+- `?` is rejected on a derivation LHS — derivations publish values, they're not optional inputs.
+- `?` is rejected on a name reserved by the curated namespace (`?all`, `?sin`, etc.).
+- If you declare the Param explicitly (`fillet = Param(float, default=3.0)`), that declaration wins; the sigil has no effect.
+
+**Truthy vs. `is None`**: when an optional Param has a positivity constraint (most dimensional Params do), `?x if ?x else y` is equivalent to `?x if ?x is not None else y` because `0` is rejected by the constraint. The truthy form reads shorter and is the recommended idiom. Use the explicit `is None` form when the optional Param can legitimately be `0`, `False`, or another falsy value (rare; the clearest case is the XOR predicate above, where the intent is specified-ness rather than truthiness).
+
 A falsy predicate raises `ValidationError` with the raw source and, for the two common shapes (top-level `Compare`, `all(... for e in seq)`), per-value context showing which element or pair violated the check.
 
 ### Validators reference
