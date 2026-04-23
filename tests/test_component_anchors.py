@@ -151,6 +151,67 @@ def test_anchor_bad_expression_raises():
         Bad()
 
 
+# --- string-expression normal= ---
+
+
+def test_anchor_normal_as_literal_tuple():
+    """The classic literal-tuple form keeps working."""
+    class C(Component):
+        equations = ["w > 0"]
+        face = anchor(at="w/2, 0, 0", normal=(1, 0, 0))
+        def build(self): return cube([1, 1, 1])
+
+    c = C(w=4)
+    a = c.get_anchors()["face"]
+    assert a.normal == (1.0, 0.0, 0.0)
+
+
+def test_anchor_normal_as_string_expression():
+    """A bare string normal evaluates against instance attrs."""
+    class C(Component):
+        equations = ["w > 0"]
+        face = anchor(at="w/2, 0, 0", normal="1, 0, 0")
+        def build(self): return cube([1, 1, 1])
+
+    c = C(w=4)
+    a = c.get_anchors()["face"]
+    assert a.normal == (1.0, 0.0, 0.0)
+
+
+def test_anchor_normal_string_with_conditional():
+    """String normal with a Param-driven conditional in one component flips."""
+    class C(Component):
+        flip = Param(bool, default=False)
+        equations = ["w > 0"]
+        face = anchor(at="0, 0, 0", normal="0, 0, -1 if flip else 1")
+        def build(self): return cube([1, 1, 1])
+
+    up = C(w=2)
+    down = C(w=2, flip=True)
+    assert up.get_anchors()["face"].normal == (0.0, 0.0, 1.0)
+    assert down.get_anchors()["face"].normal == (0.0, 0.0, -1.0)
+
+
+def test_anchor_normal_string_wrong_arity_raises():
+    class C(Component):
+        equations = ["w > 0"]
+        oops = anchor(at="0, 0, 0", normal="1, 0")  # only 2
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError, match="normal= string must have 3"):
+        C(w=2)
+
+
+def test_anchor_normal_string_undefined_name_raises():
+    class C(Component):
+        equations = ["w > 0"]
+        oops = anchor(at="0, 0, 0", normal="0, 0, missing_param")
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError, match="cannot evaluate normal="):
+        C(w=2)
+
+
 # --- shape library anchors ---
 
 

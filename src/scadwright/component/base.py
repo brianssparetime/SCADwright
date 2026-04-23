@@ -472,7 +472,8 @@ def _resolve_anchor_defs(instance):
 
     for name, adef in anchor_defs.items():
         pos = adef.resolve(instance)
-        instance._anchors[name] = _Anchor(position=pos, normal=adef.normal)
+        normal = adef.resolve_normal(instance)
+        instance._anchors[name] = _Anchor(position=pos, normal=normal)
 
 
 # Implicit kwargs accepted by every Component's auto-init in addition to
