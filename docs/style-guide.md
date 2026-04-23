@@ -43,15 +43,21 @@ Specify any two of (id, od, thk) and the solver fills in the third. Constraints 
 
 Optional Params (declared with `default=None`) opt out of validation when unset — both per-Param validators and cross-constraints skip silently if a referenced value is `None`. So `Param(float, default=None)` coexists cleanly with `equations = ["x > 0", "x < y"]`: when `x` is omitted, neither fires.
 
-### Declare standalone float parameters with `params`
+### Let constraints declare float parameters
 
-Floats that don't appear in any equation but need no special type or validators (but prefer constraints and equatiosn when feasible):
+A constraint auto-creates its operand as `Param(float)` and installs the validator in one line. Most dimensions have a natural bound — a length is positive, an angle lives in a range — so the constraint form covers the declaration and the validation together:
 
 ```python
 class FilletRing(Component):
-    params = "base_angle"
-    equations = ["id, od > 0"]
+    equations = [
+        "id, od > 0",
+        "base_angle > 0",
+        "base_angle < 90",
+        "id < od",
+    ]
 ```
+
+`params = "..."` is the rare escape for floats that are genuinely unbounded *and* don't appear in any equation. See [Components → Declaring parameters](components.md#declaring-parameters).
 
 ### Declare anchors at class scope with `anchor()`
 
@@ -205,19 +211,18 @@ class MyBracket(Bracket):             # concrete subclass fills in values
     depth = 15
 ```
 
-### Don't use `Param(float)` when equations or params= work
+### Don't use `Param(float)` when a constraint will declare it
 
 ```python
 # Wrong:
 w = Param(float)
 h = Param(float)
 
-# Right (if constrained):
+# Right (any natural bound is a constraint):
 equations = ["w, h > 0"]
-
-# Right (if unconstrained):
-params = "w h"
 ```
+
+For a genuinely-unbounded float that doesn't appear in any equation (rare — signed offsets, freely-scaling coefficients), use `params = "name"`. But first check whether a constraint actually does apply — it usually does.
 
 ### Don't use a method where a derivation works
 
