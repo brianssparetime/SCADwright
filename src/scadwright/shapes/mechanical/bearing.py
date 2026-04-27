@@ -56,7 +56,7 @@ class Bearing(Component):
     use ``Bearing.of("608")`` for canned 6xx-series dimensions.
     Centered on the origin, bore along z.
 
-    Publishes ``id``, ``od``, ``width`` for convenient dimension access.
+    The caller can read ``id``, ``od``, ``width`` off the instance.
     """
 
     spec = Param(BearingSpec)

@@ -35,7 +35,7 @@ Sizes: M2, M2.5, M3, M4, M5, M6, M8, M10, M12. Head styles: `"socket"` (ISO 4762
 
 ## `HexNut.of(size)` / `SquareNut.of(size)`
 
-ISO metric nuts centered on the origin. Both publish `af` (across-flats), `h` (height), `d` (bore) as instance attributes.
+ISO metric nuts centered on the origin. You can read `af` (across-flats), `h` (height), and `d` (bore) off either nut.
 
 ```python
 HexNut.of("M3")                          # canned
@@ -66,7 +66,7 @@ pcb = cube([50, 30, 1.6]).attach(post, face="mount_top")
 
 ## `HeatSetPocket.of(size)`
 
-Pocket sized for a brass heat-set insert. Subtract from a parent. Publishes `hole_d` and `hole_depth` for downstream sizing.
+Pocket sized for a brass heat-set insert. Subtract from a parent. You can read `hole_d` and `hole_depth` off the instance for downstream sizing.
 
 ```python
 pocket = HeatSetPocket.of("M3")
@@ -80,7 +80,7 @@ Sizes: M2, M3, M4, M5.
 
 ## `CaptiveNutPocket.of(size, depth)`
 
-Hex pocket with insertion channel for a captive nut. `channel_axis` controls the slot direction. Publishes `af` (across-flats).
+Hex pocket with insertion channel for a captive nut. `channel_axis` controls the slot direction. You can read `af` (across-flats) off the instance.
 
 ```python
 pocket = CaptiveNutPocket.of("M3", depth=3)

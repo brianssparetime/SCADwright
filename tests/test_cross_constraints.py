@@ -55,7 +55,9 @@ def test_cross_constraint_fails_with_clear_message():
 
 
 def test_cross_constraint_includes_offending_values_in_error():
-    with pytest.raises(ValidationError, match=r"id=10\.0.*od=4\.0|od=4\.0.*id=10\.0"):
+    # The unified resolver formats failed comparisons as "left=N, right=M"
+    # using the substituted values of each side.
+    with pytest.raises(ValidationError, match=r"left=10.*right=4"):
         _IdLessThanOd(id=10, od=4)
 
 
@@ -86,7 +88,9 @@ def test_cross_constraint_expression_rhs_passes():
 
 def test_cross_constraint_expression_rhs_fails():
     # 25 not < 2*10 = 20
-    with pytest.raises(ValidationError, match=r"cap_height < 2\*sphere_r"):
+    with pytest.raises(
+        ValidationError, match=r"cap_height < 2\s*\*\s*sphere_r"
+    ):
         _ExpressionRhs(cap_height=25, sphere_r=10)
 
 

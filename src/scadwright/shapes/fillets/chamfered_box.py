@@ -20,16 +20,16 @@ class ChamferedBox(Component):
 
     size = Param(tuple)
     # `?fillet` / `?chamfer` auto-declare as Param(float, default=None); the
-    # positivity constraints skip when unset. The `edge` derivation names the
-    # active radius so the size check below reads as one idea ("every side
-    # fits the edge") instead of repeating the ternary inline. Truthy form
+    # positivity rules skip when unset. `exactly_one(...)` enforces that
+    # the caller specifies one and only one. The `edge` line then names
+    # whichever is set so the size check reads as one idea. Truthy form
     # (`?fillet if ?fillet else ?chamfer`) is safe because the positivity
-    # constraint rejects 0, leaving None as the only falsy value.
+    # rule rejects 0, leaving None as the only falsy value.
     equations = [
         "?fillet > 0",
         "?chamfer > 0",
         "len(size) == 3",
-        "(?fillet is None) != (?chamfer is None)",                                 # XOR: exactly one
+        "exactly_one(?fillet, ?chamfer)",
         "edge = ?fillet if ?fillet else ?chamfer",                                 # active edge radius
         "all(s > 2 * edge for s in size)",                                         # every side fits
     ]

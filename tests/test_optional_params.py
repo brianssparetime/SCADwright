@@ -198,15 +198,20 @@ def test_derivation_with_truthy_conditional():
 # =============================================================================
 
 
-def test_question_in_equality_raises():
-    with pytest.raises(ValidationError, match="cannot appear in an equality"):
+def test_question_on_target_in_equality_raises():
+    # ``?fillet == x + 1`` makes ``fillet`` optional (None by default)
+    # AND uses the equation to pin it to a value — contradictory. Same
+    # rejection as the ``=`` form; the framework treats both identically.
+    with pytest.raises(ValidationError, match="cannot be marked optional"):
         class C(Component):
             equations = ["?fillet == x + 1"]
             def build(self): return cube(1)
 
 
-def test_question_on_derivation_lhs_raises():
-    with pytest.raises(ValidationError, match="derivation LHS cannot be marked optional"):
+def test_question_on_assign_target_raises():
+    # An equation `?pitch = 2 * x` would mark `pitch` as optional (None
+    # by default) AND pin it to a value via the equation — contradictory.
+    with pytest.raises(ValidationError, match="cannot be marked optional"):
         class C(Component):
             equations = ["?pitch = 2 * x"]
             x = Param(float, default=1.0)

@@ -174,7 +174,7 @@ def test_unparseable_equation_raises_at_class_def():
 
 
 def test_missing_operator_raises_at_class_def():
-    with pytest.raises(ValidationError, match="not a boolean predicate"):
+    with pytest.raises(ValidationError, match="not a boolean rule"):
         class _NoEq(Component):
             a = Param(float)
             equations = ["a + 5"]

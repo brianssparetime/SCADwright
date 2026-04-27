@@ -21,7 +21,7 @@ Bearing.of("625")                                     # 5x16x5mm
 Bearing(spec=BearingSpec(id=10, od=30, width=9))      # custom
 ```
 
-Publishes `id`, `od`, `width`. Available series: 604-609, 623-626, 6000-6005, 6200-6205.
+You can read `id`, `od`, and `width` off the bearing. Available series: 604-609, 623-626, 6000-6005, 6200-6205.
 
 ![Bearing](images/bearing.png)
 
@@ -35,7 +35,7 @@ GT2 timing belt pulley (2mm pitch) with flanges and bore.
 GT2Pulley(teeth=20, bore_d=5, belt_width=6)
 ```
 
-Publishes `pitch_d`, `od`.
+You can read `pitch_d` and `od` off the pulley.
 
 ![GT2 pulley](images/gt2-pulley.png)
 

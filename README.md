@@ -19,11 +19,11 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
  - real error messages with line numbers
  - and automated tests
 
-While simple projects very strongly resemeble OpenSCAD code (easy to be productive immediately), as your projects grow in complexity, **SCADwright allows a graceful transition to more complex features**, without any hard syntactic or conceptual boundaries. **Styles can be mixed and matched in the same project.**
+While simple projects very strongly resemble OpenSCAD code (easy to be productive immediately), as your projects grow in complexity, **SCADwright allows a graceful transition to more complex features**, without any hard syntactic or conceptual boundaries. **Styles can be mixed and matched in the same project.**
 
 I have put significant effort into refining the UX of SCADwright:  the more advanced constructs use a syntax 
 that's neither OpenSCAD nor quite standard object-oriented python. Instead, the goal is to **ruthlessly 
-elimate boiler plate,** and make constructs simple to use in common cases for those with little background in
+eliminate boiler plate,** and make constructs simple to use in common cases for those with little background in
 object-oriented python or advanced OpenSCAD, while retaining full python capabilities and a low-level interface
 for exceptional cases.
 
@@ -43,7 +43,7 @@ Here's 14 different OpenSCAD vexations which SCADwright solves...
 
 When you write a parametric module in OpenSCAD — say a bracket with mount-hole positions — the caller has no way to ask where those holes are. You either compute the offsets in two places, or hard-code them.
 
-In SCADwright, parametric parts are [Python classes](docs/components.md). They publish whatever attributes the caller needs, and the caller can read them without rendering anything:
+In SCADwright, parametric parts are [Python classes](docs/components.md). The caller can read any attribute of other Components freely.
 
 ```python
 from scadwright import Component
@@ -63,15 +63,17 @@ print(b.width)               # readable; no geometry built yet
 
 A hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od == id + 2*thk`. In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time -- after you've already waited.
 
-In SCADwright, you declare relationships and constraints together as [equations](docs/components.md). The framework solves for whichever parameter you didn't pass, and catches constraint violations at construction time -- before any geometry is built:
+In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint)
+
+You don't even need to isolate a variable on the left of the equation like you do with programming languages.
 
 ```python
 from scadwright import Component
 
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",                # structural relationship: solve for the missing one
-        "h, id, od, thk > 0",              # constraints: caught immediately at construction
+        "od - id = 2*thk",                 # structural relationship: solve for the missing one
+        "h, id, od, thk > 0",              # constraints
     ]
 
     def build(self): ...
@@ -82,9 +84,21 @@ Tube(h=10, od=10, thk=1)     # id solved = 8
 Tube(h=10, id=8, thk=-1)     # ValidationError: thk must be positive
 ```
 
-One definition, every call site reads naturally for the dimensions the caller has on hand. The full dimensional contract -- relationships and constraints -- is visible at a glance.
+And equations aren't limited to scalar arithmetic. Either side can be any Python expression: build a tuple with a comprehension, pick between values with a conditional, read fields and items off the inputs.
 
-The same `equations` list also carries **derivations** (single-`=` lines like `"pitch = spec.d + 2 * (clearance + wall_thk)"`) for values sympy can't solve — loop-generated tuples, namedtuple-field arithmetic, conditional scalars — and **predicates** (boolean lines like `"all(e.dia <= throat for e in elements)"`) for arbitrary-Python validation. One declarative block describes everything true about the part.
+```python
+class BatteryHolder(Component):
+    spec = Param(BatterySpec)
+    count = Param(int, positive=True)
+    equations = [
+        "wall_thk, clearance > 0",
+        "pitch = spec.d + 2*clearance",                           # field read on a namedtuple input
+        "outer_w = count * pitch + 2*end_clearance",              # arithmetic
+        "positions = tuple(i*pitch for i in range(count))",       # tuple from a comprehension
+        "edge = fillet if is_filleted else chamfer",              # conditional
+        "len(size) = 3",                                          # consistency check on an input
+    ]
+```
 
 ### 3. You can't add new transforms or other "verbs"
 
@@ -134,7 +148,7 @@ SCADwright ships a [shape library](docs/shapes/) with 50+ ready-made Components 
 from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bearing
 
 cap = Tube(h=10, id=8, thk=1)                    # od solved: 10
-gear = SpurGear(module=2, teeth=20, h=5)          # involute profile, publishes pitch_r
+gear = SpurGear(module=2, teeth=20, h=5)          # involute profile; .pitch_r readable on the instance
 bolt = Bolt(size="M3", length=10)                 # ISO dimensions from data tables
 bearing = Bearing.of("608")                       # 8x22x7, ready for fit-check
 panel = HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
@@ -162,7 +176,7 @@ class Widget(Design):
 
     @variant(fn=48, default=True)
     def print(self):
-        return union(self.box, self.lid.translate([80, 0, 0]))
+        return union(self.box, self.lid.right(80))
 
     @variant(fn=48)
     def display(self):
@@ -239,7 +253,7 @@ SCADwright puts the shape first. [Operations chain off the shape](docs/transform
 ```python
 from scadwright.primitives import cube
 
-cube([10, 20, 30]).translate([0, 0, 5]).rotate([0, 45, 0]).red()
+cube([10, 20, 30]).up(5).rotate([0, 45, 0]).red()
 ```
 
 
@@ -339,8 +353,8 @@ hole = cylinder(h=22, r=5, center=True, fn=64)
 
 part = difference(
     body,
-    hole.translate([10, 0, 0]),
-    hole.translate([-10, 0, 0]),
+    hole.right(10),
+    hole.left(10),
 )
 
 render(part, "widget.scad")
@@ -359,14 +373,14 @@ from scadwright.primitives import cylinder
 
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",
+        "od = id + 2*thk",
         "h, id, od, thk > 0",
     ]
 
     def build(self):
         return difference(
             cylinder(h=self.h, r=self.od / 2),
-            cylinder(h=self.h + 2, r=self.id / 2).translate([0, 0, -1]),
+            cylinder(h=self.h + 2, r=self.id / 2).down(1),
         )
 
 t = Tube(h=30, id=20, thk=2)      # od solved = 24.0
@@ -386,14 +400,14 @@ from scadwright.primitives import cylinder
 
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",
+        "od = id + 2*thk",
         "h, id, od, thk > 0",
     ]
 
     def build(self):
         return difference(
             cylinder(h=self.h, r=self.od / 2),
-            cylinder(h=self.h + 2, r=self.id / 2).translate([0, 0, -1]),
+            cylinder(h=self.h + 2, r=self.id / 2).down(1),
         )
 
 class MyTube(Tube):
@@ -414,7 +428,7 @@ class TubeProject(Design):
         spacing = bbox(half).size[1] + 5
         return union(
             half,                                    # concave side down
-            half.translate([0, spacing, 0]),
+            half.forward(spacing),
         )
 
 if __name__ == "__main__":

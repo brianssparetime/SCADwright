@@ -76,12 +76,12 @@ def test_chamfered_box_chamfer():
 
 
 def test_chamfered_box_both_raises():
-    with pytest.raises(ValidationError, match=r"fillet is None.*!=.*chamfer is None"):
+    with pytest.raises(ValidationError, match=r"exactly_one\(fillet, chamfer\)"):
         ChamferedBox(size=(20, 15, 10), fillet=2, chamfer=2)
 
 
 def test_chamfered_box_neither_raises():
-    with pytest.raises(ValidationError, match=r"fillet is None.*!=.*chamfer is None"):
+    with pytest.raises(ValidationError, match=r"exactly_one\(fillet, chamfer\)"):
         ChamferedBox(size=(20, 15, 10))
 
 

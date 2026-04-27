@@ -18,6 +18,7 @@ works.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import time
 from typing import Any
@@ -29,6 +30,60 @@ from scadwright.errors import BuildError, SCADwrightError, ValidationError
 from scadwright._logging import get_logger
 
 _log = get_logger("scadwright.component")
+
+
+# Algebraic function names used in equations that produce numeric results.
+# Mirror of ``_ALGEBRAIC_FUNCTION_NAMES`` in resolver_ast plus a few extra
+# numeric-yielding callables.
+_NUMERIC_CALL_NAMES = frozenset({
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "sqrt", "log", "exp", "abs", "ceil", "floor",
+    "min", "max", "sum", "round",
+    "int", "float",
+})
+
+
+def _yields_scalar_numeric(node: ast.AST) -> bool:
+    """Heuristic: does ``node`` evaluate to a single int/float?
+
+    Returns True for arithmetic, numeric-yielding calls (``sin``, ``min``),
+    and a numeric ternary; False for comparisons (yield bool), boolean
+    operations, attribute access (could be anything), comprehensions
+    (yield containers), tuple/list/dict literals or constructors, and
+    name references whose target type isn't known here.
+
+    Conservative: a False result downgrades the auto-declared Param to
+    typeless. False positives (returning True when the value is non-
+    numeric) would corrupt user data; false negatives just lose the
+    int->float convenience coercion.
+    """
+    if isinstance(node, ast.Constant):
+        return type(node.value) in (int, float)
+    if isinstance(node, ast.Name):
+        # A bare Name might resolve to anything at runtime. Conservative
+        # but practical: assume float if the name is a Param target — the
+        # caller's auto-declare loop will sort it out by checking each
+        # bare-Name target across all equations.
+        return True
+    if isinstance(node, ast.UnaryOp):
+        if isinstance(node.op, ast.Not):
+            return False
+        return _yields_scalar_numeric(node.operand)
+    if isinstance(node, ast.BinOp):
+        return (
+            _yields_scalar_numeric(node.left)
+            and _yields_scalar_numeric(node.right)
+        )
+    if isinstance(node, ast.IfExp):
+        return (
+            _yields_scalar_numeric(node.body)
+            and _yields_scalar_numeric(node.orelse)
+        )
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        if node.func.id not in _NUMERIC_CALL_NAMES:
+            return False
+        return all(_yields_scalar_numeric(a) for a in node.args)
+    return False
 
 
 # --- __init_subclass__ helpers ---
@@ -83,179 +138,138 @@ def _parse_params_string(cls, params: dict[str, Param]) -> None:
 
 
 def _register_equations(cls, params: dict[str, Param]) -> None:
-    """Parse ``equations = [...]`` and attach the resulting machinery to ``cls``.
+    """Parse ``equations = [...]`` into the unified representation and
+    auto-declare any Params introduced by names appearing in equations
+    or constraints.
 
-    Classifies each entry as an equality, a per-Param constraint, a
-    cross-constraint, a derivation, or a predicate. Auto-creates
-    ``Param(float)`` for any new symbol introduced by an equality or
-    constraint. Stores compiled derivations/predicates for instance-time
-    evaluation.
+    Per the spec (collapse_eq.md, "Feature spec v2"), ``=`` and ``==``
+    are identical: every bare-Name target of any equation is just a
+    Param the user may supply (consistency-checked) or omit (filled in
+    by the resolver). There is no "derivation target" category that
+    forbids user supply. Every free name in any equation or constraint
+    becomes a ``Param(float)`` if it isn't already declared.
     """
     all_eq_strs = list(cls.__dict__.get("equations", None) or [])
     if not all_eq_strs:
-        if not hasattr(cls, "_has_equations"):
-            cls._has_equations = False
-            cls._has_cross_constraints = False
-            cls._cross_constraints = []
-            cls._has_derivations = False
-            cls._derivations = []
-            cls._derivation_names = frozenset()
-            cls._has_predicates = False
-            cls._predicates = []
+        if not hasattr(cls, "_unified_equations"):
+            cls._unified_equations = []
+            cls._unified_constraints = []
         return
 
     from scadwright.component.equations import (
-        _CURATED_BUILTINS,
-        _CURATED_MATH,
-        _extract_optional_markers,
-        classify_equation,
-        extract_equality_symbols,
-        parse_constraints,
-        parse_cross_constraints,
-        parse_derivations,
-        parse_equations,
-        parse_predicates,
+        _CURATED_BUILTINS, _CURATED_MATH,
+    )
+    from scadwright.component.resolver import (
+        extract_per_param_validator,
+        parse_equations_unified,
     )
 
-    # Preprocess the `?name` sigil: a name prefixed with `?` anywhere in
-    # the equations list is auto-declared as `Param(float, default=None)`
-    # (optional / opt-out). Strip the sigils before classification; track
-    # which names were marked optional so we can (a) auto-declare them
-    # before the other auto-decl paths, and (b) reject `?` in equalities
-    # and on derivation LHS where it can't mean what the user wants.
-    per_line: list[tuple[str, set[str]]] = []
-    optional_names: set[str] = set()
-    for raw in all_eq_strs:
-        cleaned, line_opt = _extract_optional_markers(raw)
-        per_line.append((cleaned, line_opt))
-        optional_names |= line_opt
+    unified_eqs, unified_constraints, optional_names = (
+        parse_equations_unified(all_eq_strs)
+    )
 
-    reserved = optional_names & (set(_CURATED_BUILTINS) | set(_CURATED_MATH))
+    curated = set(_CURATED_BUILTINS) | set(_CURATED_MATH)
+
+    reserved = optional_names & curated
     if reserved:
         name = sorted(reserved)[0]
         raise ValidationError(
             f"{cls.__name__}: optional marker `?{name}` collides with a "
-            f"reserved name from the curated derivation/predicate namespace. "
-            f"Pick a different Param name."
+            f"reserved name from the curated namespace. Pick a different "
+            f"Param name."
         )
 
-    def _declare_float_param(name: str, *, default=_MISSING) -> None:
-        p = Param(float, default=default) if default is not _MISSING else Param(float)
+    # Reject equation targets (bare-Name on either side of any equation)
+    # that collide with the curated namespace. An equation `pi = 3.14`
+    # would shadow `math.pi` inside the curated eval namespace and is
+    # almost certainly a mistake.
+    eq_target_names: set[str] = set()
+    for eq in unified_eqs:
+        if isinstance(eq.lhs, ast.Name):
+            eq_target_names.add(eq.lhs.id)
+        if isinstance(eq.rhs, ast.Name):
+            eq_target_names.add(eq.rhs.id)
+    reserved_targets = eq_target_names & curated
+    if reserved_targets:
+        name = sorted(reserved_targets)[0]
+        raise ValidationError(
+            f"{cls.__name__}: equation target `{name}` collides with a "
+            f"reserved name from the curated namespace."
+        )
+
+    def _declare_param(
+        name: str, *, type_: type | None, default=_MISSING
+    ) -> None:
+        if default is _MISSING:
+            p = Param(type_)
+        else:
+            p = Param(type_, default=default)
         p.__set_name__(cls, name)
         setattr(cls, name, p)
         params[name] = p
 
-    # Auto-declare optional Params before any other auto-declaration path,
-    # so constraint-auto-decl sees them already present and attaches its
-    # validator to the default=None Param rather than creating a required
-    # one. Explicit user Params (already in `params` from the MRO walk)
-    # win — the sigil is a no-op when the name is already declared.
+    # Identify bare-Name equation targets whose every other side is
+    # demonstrably numeric. Those get ``Param(float)``, preserving the
+    # int->float coercion callers rely on (e.g. ``Tube(thk=1)`` accepts
+    # an int). Anything else — comparisons (yield bool), comprehensions,
+    # attribute access into namedtuples, ``tuple()``/``list()`` calls —
+    # gets ``Param(None)`` so the eventual non-float value isn't forced
+    # through ``float()`` coercion.
+    target_is_numeric_only: dict[str, bool] = {}
+    for eq in unified_eqs:
+        bare_targets = []
+        if isinstance(eq.lhs, ast.Name):
+            bare_targets.append((eq.lhs.id, eq.rhs))
+        if isinstance(eq.rhs, ast.Name):
+            bare_targets.append((eq.rhs.id, eq.lhs))
+        for name, other_side in bare_targets:
+            other_numeric = _yields_scalar_numeric(other_side)
+            prev = target_is_numeric_only.get(name, True)
+            target_is_numeric_only[name] = prev and other_numeric
+
+    # Auto-declare optional Params first so the auto-declare loop below
+    # finds the existing default=None Param rather than creating a
+    # required one. Optionals are float by spec (the `?` sigil).
     for name in optional_names:
         if name not in params:
-            _declare_float_param(name, default=None)
+            _declare_param(name, type_=float, default=None)
 
-    equalities: list[str] = []
-    constraints: list[str] = []
-    cross_strs: list[str] = []
-    derivation_asts: list[tuple] = []
-    predicate_asts: list[tuple] = []
-    for i, (raw, (cleaned, line_opt)) in enumerate(zip(all_eq_strs, per_line)):
-        try:
-            kind, stmt = classify_equation(cleaned)
-        except ValidationError as exc:
-            raise ValidationError(
-                f"{cls.__name__}.equations[{i}]: {exc}"
-            ) from exc
-        if kind == "equality" and line_opt:
-            markers = ", ".join(f"`?{n}`" for n in sorted(line_opt))
-            raise ValidationError(
-                f"{cls.__name__}.equations[{i}]: optional markers {markers} "
-                f"cannot appear in an equality ({raw!r}) — sympy's solver "
-                f"requires concrete values. Move this to a constraint, "
-                f"predicate, or derivation."
-            )
-        if kind == "derivation" and stmt.targets[0].id in line_opt:
-            name = stmt.targets[0].id
-            raise ValidationError(
-                f"{cls.__name__}.equations[{i}]: derivation LHS cannot be "
-                f"marked optional — `?{name}` must be a Param, not a derived "
-                f"name. Got: {raw!r}"
-            )
-        if kind == "equality":
-            equalities.append(cleaned)
-        elif kind == "cross_constraint":
-            cross_strs.append(cleaned)
-        elif kind == "derivation":
-            derivation_asts.append((stmt, cleaned))
-        elif kind == "predicate":
-            predicate_asts.append((stmt, cleaned))
+    # Auto-declare every free name in any equation or any constraint
+    # that isn't already a Param and isn't in the curated namespace.
+    # This includes bare-Name targets of `=` lines (per spec, those are
+    # just Params the user can supply) and bare-Name sides of `==` lines.
+    free_names: set[str] = set()
+    for eq in unified_eqs:
+        free_names |= eq.referenced_names
+    for c in unified_constraints:
+        free_names |= c.referenced_names
+    for name in free_names:
+        if name in params:
+            continue
+        if name in curated:
+            continue
+        # Default to float for constraint-only names and numeric targets.
+        # Targets of non-numeric equations (tuples, comparisons, etc.)
+        # auto-declare with no type coercion.
+        if target_is_numeric_only.get(name, True):
+            _declare_param(name, type_=float)
         else:
-            constraints.append(cleaned)
+            _declare_param(name, type_=None)
 
-    # Auto-create Param(float) for symbols introduced by equalities.
-    for eq_s in equalities:
-        for sym_name in extract_equality_symbols(eq_s, params.keys()):
-            if sym_name not in params:
-                _declare_float_param(sym_name)
+    # Per-Param validators from numeric-RHS constraints. The same
+    # constraint is also evaluated by the resolver; the per-Param
+    # validator additionally fires on any direct Param.__set__ call.
+    for c in unified_constraints:
+        result = extract_per_param_validator(c)
+        if result is None:
+            continue
+        name, validator = result
+        if name not in params:
+            continue
+        params[name].validators = tuple(params[name].validators) + (validator,)
 
-    # Parse constraint inequalities and attach validators to Params.
-    if constraints:
-        constraint_map = parse_constraints(constraints)
-        for name, validators in constraint_map.items():
-            if name not in params:
-                _declare_float_param(name)
-            param = params[name]
-            param.validators = tuple(param.validators) + tuple(validators)
-
-    # Parse cross-constraints (var-vs-var inequalities) — evaluated at
-    # instance-init time once all Params are set.
-    cross_compiled: list = []
-    if cross_strs:
-        cross_compiled, cross_syms = parse_cross_constraints(cross_strs, params.keys())
-        for sym_name in cross_syms:
-            if sym_name not in params:
-                _declare_float_param(sym_name)
-
-    # Parse derivations. LHS can't collide with a Param (including Params
-    # auto-declared from equality free symbols) or with an earlier derivation.
-    compiled_derivations: list = []
-    derivation_names: set[str] = set()
-    if derivation_asts:
-        compiled_derivations = parse_derivations(
-            derivation_asts, extra_allowed_names=params.keys()
-        )
-        for name, _, raw in compiled_derivations:
-            if name in params:
-                raise ValidationError(
-                    f"{cls.__name__}: derivation `{raw}` LHS {name!r} "
-                    f"collides with Param of same name"
-                )
-            if name in derivation_names:
-                raise ValidationError(
-                    f"{cls.__name__}: derivation `{raw}` LHS {name!r} "
-                    f"declared twice"
-                )
-            derivation_names.add(name)
-
-    compiled_predicates: list = (
-        parse_predicates(
-            predicate_asts,
-            extra_allowed_names=set(params.keys()) | derivation_names,
-        )
-        if predicate_asts else []
-    )
-
-    cls._parsed_equations = (
-        parse_equations(equalities, params.keys()) if equalities else None
-    )
-    cls._has_equations = bool(equalities)
-    cls._cross_constraints = cross_compiled
-    cls._has_cross_constraints = bool(cross_compiled)
-    cls._derivations = compiled_derivations
-    cls._has_derivations = bool(compiled_derivations)
-    cls._derivation_names = frozenset(derivation_names)
-    cls._predicates = compiled_predicates
-    cls._has_predicates = bool(compiled_predicates)
+    cls._unified_equations = unified_eqs
+    cls._unified_constraints = unified_constraints
 
 
 def _collect_anchor_defs(cls) -> dict:
@@ -300,14 +314,14 @@ class Component(Node):
     __params__: dict[str, Param] = {}
 
     def __setattr__(self, name, value):
-        # Frozen Components refuse writes to any name whose value is
-        # part of the construction contract: Params (solver inputs or user
-        # inputs) and derivation outputs (derived from those inputs). Letting
-        # either be reassigned after __init__ would desync the instance from
-        # the equations that produced it.
+        # Frozen Components refuse writes to any Param. Params cover both
+        # user-supplied inputs and resolver-filled values; under the
+        # unified spec those are the same category. Reassigning any of
+        # them after __init__ would desync the instance from the
+        # equations that produced it.
         if getattr(self, "_frozen", False):
             cls = type(self)
-            if name in cls.__params__ or name in getattr(cls, "_derivation_names", ()):
+            if name in cls.__params__:
                 raise ValidationError(
                     f"{cls.__name__} is frozen after construction; cannot "
                     f"reassign {name!r}. Create a new instance instead."
@@ -554,31 +568,30 @@ def _resolve_clearance_kwarg(cls, kwargs: dict) -> None:
     kwargs["clearance"] = resolve_clearance(category)
 
 
-def _solve_equation_vars(cls, params: dict[str, Param], kwargs: dict) -> None:
-    """Invoke the equation solver for a Component's equation-vars, merging
-    any solved values into ``kwargs`` in place. Leaves non-equation kwargs
-    untouched. Wraps the solver's ``ValidationError`` with the class name
-    for nicer error context.
+def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict) -> None:
+    """Replace the legacy bucketed pipeline with the unified iterative
+    resolver. Mutates ``kwargs`` in place to add resolved values.
     """
-    from scadwright.component.equations import solve_instance
+    from scadwright.component.resolver import IterativeResolver
 
-    parsed = cls._parsed_equations
-    given = {k: float(v) for k, v in kwargs.items() if k in parsed.equation_vars}
-    defaults = {
-        name: params[name].default
-        for name in parsed.equation_vars
-        if name not in kwargs
-        and params[name].has_default()
-        and params[name].default is not None
-    }
+    resolver = IterativeResolver(
+        equations=cls._unified_equations,
+        constraints=cls._unified_constraints,
+        params=params,
+        supplied=dict(kwargs),
+        component_name=cls.__name__,
+    )
     try:
-        solved = solve_instance(parsed, given, defaults, params)
-    except ValidationError as exc:
-        raise ValidationError(f"{cls.__name__}: {exc}") from exc
-    # Solved output contains both newly-solved values and any defaults the
-    # solver applied on the user's behalf; both become assignments.
-    for name, value in solved.items():
-        kwargs.setdefault(name, value)
+        resolved = resolver.resolve()
+    except ValidationError:
+        raise
+    # Push every resolved value into kwargs so the rest of the auto-init
+    # picks it up. Skip None-valued keys for params that weren't supplied
+    # to avoid over-supplying optionals back into the kwargs.
+    for name, value in resolved.items():
+        if name in kwargs:
+            continue
+        kwargs[name] = value
 
 
 def _make_param_init(cls, params: dict[str, Param]):
@@ -601,15 +614,17 @@ def _make_param_init(cls, params: dict[str, Param]):
                 f"{type(self).__name__}: unknown parameter(s): {sorted(unknown)}"
             )
 
-        # Clearance resolver runs before equation-solving so the resolved
-        # value flows through as a "given" to sympy, same as any explicit
-        # kwarg. Only joint Components with _clearance_category opt in.
+        # Clearance resolver runs before the equation resolver so the
+        # resolved value flows through as a "given" to the solver, same
+        # as any explicit kwarg. Only joint Components with
+        # _clearance_category opt in.
         _resolve_clearance_kwarg(cls, kwargs)
 
-        # Solve equation-vars BEFORE the missing-required check, so solved
-        # values count as "provided."
-        if getattr(cls, "_has_equations", False):
-            _solve_equation_vars(cls, params, kwargs)
+        has_eqs_or_constraints = bool(
+            cls._unified_equations or cls._unified_constraints
+        )
+        if has_eqs_or_constraints:
+            _run_iterative_resolver(cls, params, kwargs)
 
         missing = [n for n in required if n not in kwargs]
         if missing:
@@ -620,7 +635,7 @@ def _make_param_init(cls, params: dict[str, Param]):
         # Initialize the Component base (sets source_location and _built_tree).
         Component.__init__(self, _source_location=loc)
 
-        # Apply each param via Param.__set__ (which coerces and validates).
+        # Apply each Param via Param.__set__ (coerces and validates).
         for name in required + optional:
             value = kwargs[name] if name in kwargs else params[name].default
             setattr(self, name, value)
@@ -630,51 +645,27 @@ def _make_param_init(cls, params: dict[str, Param]):
             if impl in kwargs:
                 object.__setattr__(self, impl, kwargs[impl])
 
-        # Cross-constraints (var-vs-var inequalities) run now that every
-        # Param is set, before derivations and predicates, so violations
-        # surface at the input-validation layer rather than mid-build.
-        if getattr(cls, "_has_cross_constraints", False):
-            from scadwright.component.equations import evaluate_cross_constraints
-
-            values = {name: getattr(self, name, None) for name in params}
-            evaluate_cross_constraints(
-                cls._cross_constraints, values, type(self).__name__
-            )
+        # Derivation-target values (computed names that aren't Params)
+        # go on the instance directly so build() can read them.
+        if has_eqs_or_constraints:
+            param_names = set(params)
+            for name, value in kwargs.items():
+                if name not in param_names and name not in _IMPLICIT_KWARGS:
+                    object.__setattr__(self, name, value)
 
         _resolve_anchor_defs(self)
 
-        # Derivations publish computed values onto the instance. They see all
-        # Params (incl. solver-resolved), all earlier derivations, and namedtuple
-        # fields via attribute access. Runs before predicates so predicates can
-        # reference derived names.
-        if getattr(cls, "_has_derivations", False):
-            from scadwright.component.equations import evaluate_derivations
-
-            evaluate_derivations(cls._derivations, self, type(self).__name__)
-
-        # Predicates validate arbitrary Python truths about the instance.
-        # Runs after derivations so predicates can reference derived names.
-        if getattr(cls, "_has_predicates", False):
-            from scadwright.component.equations import evaluate_predicates
-
-            evaluate_predicates(cls._predicates, self, type(self).__name__)
-
         # Framework escape hatch: a user-defined `setup()` method, if
-        # present, runs last. Not a user-facing pattern — every normal use
-        # case belongs in derivations or predicates — but retained as an
-        # internal hook for Components that genuinely need imperative work.
+        # present, runs last. Retained as an internal hook for Components
+        # that genuinely need imperative work.
         post = getattr(self, "setup", None)
         if callable(post):
             post()
 
-        # Freeze instances whose state is tied to the user-input contract
-        # (equations, derivations, or predicates). Prevents post-construction
-        # Param or derivation writes from desynchronizing the instance.
-        if (
-            getattr(cls, "_has_equations", False)
-            or getattr(cls, "_has_derivations", False)
-            or getattr(cls, "_has_predicates", False)
-        ):
+        # Freeze instances whose state is tied to the equations contract.
+        # Prevents post-construction Param or derivation-target writes
+        # from desynchronizing the instance.
+        if has_eqs_or_constraints:
             self._frozen = True
 
     __init__.__qualname__ = f"{cls.__qualname__}.__init__"

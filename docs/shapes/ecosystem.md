@@ -16,7 +16,7 @@ Gridfinity-compatible baseplate with magnet and screw holes at standard position
 GridfinityBase(grid_x=3, grid_y=2)     # 3x2 grid (126x84mm)
 ```
 
-Publishes `outer_w`, `outer_l`. Standard 42mm grid unit.
+You can read `outer_w` and `outer_l` off the instance. Standard 42mm grid unit.
 
 ![Gridfinity base](images/gridfinity-base.png)
 
@@ -31,7 +31,7 @@ GridfinityBin(grid_x=1, grid_y=1, height_units=3)           # single cell, 21mm 
 GridfinityBin(grid_x=2, grid_y=1, height_units=5, dividers_x=2)  # split into 2 compartments
 ```
 
-Publishes `outer_w`, `outer_l`, `total_h`.
+You can read `outer_w`, `outer_l`, and `total_h` off the instance.
 
 ![Gridfinity bin](images/gridfinity-bin.png)
 

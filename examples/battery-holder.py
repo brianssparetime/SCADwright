@@ -1,18 +1,12 @@
 """Parametric battery holder: a desk tray with N cradles for cylindrical
 cells, sized to a given battery spec.
 
-Demonstrates (intermediate scope):
-- `Param(namedtuple)` for structured spec data (one BatterySpec drives
-  all per-battery dimensions).
-- Derivations in `equations` compute `pitch`, `outer_w`, `outer_l`, and a
-  loop-generated `cradle_positions` tuple directly from the spec.
-- A predicate (`tray_depth < spec.length`) validates against a namedtuple
-  field that the solver can't reach.
-- A shape-library 2D profile (`RoundedSlot`) extruded into a custom cutter.
-- A custom transform applied multiple times (one per cradle).
-- Concrete subclass per battery type + count.
-- Published derivations let the display variant read `cradle_positions`
-  without rebuilding.
+A `BatterySpec` namedtuple carries one battery's dimensions. Lines in
+`equations` compute the tray's pitch, outer dimensions, and cradle
+positions directly from the spec, plus a rule that checks the tray
+isn't deeper than the battery is long. A custom transform cuts one
+finger slot per cradle. Per-battery concrete subclasses fill in the
+rest of the dimensions.
 
 Run:
     python examples/battery-holder.py
@@ -85,8 +79,8 @@ class BatteryHolder(Component):
         "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_height, scoop_depth > 0",
         "corner_r >= 0",
         "tray_depth > floor_thk",
-        "tray_depth < spec.length",                                                          # predicate: namedtuple field on the right
-        "pitch = spec.d + 2 * (clearance + wall_thk)",                                       # derivation
+        "tray_depth < spec.length",
+        "pitch = spec.d + 2 * (clearance + wall_thk)",
         "outer_w = count * pitch + 2 * end_clearance",
         "outer_l = pitch + 2 * side_clearance",
         "cradle_positions = tuple(-(count - 1) * pitch / 2 + i * pitch for i in range(count))",

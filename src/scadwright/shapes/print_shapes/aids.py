@@ -26,7 +26,7 @@ class PolyHole(Component):
     """
 
     equations = [
-        "circumradius == (d / 2) / cos(pi / sides)",
+        "circumradius = (d / 2) / cos(pi / sides)",
         "d, h > 0",
     ]
     sides = Param(int, min=3)

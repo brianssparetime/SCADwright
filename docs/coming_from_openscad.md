@@ -205,7 +205,7 @@ class Bracket(Component):
 Bracket(width=40, height=20)
 ```
 
-Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry equations, derivations, predicates, validators, and cross-param invariants. See [Components](components.md).
+Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry an `equations` list — equations SCADwright fills in for you and rules it checks when you make the part. See [Components](components.md).
 
 ### User-defined functions
 
@@ -254,7 +254,7 @@ isinstance(x, str)           # is_string
 isinstance(x, (list, tuple)) # is_list
 ```
 
-**Note:** Python makes `bool` a subclass of `int`, so `isinstance(True, int)` is `True`. SCADwright's own validators reject booleans where numbers are expected. If you're writing your own predicate, check `isinstance(x, bool)` first.
+**Note:** Python makes `bool` a subclass of `int`, so `isinstance(True, int)` is `True`. SCADwright's own validators reject booleans where numbers are expected. If you're writing your own type test, check `isinstance(x, bool)` first.
 
 ## Strings and lists
 
@@ -284,12 +284,12 @@ math.pi                      # SCAD's PI — use Python's stdlib constant
 SCAD's `assert(condition, "message")` is a render-time check. SCADwright offers three layers:
 
 ```python
-# 1. Equation constraints: declarative, runs at construction.
+# 1. Rules in `equations`: bounds and inequalities, runs at construction.
 equations = ["width > 0", "width > thk"]
 
-# 2. Predicates in `equations`: arbitrary-Python validation at construction.
+# 2. Rules in `equations` with arbitrary Python: same list, any boolean expression.
 equations = [
-    "len(size) == 3",
+    "len(size) = 3",
     "all(e.dia <= throat for e in elements)",
 ]
 

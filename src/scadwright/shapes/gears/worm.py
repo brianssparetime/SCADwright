@@ -23,8 +23,8 @@ class Worm(Component):
         "module, length, shaft_r > 0",
         "pressure_angle > 0",
         "pressure_angle <= 45",
-        "pitch == pi * module",
-        "thread_r == shaft_r + module",
+        "pitch = pi * module",
+        "thread_r = shaft_r + module",
     ]
     leads = Param(int, default=1, min=1)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;
@@ -69,10 +69,10 @@ class WormGear(Component):
         "module, h > 0",
         "pressure_angle > 0",
         "pressure_angle <= 45",
-        "pitch_r == module * teeth / 2",
-        "base_r == pitch_r * cos(pressure_angle * pi / 180)",
-        "outer_r == pitch_r + module",
-        "root_r == pitch_r - 1.25 * module",
+        "pitch_r = module * teeth / 2",
+        "base_r = pitch_r * cos(pressure_angle * pi / 180)",
+        "outer_r = pitch_r + module",
+        "root_r = pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=12)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;

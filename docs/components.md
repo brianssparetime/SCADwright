@@ -1,16 +1,14 @@
 # Components
 
-A Component is a parametric part you define as a Python class. It's like an OpenSCAD `module`, but it **publishes attributes** the caller can read and it **acts like a shape** -- you can transform it, combine it with others, render it directly.
+A Component is a parametric part you define as a Python class. It behaves like an OpenSCAD `module`, with two additions: the caller can read computed values off it, and it acts like a shape itself. You can transform it, combine it with other shapes, or render it directly.
 
-For a walkthrough of how Components fit into a project as it grows, see [Organizing a project](organizing_a_project.md). In brief: start with a flat script, wrap it in a Component when you need named parameters or published dimensions, then add a `Design` class when you need print/display variants.
-
-This page covers the Component authoring surface itself, in order from most common to most specialized.
+For when and why to introduce Components in a project, see [Organizing a project](organizing_a_project.md).
 
 ## Your first Component
 
-A Component needs two things: parameters (what the caller passes in) and a `build()` method (what shape it produces).
+A Component has two parts: parameters (the inputs the caller passes) and a `build()` method (the shape it produces).
 
-The simplest way to declare parameters is through `equations` -- list the constraints your dimensions must satisfy, and the framework creates the parameters for you as floats:
+The simplest way to declare parameters is the `equations` list. You state the relationships and rules your dimensions must satisfy; SCADwright creates the parameters for you and fills in whichever values the caller didn't pass.
 
 ```python
 from scadwright import Component, render
@@ -19,7 +17,7 @@ from scadwright.primitives import cylinder
 
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",
+        "od = id + 2*thk",
         "h, id, od, thk > 0",
     ]
 
@@ -29,34 +27,21 @@ class Tube(Component):
         return difference(outer, inner)
 
 t = Tube(h=10, id=8, thk=1)
-print(t.od)                                # 10.0 -- solved from the equation
-render(t, "tube.scad")                     # build() runs now, result is cached
+print(t.od)                                # 10.0 (filled in from the equation)
+render(t, "tube.scad")                     # build() runs now
 render(t.right(20).red(), "moved.scad")    # transforms work too
 ```
 
-`build()` returns the actual shape. It runs the first time SCADwright needs the geometry (render, bounding box, etc.) and the result is cached.
+Specify any two of `id`, `od`, `thk` and SCADwright fills in the third. `build()` runs the first time the shape is needed; the result is kept for reuse.
 
-## Declaring parameters
+## Parameters: the `equations` list
 
-There are three ways to declare parameters, from lightest to most explicit. Use the lightest one that fits.
+Each line in `equations` does one of two things:
 
-### 1. `equations` -- the primary way
+- **States an equation.** `"od = id + 2*thk"` says od equals id + 2*thk. Either side can be any expression: `"len(size) = 3"`, `"max(a, b) = foo"`, `"spec.foo = 5"`. SCADwright fills in any value you didn't supply; if you supplied all of them, it checks they agree.
+- **States a rule.** `"id < od"`, `"all(s > 2*r for s in size)"`. SCADwright checks the rule and raises a clear error if it fails.
 
-Variables that appear in an `equations` list are automatically created as `Param(float)`. Equalities (`==`) let the framework solve for whichever the user didn't pass. Inequalities (`>`, `>=`, `<`, `<=`) add validation constraints.
-
-```python
-class Tube(Component):
-    equations = [
-        "od == id + 2*thk",            # equality: solve for the missing one
-        "h, id, od, thk > 0",          # inequality: all must be positive
-    ]
-```
-
-This single block declares four float params (`h`, `id`, `od`, `thk`), sets up the solver, and adds positivity constraints. Specify any sufficient subset at construction time; the solver fills in the rest.
-
-Comma-separated names in inequalities expand into per-variable constraints: `"x, y, z > 0"` means all three must be positive.
-
-Most float parameters have a natural bound — a length is positive, an angle is between 0 and 180, a wall thickness is greater than zero. State the bound as a constraint; the variable is declared for free:
+Names you don't declare elsewhere become float parameters automatically. Most dimensions have a natural bound (a length is positive, an angle is between 0 and 180), so a rule line like `"id, od > 0"` declares the variables and sets their bounds in one step:
 
 ```python
 class FilletRing(Component):
@@ -68,63 +53,125 @@ class FilletRing(Component):
     ]
 ```
 
-`base_angle` doesn't appear in any equality, but the constraint auto-creates it as `Param(float)` and installs the validator. No separate declaration needed.
+Every name in `equations` is readable on the Component afterwards: `t.od`, `f.base_angle`.
 
-Every variable in `equations` is readable on the Component afterwards (`t.od`, `t.base_angle`).
+Don't start a name with an underscore (`_`); those are reserved for SCADwright itself.
 
-Don't start a name with an underscore (`_`); those are reserved for the framework.
+### Building expressions
 
-### 2. `params` -- for truly unbounded floats (rare)
+Any Python expression in an equation can use these pieces:
 
-Reach for the `params = "..."` string only when a float genuinely has no natural bound *and* doesn't appear in any equation — a signed offset, a freely-scaling coefficient, or similar:
+- Arithmetic: `+`, `-`, `*`, `/`, `**`, parentheses.
+- Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `log`, `exp`, `abs`, `ceil`, `floor`, `min`, `max`, `pi`, `e`.
+- Conditional: `a if cond else b`.
+- Reading a field or an item out of an input: `spec.d`, `arr[0]`, `holes[i]`.
+- Tuples, lists, dicts, comprehensions: `tuple(...)`, `list(...)`, `range(...)`, `len(...)`, `sum(...)`, `sorted(...)`, `tuple(i*pitch for i in range(count))`.
+
+If an equation gives a value a name (`pitch = ...`, `od = ...`), SCADwright works out the value when you make the part and stores it on the part. You can read it back: `b.pitch`, `b.od`. An equation that doesn't name a new value (`len(size) = 3`, `spec.foo = 5`) is just a check: SCADwright reads each side and raises an error if they don't agree.
+
+You can write your equations in any order. SCADwright reads the whole list and works out which one needs which other; you don't have to put them in any particular order.
 
 ```python
-class Probe(Component):
-    params = "phase_offset"        # can be positive or negative; no natural bound
-    equations = ["amplitude, frequency > 0"]
+class BatteryHolder(Component):
+    spec = Param(BatterySpec)
+    count = Param(int, positive=True)
+    equations = [
+        "wall_thk, clearance, floor_thk > 0",
+        "pitch = spec.d + 2 * (clearance + wall_thk)",
+        "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))",
+    ]
+
+b = BatteryHolder(spec=AA, count=6, wall_thk=1.6, clearance=0.4, floor_thk=2)
+b.pitch                                    # 18.5 (readable on the Component)
+b.cradle_positions                         # (-46.25, -27.75, -9.25, 9.25, 27.75, 46.25)
 ```
 
-If you can express a bound, prefer the constraint form — it catches bad inputs as well as declaring the Param.
+### Comma broadcasts
 
-### 3. `Param(...)` -- escape hatch for non-floats, defaults, and special types
+A comma list of names applies the line to each name. Same broadcast for both forms:
 
-Use `Param(...)` directly for anything that isn't a plain float: non-float types, params with defaults, or params with `one_of` constraints.
+- `"x, y > 0"` is `x > 0` and `y > 0`.
+- `"x, y = 5"` is `x = 5` and `y = 5`.
+
+There's no Python tuple-unpacking. If you want different values per name, write separate lines.
+
+### Optional inputs
+
+Prefix a name with `?` anywhere in `equations` to make it optional. If the caller omits it, the value is `None`, and any rule that references it is skipped.
+
+Four helpers check how many optional inputs were set:
+
+| Helper | Meaning |
+|---|---|
+| `exactly_one(a, b, ...)` | one and only one is set |
+| `at_least_one(a, b, ...)` | one or more is set |
+| `at_most_one(a, b, ...)` | zero or one is set |
+| `all_or_none(a, b, ...)` | all are set or none are |
+
+"Set" means "is not None." The value `0` counts as set.
+
+```python
+class ChamferedBox(Component):
+    size = Param(tuple)
+    equations = [
+        "?fillet > 0",
+        "?chamfer > 0",
+        "len(size) = 3",
+        "exactly_one(?fillet, ?chamfer)",                       # one, not both
+        "edge = ?fillet if ?fillet else ?chamfer",              # whichever is set
+        "all(s > 2 * edge for s in size)",
+    ]
+
+ChamferedBox(size=(20, 15, 10), fillet=2)     # chamfer omitted
+ChamferedBox(size=(20, 15, 10), chamfer=3)    # fillet omitted
+```
+
+When a helper fails, the error message names each argument and its value, so you can see which inputs were set.
+
+The `?` sigil is for optional *inputs*. It can't appear on a name that's computed by another line.
+
+### Keep one idea per line
+
+If a line is trying to do two things at once (pick a value *and* check something with it), split it by naming the intermediate on its own line. In the ChamferedBox example above, `edge` is a name for the active radius; the size check below it then reads plainly as "every side fits the edge."
+
+## Other kinds of parameters
+
+### `Param(...)` for non-floats and defaults
+
+Use `Param(...)` when a parameter isn't a plain float (a bool, a string, a tuple, a spec object) or when it needs a default or an enumerated choice:
 
 ```python
 class CaseBase(Component):
-    pcb = Param(PCBSpec)               # non-float type
+    pcb = Param(PCBSpec)                                 # non-float type
     equations = ["wall_thk, floor_thk > 0"]
-```
 
-```python
 class Tube(Component):
-    equations = ["od == id + 2*thk", "h, id, od, thk > 0"]
+    equations = ["od = id + 2*thk", "h, id, od, thk > 0"]
     slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
 ```
 
-`Param` accepts:
+Options:
 
-- `type` -- Python type to coerce the value to. `Param(float)` accepts `5`, `"3.14"`, etc.
-- `default` -- used when the caller doesn't pass this parameter. Without a default, the parameter is required.
-- `positive`, `non_negative`, `min`, `max`, `range`, `one_of` -- shorthand validators.
-- `validators` -- list of callables that raise `ValidationError` on failure.
+- `type`: the Python type to convert the value to. `Param(float)` accepts `5` or `"3.14"`.
+- `default`: used when the caller doesn't pass this parameter. Without a default, the parameter is required.
+- `positive`, `non_negative`, `min`, `max`, `range`, `one_of`: common validators you can list inline.
+- `validators`: a list of your own check functions (each raises `ValidationError` on bad input).
 
-### Summary: which to use when
+### `params = "..."` for unbounded floats (rare)
 
-| Situation | Use |
-| --- | --- |
-| Float param in a solving equation | `equations` only -- auto-declared |
-| Float param with a constraint (`> 0`, `>= 0`, `< 90`) | `equations` only -- auto-declared by the constraint |
-| Float param that is genuinely unbounded | `params = "name"` (rare) |
-| Non-float type (`int`, `str`, `tuple`, custom) | `Param(type)` |
-| Any param with a default value | `Param(type, default=...)` |
-| Enum-style constraint | `Param(str, one_of=(...))` |
-| Published derived attribute (loop, namedtuple field, conditional) | [derivation](#derivations-loops-conditionals-namedtuple-fields) in `equations` |
-| Arbitrary-Python validation (tuple length, XOR, membership, all-of) | [predicate](#predicates-arbitrary-python-validation) in `equations` |
+For a float that has no natural bound and doesn't appear in any equation (a signed offset, a freely-scaling coefficient), list its name in a `params` string:
 
-### Structured data: namedtuple
+```python
+class Probe(Component):
+    params = "phase_offset"                  # can be positive or negative
+    equations = ["amplitude, frequency > 0"]
+```
 
-For structured data that isn't a Component -- battery specs, port dimensions, screw sizes -- use Python's `namedtuple`. It's immutable, lightweight, and reads like a parts list:
+If you can express any bound at all, prefer the bound form; it catches bad inputs and declares the parameter in one line.
+
+### `namedtuple` for spec data
+
+For a bundle of related numbers (a battery's diameter and length, a screw's dimensions, a port's profile), use Python's `namedtuple`. It's a small record that reads like a parts list:
 
 ```python
 from collections import namedtuple
@@ -133,36 +180,37 @@ BatterySpec = namedtuple("BatterySpec", "d length label")
 AA = BatterySpec(d=14.5, length=50.5, label="AA")
 ```
 
-Pass these as `Param(BatterySpec)` on a Component that needs them. The Component can then read fields like `self.spec.d` in derivations or `build()`.
+Pass these into a Component as `Param(BatterySpec)`. The Component reads fields like `self.spec.d` in equations or in `build()`.
 
-## Equations
+### Summary
 
-### How solving works
+| Situation | Use |
+|---|---|
+| Float in an equation | `equations` only, auto-declared |
+| Float with a bound (`> 0`, `< 90`) | `equations` only, auto-declared by the bound |
+| Float that is truly unbounded | `params = "name"` (rare) |
+| Non-float type (`int`, `str`, `tuple`, custom) | `Param(type)` |
+| Parameter with a default value | `Param(type, default=...)` |
+| Enum-style choice | `Param(str, one_of=(...))` |
+| Value worked out from other values | equation line in `equations` (`name = ...`) |
+| Check the bound form can't express | rule line in `equations` |
 
-- Variables in an equation are automatically created as `Param(float)`.
-- At construction, the framework determines which params the user supplied and solves for the rest.
-- If the user supplies more than necessary, the framework checks consistency and raises if violated.
-- Math constants (`pi`, `e`) are recognized and don't count as params. Trig functions (`sin`, `cos`, `tan`) work too.
-- A quadratic like `"area == pi * r**2"` works -- the framework uses inequality constraints to disambiguate (e.g. pick the positive root).
+## Building the shape
 
-### Error cases
+### Returning a shape
 
-All produce a `ValidationError` with enough context to act:
+In the simple case, `build()` returns a single shape:
 
-- **Under-specified** -- `Tube(h=10, id=8)`: message lists the sufficient combinations.
-- **Over-specified inconsistent** -- `Tube(h=10, id=8, od=10, thk=2)`: message quotes the offending equation and the values.
-- **No valid solution** -- `Tube(h=10, od=4, thk=3)` implies `id = -2`; the constraint rejects it.
-- **Multiple valid solutions** -- add a constraint (typically `> 0`) to disambiguate.
-- **Derivation fails at runtime** -- `ValidationError: X: derivation ``name = expr`` failed: {exception}`; covers `NameError`, `ZeroDivisionError`, `TypeError`, and friends with the raw source.
-- **Predicate evaluates to falsy** -- `ValidationError: X: equation ``expr`` failed`; enriched with left/right values for top-level `Compare` and with the offending index for `all(... for e in seq)`.
+```python
+def build(self):
+    outer = cylinder(h=self.h, r=self.od / 2)
+    inner = cylinder(h=self.h + 2, r=self.id / 2).down(1)
+    return difference(outer, inner)
+```
 
-### Dependency
+### Yielding pieces
 
-Equations require `sympy`, installed via the extras: `pip install 'scadwright[equations]'`. Components without `equations` have no sympy import and no extra dependency.
-
-## Composite parts: yield the pieces
-
-When a Component is made of multiple subparts, write `build()` as a generator and `yield` each part. The framework auto-unions them:
+If the Component is made of multiple pieces, write `build()` with a `yield` line for each piece. SCADwright joins them into a single shape (union):
 
 ```python
 class Widget(Component):
@@ -176,15 +224,63 @@ class Widget(Component):
 
 Rules:
 
-- An empty generator (yields nothing) raises `BuildError`.
-- A single yield unwraps to that Node (no redundant `union(x)` wrapper).
-- A non-Node yield raises `BuildError` at the offending index.
-- Returning a Node (not a generator) still works -- use it for single-shape Components.
-- Generator form is pure union. If you need `difference`, `intersection`, or to transform the whole result, return a Node instead.
+- Yielding nothing is an error.
+- Yielding one piece is fine; the result is that piece (no wrapper).
+- Every yield has to be a shape. Yielding anything else raises an error naming the offending yield.
+- `yield` form is always union. For `difference` or `intersection`, or to transform the whole result, return a single shape instead.
+
+## Features every Component gets
+
+These work on every Component automatically, no matter how it was written.
+
+### Centering with `center=`
+
+Pass `center=` to the constructor to move the shape onto the origin. It uses the same syntax as `cube(center=...)`: `True` for all axes, `"xy"` for X and Y only, and so on.
+
+```python
+t = Tube(h=10, id=8, thk=1, center="xy")
+t.od                                       # 10.0 (still readable)
+bbox(t).center                             # (0, 0, 5)
+```
+
+By default, centering uses the shape's bounding-box center. If the bounding-box center isn't the right reference point, override it:
+
+```python
+class Bracket(Component):
+    equations = ["width, height, thk > 0"]
+
+    def center_origin(self):
+        return (self.width / 2, self.thk / 2, 0)
+
+    def build(self): ...
+```
+
+Bounding-box centering is also available as a chained method on any shape:
+
+```python
+cube([10, 20, 30]).center_bbox("xy")
+```
+
+### Resolution (`fn`/`fa`/`fs`)
+
+Resolution flows implicitly. Every Component accepts `fn`, `fa`, `fs` as constructor keyword arguments; every primitive inside inherits them:
+
+```python
+t = Tube(h=10, id=8, thk=1, fn=64)        # every cylinder inside gets $fn=64
+```
+
+You can also set resolution as a default on the class, so every part you build from it uses it:
+
+```python
+class HighResTube(Tube):
+    fn = 128
+```
+
+A primitive can still override with its own `fn=` argument.
 
 ## Concrete subclasses
 
-When a project has enough measurements that inline kwargs are unwieldy, move them to a concrete subclass. Each measurement becomes a plain class attribute:
+When a project has enough measurements that inline arguments get unwieldy, move them to a concrete subclass. Each measurement becomes one line:
 
 ```python
 class MyTube(Tube):
@@ -192,131 +288,18 @@ class MyTube(Tube):
     id = 8
     thk = 1
 
-t = MyTube()                               # od solved = 10.0
+t = MyTube()                               # od filled in: 10.0
 ```
 
-The subclass reads like a parts list. The generic `Tube` stays portable; the concrete `MyTube` holds the project-specific numbers. See [Organizing a project](organizing_a_project.md) for when and why to use this pattern.
-
-## Resolution (`fn`/`fa`/`fs`)
-
-Resolution is implicit -- every Component accepts `fn`, `fa`, `fs` as constructor kwargs without declaring them. The values flow into the resolution context for `build()`, so all primitives inside inherit them:
-
-```python
-t = Tube(h=10, id=8, thk=1, fn=64)        # all cylinders get $fn=64
-```
-
-You can also set resolution at the class level:
-
-```python
-class HighResTube(Tube):
-    fn = 128                               # default $fn for everything in build()
-```
-
-Per-shape `fn=` arguments on primitives still win over both.
-
-## Centering
-
-Every Component accepts `center=` as a constructor kwarg. It uses the same syntax as `cube(center=...)`: `True` for all axes, `"xy"` for X and Y only, etc. Centering is applied after `build()`, so the Component stays a Component and its attributes remain readable:
-
-```python
-t = Tube(h=10, id=8, thk=1, center="xy")
-t.od                                       # 10.0 -- still accessible
-bbox(t).center                             # (0, 0, 5) -- X,Y centered, Z at build origin
-```
-
-By default, centering uses the bbox center. A Component can override `center_origin()` to use a different reference point:
-
-```python
-class Bracket(Component):
-    equations = ["width, height, thk > 0"]
-
-    def center_origin(self):
-        # Center on the mounting-face midpoint, not the bbox center.
-        return (self.width / 2, self.thk / 2, 0)
-
-    def build(self): ...
-```
-
-The `center_bbox()` chained method on any shape also supports per-axis centering:
-
-```python
-cube([10, 20, 30]).center_bbox("xy")       # center X and Y, leave Z
-```
+The generic `Tube` stays reusable; `MyTube` holds the project-specific numbers. See [Organizing a project](organizing_a_project.md) for when and why to do this.
 
 ---
 
-## Advanced
+## Reference
 
-### Derivations: loops, conditionals, namedtuple fields
+### Validators
 
-For computed values that *can't* be a scalar sympy equation -- anything that iterates, conditionally branches, or reaches into a namedtuple field -- write them as derivations in the same `equations` list. A derivation is a `name = expression` line (single `=`). The expression on the right of the `=` is evaluated at construction time in a restricted namespace (curated Python builtins, curated math, plus instance attributes) and the result is stored on the instance.
-
-```python
-class BatteryHolder(Component):
-    spec = Param(BatterySpec)
-    count = Param(int, positive=True)
-    equations = [
-        "wall_thk, clearance, floor_thk, tray_depth > 0",
-        "pitch = spec.d + 2 * (clearance + wall_thk)",                                # namedtuple field
-        "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))",  # loop
-    ]
-```
-
-Derivations see all Params and any earlier derivations. They run in declaration order, so `cradle_positions` above can reference `pitch`.
-
-Derivation names freeze along with Params after construction; reassigning one raises `ValidationError`. The curated namespace includes `range`, `tuple`, `list`, `dict`, `set`, `zip`, `enumerate`, `sum`, `abs`, `round`, `len`, `min`, `max`, `all`, `any`, `int`/`float`/`bool`/`str`, and math functions (`sin`, `cos`, `sqrt`, `pi`, etc.).
-
-### Predicates: arbitrary-Python validation
-
-Boolean expressions that sympy can't reason about -- `len(size) == 3`, `spec.series in {"AA", "AAA"}`, `all(e.dia <= throat for e in elements)`, XOR between optional Params -- are predicates. Drop them into the same `equations` list; the framework classifies each line by shape and routes predicates to the runtime evaluator.
-
-```python
-class RoundedBox(Component):
-    size = Param(tuple)
-    equations = [
-        "r > 0",
-        "len(size) == 3",                              # tuple-length validation
-        "all(s > 2 * r for s in size)",                # element-wise constraint
-    ]
-```
-
-### Optional inputs: the `?` sigil
-
-Prefix a variable with `?` in any equation to make it optional. The caller may omit it; when omitted, its value is `None`.
-
-```python
-class ChamferedBox(Component):
-    size = Param(tuple)
-    equations = [
-        "?fillet > 0",                                                     # skipped when fillet is omitted
-        "?chamfer > 0",
-        "len(size) == 3",
-        "(?fillet is None) != (?chamfer is None)",                         # XOR: exactly one must be set
-        "edge = ?fillet if ?fillet else ?chamfer",                         # active edge radius
-        "all(s > 2 * edge for s in size)",                                 # every side fits the edge
-    ]
-
-ChamferedBox(size=(20, 15, 10), fillet=2)     # chamfer is None; the predicate skips
-ChamferedBox(size=(20, 15, 10), chamfer=3)    # fillet is None
-```
-
-The `edge = ...` line is a **derivation** — a computed intermediate given a name. Naming it lets the size check below read as one idea ("every side fits the edge") rather than repeating the ternary inline. Whenever an equation starts carrying two ideas at once, pull the intermediate onto its own line; each string then narrates as a single sentence.
-
-Constraints and cross-constraints referencing an omitted value silently skip. Predicates and derivations see the value as `None`; write whatever check you need (`?x is None`, `?x if ?x else fallback`, etc.).
-
-Not allowed:
-
-- `?` in an equality (`==`). The solver can't work with a missing value.
-- `?` on the left side of a derivation (`?pitch = ...`). Derivations compute values; they aren't inputs.
-- `?` on a name the framework reserves (`?all`, `?sin`, `?range`, and the rest of the curated namespace).
-
-**`?x if ?x else y` vs. `?x if ?x is None else y`**: if the optional has any positivity constraint (`"?x > 0"`, `"?x >= 0"`), `0` is already rejected so `None` is the only falsy value — the short truthy form is equivalent and easier to read. Use the explicit `is None` form only when `0` or `False` is a legitimate value, or when you specifically need "specified-ness" semantics (like the XOR predicate above).
-
-A falsy predicate raises `ValidationError` with the raw source and, for the two common shapes (top-level `Compare`, `all(... for e in seq)`), per-value context showing which element or pair violated the check.
-
-### Validators reference
-
-Pre-built validators for use with `Param(validators=[...])`:
+Ready-made check functions for `Param(validators=[...])`:
 
 ```python
 positive(x)               # x > 0
@@ -324,27 +307,25 @@ non_negative(x)           # x >= 0
 minimum(n)(x)             # x >= n
 maximum(n)(x)             # x <= n
 in_range(lo, hi)(x)       # lo <= x <= hi
-one_of(*values)(x)        # x in values
+one_of(*values)(x)        # x is one of the listed values
 ```
 
-Custom validators are just functions that take a value and raise `ValidationError` on failure.
+A custom validator is just a function that takes a value and raises `ValidationError` on bad input.
 
-### `materialize(component)`
+### What errors look like
 
-Returns the AST node that `build()` produced (cached). Useful in tests to verify what a Component actually built:
+Every failure raises `ValidationError` (or `BuildError` if something goes wrong inside `build()`). The message tells you which Component and which line failed:
 
-```python
-from scadwright import materialize
-from scadwright.ast.csg import Difference
+- Not enough inputs: `cannot solve for equation variables: given {id}, need one of: {id, thk}, {od, thk}, ...`
+- Inputs that don't agree: `equation violated: od = id + 2*thk (lhs=10, rhs=12)`.
+- A bound failure: `ChamferedBox.fillet: must be > 0, got -1`.
+- A rule failure: `RoundedBox: constraint violated: all(s > 2 * r for s in size): failed at index 1 with s=4: left=4, right=6.0`.
 
-tree = materialize(Tube(h=10, id=8, thk=1))
-assert isinstance(tree, Difference)        # Tube builds a difference of two cylinders
-assert len(tree.children) == 2
-```
+If `build()` raises an exception, SCADwright wraps it in a `BuildError` that includes the Component class name and the source line where you created the Component.
 
-### Plain `__init__`
+### Plain `__init__` (escape hatch)
 
-You can write your own `__init__` instead of using `equations`/`params`/`Param`. Call `super().__init__()` first, then set attributes:
+You can write your own `__init__` instead of using `equations` / `params` / `Param`. Call `super().__init__()` first, then set values on `self`:
 
 ```python
 class Bracket(Component):
@@ -357,19 +338,29 @@ class Bracket(Component):
         return cube([self.width, self.width, self.height])
 ```
 
-This is supported but not recommended -- you lose equation solving, auto-generated kwargs-only init, validator support, and the declarative style that makes Components scannable. Use it only if you have a specific reason the declarative approach doesn't fit.
+This is supported but gives up everything the `equations` approach provides: filling in missing values, validation, readable computed values. Use it only if you have a specific reason the `equations` approach doesn't fit.
 
-### Build caching and errors
+### Inspecting the built shape: `materialize()`
 
-- `build()` runs once per Component instance and the result is cached. Treat Components as immutable after construction.
-- If `build()` raises any exception that isn't already a `SCADwrightError`, SCADwright wraps it in a `BuildError` that includes the Component class name and the source location of where you instantiated it. The original exception is chained via `__cause__`.
+`materialize(component)` returns the shape that `build()` produced (cached on first call). Useful in tests to assert the Component built what you expected:
 
-### Frozen after construction
+```python
+from scadwright import materialize
+from scadwright.ast.csg import Difference
 
-Components with equations are immutable after construction. Reassigning a param (e.g. `t.id = 5`) would desync from the solved values, so writes raise. To reparameterize, build a new instance.
+tree = materialize(Tube(h=10, id=8, thk=1))
+assert isinstance(tree, Difference)
+assert len(tree.children) == 2
+```
 
----
+### Components are frozen after construction
+
+Once constructed, a Component's values can't be reassigned. `t.id = 5` raises an error. To change values, build a new Component.
+
+### `sympy` dependency
+
+Install `sympy` with `pip install 'scadwright[equations]'`. It's highly recommended: without it, you can't use the `equations` feature, which is how you'll declare most Components.
 
 ### See also
 
-- [Anchors and attachment](anchors.md) -- declare named attachment points on Components and position parts relative to each other with `attach()`
+- [Anchors and attachment](anchors.md): named attachment points on Components; position parts relative to each other with `attach()`.

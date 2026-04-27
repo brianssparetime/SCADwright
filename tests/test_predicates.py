@@ -233,7 +233,7 @@ def test_predicate_undefined_name_wrapped_at_runtime():
 
 
 def test_bare_name_rejected():
-    with pytest.raises(ValidationError, match="not a boolean predicate"):
+    with pytest.raises(ValidationError, match="not a boolean rule"):
         class C(Component):
             a = Param(float)
             equations = ["a"]
@@ -241,7 +241,7 @@ def test_bare_name_rejected():
 
 
 def test_bare_arithmetic_rejected():
-    with pytest.raises(ValidationError, match="not a boolean predicate"):
+    with pytest.raises(ValidationError, match="not a boolean rule"):
         class C(Component):
             equations = ["a + b"]
             def build(self): return cube(1)

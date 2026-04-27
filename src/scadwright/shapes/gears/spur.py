@@ -21,8 +21,8 @@ class SpurGear(Component):
     (default) for a straight spur gear. For herringbone, build two
     helical gears mirrored.
 
-    Published attributes: ``pitch_r``, ``outer_r``, ``root_r``,
-    ``base_r`` (the standard gear circle radii).
+    The standard gear circle radii (``pitch_r``, ``outer_r``, ``root_r``,
+    ``base_r``) are available as attributes on the instance.
     """
 
     equations = [
@@ -31,10 +31,10 @@ class SpurGear(Component):
         "pressure_angle <= 45",
         "helix_angle >= -45",
         "helix_angle <= 45",
-        "pitch_r == module * teeth / 2",
-        "base_r == pitch_r * cos(pressure_angle * pi / 180)",
-        "outer_r == pitch_r + module",
-        "root_r == pitch_r - 1.25 * module",
+        "pitch_r = module * teeth / 2",
+        "base_r = pitch_r * cos(pressure_angle * pi / 180)",
+        "outer_r = pitch_r + module",
+        "root_r = pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=6)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;

@@ -123,13 +123,11 @@ def test_through_non_overlapping_error_unchanged():
 
 
 def test_contradictory_constant_equations():
-    """a == 1 AND a == 2 with no user input identifies as inconsistent."""
-    class C(Component):
-        equations = ["a == 1", "a == 2"]
-        def build(self): return cube([1, 1, 1])
-
+    """a == 1 AND a == 2 surfaces as inconsistent at class-definition time."""
     with pytest.raises(ValidationError) as exc_info:
-        C()
+        class C(Component):
+            equations = ["a == 1", "a == 2"]
+            def build(self): return cube([1, 1, 1])
     msg = str(exc_info.value)
     assert "inconsistent" in msg
     assert "a" in msg
@@ -138,13 +136,11 @@ def test_contradictory_constant_equations():
 
 
 def test_contradictory_expression_equations():
-    """Non-constant contradictions (a+b==1, a+b==5) also flagged."""
-    class C(Component):
-        equations = ["a + b == 1", "a + b == 5"]
-        def build(self): return cube([1, 1, 1])
-
+    """Non-constant contradictions (a+b==1, a+b==5) also flagged at class-def."""
     with pytest.raises(ValidationError) as exc_info:
-        C()
+        class C(Component):
+            equations = ["a + b == 1", "a + b == 5"]
+            def build(self): return cube([1, 1, 1])
     msg = str(exc_info.value)
     assert "inconsistent" in msg
 
@@ -305,27 +301,32 @@ def test_missing_build_caught_at_render_time():
 # =============================================================================
 
 
-def test_derivation_collision_with_param_names_param():
-    with pytest.raises(ValidationError) as exc_info:
-        class C(Component):
-            x = Param(float)
-            equations = ["x = 5"]
-            def build(self): return cube([1, 1, 1])
-    msg = str(exc_info.value)
-    assert "collides with Param" in msg
-    assert "'x'" in msg
+def test_assign_target_overlapping_with_explicit_param_solves():
+    # Under the unified spec, ``Param(float)`` + ``"x = 5"`` is not a
+    # collision: the equation simply provides the value the resolver
+    # uses when the user omits ``x``. (Pre-spec versions raised at
+    # class-def time; that rejection was removed when ``=`` and ``==``
+    # were unified.)
+    class C(Component):
+        x = Param(float)
+        equations = ["x = 5"]
+        def build(self): return cube([1, 1, 1])
+
+    assert C().x == 5.0
 
 
-def test_derivation_undefined_name_message_includes_raw():
+def test_undeclared_free_name_in_equation_surfaces_at_construction():
+    # Free names appearing in equations are auto-declared as Params
+    # under the unified spec, so the typo'd ``unknown`` becomes a
+    # required Param. The error surfaces at construction (not class-
+    # definition) and still names the offending identifier.
     class C(Component):
         equations = ["a > 0", "b = a + unknown"]
         def build(self): return cube([1, 1, 1])
 
     with pytest.raises(ValidationError) as exc_info:
-        C(a=5)
+        C(a=1)
     msg = str(exc_info.value)
-    assert "derivation" in msg
-    assert "b = a + unknown" in msg
     assert "unknown" in msg
 
 
@@ -370,9 +371,9 @@ def test_predicate_failure_all_shows_offending_index():
     assert "right=10.0" in msg
 
 
-def test_predicate_not_boolean_shape_rejected_at_class_def():
+def test_non_boolean_rule_rejected_at_class_def():
     with pytest.raises(ValidationError) as exc_info:
         class C(Component):
-            equations = ["len(size)"]  # no comparison — ambiguous as a predicate
+            equations = ["len(size)"]  # no comparison — ambiguous as a rule
             def build(self): return cube([1, 1, 1])
-    assert "not a boolean predicate" in str(exc_info.value)
+    assert "not a boolean rule" in str(exc_info.value)

@@ -17,10 +17,10 @@ class AlignmentPin(Component):
     pairs to constrain two parts' relative position while other features
     (screws, clips) provide retention.
 
-    Sits on z=0 with its tip at z=``h``. Publishes ``socket_d``
-    (= ``d`` + 2*``clearance``) and a ``.socket`` @property returning
-    the matching blind-hole cutter. If not passed, ``clearance``
-    resolves from the active scope (``with clearances(...)``,
+    Sits on z=0 with its tip at z=``h``. ``socket_d`` (= ``d`` +
+    2*``clearance``) is available on the instance, and ``.socket`` is a
+    @property returning the matching blind-hole cutter. If not passed,
+    ``clearance`` resolves from the active scope (``with clearances(...)``,
     Design/Component class attrs, or ``DEFAULT_CLEARANCES.sliding``).
     Typical FDM values are 0.05–0.2 mm per side.
     """
@@ -29,7 +29,7 @@ class AlignmentPin(Component):
 
     equations = [
         "d, h, lead_in, clearance > 0",
-        "socket_d == d + 2 * clearance",
+        "socket_d = d + 2 * clearance",
         "lead_in < h",
         "lead_in < d / 2",
     ]
@@ -63,24 +63,25 @@ class PressFitPeg(Component):
 
     Unlike the other joint Components, ``clearance`` here carries the
     opposite sign: the socket is *smaller* than the shaft by
-    ``2 * clearance`` (``socket_d == shaft_d - 2 * clearance``). The
+    ``2 * clearance`` (``socket_d = shaft_d - 2 * clearance``). The
     press-fit interference comes from the shaft being oversized relative
     to the hole. The resolution machinery still calls the field
     ``clearance`` so joints share one name across the library — the
     sign convention lives in the equation above.
 
     Flange sits on z=0; the shaft rises from z=``flange_h``; the tip is
-    at z=``flange_h`` + ``shaft_h``. Publishes ``socket_d`` and a
-    ``.socket`` @property returning the matching through-hole cutter.
-    If not passed, ``clearance`` resolves from the active scope or
-    ``DEFAULT_CLEARANCES.press``. Typical FDM values are 0.05–0.15 mm.
+    at z=``flange_h`` + ``shaft_h``. ``socket_d`` is available on the
+    instance, and ``.socket`` is a @property returning the matching
+    through-hole cutter. If not passed, ``clearance`` resolves from the
+    active scope or ``DEFAULT_CLEARANCES.press``. Typical FDM values are
+    0.05–0.15 mm.
     """
 
     _clearance_category = "press"
 
     equations = [
         "shaft_d, shaft_h, flange_d, flange_h, lead_in, clearance > 0",
-        "socket_d == shaft_d - 2 * clearance",
+        "socket_d = shaft_d - 2 * clearance",
         "flange_d > shaft_d",
         "lead_in < shaft_h",
         "lead_in < shaft_d / 2",

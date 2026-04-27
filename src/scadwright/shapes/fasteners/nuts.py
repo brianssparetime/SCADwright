@@ -17,8 +17,8 @@ class HexNut(Component):
     ``HexNut.of("M3")`` classmethod for canned ISO sizes. Dimensions
     from ISO 4032. Centered on the origin, flat faces on z=0 and z=h.
 
-    Publishes ``af`` (across-flats), ``h`` (height), ``d`` (bore) for
-    convenient dimension access.
+    The caller can read ``af`` (across-flats), ``h`` (height), and
+    ``d`` (bore) off the instance.
     """
 
     spec = Param(NutSpec)
@@ -47,8 +47,8 @@ class SquareNut(Component):
     for canned ISO sizes (uses the same across-flats dimension as the
     hex nut for that size, but square cross-section).
 
-    Publishes ``af`` (across-flats / side length), ``h`` (height),
-    ``d`` (bore).
+    The caller can read ``af`` (across-flats / side length), ``h``
+    (height), and ``d`` (bore) off the instance.
     """
 
     spec = Param(NutSpec)

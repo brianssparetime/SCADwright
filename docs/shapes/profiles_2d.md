@@ -85,7 +85,7 @@ RoundedSlot(length=20, width=4, fn=16)
 
 ## `Teardrop(r, tip_angle=45, cap_h=None)`
 
-FDM-friendly teardrop for horizontal holes. A circle with a tangent-line cap rising to a point at +y; the side walls slope at `tip_angle` above horizontal so the hole prints without support. `tip_angle=45` is the classic printable-hole default. Pass `cap_h` to truncate the tip with a flat horizontal cut. Publishes `tip_height` (solved from `r` and `tip_angle`).
+FDM-friendly teardrop for horizontal holes. A circle with a tangent-line cap rising to a point at +y; the side walls slope at `tip_angle` above horizontal so the hole prints without support. `tip_angle=45` is the classic printable-hole default. Pass `cap_h` to truncate the tip with a flat horizontal cut. You can read `tip_height` (solved from `r` and `tip_angle`) off the instance.
 
 ```python
 Teardrop(r=3)                           # classic 45° tip

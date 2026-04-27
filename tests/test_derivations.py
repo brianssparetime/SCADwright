@@ -98,32 +98,74 @@ def test_derivation_uses_math_functions():
 
 
 # =============================================================================
-# Collision rules at class-definition time
+# = and == are interchangeable (collapse_eq spec)
 # =============================================================================
+#
+# Per the unified spec, `=` and `==` produce identical Components. Every
+# bare-Name target of any equation is a Param the user MAY supply
+# (consistency-checked) or omit (filled in by the resolver). There is no
+# class-def-time collision between `=` LHS and other declarations of the
+# same name; the resolver treats them as one system.
 
 
-def test_derivation_name_collides_with_param():
-    with pytest.raises(ValidationError, match="collides with Param"):
-        class C(Component):
-            x = Param(float)
-            equations = ["x = 5"]
-            def build(self): return cube(1)
+def test_assign_target_overlaps_with_explicit_param():
+    # `x = Param(float)` declares the type explicitly; the equation
+    # `x = 5` provides a value the resolver fills in if the user omits.
+    # User can omit (gets 5), supply 5 (consistency check passes), or
+    # supply 7 (consistency check fails).
+    class C(Component):
+        x = Param(float)
+        equations = ["x = 5"]
+        def build(self): return cube(1)
+
+    assert C().x == 5.0
+    assert C(x=5).x == 5.0
+    with pytest.raises(ValidationError):
+        C(x=7)
 
 
-def test_derivation_name_collides_with_auto_declared_equation_var():
-    # `a` is introduced as an equation variable by the equality (auto-declared
-    # as Param(float)); the derivation can't then steal the same name.
-    with pytest.raises(ValidationError, match="collides with Param"):
-        class C(Component):
-            equations = ["a == b + 1", "a = 5"]
-            def build(self): return cube(1)
+def test_assign_and_equality_targets_with_same_name():
+    # Both `a == b + 1` and `a = 5` constrain `a`. Solving as a system:
+    # a=5, b=4. Single consistent solution.
+    class C(Component):
+        equations = ["a == b + 1", "a = 5"]
+        def build(self): return cube(1)
+
+    c = C()
+    assert c.a == 5.0
+    assert c.b == 4.0
 
 
-def test_derivation_name_declared_twice():
-    with pytest.raises(ValidationError, match="declared twice"):
-        class C(Component):
-            equations = ["a > 0", "b = a + 1", "b = a * 2"]
-            def build(self): return cube(1)
+def test_two_assigns_same_target_solve_as_system():
+    # Two `=` lines targeting `b` form a 2-equation system in (a, b).
+    # b = a+1, b = a*2 → a=1, b=2.
+    class C(Component):
+        equations = ["a > 0", "b = a + 1", "b = a * 2"]
+        def build(self): return cube(1)
+
+    c = C()
+    assert c.a == pytest.approx(1.0)
+    assert c.b == pytest.approx(2.0)
+
+
+def test_assign_target_can_be_supplied_as_kwarg():
+    # The bare-Name target of an `=` line is a Param the user may pin.
+    class C(Component):
+        equations = ["a = b + 1"]
+        def build(self): return cube(1)
+
+    c = C(a=10, b=9)
+    assert c.a == 10.0
+    assert c.b == 9.0
+
+
+def test_assign_target_supplied_inconsistent_raises():
+    class C(Component):
+        equations = ["a = b + 1"]
+        def build(self): return cube(1)
+
+    with pytest.raises(ValidationError):
+        C(a=10, b=5)
 
 
 # =============================================================================
@@ -152,19 +194,19 @@ def test_derivation_calls_unknown_function_caught_early():
 # =============================================================================
 
 
-def test_derivation_name_error_wrapped():
-    # `undeclared_name` is neither a Param nor an earlier derivation nor a
-    # curated name. At instance time this raises NameError, wrapped in
-    # ValidationError.
+def test_undeclared_free_name_in_equation_auto_declares_as_param():
+    # Under the unified spec, free names appearing in equations are
+    # auto-declared as Params. A typo'd name therefore becomes a
+    # required Param; the user gets a runtime "missing required
+    # parameter" / "insufficient" error instead of a class-def-time one,
+    # which still points at the offending name.
     class C(Component):
         equations = ["a > 0", "b = a + undeclared_name"]
         def build(self): return cube(1)
 
     with pytest.raises(ValidationError) as exc_info:
-        C(a=5)
+        C(a=1)
     msg = str(exc_info.value)
-    assert "derivation" in msg
-    assert "b = a + undeclared_name" in msg
     assert "undeclared_name" in msg
 
 
@@ -177,7 +219,7 @@ def test_derivation_zero_division_wrapped():
     with pytest.raises(ValidationError) as exc_info:
         C(a=0)
     msg = str(exc_info.value)
-    assert "derivation" in msg
+    assert "equation" in msg
     assert "1 / a" in msg
     assert "ZeroDivisionError" in msg
 
