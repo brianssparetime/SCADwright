@@ -21,16 +21,17 @@ class TabSlot(Component):
     adds play around the slot for print tolerance. If not passed,
     ``clearance`` resolves from the active scope (``with clearances(...)``,
     Design/Component class attrs, or ``DEFAULT_CLEARANCES.finger``).
-    Slot dimensions are published as ``slot_w``, ``slot_h``, ``slot_d``.
+    Slot dimensions are available on the instance as ``slot_w``,
+    ``slot_h``, ``slot_d``.
     """
 
     _clearance_category = "finger"
 
     equations = [
         "tab_w, tab_h, tab_d, clearance > 0",
-        "slot_w == tab_w + 2 * clearance",
-        "slot_h == tab_h + clearance",
-        "slot_d == tab_d + 2 * clearance",
+        "slot_w = tab_w + 2 * clearance",
+        "slot_h = tab_h + clearance",
+        "slot_d = tab_d + 2 * clearance",
     ]
 
     def build(self):

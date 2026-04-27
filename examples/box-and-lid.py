@@ -1,15 +1,10 @@
 """Enclosure: box with a snap-on lid. Chamfered bottom edges, rounded
 vertical corners, centering lip, and 4 corner screws into pylons.
 
-Demonstrates:
-- Equations relate outer/inner dimensions so the user specifies whichever
-  they have and the framework solves the rest.
-- Derivations compute `inner_corner_r` (a max-clamped value) and
-  `pylon_positions` (a double-loop comprehension) from the Params.
-- Cross-component dimension sharing: the `Lid` takes a `Box` instance
-  as a Param and reads `box.outer_w`, `box.pylon_positions`, etc.
-- A custom transform `.chamfer_top(c=...)`.
-- Generator-style `build()`.
+Equations relate outer and inner dimensions so the user specifies
+whichever they have and the solver fills in the rest. The `Lid` takes
+a `Box` as a parameter and reads its dimensions directly. `build()`
+uses `yield` lines to emit each part separately.
 
 Run:
     python examples/box-and-lid.py
@@ -65,20 +60,20 @@ class Box(Component):
     """Open-top box with chamfered bottom edges, rounded vertical corners,
     a centering lip at the rim, and four corner screw pylons.
 
-    Publishes outer dimensions and pylon positions so a mating Lid can
-    read them directly.
+    A mating `Lid` can read the outer dimensions and pylon positions
+    off this Box directly.
     """
 
     equations = [
-        "inner_w == outer_w - 2 * wall_thk",
-        "inner_l == outer_l - 2 * wall_thk",
-        "inner_h == height - floor_thk",
+        "inner_w = outer_w - 2 * wall_thk",
+        "inner_l = outer_l - 2 * wall_thk",
+        "inner_h = height - floor_thk",
         "outer_w, outer_l, inner_w, inner_l, inner_h > 0",
         "wall_thk, floor_thk, height, pylon_od, corner_inset, lip_thk > 0",
         "corner_r, chamfer, lip_height, lip_clearance >= 0",
         "lip_thk < wall_thk",
-        "inner_corner_r = max(corner_r - wall_thk, 0.5)",                                   # derivation
-        "pylon_positions = tuple("                                                          # derivation
+        "inner_corner_r = max(corner_r - wall_thk, 0.5)",
+        "pylon_positions = tuple("
         "    (sx * (outer_w / 2 - corner_inset), sy * (outer_l / 2 - corner_inset))"
         "    for sx in (+1, -1) for sy in (+1, -1)"
         ")",

@@ -8,10 +8,10 @@ If you searched "Python OpenSCAD" or "Python parametric CAD," several other proj
 
 **How SCADwright differs:**
 
-- **Components publish dimensions.** A SolidPython part is a function that returns geometry; the caller can't ask "where are your mount holes?" without re-running the math themselves. SCADwright's `Component` classes declare their parameters via equations and constraints; every param and every equation-solved value is readable directly by the caller (e.g. `tube.od`, `bracket.rise`).
+- **Components let the caller read dimensions back.** A SolidPython part is a function that returns geometry; the caller can't ask "where are your mount holes?" without re-running the math themselves. SCADwright's `Component` classes use an `equations` list to relate their inputs; the caller can read every input and every value SCADwright filled in directly off the part (e.g. `tube.od`, `bracket.rise`).
 - **Real validation with source locations.** `cube([-5, 10, 10])` in SCADwright raises `ValidationError: cube size[0] must be non-negative, got -5.0 (at widget.py:42)`. SolidPython hands the bad value to OpenSCAD and you debug from the rendered output.
 - **Built-in shape library.** `Tube`, `Funnel`, `RoundedBox`, `FilletRing`, `Sector`, `RoundedSlot`, etc. ship with the package. SolidPython gives you the OpenSCAD primitives; reusable shapes you copy-paste between projects.
-- **Equations and solving.** SCADwright Components can declare relationships like `od == id + 2*thk` and supply any two of the three; the framework solves for the third.
+- **Equations and solving.** SCADwright Components can declare relationships like `od = id + 2*thk` and supply any two of the three; the framework solves for the third.
 - **Test infrastructure.** `tree_hash` for regression-pinning a part's geometry, and `assert_fits_in` / `assert_contains` / `assert_no_collision` for geometry assertions.
 - **Variants.** Named print/display variants are first-class instead of commented-out code blocks.
 

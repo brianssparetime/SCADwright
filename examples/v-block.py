@@ -5,16 +5,9 @@ any two of (angle, max_d, groove_depth) and the third solves. The groove
 is sized so a rod of diameter max_d sits tangent to both V faces with
 its center at the block's top surface.
 
-Demonstrates (intermediate scope):
-- Trig equations do the heavy lifting: `sin` relates groove angle to
-  the cradled rod's diameter; `tan` derives the opening width. Specify
-  any two primary vars, the rest solve.
-- Cross-constraints encode physical bounds without a method.
-- Three concrete subclasses, each pinned by a different pair.
-- Every dimension flows through the `equations` list — no intermediate
-  Param declarations, no derivations needed (all relationships are
-  scalar algebra).
-- Print and display `@variant`s.
+Trig inside `equations` (`sin`, `tan`) relates groove angle, rod
+diameter, and groove opening width. Three concrete subclasses each pin
+a different pair of values.
 
 Run:
     python examples/v-block.py
@@ -38,14 +31,14 @@ class VBlock(Component):
 
     Specify any two of (angle, max_d, groove_depth); the third is solved
     by the trig relationship. `contact_width` (the opening width at the
-    top of the groove) is always derived.
+    top of the groove) is always computed.
     """
 
     equations = [
-        # V-groove trig -- any two of (angle, max_d, groove_depth) solve the third:
-        "half_angle == angle / 2",
-        "max_d == 2 * groove_depth * sin(half_angle * pi / 180)",
-        "contact_width == 2 * groove_depth * tan(half_angle * pi / 180)",
+        # V-groove trig: any two of (angle, max_d, groove_depth) solve the third.
+        "half_angle = angle / 2",
+        "max_d = 2 * groove_depth * sin(half_angle * pi / 180)",
+        "contact_width = 2 * groove_depth * tan(half_angle * pi / 180)",
         # positivity:
         "angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0",
         # physical bounds:

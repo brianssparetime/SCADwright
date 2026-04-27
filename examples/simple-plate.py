@@ -1,6 +1,6 @@
-"""A plate with two holes -- the simplest possible scadwright script.
+"""A plate with two holes. The simplest possible scadwright script.
 
-No Components, no Design, no equations -- just primitives, booleans,
+No Components, no Design, no equations: just primitives, booleans,
 and a render call. This is Stage 1 from docs/organizing_a_project.md.
 
 Run:

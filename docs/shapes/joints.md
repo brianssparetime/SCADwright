@@ -1,6 +1,6 @@
 # Joints
 
-Parametric joints for press-fits, snap-fits, finger joints, and alignment. Each pair-Component publishes a `.socket` or `.slot` property that returns a cutter sized for the matching recess — subtract it from the mating part.
+Parametric joints for press-fits, snap-fits, finger joints, and alignment. Each pair-Component has a `.socket` or `.slot` property that returns a cutter sized for the matching recess — subtract it from the mating part.
 
 ```python
 from scadwright.shapes import (
@@ -18,7 +18,7 @@ from scadwright.shapes import (
 
 ### `TabSlot(tab_w, tab_h, tab_d)`
 
-Finger joint tab. The Component emits the tab (positive); read `.slot` for the matching pocket cutter (sized to tab + clearance). `slot_w`, `slot_h`, `slot_d` are also published if you need the raw dimensions. `clearance` resolves from the project's `finger` category unless passed explicitly.
+Finger joint tab. The Component emits the tab (positive); read `.slot` for the matching pocket cutter (sized to tab + clearance). You can also read `slot_w`, `slot_h`, `slot_d` off the instance if you need the raw dimensions. `clearance` resolves from the project's `finger` category unless passed explicitly.
 
 ```python
 tab = TabSlot(tab_w=5, tab_h=3, tab_d=10)
@@ -49,7 +49,7 @@ SnapHook(arm_length=10, hook_depth=2, hook_height=2, thk=1.5, width=5)
 
 ### `SnapPin(d, h, slot_width, slot_depth, barb_depth, barb_height)`
 
-Split-tined compliant pin. A cylindrical pin with a vertical slot cut through its tip, dividing the top portion into two flexible tines. Each tine carries an outward barb near the top; the barbs compress inward during insertion through a matching hole, then spring back to retain the pin on the far side. Publishes `socket_d` (= `d + 2*clearance`) and a `.socket` @property returning the through-hole cutter. `clearance` resolves from the project's `snap` category (default 0.2 mm) unless passed explicitly.
+Split-tined compliant pin. A cylindrical pin with a vertical slot cut through its tip, dividing the top portion into two flexible tines. Each tine carries an outward barb near the top; the barbs compress inward during insertion through a matching hole, then spring back to retain the pin on the far side. `socket_d` (= `d + 2*clearance`) is readable on the instance, and `.socket` is a @property returning the through-hole cutter. `clearance` resolves from the project's `snap` category (default 0.2 mm) unless passed explicitly.
 
 ```python
 pin = SnapPin(d=5, h=15, slot_width=1, slot_depth=10, barb_depth=0.8, barb_height=1.5)
@@ -64,7 +64,7 @@ sheet = difference(sheet, pin.socket.translate([x, y, 0]).through(sheet))
 
 ### `AlignmentPin(d, h, lead_in)`
 
-Cylindrical pin with a tapered lead-in tip. For location only (not load-bearing): used in pairs at well-defined positions to constrain two parts' relative orientation while other features (screws, clips) provide retention. Publishes `socket_d` (= `d + 2*clearance`) and a `.socket` @property returning the matching blind-hole cutter. `clearance` resolves from the project's `sliding` category (default 0.1 mm) unless passed explicitly.
+Cylindrical pin with a tapered lead-in tip. For location only (not load-bearing): used in pairs at well-defined positions to constrain two parts' relative orientation while other features (screws, clips) provide retention. `socket_d` (= `d + 2*clearance`) is readable on the instance, and `.socket` is a @property returning the matching blind-hole cutter. `clearance` resolves from the project's `sliding` category (default 0.1 mm) unless passed explicitly.
 
 ```python
 pin = AlignmentPin(d=4, h=8, lead_in=1)
@@ -79,7 +79,7 @@ mating_part = difference(mating_part, pin.socket.translate([x, y, 0]))
 
 Flanged press-fit peg. A shaft with a broader flange at its base and a tapered lead-in at its tip. The flange seats against one sheet; the shaft passes through a matching hole in the opposing sheet and holds by friction.
 
-Here, `clearance` carries the opposite sign: the socket is *smaller* than the shaft by `2 * clearance` (the shaft's oversize gives the press fit). The name stays `clearance` so the resolution machinery works uniformly across all joints; the sign convention lives in the `socket_d == shaft_d - 2 * clearance` equation. `clearance` resolves from the project's `press` category (default 0.1 mm) unless passed explicitly.
+Here, `clearance` carries the opposite sign: the socket is *smaller* than the shaft by `2 * clearance` (the shaft's oversize gives the press fit). The name stays `clearance` so the resolution machinery works uniformly across all joints; the sign convention lives in the `socket_d = shaft_d - 2 * clearance` equation. `clearance` resolves from the project's `press` category (default 0.1 mm) unless passed explicitly.
 
 ```python
 peg = PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)

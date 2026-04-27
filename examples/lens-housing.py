@@ -1,10 +1,10 @@
 """Lens housing with stacked optical elements and a matching clip-on hood.
 
-Demonstrates the recommended multi-part layout (see
-docs/organizing_a_project.md): generic Components live in the REUSABLE
-zone with flat Params (no project-specific defaults); the specific
-design for an M57-throat camera lives in the CONCRETE zone as thin
-subclasses that fill in measurements as class attributes.
+Shows the recommended multi-part layout (see
+docs/organizing_a_project.md). Generic Components live in the REUSABLE
+zone with no project-specific defaults; the specific design for an
+M57-throat camera lives in the CONCRETE zone as thin subclasses that
+fill in measurements as class attributes.
 
 Run:
     python examples/lens-housing.py                                  # print variant (default)
@@ -30,8 +30,8 @@ from scadwright.shapes import FilletRing, Funnel, Tube
 
 # spacing is from flange (z=0) to element center; +z = toward object.
 # `face_z_top`, `face_z_bot`, `constricted`, `throat_dia_required` are
-# precomputed by `element(...)` so the housing's equations-list can
-# reference them without calling methods.
+# precomputed by `element(...)` so the housing's `equations` list can
+# reference them as attributes directly.
 Element = namedtuple(
     "Element",
     "dia edge_thk spacing face_z_top face_z_bot constricted throat_dia_required",
@@ -63,11 +63,10 @@ class ElementHolder(Component):
 
 
 def element(*, dia, edge_thk, spacing):
-    """Build an `Element` with geometric derived fields populated.
+    """Build an `Element` with its computed geometric fields filled in.
 
-    Derived fields use `ElementHolder` grip geometry so the housing can reason
-    about each element purely through attribute access (keeping the lens
-    housing's equations list free of classmethod calls).
+    The computed fields use `ElementHolder` grip geometry so the housing
+    can reason about each element through attribute access.
     """
     half = (edge_thk + 2 * ElementHolder.GRIP_WIDTH) / 2
     return Element(
@@ -100,16 +99,16 @@ def trunc_fillet_ring(*, id, od, base_angle, slant="outwards", rim_width):
 
 class LensHousing(Component):
     """Generic lens barrel: lower recess + flange + upper housing (narrow
-    or funnel-widened) + element holders + front fillet. Publishes outer
-    dimensions and hood cone angle so a hood Component can mate without
-    shared scope."""
+    or funnel-widened) + element holders + front fillet. A matching hood
+    Component can read the outer dimensions and hood cone angle off this
+    housing to mate without shared scope."""
 
     FRONT_FILLET_OFFSET = 5.0   # aperture rim inset from the front element's grip ID
 
     elements = Param(tuple)
     equations = [
-        "lower_housing_od == lower_housing_id + barrel_thk",
-        "hood_base_angle == 90 - fov_angle / 2",
+        "lower_housing_od = lower_housing_id + barrel_thk",
+        "hood_base_angle = 90 - fov_angle / 2",
         "lower_housing_od, lower_housing_id, lower_housing_len, barrel_thk > 0",
         "flange_flange_od, flange_flange_len, fov_angle, hood_base_angle > 0",
         "unconstricted = tuple(e for e in elements if not e.constricted)",
@@ -166,16 +165,16 @@ class LensHousing(Component):
 
 class LensHood(Component):
     """Generic clip-on hood sized by a paired housing. `housing_upper_od`
-    and `hood_base_angle` come from the housing instance at construction
-    time; the rest are hood-specific. Built in its mounted orientation --
-    coupler at z=0, funnel flaring upward; the print variant flips it."""
+    and `hood_base_angle` come from the housing; the rest are hood-specific.
+    Built in its mounted orientation: coupler at z=0, funnel flaring upward.
+    The print variant flips it."""
 
     equations = [
         "housing_upper_od, hood_base_angle, wall_thk, hood_length, coupler_overlap > 0",
         "hood_clr >= 0",
-        "id_coupler == housing_upper_od + hood_clr",
-        "od_coupler == id_coupler + 2 * wall_thk",
-        "flare_od == housing_upper_od + 2 * hood_length * tan((90 - hood_base_angle) * pi / 180)",
+        "id_coupler = housing_upper_od + hood_clr",
+        "od_coupler = id_coupler + 2 * wall_thk",
+        "flare_od = housing_upper_od + 2 * hood_length * tan((90 - hood_base_angle) * pi / 180)",
     ]
 
     def build(self):                                       # framework hook: required; returns the shape

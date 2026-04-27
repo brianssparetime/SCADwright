@@ -55,7 +55,7 @@ UShapeChannel(wall_thk=2, channel_length=20, channel_width=10)
 UShapeChannel(wall_thk=2, channel_length=20, channel_width=10, n_shape=True)
 ```
 
-Publishes `bottom_width`, `outer_width`, `outer_height`. Declares a `channel_opening` anchor at the center of the open face.
+You can read `bottom_width`, `outer_width`, `outer_height` off the instance. Declares a `channel_opening` anchor at the center of the open face.
 
 ## `RectTube(outer_w, outer_d, inner_w, inner_d, wall_thk, h)`
 

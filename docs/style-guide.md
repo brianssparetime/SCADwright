@@ -21,27 +21,28 @@ Use these features whenever they fit. They exist to eliminate boilerplate and ma
 
 ### Declare dimensional parameters with `equations`
 
-Float parameters that have arithmetic relationships belong in `equations`. Variables are auto-declared as `Param(float)` -- no manual `Param()` needed.
+Float parameters that have arithmetic relationships belong in `equations`. Names are auto-declared as `Param(float)` — no manual `Param()` needed.
 
 ```python
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",
+        "od = id + 2*thk",
         "h, id, od, thk > 0",
     ]
 ```
 
-Specify any two of (id, od, thk) and the solver fills in the third. Constraints (`> 0`) attach validators automatically.
+Specify any two of (id, od, thk) and SCADwright fills in the third. Bound rules (`> 0`) declare the parameter and attach validators in one step.
 
-`equations` accepts five forms, distinguished by AST shape — the framework classifies each line automatically:
+Each line in `equations` is one of two things:
 
-- **Equalities** (`"od == id + 2*thk"`): drive the solver. Sympy functions like `cos`, `sqrt`, `pi` are available — useful for trig (`"base_r == pitch_r * cos(pressure_angle * pi / 180)"`).
-- **Per-Param constraints** (`"x > 0"`, `"x, y, z >= -5"`): a plain number on the right; compile to validators on the listed Params and fire on assignment.
-- **Cross-constraints** (`"id < od"`, `"cap_height <= 2 * sphere_r"`): an expression (over other Params) on the right; evaluated after all Params are set.
-- **Derivations** (`"pitch = spec.d + 2 * (clearance + wall_thk)"`, single `=`, plain name on the left): the expression on the right is evaluated in a restricted namespace at construction; the result is stored on the instance. Use for loop-generated tuples, namedtuple-field arithmetic, conditional scalars — anything a scalar sympy equation can't express.
-- **Predicates** (`"len(size) == 3"`, `"spec.series in {...}"`, `"all(e.dia <= throat for e in elements)"`): arbitrary boolean Python; evaluated at construction, a falsy result raises `ValidationError`. Use for tuple-length checks, XOR between options, element-wise loops, or any check that sympy can't reason about.
+- **An equation.** `"od = id + 2*thk"`, `"len(size) = 3"`, `"max(a, b) = foo"`, `"x * len(y) = c"`. Either side can be any expression. SCADwright fills in any value the system can solve from what you supplied; anything you over-supplied gets consistency-checked. Subscript and attribute expressions like `arr[0]` or `spec.foo` are reads — the resolver consistency-checks them but never mutates them.
+- **A rule.** `"id < od"`, `"all(s > 2*r for s in size)"`. Checked at construction; a falsy result raises `ValidationError`. Bound rules with a numeric bound (`"x > 0"`) compile to a per-Param validator that fires on direct assignment too.
 
-Optional inputs use the `?` sigil. Prefix any variable with `?` in the equations list (`"?fillet > 0"`) and the caller may omit it; when omitted, its value is `None` and any constraint referencing it skips. `?` is not allowed in `==` equalities or on the left side of a derivation. For the conditional idiom, write `?x if ?x else y` when the input has a positivity constraint; reach for the explicit `?x is None` form only when `0` is a legitimate value or you specifically need specified-ness (XOR predicates).
+Comma broadcasts: `"x, y > 0"` is two rules; `"x, y = 5"` is two equations.
+
+`=` and `==` are accepted and mean the same thing. Prefer `=`.
+
+**Optional inputs.** Prefix a name with `?` in the equations list (`"?fillet > 0"`) to make it optional. If omitted, the value is `None` and any rule referencing it skips. `?` can't appear on a name that's computed by another line. For the conditional idiom, write `?x if ?x else y` when the input has a positivity constraint; reach for the explicit `?x is None` form only when `0` or `False` is a legitimate value.
 
 ### Let constraints declare float parameters
 
@@ -57,7 +58,7 @@ class FilletRing(Component):
     ]
 ```
 
-`params = "..."` is the rare escape for floats that are genuinely unbounded *and* don't appear in any equation. See [Components → Declaring parameters](components.md#declaring-parameters).
+`params = "..."` is the rare escape for floats that are genuinely unbounded *and* don't appear in any equation. See [Components → Other kinds of parameters](components.md#other-kinds-of-parameters).
 
 ### Declare anchors at class scope with `anchor()`
 
@@ -105,9 +106,9 @@ part = difference(box, cylinder(h=10, r=3).through(box))
 
 Eliminates manual epsilon constants. Call after positioning the cutter.
 
-### Use generator-style `build()` for multi-part Components
+### Use `yield`-form `build()` for multi-part Components
 
-Yield parts; the framework auto-unions them:
+Yield each part; SCADwright auto-unions them:
 
 ```python
 def build(self):
@@ -224,7 +225,7 @@ equations = ["w, h > 0"]
 
 For a genuinely-unbounded float that doesn't appear in any equation (rare — signed offsets, freely-scaling coefficients), use `params = "name"`. But first check whether a constraint actually does apply — it usually does.
 
-### Don't use a method where a derivation works
+### Don't use a method where an equation works
 
 ```python
 # Wrong (imperative loop in a helper method):
@@ -234,38 +235,38 @@ def _compute_positions(self):
         for i in range(self.count)
     )
 
-# Right (derivation in the equations list):
+# Right (equation in `equations`):
 equations = [
     "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))",
 ]
 ```
 
-Derivations cover loop-generated tuples, namedtuple-field arithmetic (`spec.d + ...`), and conditional scalars (`(a + b) if cond else c`). Reach for `equations` first.
+Equations cover loop-generated tuples, namedtuple-field arithmetic (`spec.d + ...`), and conditional scalars (`(a + b) if cond else c`). Reach for `equations` first.
 
 ### Don't pack two ideas into one equation
 
-If a predicate or derivation is carrying both a computed value and a check on it, split them with a named derivation. Each string should narrate as a single sentence.
+If a line is carrying both a computed value and a check on it, split them so each line is a single idea: one equation that names the intermediate, one rule that uses it.
 
 ```python
 # Wrong (one string, two ideas: which edge is active + every side fits it)
 equations = [
     "?fillet > 0", "?chamfer > 0",
-    "(?fillet is None) != (?chamfer is None)",
+    "exactly_one(?fillet, ?chamfer)",
     "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",
 ]
 
-# Right (derivation names the active edge; predicate checks size)
+# Right (one equation gives the active edge a name; one rule checks size)
 equations = [
     "?fillet > 0", "?chamfer > 0",
-    "(?fillet is None) != (?chamfer is None)",
+    "exactly_one(?fillet, ?chamfer)",
     "edge = ?fillet if ?fillet else ?chamfer",
     "all(s > 2 * edge for s in size)",
 ]
 ```
 
-Adding a derivation is cheap — one more string, no boilerplate — and the DSL lives inside Python strings, so nesting doesn't get IDE support. Split any line where a reader would need to parse a sub-expression before they can parse the whole.
+Adding an extra line is cheap (one more string, no boilerplate), and the equation expressions live inside Python strings so nested expressions don't get IDE support. Split any line where a reader would need to parse a sub-expression before they can parse the whole.
 
-### Don't hand-code what a predicate does
+### Don't hand-code what a rule line does
 
 ```python
 # Wrong (imperative validation after construction):
@@ -274,11 +275,27 @@ def _validate(self):
         if e.constricted and e.dia > self.throat:
             raise ValueError(...)
 
-# Right (predicate in the equations list):
+# Right (rule line in equations):
 equations = [
     "all(not e.constricted or e.dia <= throat for e in elements)",
 ]
 ```
+
+
+### Don't define `setup()` on a Component
+
+```python
+# Wrong (imperative computation in a hook method):
+def setup(self):
+    self.pitch = self.spec.d + 2 * (self.clearance + self.wall_thk)
+
+# Right (equation in `equations`):
+equations = [
+    "pitch = spec.d + 2 * (clearance + wall_thk)",
+]
+```
+
+Anything `setup()` was used for — computed values, validation, multi-step bookkeeping — has a place in `equations`. The lint rule `no-component-setup` enforces this on user-facing Components.
 
 ### Don't use `.translate()` for single-axis offsets
 
@@ -306,6 +323,6 @@ Rules currently enforced:
 - `no-module-eps` — module-level `EPS = ...` assignments. Prefer `.through(parent)` for cutters or `.attach(fuse=True)` for joints; when a manual epsilon is genuinely unavoidable (non-axis-aligned cutters, hull-slab layer thickness), scope it locally inside the function that needs it.
 - `no-param-float` — `Param(float)` with no `default=` argument. Floats belong in `equations` or `params=`. `Param(float, default=None)` is the deliberate opt-out pattern and is allowed.
 - `translate-single-axis` — `.translate([x, 0, 0])` (or any permutation with two literal zeros). Use the `.right/.left/.up/.down/.forward/.back` directional helper.
-- `no-component-setup` — `def setup(self):` on a `Component` subclass. Move computed values to derivations in `equations` (single `=`) and validation to predicates. The framework hook still exists as an internal escape; user-facing Components must be declarative.
+- `no-component-setup` — `def setup(self):` on a `Component` subclass. Move computed values to equations in `equations` (`x = expr`) and checks to rule lines (comparisons or boolean expressions). The framework hook still exists as an internal escape; user-facing Components must declare their inputs and rules in `equations`.
 
-The linter is intentionally conservative: it only flags patterns that have a clear correct alternative. Style-guide rules that require semantic understanding (no baked-in defaults on *reusable* Components, preferring derivations over imperative helpers, etc.) aren't mechanically checkable and live as prose-only guidance.
+The linter is intentionally conservative: it only flags patterns that have a clear correct alternative. Style-guide rules that require semantic understanding (no baked-in defaults on *reusable* Components, preferring `equations` over imperative helpers, etc.) aren't mechanically checkable and live as prose-only guidance.

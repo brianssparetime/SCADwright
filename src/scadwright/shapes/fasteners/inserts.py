@@ -20,7 +20,8 @@ class HeatSetPocket(Component):
     pocket is a cylinder starting at z=0, extending upward. Subtract
     from a parent to create the pocket.
 
-    Publishes ``hole_d`` and ``hole_depth`` for downstream sizing.
+    The caller can read ``hole_d`` and ``hole_depth`` off the instance
+    for downstream sizing.
     """
 
     spec = Param(InsertSpec)
@@ -48,7 +49,8 @@ class CaptiveNutPocket(Component):
     ``channel_axis`` controls which direction the insertion slot
     extends: ``"x"`` (default) or ``"y"``.
 
-    Publishes ``af`` (across-flats) for downstream sizing.
+    The caller can read ``af`` (across-flats) off the instance for
+    downstream sizing.
     """
 
     spec = Param(NutSpec)

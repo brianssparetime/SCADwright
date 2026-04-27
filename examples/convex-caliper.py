@@ -1,7 +1,7 @@
 """Convex caliper: slips over a measuring caliper's jaws so the caliper
-can span a part whose outer faces are both concave -- the central
+can span a part whose outer faces are both concave (the central
 thickness of a biconcave lens, or the web of material left between two
-opposing countersunk holes drilled from each side of a plate. A plain
+opposing countersunk holes drilled from each side of a plate). A plain
 jaw tip can't seat on either surface; the spherical-cap feeler nests
 into the concavity so the caliper ends up reading the distance between
 the feelers' outer domes.
@@ -34,7 +34,7 @@ class ConvexCaliper(Design):
         neck = cylinder(r=clip.bottom_width / 2, h=15).attach(clip)
         cap = SphericalCap(cap_dia=clip.bottom_width, cap_height=5).attach(neck)
         head = union(clip, neck, cap)
-        # Two mirrored heads on the bed -- one slides onto each caliper jaw.
+        # Two mirrored heads on the bed, one for each caliper jaw.
         spread = clip.outer_width / 2 + 10
         return union(head.right(spread), head.left(spread))
 

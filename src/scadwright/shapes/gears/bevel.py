@@ -27,10 +27,10 @@ class BevelGear(Component):
         "pressure_angle <= 45",
         "cone_angle > 0",
         "cone_angle < 90",
-        "pitch_r == module * teeth / 2",
-        "base_r == pitch_r * cos(pressure_angle * pi / 180)",
-        "outer_r == pitch_r + module",
-        "root_r == pitch_r - 1.25 * module",
+        "pitch_r = module * teeth / 2",
+        "base_r = pitch_r * cos(pressure_angle * pi / 180)",
+        "outer_r = pitch_r + module",
+        "root_r = pitch_r - 1.25 * module",
     ]
     teeth = Param(int, min=6)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;

@@ -167,8 +167,8 @@ part.only()                # !part — render ONLY this subtree
 ```python
 class Tube(Component):
     equations = [
-        "od == id + 2*thk",                # solver equality; variables auto-declared as floats
-        "h, id, od, thk > 0",              # per-Param constraints
+        "od = id + 2*thk",                 # equation; bare names auto-declared as floats
+        "h, id, od, thk > 0",              # rule (positivity bound on each name)
     ]
 
     def build(self):
@@ -182,44 +182,53 @@ t.od                                      # readable without building
 render(t, "tube.scad")                    # build runs now, caches result
 ```
 
-### `equations` list — five forms, classified by AST shape
+### `equations` list — equations and rules
+
+Each line is one of two things:
 
 ```python
-# 1. Solver equality (drives sympy; any one missing is solved):
-"od == id + 2*thk"
-
-# 2. Per-Param constraint (a number on the right; attaches a validator):
-"w, h, thk > 0"                            # comma-expansion OK
-
-# 3. Cross-constraint (Param-vs-Param inequality):
-"id < od"
-
-# 4. Derivation (single =, plain name on the left, any Python expression on the right):
+# Equation — write what's true about your part. Either side can be any
+# expression. SCADwright fills in any value the system can solve from
+# what you supplied, and checks anything you over-supplied for agreement.
+# `=` and `==` are accepted and mean the same thing.
+"od = id + 2*thk"
 "pitch = spec.d + 2 * (clearance + wall_thk)"
 "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))"
+"max(a, b) = foo"                          # solves foo from a, b
+"x * len(y) = c"                           # solves x from y, c
+"len(size) = 3"                            # consistency-check on size
+"spec.foo = 5"                             # consistency-check on spec.foo
 
-# 5. Predicate (boolean; raises ValidationError if false):
-"len(size) == 3"
-"tray_depth < spec.length"
+# Rule — a comparison, a boolean expression, or a call returning bool.
+# Checked at construction; falsy raises ValidationError.
+"h, id, od, thk > 0"                       # bound rules attach per-Param validators too
+"id < od"
 "all(e.dia <= throat for e in elements)"
 
-# Optional input: prefix a variable with `?` to let the caller omit it.
-# When omitted, the value is None. Constraints skip; predicates/derivations see None.
-# Not allowed in `==` equalities or on the left of a derivation.
-"?fillet > 0"                                   # omit fillet and this skips
-"(?fillet is None) != (?chamfer is None)"       # XOR: exactly one must be set
-"edge = ?fillet if ?fillet else ?chamfer"       # pick whichever is set
+# Comma broadcasts apply to either form:
+"x, y > 0"                                 # two rules
+"x, y = 5"                                 # two equations
+
+# Optional input: prefix a name with `?` to let the caller omit it.
+# When omitted, the value is None and any rule referencing it skips.
+# `?` can't appear on a name that's computed by another line.
+"?fillet > 0"
+"exactly_one(?fillet, ?chamfer)"           # one and only one is set
+"at_least_one(?a, ?b)"                     # one or more is set
+"at_most_one(?a, ?b, ?c)"                  # zero or one is set
+"all_or_none(?a, ?b)"                      # all are set or none are
+"edge = ?fillet if ?fillet else ?chamfer"  # pick whichever is set
 ```
 
-Derivations and predicates see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`/math funcs) plus instance Params and earlier derivations. Both run after the solver and cross-constraints; predicates run after derivations.
+Order doesn't matter — the resolver iterates until everything resolves. Equations see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`, cardinality helpers, math funcs) plus the Component's Params.
 
 ### Declaring params
 
 ```python
-# 1. equations (primary) — auto-declares floats, solves, constrains
+# 1. equations (primary) — auto-declares floats, solves, validates
 equations = [
-    "od == id + 2*thk",                # equality feeds the solver
-    "h, id, od, thk > 0",              # constraint auto-declares + validates
+    "od = id + 2*thk",                 # equation; SCADwright fills in or checks
+    "h, id, od, thk > 0",              # bound rule auto-declares + validates
     "base_angle > 0", "base_angle < 90",
 ]
 
@@ -236,7 +245,7 @@ mount = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
 tip   = anchor(at=(0, 0, 10), normal=(0, 0, 1))
 ```
 
-Equations require `pip install 'scadwright[equations]'` (sympy). Components with equations, derivations, or predicates are frozen after construction.
+Equations require `pip install 'scadwright[equations]'` (sympy). Components are frozen after construction.
 
 ### Composite build(): yield parts, auto-unioned
 

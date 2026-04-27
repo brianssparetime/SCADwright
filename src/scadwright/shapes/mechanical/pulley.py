@@ -39,10 +39,10 @@ class GT2Pulley(_BeltPulley):
 
     equations = [
         "bore_d, belt_width > 0",
-        "pitch_d == teeth * 2.0 / pi",
-        "od == pitch_d + 1.0",
-        "flange_d == od + 2.0",
-        "flange_h == 0.8",
+        "pitch_d = teeth * 2.0 / pi",
+        "od = pitch_d + 1.0",
+        "flange_d = od + 2.0",
+        "flange_h = 0.8",
     ]
 
 
@@ -55,8 +55,8 @@ class HTDPulley(_BeltPulley):
 
     equations = [
         "bore_d, belt_width, pitch > 0",
-        "pitch_d == teeth * pitch / pi",
-        "od == pitch_d + 1.5",
-        "flange_d == od + 2.0",
-        "flange_h == 1.0",
+        "pitch_d = teeth * pitch / pi",
+        "od = pitch_d + 1.5",
+        "flange_d = od + 2.0",
+        "flange_h = 1.0",
     ]

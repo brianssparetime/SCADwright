@@ -44,8 +44,8 @@ class SphericalCap(Component):
     """
 
     equations = [
-        "cap_r == cap_dia / 2",
-        "cap_r**2 == cap_height * (2 * sphere_r - cap_height)",
+        "cap_r = cap_dia / 2",
+        "cap_r**2 = cap_height * (2 * sphere_r - cap_height)",
         "cap_height, cap_dia, cap_r, sphere_r > 0",
         "cap_height <= 2 * sphere_r",
     ]

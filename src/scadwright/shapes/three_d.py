@@ -22,7 +22,7 @@ class Tube(Component):
     """
 
     equations = [
-        "od == id + 2*thk",
+        "od = id + 2*thk",
         "h, id, od, thk > 0",
     ]
 
@@ -40,8 +40,8 @@ class Funnel(Component):
     """
 
     equations = [
-        "bot_od == bot_id + 2*thk",
-        "top_od == top_id + 2*thk",
+        "bot_od = bot_id + 2*thk",
+        "top_od = top_id + 2*thk",
         "h, thk, bot_id, bot_od, top_id, top_od > 0",
     ]
 
@@ -136,16 +136,16 @@ class Capsule(Component):
 
     ``length`` is the total end-to-end distance along +z (hemispheres
     included); ``r`` is the radius of the hemispheres and the cylindrical
-    body. The straight-section height ``straight_length`` is published
-    (solved from ``length`` and ``r``). ``base`` at z=0 and ``tip`` at
-    z=length are published as anchors, pointing outward in ±z.
+    body. The straight-section height ``straight_length`` is computed at
+    construction from ``length`` and ``r``. Anchors ``base`` (z=0) and
+    ``tip`` (z=length) point outward in ±z.
 
     Always built along z, like Tube/Funnel/Helix/etc. For a horizontal
     capsule, rotate the result: ``Capsule(r=3, length=20).rotate([0, 90, 0])``.
     """
 
     equations = [
-        "straight_length == length - 2 * r",
+        "straight_length = length - 2 * r",
         "r, length > 0",
         "straight_length > 0",
     ]
@@ -171,8 +171,8 @@ class RectTube(Component):
     """
 
     equations = [
-        "outer_w == inner_w + 2 * wall_thk",
-        "outer_d == inner_d + 2 * wall_thk",
+        "outer_w = inner_w + 2 * wall_thk",
+        "outer_d = inner_d + 2 * wall_thk",
         "h, outer_w, outer_d, inner_w, inner_d, wall_thk > 0",
     ]
 
@@ -249,7 +249,7 @@ class Wedge(Component):
     """
 
     # `?fillet` auto-declares as Param(float, default=None); the
-    # constraints skip silently when it is unset.
+    # rules skip silently when it is unset.
     equations = [
         "base_w, base_h, thk > 0",
         "?fillet > 0",
@@ -306,9 +306,9 @@ class UShapeChannel(Component):
     """
 
     equations = [
-        "outer_width == channel_width + 2 * wall_thk",
-        "outer_height == channel_height + wall_thk",
-        "bottom_width == outer_width",
+        "outer_width = channel_width + 2 * wall_thk",
+        "outer_height = channel_height + wall_thk",
+        "bottom_width = outer_width",
         "channel_width, channel_height, outer_width, outer_height, wall_thk, channel_length > 0",
     ]
     n_shape = Param(bool, default=False)

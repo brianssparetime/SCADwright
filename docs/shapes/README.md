@@ -103,7 +103,7 @@ ISO metric data tables for M2–M12. Spec-driven Components offer `Cls.of("M5")`
 
 ### [Gears and motion](gears.md)
 
-Involute tooth profiles with published pitch radii.
+Involute tooth profiles; you can read pitch radii off each gear.
 
 - [`SpurGear`](gears.md#spurgearmodule-teeth-h) — involute spur gear
 - [`RingGear`](gears.md#ringgearmodule-teeth-h-rim_thk) — internal gear: teeth on the inside of a ring

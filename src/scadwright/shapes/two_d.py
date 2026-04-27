@@ -3,7 +3,8 @@
 Naming convention:
 - lowercase factory functions for simple parametric shapes (rounded_rect, regular_polygon).
 - Capitalized Component classes for shapes with non-trivial parameter logic
-  or multiple useful published attributes (Sector, Arc, RoundedEndsArc, RoundedSlot).
+  or computed attributes worth reading off the instance (Sector, Arc,
+  RoundedEndsArc, RoundedSlot).
 """
 
 from __future__ import annotations
@@ -86,8 +87,8 @@ class Arc(Component):
     """Annular ring segment: a band between r-width/2 and r+width/2 from `angles[0]` to `angles[1]`."""
 
     equations = [
-        "inner_r == r - width / 2",
-        "outer_r == r + width / 2",
+        "inner_r = r - width / 2",
+        "outer_r = r + width / 2",
         "r, width > 0",
     ]
     angles = Param(tuple)
@@ -126,7 +127,7 @@ class RoundedSlot(Component):
     """
 
     equations = [
-        "radius == width / 2",
+        "radius = width / 2",
         "length, width > 0",
     ]
 
@@ -154,11 +155,11 @@ class Teardrop(Component):
 
     ``cap_h`` optionally truncates the tip with a horizontal cut
     (useful when the remaining point is still unprintable overhead).
-    ``tip_height`` is published (solved from ``r`` and ``tip_angle``).
+    ``tip_height`` is computed at construction from ``r`` and ``tip_angle``.
     """
 
     equations = [
-        "tip_height == r / cos(tip_angle * pi / 180)",
+        "tip_height = r / cos(tip_angle * pi / 180)",
         "r > 0",
         "tip_angle > 0",
         "tip_angle < 90",

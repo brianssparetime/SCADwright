@@ -114,7 +114,7 @@ with clearances(Clearances(sliding=0.3)):          # outer scope
 `PressFitPeg` uses `clearance` to mean *interference* — the shaft is oversized relative to its hole. Internally:
 
 ```
-socket_d == shaft_d - 2 * clearance
+socket_d = shaft_d - 2 * clearance
 ```
 
 The sign flips, but the name stays `clearance` so the resolution machinery works uniformly across all joints. See the `PressFitPeg` docstring for the geometric detail.

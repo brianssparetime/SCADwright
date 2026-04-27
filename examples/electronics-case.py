@@ -2,21 +2,14 @@
 Pi, Arduino, etc.). Base with standoffs at the PCB mount holes, port
 cutouts matching the PCB's connectors, and a screw-on lid with vents.
 
-Demonstrates (complex scope):
-- Spec namedtuples (`PCBSpec`, `PortSpec`) as data contracts between a
-  generic Component and a concrete design.
-- Constraint equations on case Params; derivations compute `inner_size`,
-  `outer_size`, `pcb_top_z`, and a loop-generated `mount_positions`
-  tuple from PCB fields and clearances — all in the `equations` list.
-- Cross-Component publishing: `CaseBase`'s derived attributes flow to
-  `CaseLid` through a `Param(CaseBase)`.
-- Three custom transforms (`port_cutout`, `countersunk_hole`,
-  `vent_slot_array`) applied repeatedly.
-- Multi-instantiation driven by spec data: N standoffs from
-  `pcb.mount_holes`, M port cutouts from `pcb.ports`.
-- A `Design` with print and display variants — `print_base` and
-  `print_lid` are the bed-ready orientations; `display` shows the
-  assembled case with a stand-in PCB.
+A `PCBSpec` and `PortSpec` (plain namedtuples) carry all the board's
+dimensions. Swapping one spec for another (an Arduino in place of the
+Pi, for instance) produces a valid case with no Component changes.
+Three custom transforms (`port_cutout`, `countersunk_hole`,
+`vent_slot_array`) are applied once per hole, port, or vent. The lid
+reads the base's dimensions off the base instance. `print_base` and
+`print_lid` are bed-ready orientations; `display` shows the assembled
+case with a stand-in PCB.
 
 Run:
     python examples/electronics-case.py                          # default = display
@@ -35,7 +28,7 @@ from scadwright.transforms import transform
 
 
 # =============================================================================
-# REUSABLE: data contracts, custom verbs, generic Components
+# REUSABLE: specs, custom transforms, generic Components
 # =============================================================================
 
 
@@ -50,7 +43,7 @@ PCBSpec = namedtuple(
 
 
 def pcb_spec(*, size, mount_holes, mount_hole_d, ports, component_clearance):
-    """Build a PCBSpec with width/length/thk derived from `size`."""
+    """Build a PCBSpec with width/length/thk computed from `size`."""
     return PCBSpec(
         size=size, width=size[0], length=size[1], thk=size[2],
         mount_holes=mount_holes, mount_hole_d=mount_hole_d,
@@ -142,8 +135,9 @@ def vent_slot_array(node, *, count, slot_w, slot_l, spacing):
 
 class CaseBase(Component):
     """Generic PCB case base: walled tray with standoffs at the PCB mount
-    holes and port cutouts for each `PortSpec`. Publishes the outer size,
-    standoff positions, and `pcb_top_z` for a lid to mate against.
+    holes and port cutouts for each `PortSpec`. A lid can read the outer
+    size, standoff positions, and `pcb_top_z` off this base to mate
+    against.
     """
 
     pcb = Param(PCBSpec)

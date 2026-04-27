@@ -114,13 +114,13 @@ SphericalCap(sphere_r=20, cap_height=8)
 SphericalCap(cap_dia=30, cap_height=5)
 ```
 
-Parameters: `cap_height`, `cap_dia`, `cap_r`, `sphere_r`. All are published as readable attributes after construction.
+Parameters: `cap_height`, `cap_dia`, `cap_r`, `sphere_r`. You can read all four off the instance once it's built.
 
 See [examples/convex-caliper.py](../examples/convex-caliper.py) for a worked example that defines this Component inline to demonstrate the equation solver.
 
 ## `Capsule(r, length)`
 
-Pill / stadium solid: a cylinder with hemispherical caps on both ends. `length` is the total end-to-end distance along +z (hemispheres included); `r` is the radius of both the cylinder and the caps. The straight-section height is published as `straight_length`. `base` and `tip` anchors at z=0 and z=length point outward. For a horizontal capsule, rotate the result.
+Pill / stadium solid: a cylinder with hemispherical caps on both ends. `length` is the total end-to-end distance along +z (hemispheres included); `r` is the radius of both the cylinder and the caps. The straight-section height is readable on the instance as `straight_length`. `base` and `tip` anchors at z=0 and z=length point outward. For a horizontal capsule, rotate the result.
 
 ```python
 Capsule(r=3, length=20)                             # vertical (z) pill

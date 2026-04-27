@@ -1,11 +1,10 @@
 """Wall-mount coat hook: plate + J-hook assembled via named anchors.
 
-Demonstrates class-scope `anchor()` on reusable Components, and
-`attach(parent, face="anchor_name", fuse=True)` picking a specific
-mount point on the parent. The plate publishes two anchors (one for
-the hook, one for future extensibility) and the hook publishes one
-(its attachment base) so the Design's `attach()` call reads like
-plain English.
+Both Components declare named anchors on the class. The Design joins
+them with `attach(parent, face="anchor_name", fuse=True)`, which picks
+a specific anchor on the parent. The plate offers two anchors (one for
+the hook, one for future use) and the hook offers one (its base), so
+the `attach()` call reads like plain English.
 
 Run:
     python examples/wall-hook.py                     # display variant (default)
@@ -38,9 +37,9 @@ class WallPlate(Component):
     # holder, or other accessory attaches here with its own -Z base anchor.
     hook_mount = anchor(at="0, 0, thk", normal=(0, 0, 1))
 
-    # A second anchor published purely for extensibility -- unused by this
-    # example. A future subclass could attach a decorative cap or a cable
-    # clip along the top edge without rewriting `WallPlate`.
+    # A second anchor, not used by this example but available for future
+    # subclasses. A decorative cap or cable clip could attach along the top
+    # edge without rewriting `WallPlate`.
     top_edge = anchor(at="0, h/2, thk/2", normal=(0, 1, 0))
 
     def build(self):                                       # framework hook: required; returns the shape
