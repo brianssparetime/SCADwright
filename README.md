@@ -513,12 +513,12 @@ This makes it simple to see the results of changes with a single click.  As long
 
 ## SCADwright and modeling with AI
 
-Compared to OpenSCAD, building a model wiht AI in SCADwright (and the MCP below) is faster and more straightforward than just building in OpenSCAD directly.
+Compared to OpenSCAD, building a model wiht AI in SCADwright (and the MCP below) is faster and lets you take bigger steps than just building in OpenSCAD directly.
 
-Based on feedback from Claude:
- - AI is much better at python than openscad, reflecting the relative popularity of python in training data 
- - equations and constraints catch a lot of mistakes with explicit errors that might otherwise slip through in OpenSCAD
- - higher level abstractions (like `attach(fuse=True)`, `through()`, custom transforms, `add_text()`, etc.) are closer to what the user describes and require less interpretation/translation into code.
+But don't make my word for it.  From the horses mouth:
+ - equations and constraints catch a lot of lazy or under-specified mistakes with explicit errors - ones that, in OpenSCAD, might otherwise might result in a less scrutable error or slip through entirely 
+ - higher level abstractions (like `attach(fuse=True)`, `through()`, custom transforms, `add_text()`, etc.) are closer to what the user describes and require less interpretation/translation into code
+ - AI is much better writing at python than openscad, reflecting the relative popularity of python in training data 
 
 Whichever AI assistant you use, dropping the [style guide](docs/style-guide.md) into its context steers generated code away from generic-Python habits toward SCADwright's idioms.
 
