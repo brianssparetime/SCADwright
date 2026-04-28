@@ -385,6 +385,17 @@ See [Anchors and attachment](anchors.md) for the full reference.
 
 SCADwright also automates epsilon overlap -- `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps joints. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md).
 
+## Text on a 3D shape
+
+In OpenSCAD, putting raised or inset text on a part takes several steps: 2D `text(...)`, `linear_extrude`, position, then union or difference. SCADwright does it in one call:
+
+```python
+plate.add_text(label="HELLO", relief=0.5, on="top", font_size=8)   # raised
+plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)  # inset
+```
+
+`relief` is signed: positive raises, negative cuts in. `on=` picks any face by name. See [`add_text`](add_text.md) for the full reference.
+
 ## Features SCADwright doesn't have (and probably won't)
 
 A short list of things that SCAD users occasionally ask about:

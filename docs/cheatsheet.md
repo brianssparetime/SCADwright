@@ -151,6 +151,44 @@ profile.rotate_extrude(angle=360)                   # default full sweep
 linear_extrude(circle(r=5), height=10)              # standalone form
 ```
 
+## Text on a surface &nbsp; &nbsp;[→ full](add_text.md)
+
+```python
+# Planar:
+plate.add_text(label="HELLO", relief=0.5, on="top", font_size=8)   # raised
+plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)  # inset
+plate.add_text(label="SIDE",  relief=0.5, on="rside", font_size=4) # any face name
+
+# Cylindrical (cylinder primitive and Tube ship with `outer_wall`):
+cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)              # default meridian +X
+cyl.add_text(label="ON",    relief=0.4, on="outer_wall", font_size=4, meridian="front")
+cyl.add_text(label="LOT",   relief=-0.3, on="outer_wall", font_size=3, at_z=-7)    # 7mm below mid-wall
+cyl.add_text(label="37",    relief=0.4, on="outer_wall", font_size=3, meridian=37) # numeric degrees CCW
+
+# Conical (Funnel and tapered cylinder primitives):
+funnel.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4)            # axial glyphs (default)
+funnel.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4,
+                text_orient="slant")                                                # glyphs tilt with the slope
+
+# Inner walls (Tube and Funnel are hollow):
+tube.add_text(label="LOT 7", relief=0.3, on="inner_wall", font_size=3)             # text on the inside surface
+
+# Multi-line: split on \n, stack vertically; line_spacing in font-size multiples.
+plate.add_text(label="LINE 1\nLINE 2", relief=0.5, on="top", font_size=8)          # 2 lines centered
+plate.add_text(label="v1.0\n2026-04", relief=-0.3, on="top", font_size=4,
+               valign="top", line_spacing=1.4)
+
+# Ad-hoc placement (Anchor object or at + normal):
+shape.add_text(label="X", relief=0.4, font_size=5,
+               on=Anchor(position=(5, 5, 5), normal=(0, 0, 1)))
+shape.add_text(label="X", relief=0.4, font_size=5,
+               at=(5, 5, 5), normal=(0, 0, 1))
+```
+
+`relief` is signed: positive raised, negative inset. The host's anchors stay
+intact, so you can chain more labels or call `.attach()` afterward. `text()`
+options (`font`, `halign`, `valign`, etc.) pass through.
+
 ## Preview modifiers &nbsp; &nbsp;[→ full](transformations.md#preview-modifiers)
 
 Affect preview only, not rendered output.
@@ -321,7 +359,6 @@ Spring(r=8, wire_r=0.5, pitch=3, turns=5)         # with flat ends
 
 # Print:
 HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
-TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.5, font_size=8)
 PolyHole(d=6, h=10, sides=8)                      # Laird-compensated FDM hole
 
 # Joints (clearance auto-resolves via the clearance chain; pass `clearance=` to override):

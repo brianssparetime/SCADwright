@@ -16,10 +16,17 @@ class Transform:
     Subclasses define `name` and `expand(self, child, **kwargs)` returning the
     AST subtree the transform produces. Most users will use `@sc.transform`
     instead — the decorator wraps a function in an auto-generated subclass.
+
+    Set ``decoration = True`` on transforms that semantically *add to* the
+    host rather than replacing it (labels, decals, logos). Decoration
+    transforms preserve the host's anchors when ``get_node_anchors`` walks
+    them, so chaining decorations (or attaching to a host anchor after a
+    decoration) keeps working. See ``docs/add_text.md``.
     """
 
     name: str = ""
     inline: bool = False  # True → no SCAD module hoisting; expand at use site
+    decoration: bool = False  # True → preserve host anchors through this Custom
 
     def expand(self, child: Node, **kwargs) -> Node:
         raise NotImplementedError(
@@ -31,7 +38,7 @@ class Transform:
 _registry: dict[str, Transform] = {}
 
 
-def transform(name: str, *, inline: bool = False):
+def transform(name: str, *, inline: bool = False, decoration: bool = False):
     """Decorator: register a function as a custom transform.
 
     The function must take a Node as its first positional argument and any
@@ -43,6 +50,12 @@ def transform(name: str, *, inline: bool = False):
             return sc.minkowski(node, sc.sphere(r=r))
 
     After registration, `node.round_edges(r=2)` works on any Node.
+
+    Pass ``decoration=True`` for transforms that semantically *add to* the
+    host without replacing it (labels, decals). Decoration transforms
+    preserve the host's anchors when ``get_node_anchors`` walks them, so
+    chained decorations and post-decoration ``attach()`` calls keep
+    working. See ``docs/add_text.md`` for the canonical example.
     """
 
     def decorator(fn: Callable[..., Node]) -> Callable[..., Node]:
@@ -55,6 +68,7 @@ def transform(name: str, *, inline: bool = False):
             {
                 "name": name,
                 "inline": inline,
+                "decoration": decoration,
                 "expand": lambda self, child, **kw: fn(child, **kw),
                 "_fn": staticmethod(fn),
             },

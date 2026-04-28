@@ -1,15 +1,18 @@
-"""Tests for print-oriented shapes (infill, text, vents, print aids)."""
+"""Tests for print-oriented shapes (infill, vents, print aids).
+
+Text decoration moved from dedicated Components (``TextPlate``,
+``EmbossedLabel``) to the generic ``.add_text(...)`` method — see
+``test_add_text.py``.
+"""
 
 import pytest
 
 from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
 from scadwright.shapes import (
-    EmbossedLabel,
     GridPanel,
     HoneycombPanel,
     PolyHole,
-    TextPlate,
     TriGridPanel,
     VentSlots,
 )
@@ -47,41 +50,6 @@ def test_tri_grid_builds():
     p = TriGridPanel(size=(40, 40, 2), cell_size=6, wall_thk=1)
     scad = emit_str(p)
     assert "difference" in scad
-
-
-# --- TextPlate ---
-
-
-def test_text_plate_builds():
-    p = TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2,
-                  depth=0.5, font_size=8)
-    scad = emit_str(p)
-    assert "text" in scad
-
-
-def test_text_plate_emit_contains_literal_label():
-    """The emitted SCAD must contain the actual label text, not just `text(`."""
-    p = TextPlate(label="SCADwright", plate_w=60, plate_h=15, plate_thk=2,
-                  depth=0.5, font_size=8)
-    scad = emit_str(p)
-    assert '"SCADwright"' in scad
-
-
-def test_text_plate_uses_specified_font():
-    p = TextPlate(label="X", plate_w=20, plate_h=10, plate_thk=1,
-                  depth=0.3, font_size=5, font="DejaVu Sans")
-    scad = emit_str(p)
-    assert "DejaVu Sans" in scad
-
-
-# --- EmbossedLabel ---
-
-
-def test_embossed_label_builds():
-    p = EmbossedLabel(label="v1.0", plate_w=30, plate_h=10, plate_thk=2,
-                      depth=0.3, font_size=6)
-    scad = emit_str(p)
-    assert "text" in scad
 
 
 # --- VentSlots ---

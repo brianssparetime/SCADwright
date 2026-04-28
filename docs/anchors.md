@@ -108,6 +108,44 @@ Boolean operations (union, difference, intersection) drop custom anchors. Only t
 
 Non-spatial wrappers (`.color()`, `.highlight()`, etc.) pass anchors through unchanged.
 
+## Surface metadata: `kind` and `surface_params`
+
+Every `Anchor` carries a `kind` field describing the surface it lies on. The default is `"planar"`. Curved-surface kinds — `"cylindrical"` and `"conical"` — also carry the geometric parameters of the surface (`radius` or `r1`/`r2`, `axis`, `length`) so [`add_text`](add_text.md) can wrap text around them.
+
+`cylinder()` carries an `outer_wall` anchor (cylindrical when `r1 == r2`, conical when tapered). `Tube` and `Funnel` carry `outer_wall` and `inner_wall` anchors.
+
+```python
+from scadwright.primitives import cylinder
+from scadwright.anchor import get_node_anchors
+
+a = get_node_anchors(cylinder(h=20, r=5))["outer_wall"]
+a.kind                     # "cylindrical"
+a.surface_param("radius")  # 5.0
+a.surface_param("axis")    # (0.0, 0.0, 1.0)
+a.surface_param("length")  # 20.0
+```
+
+Surface params transform alongside `position` and `normal`: rotating the host rotates the axis, scaling scales the radius and length. `cylinder(h=20, r=5).rotate([90, 0, 0])` reports `axis=(0, -1, 0)` for its outer wall, and `add_text(on="outer_wall", ...)` wraps correctly around the rotated cylinder.
+
+```python
+from scadwright import anchor
+
+# Planar (the default — surface_params is omitted).
+mount = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
+
+# Cylindrical anchor on a Component. surface_params values can be
+# Python expressions (strings) evaluated against instance attributes —
+# same as `at=` strings.
+outer_wall = anchor(
+    at="od/2, 0, h/2",
+    normal=(1, 0, 0),
+    kind="cylindrical",
+    surface_params={"axis": (0, 0, 1), "radius": "od/2", "length": "h"},
+)
+```
+
+Use `Anchor.surface_param(name, default)` to read back a value.
+
 ## Shape-library anchors
 
 Shape-library Components ship with useful custom anchors:

@@ -26,6 +26,36 @@ class Tube(Component):
         "h, id, od, thk > 0",
     ]
 
+    outer_wall = anchor(
+        at="od/2, 0, h/2",
+        normal=(1.0, 0.0, 0.0),
+        kind="cylindrical",
+        surface_params={"axis": (0.0, 0.0, 1.0), "radius": "od/2", "length": "h"},
+    )
+    inner_wall = anchor(
+        at="id/2, 0, h/2",
+        normal=(-1.0, 0.0, 0.0),
+        kind="cylindrical",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "radius": "id/2",
+            "length": "h",
+            "inner": True,
+        },
+    )
+    top = anchor(
+        at="0, 0, h",
+        normal=(0.0, 0.0, 1.0),
+        kind="planar",
+        surface_params={"axis": (0.0, 0.0, 1.0), "rim_radius": "od/2"},
+    )
+    bottom = anchor(
+        at="0, 0, 0",
+        normal=(0.0, 0.0, -1.0),
+        kind="planar",
+        surface_params={"axis": (0.0, 0.0, -1.0), "rim_radius": "od/2"},
+    )
+
     def build(self):
         outer = cylinder(h=self.h, r=self.od / 2.0)
         inner = cylinder(h=self.h, r=self.id / 2.0).through(outer)
@@ -44,6 +74,42 @@ class Funnel(Component):
         "top_od = top_id + 2*thk",
         "h, thk, bot_id, bot_od, top_id, top_od > 0",
     ]
+
+    outer_wall = anchor(
+        at="(bot_od + top_od) / 4.0, 0, h/2",
+        normal=(1.0, 0.0, 0.0),
+        kind="conical",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "r1": "bot_od/2.0",
+            "r2": "top_od/2.0",
+            "length": "h",
+        },
+    )
+    inner_wall = anchor(
+        at="(bot_id + top_id) / 4.0, 0, h/2",
+        normal=(-1.0, 0.0, 0.0),
+        kind="conical",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "r1": "bot_id/2.0",
+            "r2": "top_id/2.0",
+            "length": "h",
+            "inner": True,
+        },
+    )
+    top = anchor(
+        at="0, 0, h",
+        normal=(0.0, 0.0, 1.0),
+        kind="planar",
+        surface_params={"axis": (0.0, 0.0, 1.0), "rim_radius": "top_od/2"},
+    )
+    bottom = anchor(
+        at="0, 0, 0",
+        normal=(0.0, 0.0, -1.0),
+        kind="planar",
+        surface_params={"axis": (0.0, 0.0, -1.0), "rim_radius": "bot_od/2"},
+    )
 
     def build(self):
         outer = cylinder(

@@ -118,6 +118,18 @@ def chamfer_top(node, *, depth):
 part = cube([10, 10, 5]).chamfer_top(depth=1)
 ```
 
+Built-in [`add_text`](docs/add_text.md) is one example — putting raised or inset text on a flat plate, cylinder wall, or tapered funnel is one chained call:
+
+```python
+plate.add_text(label="HELLO", relief=0.5, on="top", font_size=8)              # raised on a flat face
+plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)             # inset on a flat face
+cyl.add_text(label="BRAND",   relief=0.4, on="outer_wall", font_size=4,
+             meridian="front")                                                # wrapped around a cylinder
+funnel.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4)       # wrapped around a tapered cone
+```
+
+`relief` is signed: positive raises, negative cuts. `on=` picks any face by name — flat faces (`top`, `rside`, custom Component anchors) or curved walls (`outer_wall` on `cylinder()`, `Tube`, and `Funnel`).
+
 
 
 ### 4. Every union/difference needs manual epsilon overlap

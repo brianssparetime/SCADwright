@@ -75,6 +75,19 @@ list_transforms()         # ["chamfer_top", "frame", ...]
 
 Returns the names of all transforms registered so far.
 
+## Decoration transforms
+
+Pass `decoration=True` for transforms that add something to a host (labels, decals, logos) without replacing it. Decoration transforms preserve the host's anchors, so chaining more decorations or calling `attach()` afterward still finds the host's named faces:
+
+```python
+@transform("emboss", inline=True, decoration=True)
+def emboss(node, *, label, depth):
+    flat = text(label, size=8).linear_extrude(height=depth)
+    return union(node, flat.up(bbox(node).max[2]))
+```
+
+Without `decoration=True`, the host's custom anchors disappear after the transform — the same as if you'd written the union or difference yourself. The built-in [`add_text`](add_text.md) uses this flag.
+
 ---
 
 ### Pattern: face-relative transforms

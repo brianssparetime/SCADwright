@@ -66,11 +66,9 @@ from scadwright.shapes.joints import (
     TabSlot,
 )
 from scadwright.shapes.print_shapes import (
-    EmbossedLabel,
     GridPanel,
     HoneycombPanel,
     PolyHole,
-    TextPlate,
     TriGridPanel,
     VentSlots,
 )
@@ -126,7 +124,6 @@ __all__ = [
     "DShaft",
     "Dodecahedron",
     "Dome",
-    "EmbossedLabel",
     "FilletMask",
     "FilletRing",
     "Funnel",
@@ -172,7 +169,6 @@ __all__ = [
     "TabSlot",
     "Teardrop",
     "Tetrahedron",
-    "TextPlate",
     "Torus",
     "TriGridPanel",
     "Tube",

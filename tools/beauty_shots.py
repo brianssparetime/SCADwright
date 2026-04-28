@@ -57,7 +57,6 @@ from scadwright.shapes import (
     SpurGear,
     Standoff,
     Teardrop,
-    TextPlate,
     Torus,
     Tube,
     Wedge,
@@ -100,6 +99,12 @@ def _keyed_shaft():
     return KeyedShaft(d=12, key_w=3, key_h=1.5).linear_extrude(height=40)
 
 
+def _add_text_demo():
+    return cube([40, 15, 2], center="xy").add_text(
+        label="HELLO", relief=0.8, on="top", font_size=8,
+    )
+
+
 def _transform_bend():
     return cube([2, 2, 60]).bend(radius=15)
 
@@ -135,7 +140,7 @@ COMPONENTS = [
 
     # print.md
     {"out": "docs/shapes/images/honeycomb-panel.png", "component": HoneycombPanel, "kwargs": {"size": (80, 60, 3), "cell_size": 8, "wall_thk": 1}},
-    {"out": "docs/shapes/images/text-plate.png",      "component": TextPlate,      "kwargs": {"label": "HELLO", "plate_w": 40, "plate_h": 15, "plate_thk": 2, "depth": 0.8, "font_size": 8}},
+    {"out": "docs/shapes/images/add-text.png",        "build": _add_text_demo,    "name": "add-text"},
     {"out": "docs/shapes/images/poly-hole.png",       "component": PolyHole,       "kwargs": {"d": 10, "h": 20, "sides": 8}},
 
     # joints.md

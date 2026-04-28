@@ -5,6 +5,9 @@ design_docs/
 .claude/
 CLAUDE.md
 
+# Local scratch / WIP — not part of the public repo.
+s2-evolving/
+
 # Generated OpenSCAD output (golden test files and reference SCAD are tracked)
 *.scad
 !tests/golden/*.scad

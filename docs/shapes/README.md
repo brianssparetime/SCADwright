@@ -142,10 +142,10 @@ Registered as chainable methods on every shape.
 - [`HoneycombPanel`](print.md#honeycombpanelsize-cell_size-wall_thk) — hex-grid infill panel
 - [`GridPanel`](print.md#gridpanelsize-cell_size-wall_thk) — square-grid infill panel
 - [`TriGridPanel`](print.md#trigridpanelsize-cell_size-wall_thk) — triangular-grid infill panel
-- [`TextPlate`](print.md#textplatelabel-plate_w-plate_h-plate_thk-depth-font_size) — rectangular plate with raised text
-- [`EmbossedLabel`](print.md#embossedlabellabel-plate_w-plate_h-plate_thk-depth-font_size) — rectangular plate with engraved (recessed) text
 - [`VentSlots`](print.md#ventslotswidth-height-thk-slot_width-slot_height-slot_count) — row of rectangular ventilation slots in a panel
 - [`PolyHole`](print.md#polyholed-h-sides) — Laird-compensated polygonal hole cutter for accurate printed circles
+
+For raised or inset text on any host shape, use the chained [`.add_text(...)`](../add_text.md) method.
 
 ### [Joints](joints.md)
 

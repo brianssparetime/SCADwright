@@ -380,7 +380,15 @@ class Component(Node):
         bb = _bbox(self._built_tree)
         return bb.center
 
-    def anchor(self, name: str, position: tuple, normal: tuple) -> None:
+    def anchor(
+        self,
+        name: str,
+        position: tuple,
+        normal: tuple,
+        *,
+        kind: str = "planar",
+        surface_params=None,
+    ) -> None:
         """Declare a named anchor on this Component at runtime.
 
         Prefer the class-scope ``anchor()`` descriptor — both ``at=`` and
@@ -388,12 +396,18 @@ class Component(Node):
         positions and conditional normals. This method is the imperative
         escape hatch for Components that genuinely can't express an anchor
         declaratively.
+
+        ``kind`` and ``surface_params`` carry surface-type metadata for
+        decoration transforms (see ``docs/add_text.md``). The default
+        ``"planar"`` covers every flat face.
         """
-        from scadwright.anchor import Anchor
+        from scadwright.anchor import Anchor, _normalize_surface_params
 
         self._anchors[name] = Anchor(
             position=(float(position[0]), float(position[1]), float(position[2])),
             normal=(float(normal[0]), float(normal[1]), float(normal[2])),
+            kind=kind,
+            surface_params=_normalize_surface_params(surface_params),
         )
 
     def get_anchors(self) -> dict:
@@ -540,7 +554,16 @@ def _resolve_anchor_defs(instance):
     for name, adef in anchor_defs.items():
         pos = adef.resolve(instance)
         normal = adef.resolve_normal(instance)
-        instance._anchors[name] = _Anchor(position=pos, normal=normal)
+        if hasattr(adef, "resolve_surface_params"):
+            sp = adef.resolve_surface_params(instance)
+        else:
+            sp = ()
+        instance._anchors[name] = _Anchor(
+            position=pos,
+            normal=normal,
+            kind=getattr(adef, "kind", "planar"),
+            surface_params=sp,
+        )
 
 
 # Implicit kwargs accepted by every Component's auto-init in addition to

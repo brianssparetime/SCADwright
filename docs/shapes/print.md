@@ -1,11 +1,10 @@
 # Print-oriented shapes
 
-Infill panels, text plates, vent slots, and print-process helpers. Mechanical joints (tabs, snaps, locators) live in their own page — see [Joints](joints.md).
+Infill panels, vent slots, and print-process helpers. Mechanical joints (tabs, snaps, locators) live in their own page — see [Joints](joints.md). Text decoration is a chained method on any shape: see [add_text](../add_text.md).
 
 ```python
 from scadwright.shapes import (
     HoneycombPanel, GridPanel, TriGridPanel,
-    TextPlate, EmbossedLabel,
     VentSlots,
     PolyHole,
 )
@@ -43,27 +42,15 @@ TriGridPanel(size=(60, 40, 2), cell_size=6, wall_thk=1)
 
 ## Text
 
-### `TextPlate(label, plate_w, plate_h, plate_thk, depth, font_size)`
-
-Plate with raised text on the surface.
+Text decoration is a chained method on any host shape, not a dedicated Component. Use `.add_text(label=..., relief=..., font_size=..., on=...)`:
 
 ```python
-TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.5, font_size=8)
+plate = cube([40, 15, 2], center="xy")
+plate.add_text(label="HELLO", relief=0.5, on="top", font_size=8)   # raised
+plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)  # inset
 ```
 
-![Text plate](images/text-plate.png)
-
-*`TextPlate(label="HELLO", plate_w=40, plate_h=15, plate_thk=2, depth=0.8, font_size=8)` — raised text on a flat plate, useful for labels and tags.*
-
-### `EmbossedLabel(label, plate_w, plate_h, plate_thk, depth, font_size)`
-
-Plate with engraved (recessed) text.
-
-```python
-EmbossedLabel(label="v1.0", plate_w=30, plate_h=10, plate_thk=2, depth=0.3, font_size=6)
-```
-
-Both accept an optional `font` parameter (default `"Liberation Sans"`).
+`relief` is signed: positive raises text outward, negative cuts it into the host. See the [add_text page](../add_text.md) for cylindrical and conical walls, rim arcs, multi-line text, and the rest.
 
 ## `VentSlots(width, height, thk, slot_width, slot_height, slot_count)`
 
