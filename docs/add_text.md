@@ -1,6 +1,6 @@
 # Text on a surface — `add_text`
 
-`.add_text(...)` puts raised or inset text on any flat face, cylindrical wall, or conical wall of a shape. After `add_text`, chaining more labels or calling `attach()` still works — the host's anchors are still there.
+`.add_text(...)` puts raised or inset text on any flat face, cylindrical wall, or conical wall of a shape. After `add_text()`, chaining more labels or calling `attach()` still works — the host's anchors are still there.
 
 ```python
 from scadwright.primitives import cube
@@ -96,7 +96,7 @@ plate.add_text(
 
 ## Cylindrical walls
 
-`cylinder()` and `Tube` have an `outer_wall` anchor. `add_text` wraps the label around the cylinder:
+`cylinder()` and `Tube` have an `outer_wall` anchor. `add_text()` wraps the label around the cylinder:
 
 ```python
 from scadwright.primitives import cylinder
@@ -261,9 +261,9 @@ For a multi-line label, `valign` positions the *whole block* on the face:
 - `relief < 0` cuts the text inward by `|relief|` mm. If `|relief|` is greater than the host's wall thickness, the cut punches all the way through.
 - `relief = 0` isn't allowed.
 
-## Chaining and `attach()` after `add_text`
+## Chaining and `attach()` after `add_text()`
 
-`add_text` keeps the host's anchors intact. Multiple labels chain, and `attach()` after `add_text` still finds the host's named faces:
+`add_text()` keeps the host's anchors intact. Multiple labels chain, and `attach()` after `add_text()` still finds the host's named faces:
 
 ```python
 # Chain two labels:

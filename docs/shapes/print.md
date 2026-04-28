@@ -1,6 +1,6 @@
 # Print-oriented shapes
 
-Infill panels, vent slots, and print-process helpers. Mechanical joints (tabs, snaps, locators) live in their own page — see [Joints](joints.md). Text decoration is a chained method on any shape: see [add_text](../add_text.md).
+Infill panels, vent slots, and print-process helpers. Mechanical joints (tabs, snaps, locators) live in their own page — see [Joints](joints.md). Text decoration is a chained method on any shape: see [`add_text()`](../add_text.md).
 
 ```python
 from scadwright.shapes import (
@@ -50,7 +50,7 @@ plate.add_text(label="HELLO", relief=0.5, on="top", font_size=8)   # raised
 plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)  # inset
 ```
 
-`relief` is signed: positive raises text outward, negative cuts it into the host. See the [add_text page](../add_text.md) for cylindrical and conical walls, rim arcs, multi-line text, and the rest.
+`relief` is signed: positive raises text outward, negative cuts it into the host. See the [`add_text()` page](../add_text.md) for cylindrical and conical walls, rim arcs, multi-line text, and the rest.
 
 ## `VentSlots(width, height, thk, slot_width, slot_height, slot_count)`
 

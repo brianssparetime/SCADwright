@@ -86,7 +86,7 @@ def emboss(node, *, label, depth):
     return union(node, flat.up(bbox(node).max[2]))
 ```
 
-Without `decoration=True`, the host's custom anchors disappear after the transform — the same as if you'd written the union or difference yourself. The built-in [`add_text`](add_text.md) uses this flag.
+Without `decoration=True`, the host's custom anchors disappear after the transform — the same as if you'd written the union or difference yourself. The built-in [`add_text()`](add_text.md) uses this flag.
 
 ---
 

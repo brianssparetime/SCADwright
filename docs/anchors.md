@@ -110,7 +110,7 @@ Non-spatial wrappers (`.color()`, `.highlight()`, etc.) pass anchors through unc
 
 ## Surface metadata: `kind` and `surface_params`
 
-Every `Anchor` carries a `kind` field describing the surface it lies on. The default is `"planar"`. Curved-surface kinds — `"cylindrical"` and `"conical"` — also carry the geometric parameters of the surface (`radius` or `r1`/`r2`, `axis`, `length`) so [`add_text`](add_text.md) can wrap text around them.
+Every `Anchor` carries a `kind` field describing the surface it lies on. The default is `"planar"`. Curved-surface kinds — `"cylindrical"` and `"conical"` — also carry the geometric parameters of the surface (`radius` or `r1`/`r2`, `axis`, `length`) so [`add_text()`](add_text.md) can wrap text around them.
 
 `cylinder()` carries an `outer_wall` anchor (cylindrical when `r1 == r2`, conical when tapered). `Tube` and `Funnel` carry `outer_wall` and `inner_wall` anchors.
 

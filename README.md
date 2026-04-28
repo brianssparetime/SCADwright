@@ -118,7 +118,7 @@ def chamfer_top(node, *, depth):
 part = cube([10, 10, 5]).chamfer_top(depth=1)
 ```
 
-Built-in [`add_text`](#6-putting-text-on-a-part-is-a-project-of-its-own) is one example — see below.
+Built-in [`add_text()`](#6-putting-text-on-a-part-is-a-project-of-its-own) is one example — see below.
 
 
 
@@ -164,7 +164,7 @@ Fit tolerances flow project-wide. Set `Clearances(sliding=0.05, press=0.08, snap
 
 In OpenSCAD, putting a label on a part means doing the math yourself: build the 2D `text()`, `linear_extrude` it, then `translate`/`rotate` it onto the face — and that only works on a flat face. Wrapping a label around a cylinder or up the side of a funnel means hand-rolling per-glyph placement around an arc, or giving up.
 
-SCADwright provides [`add_text`](docs/add_text.md) as a chained method on every shape. One call places raised or inset text on any flat face, cylindrical wall, conical wall, or disk rim:
+SCADwright provides [`add_text()`](docs/add_text.md) as a chained method on every shape. One call places raised or inset text on any flat face, cylindrical wall, conical wall, or disk rim:
 
 ```python
 from scadwright.primitives import cube, cylinder
@@ -195,7 +195,7 @@ cylinder(h=10, r=15).add_text(label="MAX 5L", relief=0.4, on="top", font_size=3)
 
 Multi-line labels stack the right way for each surface — vertically on a face, axially on a wall, radially on a rim — and the host's anchors survive the call, so labels chain and `attach()` still works afterwards.
 
-See [`add_text`](docs/add_text.md) for the full reference.
+See [`add_text()`](docs/add_text.md) for the full reference.
 
 
 ### 7. No clean separation between display and print variants
