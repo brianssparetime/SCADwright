@@ -273,7 +273,8 @@ equations = [
 # 2. params — only for unbounded floats that don't appear in any equation (rare)
 params = "phase_offset"
 
-# 3. Param — non-floats, defaults, enums
+# 3. Param — non-floats, defaults, enums (required for tuples, ints, bools, custom types)
+size = Param(tuple)                            # so equations can use len(size), size[0], etc.
 label = Param(str)
 count = Param(int, positive=True)
 mode = Param(str, default="A", one_of=("A","B"))

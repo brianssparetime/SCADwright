@@ -51,6 +51,10 @@ class Param:
         self.default = default
         self.doc = doc
         self._name: str = ""  # set by __set_name__
+        # True when the metaclass auto-created this Param from a name appearing
+        # in `equations` or `params = "..."`. Used solely to add a hint to the
+        # coercion error when a non-float value lands on an auto-declared float.
+        self._auto_declared: bool = False
 
         vs = list(validators)
         if positive:
@@ -133,10 +137,18 @@ class Param:
         try:
             return self.type(value)
         except (TypeError, ValueError) as exc:
-            raise ValidationError(
-                f"{type(instance).__name__}.{self._name}: cannot coerce {value!r} to {self.type.__name__}: {exc}",
-                source_location=loc,
-            ) from exc
+            msg = (
+                f"{type(instance).__name__}.{self._name}: cannot coerce "
+                f"{value!r} to {self.type.__name__}: {exc}"
+            )
+            if self._auto_declared and self.type is float:
+                msg += (
+                    f"\nHint: `{self._name}` was auto-declared as Param(float) "
+                    f"from its appearance in `equations`. For a non-float value, "
+                    f"declare it explicitly above the equations list, e.g. "
+                    f"`{self._name} = Param(tuple)`."
+                )
+            raise ValidationError(msg, source_location=loc) from exc
 
     def has_default(self) -> bool:
         return self.default is not _MISSING

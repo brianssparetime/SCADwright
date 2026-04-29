@@ -132,6 +132,7 @@ def _parse_params_string(cls, params: dict[str, Param]) -> None:
     for tok in tokens:
         if tok not in params:
             p = Param(float)
+            p._auto_declared = True
             p.__set_name__(cls, tok)
             setattr(cls, tok, p)
             params[tok] = p
@@ -204,6 +205,7 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
             p = Param(type_)
         else:
             p = Param(type_, default=default)
+        p._auto_declared = True
         p.__set_name__(cls, name)
         setattr(cls, name, p)
         params[name] = p

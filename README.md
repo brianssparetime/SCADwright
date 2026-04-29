@@ -10,6 +10,7 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
 
  - equation-based components with externally accessible attributes and bounding boxes.
  - ability to add new transforms to the language
+ - placing text on geometric objects (plates, cylinders, cones) is easy
  - a library of reusable shapes out of the box
  - auto-EPS adjustment on difference() and union()
  - surface-based attachment
@@ -34,16 +35,13 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
 
-## SCADwright systematically addresses the most painful aspects of OpenSCAD:
+## SCADwright addresses the most painful and vexatious limitations of OpenSCAD in 15 ways:
 
-Here's 15 different OpenSCAD vexations which SCADwright solves...
+### 1.  Components make what they know accessible externally; modules can't.
 
+When you write a parametric module in OpenSCAD — say a bracket with mount-hole positions — the caller has no way to ask where those holes are. You are forced to compute the offsets outside the object, or in two places, or  hard-code them.
 
-### 1. Modules can't expose what they know
-
-When you write a parametric module in OpenSCAD — say a bracket with mount-hole positions — the caller has no way to ask where those holes are. You either compute the offsets in two places, or hard-code them.
-
-In SCADwright, parametric parts are [Python classes](docs/components.md). The caller can read any attribute of other Components freely.
+In SCADwright, parametric parts are [Python classes called Components](docs/components.md). The caller can read any attribute of other Components freely, and use that information to construct other parts to fit.
 
 ```python
 from scadwright import Component
@@ -59,9 +57,11 @@ b = Bracket(width=80, height=5)
 print(b.width)               # readable; no geometry built yet
 ```
 
-### 2. Dimensional relationships live in your head, not the code
+### 2. A component's key equations are all defined together, with constraints and solving for unsupplied arguments
 
-A hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od == id + 2*thk`. In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time -- after you've already waited.
+Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od == id + 2*thk`. 
+
+In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time -- after you've already waited.
 
 In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint)
 
@@ -90,17 +90,36 @@ And equations aren't limited to scalar arithmetic. Either side can be any Python
 class BatteryHolder(Component):
     spec = Param(BatterySpec)
     count = Param(int, positive=True)
+    size = Param(tuple)                                           # non-float Params are declared explicitly
     equations = [
-        "wall_thk, clearance > 0",
+        "wall_thk, clearance, end_clearance > 0",
         "pitch = spec.d + 2*clearance",                           # field read on a namedtuple input
         "outer_w = count * pitch + 2*end_clearance",              # arithmetic
         "positions = tuple(i*pitch for i in range(count))",       # tuple from a comprehension
-        "edge = fillet if is_filleted else chamfer",              # conditional
         "len(size) = 3",                                          # consistency check on an input
     ]
 ```
 
-### 3. You can't add new transforms or other "verbs"
+Equations also handle optional inputs. Prefix a name with `?` to declare it optional; rules and equations that reference it auto-skip when it's not set. The `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` helpers cover the common XOR/OR validation shapes in one line each.
+
+```python
+class FilletedBracket(Component):
+    equations = [
+        "w, l, thk > 0",
+        "exactly_one(?r, ?r_frac)",                # absolute radius or fraction-of-thk; one and only one
+        "r = ?r if ?r else ?r_frac * thk",         # synthesize the active value
+        "r < thk / 2",                             # downstream check uses the synthesized name
+    ]
+
+FilletedBracket(w=40, l=20, thk=4, r=1)               # absolute
+FilletedBracket(w=40, l=20, thk=4, r_frac=0.25)       # 25% of thk
+FilletedBracket(w=40, l=20, thk=4)                    # ValidationError: exactly_one(?r, ?r_frac) — neither set
+FilletedBracket(w=40, l=20, thk=4, r=1, r_frac=0.25)  # ValidationError: both set
+```
+
+
+
+### 3. SCADwright lets you build reusable transforms in addition to resuable objects
 
 In OpenSCAD you can't write `cube(10).chamfer_top(depth=1)` — there's no way to add a transform that works on any shape.
 
@@ -118,11 +137,8 @@ def chamfer_top(node, *, depth):
 part = cube([10, 10, 5]).chamfer_top(depth=1)
 ```
 
-Built-in [`add_text()`](#6-putting-text-on-a-part-is-a-project-of-its-own) is one example — see below.
 
-
-
-### 4. Every union/difference needs manual epsilon overlap
+### 4. No more EPS on every union/diff; the framework handles it
 
 In OpenSCAD, when two shapes share a face in a `difference()` or `union()`, the result has artifacts unless you manually extend the shapes by a tiny epsilon. Every project defines `eps = 0.01` and litters it through every cut and join.
 
@@ -138,9 +154,9 @@ part = difference(box, cylinder(h=10, r=3).through(box))     # through-hole, no 
 
 `through(parent)` detects which faces of the cutter are flush with the parent and extends them automatically. For joints, `attach(fuse=True)` overlaps parts at the contact face. See [Eliminating epsilon overlap](docs/auto-eps_fuse_and_through.md).
 
-### 5. You spend half your time on geometry that isn't your actual project
+### 5. SCADwright's Component library let you focus on your part, the not parts it's made of
 
-OpenSCAD has no module library. Every project starts with reinventing tubes, rounded rectangles, and screw holes. Need an M3 bolt? Look up the head diameter, compute the hex profile, get the clearance hole size right. Need a gear? That's a week.
+OpenSCAD has no built-in module library, only primitives. Every project starts with reinventing tubes, rounded rectangles, and screw holes. Need an M3 bolt? Look up the head diameter, compute the hex profile, get the clearance hole size right. Need a gear? That's a week.
 
 SCADwright ships a [shape library](docs/shapes/) with 50+ ready-made Components across mechanical, fastener, gear, and print-oriented categories:
 
@@ -160,7 +176,7 @@ Every shape is a Component -- you can read its computed dimensions, attach other
 
 Fit tolerances flow project-wide. Set `Clearances(sliding=0.05, press=0.08, snap=0.2, finger=0.2)` once on your `Design` class and every `AlignmentPin`, `PressFitPeg`, `SnapPin`, and `TabSlot` inherits automatically; override per-scope, per-Component, or per-call. See [Clearances](docs/clearances.md).
 
-### 6. Putting text on a part is a project of its own
+### 6. Putting text on a plate, cylinder, cone, or funnel is easy - one operator
 
 In OpenSCAD, putting a label on a part means doing the math yourself: build the 2D `text()`, `linear_extrude` it, then `translate`/`rotate` it onto the face — and that only works on a flat face. Wrapping a label around a cylinder or up the side of a funnel means hand-rolling per-glyph placement around an arc, or giving up.
 
@@ -191,14 +207,12 @@ cylinder(h=10, r=15).add_text(label="MAX 5L", relief=0.4, on="top", font_size=3)
 
 `relief` is signed: positive raises, negative cuts (and cuts deeper than the wall punch through).
 
-`on=` takes any face name — flat faces (`top`, `rside`, …), curved walls (`outer_wall`, `inner_wall` on `cylinder()`, `Tube`, and `Funnel`), disk rims, or any custom anchor a Component declares. Cylindrical and conical placements use `meridian=` (string name or numeric degrees) and `at_z=` to position around and along the axis; rim text uses `at_radial=` for the path radius.
-
 Multi-line labels stack the right way for each surface — vertically on a face, axially on a wall, radially on a rim — and the host's anchors survive the call, so labels chain and `attach()` still works afterwards.
 
 See [`add_text()`](docs/add_text.md) for the full reference.
 
 
-### 7. No clean separation between display and print variants
+### 7. Clean separation between variants for printing, display, integration testing, etc.
 
 Often the best way to print a part is very different from how you want to see it. A part might need supports, or to be re-oriented, or cut in half for printing. For display, you might want to see parts mated together or show stand-in hardware.
 
@@ -232,7 +246,7 @@ scadwright build widget.py --variant=display
 ```
 
 
-### 8. Positioning parts relative to each other requires manual coordinate math
+### 8. Positioning parts relative to each other easily without extra calcuation
 
 In OpenSCAD, stacking a lid on a box means computing `translate([0, 0, box_height])` by hand. If you add a spacer or change a dimension, every downstream offset needs updating.
 
@@ -250,7 +264,7 @@ Insert a spacer between any two parts and nothing downstream needs to change. Co
 
 See [Anchors and attachment](docs/anchors.md) for the full reference.
 
-### 9. You can't reason about a part's size without rendering it
+### 9. Parts know their bounds without needing to render, allowing print-bed tests and overlap tests.
 
 In OpenSCAD, the only way to know how big something is -- whether it fits on your print bed, whether two parts overlap, whether a lid is wider than its box -- is to render it and eyeball the result.
 
@@ -267,7 +281,7 @@ assert_fits_in(my_widget, [200, 200, 50])  # fits on the print bed?
 assert_no_collision(box, lid)              # parts don't overlap?
 ```
 
-### 10. Centering parts is manual and repetitive
+### 10. Centering Components is easy and straightforward
 
 In OpenSCAD, `center=true` works on primitives but not on modules. If your module builds a shape at the origin and you want it centered, you compute the offset yourself. Every module that needs centering reinvents the same translate-by-half-size logic.
 
@@ -284,7 +298,7 @@ The Component author doesn't write any centering code. The framework computes th
 
 
 
-### 11. Transforms read backwards
+### 11. Transforms chain naturally, starting with the object being affected
 
 In OpenSCAD, the verb comes before the noun: you write the rotate-then-translate first, then the shape they apply to. Reading the code, you have to scan to the end of a line to see what's actually moving.
 
@@ -297,9 +311,10 @@ cube([10, 20, 30]).up(5).rotate([0, 45, 0]).red()
 ```
 
 
-### 12. Errors don't tell you where they came from
+### 12. Error types and messages provide detail on what caused the error and where
 
-OpenSCAD's error messages typically point at the rendered output, not your source. Tracking down which call produced a bad value is manual.
+OpenSCAD's error messages typically point at the rendered output, not your source.  
+Tracking down which call produced a bad value is manual.
 
 SCADwright [errors](docs/errors_and_logging.md) carry the file and line of your call:
 
@@ -311,7 +326,7 @@ cube([-5, 10, 10])
 ```
 
 
-### 13. Scripts can't declare command-line parameters
+### 13. Scripts can declare command-line parameters, allowing fully programmatic part design
 
 OpenSCAD takes `-D foo=10`, but scripts can't say what parameters they accept, what types they expect, or what defaults to use. The contract lives in comments.
 
@@ -337,7 +352,7 @@ scadwright build widget.py --width=80
 scadwright build widget.py --help          # lists arguments with defaults
 ```
 
-### 14. Resolution ($fn) is tedious to manage
+### 14. Resolution ($fn) is managed for you, but easily overridable
 
 In OpenSCAD, you either set `$fn` globally (too coarse) or pass it to every single primitive call (tedious and easy to miss one). There's no middle ground.
 
@@ -365,7 +380,7 @@ No declaration needed on the Component side — `fn` is accepted by every Compon
 
 
 
-### 15. You can't tell if a part has changed
+### 15. You know if a part has changed
 
 OpenSCAD has no way to write a regression test that says "this part hasn't changed since I last reviewed it." You either re-render and visually compare, or trust that your edit didn't break anything.
 
@@ -505,10 +520,10 @@ This makes it simple to see the results of changes with a single click.  As long
 
 Compared to OpenSCAD, building a model wiht AI in SCADwright (and the MCP below) is faster and lets you take bigger steps than just building in OpenSCAD directly.
 
-But don't make my word for it.  From the horses mouth:
+Claude Code summarized the key benefits of its working in SCADwright over OpenSCAD as:
  - equations and constraints catch a lot of lazy or under-specified mistakes with explicit errors - ones that, in OpenSCAD, might otherwise might result in a less scrutable error or slip through entirely 
  - higher level abstractions (like `attach(fuse=True)`, `through()`, custom transforms, `add_text()`, etc.) are closer to what the user describes and require less interpretation/translation into code
- - AI is much better writing at python than openscad, reflecting the relative popularity of python in training data 
+ - AI is much better writing at python than openscad, reflecting the relative frequency of python in training data 
 
 Whichever AI assistant you use, dropping the [style guide](docs/style-guide.md) into its context steers generated code away from generic-Python habits toward SCADwright's idioms.
 

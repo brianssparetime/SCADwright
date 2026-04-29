@@ -38,6 +38,51 @@ def test_param_bad_coercion_raises():
         _Box(width="not a number")
 
 
+# --- Auto-declared float hint on bad coercion ---
+
+
+class _AutoFloatFromEquation(Component):
+    """`size` is auto-declared as Param(float) from its appearance in
+    `equations`; passing a tuple should raise with the explicit-declaration
+    hint."""
+    equations = ["len(size) = 3"]
+
+    def build(self):
+        return cube(1)
+
+
+def test_auto_declared_float_hints_explicit_declaration():
+    with pytest.raises(ValidationError, match="cannot coerce") as exc_info:
+        _AutoFloatFromEquation(size=(1, 2, 3))
+    msg = str(exc_info.value)
+    assert "auto-declared as Param(float)" in msg
+    assert "size = Param(tuple)" in msg
+
+
+def test_user_declared_float_no_hint():
+    """Explicit Param(float) coercion failures must NOT carry the auto-declare
+    hint — the user already chose the type."""
+    with pytest.raises(ValidationError, match="cannot coerce") as exc_info:
+        _Box(width="not a number")
+    assert "auto-declared" not in str(exc_info.value)
+
+
+class _ExplicitTupleParam(Component):
+    """Companion positive case: declaring `size = Param(tuple)` lets
+    equations consume `len(size)` cleanly."""
+    size = Param(tuple)
+    equations = ["len(size) = 3", "thk > 0"]
+
+    def build(self):
+        return cube(1)
+
+
+def test_explicit_tuple_param_supports_len_equation():
+    _ExplicitTupleParam(size=(1, 2, 3), thk=2)
+    with pytest.raises(ValidationError):
+        _ExplicitTupleParam(size=(1, 2), thk=2)
+
+
 # --- Validators ---
 
 

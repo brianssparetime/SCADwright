@@ -138,7 +138,7 @@ If a line is trying to do two things at once (pick a value *and* check something
 
 ### `Param(...)` for non-floats and defaults
 
-Use `Param(...)` when a parameter isn't a plain float (a bool, a string, a tuple, a spec object) or when it needs a default or an enumerated choice:
+Use `Param(...)` above equations when a parameter isn't a plain float (a bool, a string, a tuple, a spec object) or when it needs a default or an enumerated choice:
 
 ```python
 class CaseBase(Component):
@@ -146,8 +146,8 @@ class CaseBase(Component):
     equations = ["wall_thk, floor_thk > 0"]
 
 class Tube(Component):
-    equations = ["od = id + 2*thk", "h, id, od, thk > 0"]
     slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
+    equations = ["od = id + 2*thk", "h, id, od, thk > 0"]
 ```
 
 Options:
@@ -156,6 +156,17 @@ Options:
 - `default`: used when the caller doesn't pass this parameter. Without a default, the parameter is required.
 - `positive`, `non_negative`, `min`, `max`, `range`, `one_of`: common validators you can list inline.
 - `validators`: a list of your own check functions (each raises `ValidationError` on bad input).
+
+A name appearing only in `equations` auto-declares as `Param(float)`. For tuples, namedtuples, ints, bools, or other non-float types, failure to declare the Param explicitly above the equations list fails with a coercion error pointing at the missing declaration:
+
+```python
+class MountingPlate(Component):
+    size = Param(tuple)                          # explicit; equations can read len(size), size[0]
+    equations = [
+        "len(size) = 2",
+        "thk, hole_d > 0",
+    ]
+```
 
 ### `params = "..."` for unbounded floats (rare)
 
