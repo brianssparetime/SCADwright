@@ -27,6 +27,15 @@ The bounding box is computed in *world coordinates* — it accounts for any tran
 
 `bbox` works on any shape: primitives, transforms, CSG combinations, components, custom transforms.
 
+The same value is also available as a chained property on every shape:
+
+```python
+part.bbox.size       # (10, 20, 30) — no import needed
+part.bbox.center     # (10, 10, 15)
+```
+
+`shape.bbox` is exactly equivalent to `bbox(shape)`; pick whichever reads better in context.
+
 ### `BBox`
 
 The bounding box object has a few useful methods:

@@ -577,16 +577,16 @@ class Node(
     def attach(
         self,
         other: "Node",
-        face: str = "top",
+        on: str = "top",
         at: str = "bottom",
         *,
         orient: bool = False,
         fuse: bool = False,
         eps: float = 0.01,
     ) -> "Node":
-        """Position self so its ``at`` anchor touches ``other``'s ``face`` anchor.
+        """Position self so its ``at`` anchor touches ``other``'s ``on`` anchor.
 
-        Both ``face`` and ``at`` accept friendly names (``"top"``, ``"bottom"``,
+        Both ``on`` and ``at`` accept friendly names (``"top"``, ``"bottom"``,
         ``"front"``, ``"back"``, ``"lside"``, ``"rside"``) or axis-sign names
         (``"+z"``, ``"-z"``, ``"+y"``, ``"-y"``, ``"+x"``, ``"-x"``).
 
@@ -608,7 +608,7 @@ class Node(
         from scadwright.ast.transforms import Translate
 
         loc = SourceLocation.from_caller()
-        other_anchor = _resolve_attach_anchor(other, face, "other", loc)
+        other_anchor = _resolve_attach_anchor(other, on, "other", loc)
         self_anchor = _resolve_attach_anchor(self, at, "self", loc)
 
         if not orient:
@@ -658,6 +658,18 @@ class Node(
         parent_bb = _bbox(parent)
         ax = _detect_through_axis(self_bb, parent_bb, axis, loc)
         return _extend_through_faces(self, self_bb, parent_bb, ax, eps, loc)
+
+    @property
+    def bbox(self):
+        """The world-space axis-aligned bounding box of this shape.
+
+        Equivalent to ``scadwright.bbox(self)``. Use ``.bbox.size``,
+        ``.bbox.center``, ``.bbox.min``, ``.bbox.max`` for derived
+        quantities. For Components, the bbox is cached on the instance
+        and invalidated when a Param is changed.
+        """
+        from scadwright.bbox import bbox as _bbox_fn
+        return _bbox_fn(self)
 
     # --- boolean operators ---
 

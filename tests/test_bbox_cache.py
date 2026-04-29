@@ -46,3 +46,52 @@ def test_param_component_has_bbox_cache():
     assert p._bbox_cache is None
     bbox(p)
     assert p._bbox_cache is not None
+
+
+# --- node.bbox property (matches free function) ---
+
+
+def test_bbox_property_on_primitive_matches_free_function():
+    c = cube([10, 20, 30])
+    assert c.bbox == bbox(c)
+    assert c.bbox.size == (10.0, 20.0, 30.0)
+
+
+def test_bbox_property_on_transformed_node_matches_free_function():
+    c = cube([10, 10, 10]).up(5).right(2)
+    assert c.bbox == bbox(c)
+
+
+def test_bbox_property_on_component_uses_cache():
+    c = _Counter()
+    _ = c.bbox
+    assert _Counter._calls == 1
+    _ = c.bbox
+    assert _Counter._calls == 1   # second access hits the cache
+
+
+def test_bbox_property_on_component_matches_free_function():
+    class _P(Component):
+        size = Param(float, default=10)
+
+        def build(self):
+            return cube(self.size)
+
+    p = _P(size=7)
+    assert p.bbox == bbox(p)
+    assert p.bbox.size == (7.0, 7.0, 7.0)
+
+
+def test_bbox_property_invalidates_with_param_change():
+    """Setting a Param invalidates the cache; .bbox reflects the new value."""
+    class _P(Component):
+        size = Param(float, default=10)
+
+        def build(self):
+            return cube(self.size)
+
+    p = _P(size=5)
+    assert p.bbox.size == (5.0, 5.0, 5.0)
+    # Pre-freeze direct __set__ via the descriptor invalidates the cache.
+    type(p).size.__set__(p, 8)
+    assert p.bbox.size == (8.0, 8.0, 8.0)

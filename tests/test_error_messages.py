@@ -239,7 +239,7 @@ def test_attach_unknown_anchor_suggests_available():
 
     p = Plate(w=20, h=20, thk=3)
     with pytest.raises(ValidationError) as exc_info:
-        cylinder(h=5, r=2).attach(p, face="nonexistnt")
+        cylinder(h=5, r=2).attach(p, on="nonexistnt")
     msg = str(exc_info.value)
     assert "attach" in msg
     assert "nonexistnt" in msg
@@ -253,7 +253,7 @@ def test_attach_custom_anchor_on_primitive_errors_with_guidance():
     a = cube([10, 10, 10])
     b = cube([5, 5, 5])
     with pytest.raises(ValidationError) as exc_info:
-        b.attach(a, face="top", at="custom_thing")
+        b.attach(a, on="top", at="custom_thing")
     msg = str(exc_info.value)
     assert "custom anchor" in msg
     assert "Components" in msg or "Component" in msg
@@ -377,3 +377,118 @@ def test_non_boolean_rule_rejected_at_class_def():
             equations = ["len(size)"]  # no comparison — ambiguous as a rule
             def build(self): return cube([1, 1, 1])
     assert "not a boolean rule" in str(exc_info.value)
+
+
+# =============================================================================
+# Source-line index in resolver error messages
+# =============================================================================
+
+
+def test_constraint_violation_reports_source_line_index():
+    """A failing rule's error message names the offending line in the
+    user's `equations` list as `Component.equations[N]`."""
+    class MyTube(Component):
+        equations = [
+            "h, id, od > 0",     # index 0
+            "od = id + 2",       # index 1
+            "id < od",           # index 2
+        ]
+        def build(self): return cube([1, 1, 1])
+
+    # id > od: violates the rule on index 2.
+    with pytest.raises(ValidationError) as exc_info:
+        MyTube(h=10, id=20, od=15)
+    msg = str(exc_info.value)
+    assert "MyTube.equations[2]" in msg
+    assert "constraint violated" in msg
+    assert "`id < od`" in msg
+
+
+def test_equation_violation_reports_source_line_index():
+    """An over-supplied equation that disagrees names its source line."""
+    class MyTube(Component):
+        equations = [
+            "h, id, od, thk > 0",        # index 0
+            "od = id + 2*thk",           # index 1
+        ]
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError) as exc_info:
+        MyTube(h=10, id=8, od=10, thk=2)   # od should be 12, not 10
+    msg = str(exc_info.value)
+    assert "MyTube.equations[1]" in msg
+    assert "equation violated" in msg
+
+
+def test_comma_broadcast_reports_source_line_index():
+    """A comma-broadcast rule reports the source line index, not a
+    post-broadcast position. The expanded form names the failing slice.
+
+    Uses a name-vs-name comparison so the per-Param-validator shortcut
+    (which fires at __set__ time without going through the resolver)
+    doesn't apply — the resolver has to evaluate the constraint and
+    surface its location.
+    """
+    class C(Component):
+        equations = [
+            "a, b > 0",          # index 0 — per-Param shortcuts (positive)
+            "ceiling > 0",       # index 1
+            "a, b < ceiling",    # index 2 — broadcast, name-vs-name; resolver path
+        ]
+        def build(self): return cube([1, 1, 1])
+
+    # b violates `b < ceiling`.
+    with pytest.raises(ValidationError) as exc_info:
+        C(a=1, b=20, ceiling=10)
+    msg = str(exc_info.value)
+    assert "C.equations[2]" in msg          # source line, not broadcast offset
+    assert "`b < ceiling`" in msg           # expanded slice surfaces the failing name
+
+
+def test_equation_index_is_zero_based():
+    """The first line in `equations` is `equations[0]`, matching Python
+    list semantics.
+
+    Uses a name-vs-name comparison so the resolver path fires (not the
+    per-Param-validator shortcut, which would surface `C.x: must be > ...`
+    instead of an equations-index prefix).
+    """
+    class C(Component):
+        equations = [
+            "x = 5",              # index 0 — sets x
+            "y = 3",              # index 1 — sets y
+            "x < y",              # index 2 — fails (5 < 3 false)
+        ]
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError) as exc_info:
+        C()
+    msg = str(exc_info.value)
+    # The constraint at index 2 is what fires; index 0 and 1 resolved.
+    assert "C.equations[2]" in msg
+    assert "C.equations[0]" not in msg
+    assert "C.equations[1]" not in msg
+
+
+def test_system_solve_reports_multiple_indices():
+    """Coupled equations that sympy hands as a system report every
+    involved source-line index when no solution exists.
+
+    Using `c` as a Param breaks the class-def-time mutual-inconsistency
+    check (which only flags constants-on-one-side cases), forcing the
+    failure into the runtime system-solve path.
+    """
+    class C(Component):
+        equations = [
+            "a + b = c",          # index 0
+            "a + b = c + 5",      # index 1 — never simultaneously true
+            "c > 0",              # index 2
+        ]
+        def build(self): return cube([1, 1, 1])
+
+    with pytest.raises(ValidationError) as exc_info:
+        C(c=3)
+    msg = str(exc_info.value)
+    # Both contributing source lines should appear in the prefix.
+    assert "C.equations[0, 1]" in msg
+    assert "no solution" in msg

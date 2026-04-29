@@ -172,3 +172,103 @@ def test_comma_lhs_with_mismatched_length_tuple_ok():
 # Full Component integration of comma-expansion equations requires
 # restructuring _register_equations (a later phase); the parser-level
 # behavior is verified above.
+
+
+# =============================================================================
+# Class-definition-time errors include the source-line index prefix
+# =============================================================================
+# Each test below pins the new ``ClassName.equations[N]:`` prefix on a
+# class-def-time error site. Existing body-substring assertions in this
+# file (above) continue to pass because the message body is unchanged.
+
+
+def test_chained_assignment_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "a = b = c"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_empty_side_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "y = "]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_syntax_error_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "y = 1 +"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_walrus_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "y = (z := 5)"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_tuple_unpack_rejection_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "a, b = (3, 4)"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_optional_target_rejection_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "?y = 5"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_not_a_boolean_rule_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x > 0", "len(size)"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_unknown_function_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x, y > 0", "x = snh(y)"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_self_reference_includes_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["q > 0", "x = x + 1"]
+            def build(self): return cube(1)
+    assert "_Bad.equations[1]" in str(exc_info.value)
+
+
+def test_mutual_inconsistency_uses_multi_index():
+    with pytest.raises(ValidationError) as exc_info:
+        class _Bad(Component):
+            equations = ["x + y = 5", "x + y = 9"]
+            def build(self): return cube(1)
+    msg = str(exc_info.value)
+    assert "_Bad.equations[0, 1]" in msg
+
+
+def test_no_class_name_degrades_to_bare_index():
+    """When parse_equations_unified is called without a class context
+    (e.g. directly from tests), the prefix degrades to just `equations[N]:`."""
+    with pytest.raises(ValidationError) as exc_info:
+        parse_equations_unified(["x > 0", "a = b = c"])
+    msg = str(exc_info.value)
+    assert "equations[1]" in msg
+    # And no spurious leading dot.
+    assert ".equations[1]" not in msg

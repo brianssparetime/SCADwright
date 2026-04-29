@@ -1,7 +1,7 @@
 """Wall-mount coat hook: plate + J-hook assembled via named anchors.
 
 Both Components declare named anchors on the class. The Design joins
-them with `attach(parent, face="anchor_name", fuse=True)`, which picks
+them with `attach(parent, on="anchor_name", fuse=True)`, which picks
 a specific anchor on the parent. The plate offers two anchors (one for
 the hook, one for future use) and the hook offers one (its base), so
 the `attach()` call reads like plain English.
@@ -133,7 +133,7 @@ class CoatHook(Design):
         # anchor point.
         return union(
             self.plate,
-            self.hook.attach(self.plate, face="hook_mount", fuse=True),
+            self.hook.attach(self.plate, on="hook_mount", fuse=True),
         )
 
     @variant(fn=48)

@@ -166,7 +166,7 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
     )
 
     unified_eqs, unified_constraints, optional_names = (
-        parse_equations_unified(all_eq_strs)
+        parse_equations_unified(all_eq_strs, class_name=cls.__name__)
     )
 
     curated = set(_CURATED_BUILTINS) | set(_CURATED_MATH)
@@ -284,6 +284,65 @@ def _collect_anchor_defs(cls) -> dict:
             if isinstance(value, AnchorDef):
                 anchor_defs[name] = value
     return anchor_defs
+
+
+# =============================================================================
+# build() return-value diagnostics
+# =============================================================================
+#
+# When ``build()`` returns something the framework can't materialize, the
+# error needs to be specific enough that a user (especially a fresh AI
+# instance) can fix it without grepping the source. The two functions below
+# format the diagnostic; the actual raise site is in ``_invoke_build``.
+
+
+def _describe_build_result(result) -> str:
+    """One-phrase description of an unexpected ``build()`` return value."""
+    from scadwright.ast.base import Node as _Node
+
+    if result is None:
+        return "None"
+    if isinstance(result, (list, tuple)):
+        kind = type(result).__name__
+        if not result:
+            return f"empty {kind}"
+        if all(isinstance(x, _Node) for x in result):
+            return f"{kind} of {len(result)} Nodes"
+        bad = [(i, type(x).__name__) for i, x in enumerate(result)
+               if not isinstance(x, _Node)]
+        bad_summary = ", ".join(t for _, t in bad[:3])
+        if len(bad) > 3:
+            bad_summary += f", ... ({len(bad)} total)"
+        return f"{kind} with non-Node items (types: {bad_summary})"
+    return type(result).__name__
+
+
+def _build_return_hint(result) -> str | None:
+    """Return a focused hint for the most common new-author mistakes, or
+    ``None`` to fall back to the generic message."""
+    from scadwright.ast.base import Node as _Node
+
+    if result is None:
+        return (
+            "did you forget a `return` statement? For multiple parts, "
+            "use `yield each_part` (auto-unioned by the framework)."
+        )
+    if isinstance(result, (list, tuple)):
+        if not result:
+            return (
+                "build() must `yield` at least one part, or `return` a "
+                "single Node."
+            )
+        if all(isinstance(x, _Node) for x in result):
+            return (
+                "change `return [a, b, c]` to either `yield a; yield b; "
+                "yield c` (preferred — auto-unioned by the framework) "
+                "or `return union(a, b, c)`."
+            )
+        # mixed list/tuple: indices are useful, the description already
+        # names the bad types — no extra hint adds value.
+        return None
+    return None
 
 
 class Component(Node):
@@ -473,11 +532,19 @@ class Component(Node):
                         source_location=self.source_location,
                     )
             return parts[0] if len(parts) == 1 else _union(*parts)
-        raise BuildError(
-            f"{type(self).__name__}.build() must return a Node or yield Nodes; "
-            f"got {type(result).__name__}",
-            source_location=self.source_location,
+
+        # Non-Node, non-generator return values. The base error message stays
+        # the same across every shape so existing tests matching on
+        # "must return a Node or yield Nodes" continue to pass; we append a
+        # focused hint for the most common new-author mistakes.
+        cls_name = type(self).__name__
+        base = (
+            f"{cls_name}.build() must return a Node or yield Nodes; "
+            f"got {_describe_build_result(result)}"
         )
+        hint = _build_return_hint(result)
+        msg = f"{base}\nHint: {hint}" if hint else base
+        raise BuildError(msg, source_location=self.source_location)
 
     def _get_built_tree(self) -> Node:
         """Return the materialized subtree, building and caching on first call.

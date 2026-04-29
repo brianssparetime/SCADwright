@@ -204,15 +204,15 @@ plate = cube([40, 40, 2])
 peg   = cube([10, 10, 5]).attach(plate)              # bottom of peg on top of plate
 ```
 
-`face` names which anchor on the other shape to attach to; `at` names which anchor on self to use as the contact point:
+`on` names which anchor on the other shape to attach to; `at` names which anchor on self to use as the contact point:
 
 ```python
-cube([10, 10, 5]).attach(plate, face="top")                    # default
-cube([10, 10, 5]).attach(plate, face="bottom", at="top")       # peg underneath
-cube([5, 5, 5]).attach(plate, face="rside", at="lside")        # side-by-side
+cube([10, 10, 5]).attach(plate, on="top")                    # default
+cube([10, 10, 5]).attach(plate, on="bottom", at="top")       # peg underneath
+cube([5, 5, 5]).attach(plate, on="rside", at="lside")        # side-by-side
 ```
 
-Both `face` and `at` accept friendly names or axis-sign names:
+Both `on` and `at` accept friendly names or axis-sign names:
 
 | Friendly | Axis-sign | Direction   |
 |----------|-----------|-------------|
@@ -232,7 +232,7 @@ cube([5, 5, 5]).attach(plate).right(10)               # offset 10 in +X
 Pass `orient=True` to also rotate self so the two anchors' normals oppose each other (faces touching). Without it, only translation is applied:
 
 ```python
-peg.attach(plate, face="rside", at="bottom", orient=True)  # rotate to face outward
+peg.attach(plate, on="rside", at="bottom", orient=True)  # rotate to face outward
 ```
 
 Components can declare custom anchors at class scope — see [Anchors and attachment](anchors.md) for the full reference.

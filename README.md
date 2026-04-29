@@ -257,7 +257,7 @@ from scadwright.primitives import cube, cylinder
 
 plate = cube([40, 40, 2])
 peg   = cylinder(h=10, r=3).attach(plate)                   # bottom on top
-cap   = cube([8, 8, 2]).attach(peg, face="top")              # cap on top of peg
+cap   = cube([8, 8, 2]).attach(peg, on="top")                # cap on top of peg
 ```
 
 Insert a spacer between any two parts and nothing downstream needs to change. Components can declare custom named anchors for semantically meaningful attachment points.
@@ -276,6 +276,9 @@ from scadwright.asserts import assert_fits_in, assert_no_collision
 
 bb = bbox(my_widget)
 print(bb.size)                             # (width, length, height)
+
+# Or as a chained property on any shape — no import needed:
+print(my_widget.bbox.size)
 
 assert_fits_in(my_widget, [200, 200, 50])  # fits on the print bed?
 assert_no_collision(box, lid)              # parts don't overlap?

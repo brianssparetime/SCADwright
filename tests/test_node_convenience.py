@@ -34,7 +34,7 @@ def test_center_bbox_moves_to_origin_and_preserves_extent(shape, expected_size):
 
 
 @pytest.mark.parametrize(
-    "face, at, peg_size, seat_axis, peg_extent",
+    "on, at, peg_size, seat_axis, peg_extent",
     [
         ("top", "bottom", [10, 10, 5], 2, (2.0, 7.0)),       # default: on top
         ("bottom", "top", [10, 10, 5], 2, (-5.0, 0.0)),      # underneath
@@ -42,16 +42,16 @@ def test_center_bbox_moves_to_origin_and_preserves_extent(shape, expected_size):
     ],
     ids=["default-top", "underneath", "rside"],
 )
-def test_attach_sits_peg_against_plate_face(face, at, peg_size, seat_axis, peg_extent):
+def test_attach_sits_peg_against_plate_face(on, at, peg_size, seat_axis, peg_extent):
     plate = cube([40, 40, 2])
-    peg = cube(peg_size).attach(plate, face=face, at=at)
+    peg = cube(peg_size).attach(plate, on=on, at=at)
     bb = bbox(peg)
     assert bb.min[seat_axis] == pytest.approx(peg_extent[0])
     assert bb.max[seat_axis] == pytest.approx(peg_extent[1])
 
 
 def test_attach_default_args_place_on_top():
-    """Default face='top', at='bottom' puts peg on top of plate."""
+    """Default on='top', at='bottom' puts peg on top of plate."""
     plate = cube([40, 40, 2])
     peg = cube([10, 10, 5]).attach(plate)
     bb = bbox(peg)
@@ -62,8 +62,8 @@ def test_attach_default_args_place_on_top():
 def test_attach_axis_sign_names_work():
     """Axis-sign names (+z, -x, etc.) work the same as friendly names."""
     plate = cube([40, 40, 2])
-    peg_friendly = cube([10, 10, 5]).attach(plate, face="top", at="bottom")
-    peg_axis = cube([10, 10, 5]).attach(plate, face="+z", at="-z")
+    peg_friendly = cube([10, 10, 5]).attach(plate, on="top", at="bottom")
+    peg_axis = cube([10, 10, 5]).attach(plate, on="+z", at="-z")
     bb_f = bbox(peg_friendly)
     bb_a = bbox(peg_axis)
     assert bb_f.min == pytest.approx(bb_a.min)
@@ -72,7 +72,7 @@ def test_attach_axis_sign_names_work():
 
 def test_attach_invalid_face_raises():
     with pytest.raises(ValidationError, match="custom anchor.*only available on Components"):
-        cube(5).attach(cube(5), face="diagonal")
+        cube(5).attach(cube(5), on="diagonal")
 
 
 def test_attach_invalid_at_raises():
@@ -91,7 +91,7 @@ def test_attach_chain_with_translate_offsets_from_center():
 def test_attach_same_face_aligns_faces():
     """Attaching top-to-top aligns the top faces (peg sits below plate)."""
     plate = cube([40, 40, 2])
-    peg = cube([10, 10, 5]).attach(plate, face="top", at="top")
+    peg = cube([10, 10, 5]).attach(plate, on="top", at="top")
     bb = bbox(peg)
     # Peg's top face should be at plate's top (z=2), peg extends down to z=-3.
     assert bb.max[2] == pytest.approx(2.0)

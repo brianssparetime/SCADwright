@@ -96,7 +96,7 @@ cyl = cylinder(r=4, h=15).attach(base_part)
 cap = SphericalCap(cap_dia=8, cap_height=5).attach(cyl)
 ```
 
-Defaults are `face="top"`, `at="bottom"` -- bottom of self on top of other. Use `fuse=True` on joints to eliminate coincident-surface seams in unions.
+Defaults are `on="top"`, `at="bottom"` -- bottom of self on top of other. Use `fuse=True` on joints to eliminate coincident-surface seams in unions.
 
 ### Use `through(parent)` for cutters in `difference()`
 

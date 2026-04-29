@@ -72,26 +72,26 @@ PI4 = pcb_spec(
 
 
 @transform("port_cutout", inline=True)
-def port_cutout(node, *, face, at_along, at_z, width, height, wall_thk):
+def port_cutout(node, *, on, at_along, at_z, width, height, wall_thk):
     """Cut a rectangular port through one wall of a box-like node.
 
     The cutter is sized to `wall_thk` deep (matching the case wall) and
-    positioned flush against the chosen face. `through()` extends it
-    outward so the boolean is clean without touching the opposite wall.
+    positioned flush against the wall named by `on`. `through()` extends
+    it outward so the boolean is clean without touching the opposite wall.
     """
     b = bbox(node)
-    if face in ("+x", "-x"):
+    if on in ("+x", "-x"):
         cutter = cube([wall_thk, width, height])
-        x = b.max[0] - wall_thk if face == "+x" else b.min[0]
+        x = b.max[0] - wall_thk if on == "+x" else b.min[0]
         cutter = cutter.translate([x, at_along - width / 2, at_z - height / 2])
         cutter = cutter.through(node, axis="x")
-    elif face in ("+y", "-y"):
+    elif on in ("+y", "-y"):
         cutter = cube([width, wall_thk, height])
-        y = b.max[1] - wall_thk if face == "+y" else b.min[1]
+        y = b.max[1] - wall_thk if on == "+y" else b.min[1]
         cutter = cutter.translate([at_along - width / 2, y, at_z - height / 2])
         cutter = cutter.through(node, axis="y")
     else:
-        raise ValueError(f"port_cutout: face must be +x/-x/+y/-y, got {face!r}")
+        raise ValueError(f"port_cutout: on must be +x/-x/+y/-y, got {on!r}")
     return difference(node, cutter)
 
 
@@ -180,7 +180,7 @@ class CaseBase(Component):
             else:
                 at_along = port.along - pcb.length / 2
             body = body.port_cutout(
-                face=port.face,
+                on=port.face,
                 at_along=at_along,
                 at_z=self.pcb_top_z + port.z_above_pcb,
                 width=port.width,

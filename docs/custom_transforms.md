@@ -92,21 +92,21 @@ Without `decoration=True`, the host's custom anchors disappear after the transfo
 
 ### Pattern: face-relative transforms
 
-A common pattern for transforms that operate on a specific face of a shape (e.g. cutting a port through a wall, adding a boss to a face): accept a `face` parameter, use `bbox()` to find the face plane, and position the operation in face-local coordinates.
+A common pattern for transforms that operate on a specific face of a shape (e.g. cutting a port through a wall, adding a boss to a face): accept an `on` parameter, use `bbox()` to find the face plane, and position the operation in face-local coordinates. Naming the kwarg `on` matches the convention used by `attach()` and `add_text()` — the same word for "which face of this shape" everywhere it appears.
 
 ```python
 @transform("port_cutout", inline=True)
-def port_cutout(node, *, face, at_along, at_z, width, height):
+def port_cutout(node, *, on, at_along, at_z, width, height):
     b = bbox(node)
-    if face in ("+x", "-x", "rside", "lside"):
+    if on in ("+x", "-x", "rside", "lside"):
         cutter = cube([b.size[0] + 2, width, height], center=True)
-        x_pos = b.max[0] if face in ("+x", "rside") else b.min[0]
+        x_pos = b.max[0] if on in ("+x", "rside") else b.min[0]
         cutter = cutter.translate([x_pos, at_along, at_z])
     # ... similar for +y/-y, +z/-z ...
     return difference(node, cutter)
 ```
 
-This keeps the face-resolution logic inside the transform — callers just write `body.port_cutout(face="rside", at_along=12, ...)` and don't think about coordinates. The `electronics-case` example uses this pattern extensively.
+This keeps the face-resolution logic inside the transform — callers just write `body.port_cutout(on="rside", at_along=12, ...)` and don't think about coordinates. The `electronics-case` example uses this pattern extensively.
 
 ---
 

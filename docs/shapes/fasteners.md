@@ -57,7 +57,7 @@ Hollow screw-mount column. Publishes a `mount_top` anchor at the top.
 
 ```python
 post = Standoff(od=7, id=3, h=8)
-pcb = cube([50, 30, 1.6]).attach(post, face="mount_top")
+pcb = cube([50, 30, 1.6]).attach(post, on="mount_top")
 ```
 
 ![Standoff](images/standoff.png)

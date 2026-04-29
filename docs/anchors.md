@@ -31,17 +31,19 @@ plate = cube([40, 40, 2])
 peg   = cube([10, 10, 5]).attach(plate)    # bottom of peg on top of plate
 ```
 
-`attach()` defaults to `face="top"` (the anchor on the other shape) and `at="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
+`attach()` defaults to `on="top"` (the anchor on the other shape) and `at="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
 
 ## Choosing faces
 
-Use `face` and `at` to pick which anchors to align:
+Use `on` and `at` to pick which anchors to align:
 
 ```python
-peg.attach(plate, face="bottom", at="top")       # peg underneath plate
-peg.attach(plate, face="rside", at="lside")      # peg to the right of plate
-peg.attach(plate, face="top", at="top")           # align top faces (peg hangs down)
+peg.attach(plate, on="bottom", at="top")       # peg underneath plate
+peg.attach(plate, on="rside", at="lside")      # peg to the right of plate
+peg.attach(plate, on="top", at="top")           # align top faces (peg hangs down)
 ```
+
+`on` names the anchor on the parent (the thing being attached to); `at` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. `at` is context-sensitive — see [`at=` across the API](#at-across-the-api) below.
 
 Chain a translate for offset placement:
 
@@ -54,7 +56,7 @@ peg.attach(plate).right(10)           # on top, shifted 10 in +X
 By default, `attach()` only translates. Pass `orient=True` to also rotate self so the two anchors' normals oppose each other (faces touching):
 
 ```python
-peg.attach(plate, face="rside", at="bottom", orient=True)
+peg.attach(plate, on="rside", at="bottom", orient=True)
 ```
 
 This rotates the peg so its bottom normal faces in the -X direction (opposing the plate's rside +X normal), then translates it into position.
@@ -87,7 +89,7 @@ mount_face  = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))  # expression
 The attribute name (`mount_face`) becomes the anchor's name. Callers attach to it by that name:
 
 ```python
-sensor = cube([8, 8, 4]).attach(Bracket(w=20, thk=3, depth=15), face="mount_face")
+sensor = cube([8, 8, 4]).attach(Bracket(w=20, thk=3, depth=15), on="mount_face")
 ```
 
 Custom anchors with the same name as a standard face (e.g. `"top"`) override the bbox-derived default. This lets a Component define a semantically meaningful "top" that differs from its bounding box top.
@@ -100,7 +102,7 @@ Anchors (including custom ones) propagate through transforms:
 
 ```python
 bracket = Bracket(w=20, thk=3, depth=15).right(20).up(10)
-sensor = cube([8, 8, 4]).attach(bracket, face="mount_face")
+sensor = cube([8, 8, 4]).attach(bracket, on="mount_face")
 # mount_face position is correctly shifted by both transforms
 ```
 
@@ -156,3 +158,16 @@ Shape-library Components ship with useful custom anchors:
 | `Standoff`     | `mount_top`       | Top of the standoff column      |
 | `Bolt`         | `tip`             | Bottom of the shaft             |
 | `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
+
+## `at=` across the API
+
+`at=` answers "where on the placed/moved thing?" Its form varies with the call:
+
+| Call | `at=` form | Meaning |
+|---|---|---|
+| `attach(other, on=..., at=...)` | string | anchor name on self (the thing being moved) |
+| `add_text(on=..., at=(u, v))` | 2-tuple in mm | offset in the chosen face's tangent plane |
+| `add_text(at=(x, y, z), normal=...)` | 3-tuple in mm | ad-hoc 3D position (no `on=`) |
+| `anchor(at=..., normal=...)` (declaration) | 3-tuple or string-expr | the anchor's position |
+
+The asymmetry is deliberate: `attach` moves an existing shape (which has its own anchors), so `at=` selects one. `add_text` stamps a generated 2D feature onto a host (no self-anchors), so `at=` is the placement offset within the chosen face. Anchor *declarations* use `at=` for the anchor's position itself.

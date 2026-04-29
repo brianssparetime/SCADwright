@@ -92,7 +92,7 @@ cube(1).red()     .steelblue(alpha=0.5)   # any SVG/X11 color name
 # Placement helpers:
 part.center_bbox()                        # AABB centered at origin
 peg.attach(plate)                         # bottom of peg on top of plate
-peg.attach(plate, face="rside", at="lside")  # side-by-side
+peg.attach(plate, on="rside", at="lside")  # side-by-side
 peg.attach(plate, orient=True)            # rotate to align normals
 pylon.attach(floor, fuse=True)            # overlap EPS into contact face
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
@@ -486,7 +486,8 @@ m.is_identity
 ## Bounding boxes and tests &nbsp; &nbsp;[→ full](introspection.md)
 
 ```python
-bb = bbox(shape)                            # world AABB
+bb = bbox(shape)                            # world AABB (free function)
+bb = shape.bbox                             # same — chained property on every shape
 bb.min   bb.max   bb.size   bb.center
 bb.contains(other)    bb.overlaps(other)
 bb.union(other)       bb.intersection(other)

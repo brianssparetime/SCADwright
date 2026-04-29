@@ -118,7 +118,7 @@ def test_setup_anchor_overrides_class_scope():
 
 def test_attach_uses_custom_anchor():
     b = Bracket()
-    peg = cube([4, 4, 6]).attach(b, face="mount_face")
+    peg = cube([4, 4, 6]).attach(b, on="mount_face")
     bb = bbox(peg)
     # mount_face is at z=3; peg's bottom (at=bottom) aligns there.
     assert bb.min[2] == pytest.approx(3.0)
@@ -130,13 +130,13 @@ def test_attach_uses_custom_anchor():
 
 def test_custom_anchor_on_primitive_raises():
     with pytest.raises(ValidationError, match="custom anchor.*only available on Components"):
-        cube(5).attach(cube(10), face="mount_face")
+        cube(5).attach(cube(10), on="mount_face")
 
 
 def test_unknown_custom_anchor_on_component_raises():
     b = Bracket()
     with pytest.raises(ValidationError, match="no anchor.*nonexistent"):
-        cube(5).attach(b, face="nonexistent")
+        cube(5).attach(b, on="nonexistent")
 
 
 def test_anchor_bad_expression_raises():

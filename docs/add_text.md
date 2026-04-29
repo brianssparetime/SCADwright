@@ -272,7 +272,7 @@ plate.add_text(label="A", relief=0.4, on="top",   font_size=4) \
 
 # Label, then attach:
 labeled = bracket.add_text(label="A1", relief=0.3, on="top", font_size=3)
-sensor = cube([8, 8, 4]).attach(labeled, face="badge")
+sensor = cube([8, 8, 4]).attach(labeled, on="badge")
 ```
 
 If you wrap a labeled host in an explicit `union()` or `difference()`, the host's custom anchors do go away — at that point you've made a new combined shape.

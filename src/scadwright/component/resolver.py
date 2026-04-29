@@ -48,12 +48,17 @@ class ParsedEquation:
     Per the spec, both have the same semantics: any bare-Name side is a
     candidate target the resolver can fill or the user can supply, and
     a non-bare side is computed or consistency-checked.
+
+    ``source_line_index`` is the 0-based position of the originating line
+    in the user's ``equations`` list. Comma-broadcast siblings share the
+    same index. Used to surface the offending line in error messages.
     """
     raw: str
     lhs: ast.AST
     rhs: ast.AST
     referenced_names: frozenset[str]
     line_optionals: frozenset[str]
+    source_line_index: int
 
 
 # =============================================================================
@@ -145,14 +150,45 @@ def ast_to_sympy(
 
 @dataclass(frozen=True)
 class ParsedConstraint:
-    """A single constraint: a boolean expression that must hold."""
+    """A single constraint: a boolean expression that must hold.
+
+    ``source_line_index`` is the 0-based position of the originating line
+    in the user's ``equations`` list. Comma-broadcast siblings share the
+    same index.
+    """
     raw: str
     expr: ast.AST
     referenced_names: frozenset[str]
     line_optionals: frozenset[str]
+    source_line_index: int
 
 
-def _split_top_level_equals(line: str) -> tuple[str, str] | None:
+# =============================================================================
+# Class-definition-time error prefix helpers
+# =============================================================================
+#
+# Mirror the runtime ``IterativeResolver._loc`` / ``_loc_multi`` shape so the
+# user sees a consistent ``ClassName.equations[N]:`` prefix in every error,
+# whether it fires at class-define time (parsing/inconsistency checks) or at
+# instantiation (resolver). ``class_name`` is empty when ``parse_equations_unified``
+# is called without a class context (e.g. from tests); the prefix degrades to
+# just ``equations[N]:``.
+
+
+def _classdef_loc(class_name: str, source_index: int) -> str:
+    base = f"equations[{source_index}]"
+    return f"{class_name}.{base}" if class_name else base
+
+
+def _classdef_loc_multi(class_name: str, items) -> str:
+    unique = sorted({i.source_line_index for i in items})
+    base = f"equations[{', '.join(str(i) for i in unique)}]"
+    return f"{class_name}.{base}" if class_name else base
+
+
+def _split_top_level_equals(
+    line: str, class_name: str = "", source_index: int = 0,
+) -> tuple[str, str] | None:
     """Find the single top-level ``=`` (or ``==``) and split the line.
 
     Returns ``(lhs_text, rhs_text)`` if exactly one top-level equality
@@ -250,7 +286,8 @@ def _split_top_level_equals(line: str) -> tuple[str, str] | None:
         return None
     if len(found) > 1:
         raise ValidationError(
-            f"cannot parse equation {line!r}: chained assignment not allowed "
+            f"{_classdef_loc(class_name, source_index)}: cannot parse equation "
+            f"{line!r}: chained assignment not allowed "
             f"(more than one top-level `=` / `==`); write each equation on "
             f"its own line."
         )
@@ -259,14 +296,16 @@ def _split_top_level_equals(line: str) -> tuple[str, str] | None:
     rhs_text = line[end:].strip()
     if not lhs_text or not rhs_text:
         raise ValidationError(
-            f"cannot parse equation {line!r}: empty expression on one side "
-            f"of the equation operator."
+            f"{_classdef_loc(class_name, source_index)}: cannot parse equation "
+            f"{line!r}: empty expression on one side of the equation operator."
         )
     return lhs_text, rhs_text
 
 
 def parse_equations_unified(
     eq_strs: Sequence[str],
+    *,
+    class_name: str = "",
 ) -> tuple[
     list[ParsedEquation], list[ParsedConstraint],
     frozenset[str],
@@ -280,6 +319,10 @@ def parse_equations_unified(
     happen here. Anything malformed or inconsistent surfaces as a
     ValidationError. Sympy is required (used for the algebraic checks);
     if it's not importable, ``_require_sympy`` raises a helpful error.
+
+    ``class_name`` (optional) is the owning Component's class name. When
+    set, error messages prefix with ``ClassName.equations[N]:``; when
+    empty, the prefix is just ``equations[N]:``.
     """
     from scadwright.component.equations import (
         _extract_optional_markers, _require_sympy,
@@ -291,28 +334,31 @@ def parse_equations_unified(
     constraints: list[ParsedConstraint] = []
     all_optionals: set[str] = set()
 
-    for raw in eq_strs:
+    for source_index, raw in enumerate(eq_strs):
         cleaned, line_opts = _extract_optional_markers(raw)
         all_optionals |= line_opts
         line_opts_frozen = frozenset(line_opts)
 
         # Step 1: split on a top-level equation operator. If the line
         # has one, it's an equation; otherwise it's a constraint.
-        split = _split_top_level_equals(cleaned)
+        split = _split_top_level_equals(cleaned, class_name, source_index)
 
         if split is not None:
             lhs_text, rhs_text = split
             _emit_equation(
                 lhs_text, rhs_text, cleaned, line_opts_frozen,
-                equations,
+                source_index, class_name, equations,
             )
         else:
-            _emit_constraint(cleaned, line_opts_frozen, constraints)
+            _emit_constraint(
+                cleaned, line_opts_frozen, source_index, class_name,
+                constraints,
+            )
 
     # Class-def-time validation passes.
-    _check_unknown_function_calls(equations, constraints)
-    _check_self_reference(equations)
-    _check_mutual_inconsistency(equations)
+    _check_unknown_function_calls(equations, constraints, class_name)
+    _check_self_reference(equations, class_name)
+    _check_mutual_inconsistency(equations, class_name)
 
     return (
         equations,
@@ -324,6 +370,7 @@ def parse_equations_unified(
 def _check_unknown_function_calls(
     equations: list[ParsedEquation],
     constraints: list[ParsedConstraint],
+    class_name: str = "",
 ) -> None:
     """Reject any bare-name function call whose callee isn't in the
     curated namespace and isn't a comprehension/cardinality helper.
@@ -355,21 +402,22 @@ def _check_unknown_function_calls(
         | eq_target_names
     )
 
-    def _check_node(node: ast.AST, raw: str) -> None:
+    def _check_node(node: ast.AST, record) -> None:
         for sub in ast.walk(node):
             if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
                 if sub.func.id not in allowed:
+                    loc = _classdef_loc(class_name, record.source_line_index)
                     raise ValidationError(
-                        f"cannot parse equation {raw!r}: unknown function "
-                        f"{sub.func.id!r} (not a Param, equation target, or "
-                        f"curated math/builtin name)"
+                        f"{loc}: cannot parse equation {record.raw!r}: "
+                        f"unknown function {sub.func.id!r} (not a Param, "
+                        f"equation target, or curated math/builtin name)"
                     )
 
     for eq in equations:
-        _check_node(eq.lhs, eq.raw)
-        _check_node(eq.rhs, eq.raw)
+        _check_node(eq.lhs, eq)
+        _check_node(eq.rhs, eq)
     for c in constraints:
-        _check_node(c.expr, c.raw)
+        _check_node(c.expr, c)
 
 
 # Predicate-shape calls plus cardinality helpers — all are valid bare-
@@ -380,7 +428,9 @@ _PREDICATE_CALL_NAMES = frozenset({
 })
 
 
-def _parse_expr(text: str, raw: str) -> ast.expr:
+def _parse_expr(
+    text: str, raw: str, class_name: str = "", source_index: int = 0,
+) -> ast.expr:
     """Parse ``text`` as a Python expression.
 
     Returns the expression AST. Raises ValidationError naming ``raw``
@@ -392,14 +442,16 @@ def _parse_expr(text: str, raw: str) -> ast.expr:
         tree = ast.parse(text, mode="eval")
     except SyntaxError as exc:
         raise ValidationError(
-            f"cannot parse equation {raw!r}: {exc.msg}"
+            f"{_classdef_loc(class_name, source_index)}: cannot parse "
+            f"equation {raw!r}: {exc.msg}"
         ) from exc
     expr = tree.body
     # Reject the walrus operator anywhere in the parsed expression.
     for sub in ast.walk(expr):
         if isinstance(sub, ast.NamedExpr):
             raise ValidationError(
-                f"equation {raw!r}: walrus operator `:=` not allowed."
+                f"{_classdef_loc(class_name, source_index)}: equation "
+                f"{raw!r}: walrus operator `:=` not allowed."
             )
     return expr
 
@@ -409,6 +461,8 @@ def _emit_equation(
     rhs_text: str,
     raw: str,
     line_opts: frozenset[str],
+    source_index: int,
+    class_name: str,
     out: list[ParsedEquation],
 ) -> None:
     """Build a ParsedEquation from the two halves of a ``=``/``==`` line.
@@ -419,8 +473,8 @@ def _emit_equation(
     reads — the resolver never drives them as outputs (it only assigns
     bare-Name unknowns).
     """
-    lhs = _parse_expr(lhs_text, raw)
-    rhs = _parse_expr(rhs_text, raw)
+    lhs = _parse_expr(lhs_text, raw, class_name, source_index)
+    rhs = _parse_expr(rhs_text, raw, class_name, source_index)
 
     # Comma broadcast on the left side: ``x, y = expr`` means each name
     # gets the same value. The right side is the broadcast value, never a
@@ -440,16 +494,18 @@ def _emit_equation(
             and len(rhs.elts) == len(lhs_names)
         ):
             raise ValidationError(
-                f"equation {raw!r}: in equations, comma broadcasts (each "
-                f"name gets the same value), it does not unpack. If you "
-                f"want different values for each name, write them on "
-                f"separate lines."
+                f"{_classdef_loc(class_name, source_index)}: equation "
+                f"{raw!r}: in equations, comma broadcasts (each name gets "
+                f"the same value), it does not unpack. If you want "
+                f"different values for each name, write them on separate "
+                f"lines."
             )
         for name_node in lhs_names:
             refs = frozenset(_free_names_in(name_node) | _free_names_in(rhs))
             out.append(ParsedEquation(
                 raw=raw, lhs=name_node, rhs=rhs,
                 referenced_names=refs, line_optionals=line_opts,
+                source_line_index=source_index,
             ))
         return
 
@@ -464,7 +520,8 @@ def _emit_equation(
         bare_target = rhs.id
     if bare_target is not None and bare_target in line_opts:
         raise ValidationError(
-            f"equation {raw!r}: target name cannot be marked optional — "
+            f"{_classdef_loc(class_name, source_index)}: equation "
+            f"{raw!r}: target name cannot be marked optional — "
             f"`?{bare_target}` must be a Param, not the target of an "
             f"equation."
         )
@@ -473,12 +530,15 @@ def _emit_equation(
     out.append(ParsedEquation(
         raw=raw, lhs=lhs, rhs=rhs,
         referenced_names=refs, line_optionals=line_opts,
+        source_line_index=source_index,
     ))
 
 
 def _emit_constraint(
     raw: str,
     line_opts: frozenset[str],
+    source_index: int,
+    class_name: str,
     out: list[ParsedConstraint],
 ) -> None:
     """Build a ParsedConstraint from a non-equation line.
@@ -487,7 +547,7 @@ def _emit_constraint(
     a boolean expression, or a call returning bool. Comma-broadcast
     constraints (``x, y > 0``) expand into per-name constraints.
     """
-    expr = _parse_expr(raw, raw)
+    expr = _parse_expr(raw, raw, class_name, source_index)
 
     names_op_rhs = _comma_expanded_compare(expr)
     if names_op_rhs is not None:
@@ -508,12 +568,14 @@ def _emit_constraint(
             out.append(ParsedConstraint(
                 raw=expanded_raw, expr=new_compare,
                 referenced_names=refs, line_optionals=line_opts,
+                source_line_index=source_index,
             ))
         return
 
     if not _is_predicate_shape(expr):
         raise ValidationError(
-            f"equation `{raw}`: not a boolean rule. "
+            f"{_classdef_loc(class_name, source_index)}: equation "
+            f"`{raw}`: not a boolean rule. "
             f"An equation uses `=` (or `==`); a rule uses a comparison "
             f"(`<`, `>`, `<=`, `>=`, `in`) or a boolean expression "
             f"(`all(...)`, `any(...)`, `not ...`, etc.)."
@@ -523,6 +585,7 @@ def _emit_constraint(
     out.append(ParsedConstraint(
         raw=raw, expr=expr,
         referenced_names=refs, line_optionals=line_opts,
+        source_line_index=source_index,
     ))
 
 
@@ -867,7 +930,9 @@ def _sufficient_subsets(
 # =============================================================================
 
 
-def _check_self_reference(equations: list[ParsedEquation]) -> None:
+def _check_self_reference(
+    equations: list[ParsedEquation], class_name: str = "",
+) -> None:
     """Reject equations that reduce to a contradiction in isolation.
 
     Example: ``x = x - 1`` reduces to ``0 = -1``, false.
@@ -893,12 +958,15 @@ def _check_self_reference(equations: list[ParsedEquation]) -> None:
             continue
         if diff.is_number and diff != 0:
             raise ValidationError(
+                f"{_classdef_loc(class_name, eq.source_line_index)}: "
                 f"equation {eq.raw!r}: self-referential and inconsistent "
                 f"(reduces to {sp.sstr(sp.Eq(lhs_expr, rhs_expr))})"
             )
 
 
-def _check_mutual_inconsistency(equations: list[ParsedEquation]) -> None:
+def _check_mutual_inconsistency(
+    equations: list[ParsedEquation], class_name: str = "",
+) -> None:
     """Reject equation systems with no solution.
 
     Builds sympy ``Eq`` objects for every fully-algebraic equation and
@@ -940,8 +1008,8 @@ def _check_mutual_inconsistency(equations: list[ParsedEquation]) -> None:
     if len(sympy_eqs) >= len(symbols):
         eqs_str = "; ".join(f"`{eq.raw}`" for eq in algebraic)
         raise ValidationError(
-            f"equations are inconsistent: no solution to the system "
-            f"{eqs_str}"
+            f"{_classdef_loc_multi(class_name, algebraic)}: equations are "
+            f"inconsistent: no solution to the system {eqs_str}"
         )
 
 
@@ -1047,6 +1115,23 @@ class IterativeResolver:
         # surfaced errors.
         self._pending_eqs: list[int] = list(range(len(equations)))
         self._pending_constraints: list[int] = list(range(len(constraints)))
+
+    # --- error-location helpers ---
+
+    def _loc(self, eq_or_constraint) -> str:
+        """Prefix string pointing at the source line in the user's
+        ``equations`` list. Used by every per-equation/per-constraint
+        error message."""
+        return (
+            f"{self.component_name}.equations"
+            f"[{eq_or_constraint.source_line_index}]"
+        )
+
+    def _loc_multi(self, items) -> str:
+        """Prefix for errors that span multiple equations (system-solve
+        aggregates). Lists each unique source-line index."""
+        unique = sorted({i.source_line_index for i in items})
+        return f"{self.component_name}.equations[{', '.join(str(i) for i in unique)}]"
 
     # --- public ---
 
@@ -1180,7 +1265,7 @@ class IterativeResolver:
                 continue
             if val is not None:
                 raise ValidationError(
-                    f"{self.component_name}: equation `{eq.raw}` would "
+                    f"{self._loc(eq)}: equation `{eq.raw}` would "
                     f"assign {name}={val!r} but {name} was explicitly "
                     f"supplied as None"
                 )
@@ -1219,7 +1304,7 @@ class IterativeResolver:
                 except Exception:
                     return "skipped"
                 raise ValidationError(
-                    f"{self.component_name}: equation `{eq.raw}` would "
+                    f"{self._loc(eq)}: equation `{eq.raw}` would "
                     f"assign {target_name}={val!r} but {target_name} was "
                     f"explicitly supplied as None"
                 )
@@ -1248,7 +1333,7 @@ class IterativeResolver:
         if self._values_equal(lv, rv):
             return "consistent"
         raise ValidationError(
-            f"{self.component_name}: equation violated: `{eq.raw}` "
+            f"{self._loc(eq)}: equation violated: `{eq.raw}` "
             f"(lhs={lv!r}, rhs={rv!r})"
         )
 
@@ -1272,7 +1357,7 @@ class IterativeResolver:
             return "postponed"
         if not solutions:
             raise ValidationError(
-                f"{self.component_name}: equation `{eq.raw}` has no solution"
+                f"{self._loc(eq)}: equation `{eq.raw}` has no solution"
             )
 
         numeric = self._extract_numeric(solutions)
@@ -1296,14 +1381,14 @@ class IterativeResolver:
             valid = self._filter_by_feasibility(target, valid)
         if not valid:
             raise ValidationError(
-                f"{self.component_name}: equation `{eq.raw}`: no candidate "
+                f"{self._loc(eq)}: equation `{eq.raw}`: no candidate "
                 f"for {target} satisfies validators or constraints "
                 f"(candidates: {numeric!r})"
             )
         if len(valid) > 1:
             shown = valid[:_AMBIGUOUS_LIST_LIMIT]
             raise ValidationError(
-                f"{self.component_name}: equation `{eq.raw}` has multiple "
+                f"{self._loc(eq)}: equation `{eq.raw}` has multiple "
                 f"solutions for {target}: {shown!r}"
                 + (" (truncated)" if len(valid) > _AMBIGUOUS_LIST_LIMIT else "")
             )
@@ -1316,7 +1401,7 @@ class IterativeResolver:
             value = self._eval_node(value_node)
         except Exception as exc:
             raise ValidationError(
-                f"{self.component_name}: equation `{eq.raw}` failed: "
+                f"{self._loc(eq)}: equation `{eq.raw}` failed: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
         self._assign_new(target_name, value, eq)
@@ -1368,9 +1453,11 @@ class IterativeResolver:
         except (NotImplementedError, Exception):
             return False
 
+        algebraic_eqs = [self.equations[i] for i, _, _ in algebraic]
+
         if not solutions:
             raise ValidationError(
-                f"{self.component_name}: equations are inconsistent "
+                f"{self._loc_multi(algebraic_eqs)}: equations are inconsistent "
                 f"(no solution to the system)"
             )
 
@@ -1396,15 +1483,15 @@ class IterativeResolver:
             valid = self._filter_systems_by_feasibility(valid)
         if not valid:
             raise ValidationError(
-                f"{self.component_name}: equations have no solution "
-                f"satisfying validators or constraints "
+                f"{self._loc_multi(algebraic_eqs)}: equations have no "
+                f"solution satisfying validators or constraints "
                 f"(candidates: {numeric_solutions[:_AMBIGUOUS_LIST_LIMIT]!r})"
             )
         if len(valid) > 1:
             shown = valid[:_AMBIGUOUS_LIST_LIMIT]
             raise ValidationError(
-                f"{self.component_name}: equations have multiple solutions: "
-                f"{shown!r}"
+                f"{self._loc_multi(algebraic_eqs)}: equations have multiple "
+                f"solutions: {shown!r}"
                 + (" (truncated)" if len(valid) > _AMBIGUOUS_LIST_LIMIT else "")
             )
 
@@ -1422,8 +1509,11 @@ class IterativeResolver:
                     eq.raw if eq is not None
                     else (raw_for_msg or "system-solve")
                 )
+                prefix = (
+                    self._loc(eq) if eq is not None else self.component_name
+                )
                 raise ValidationError(
-                    f"{self.component_name}: equation `{raw}` would "
+                    f"{prefix}: equation `{raw}` would "
                     f"assign {name}={value!r} but {name} is already "
                     f"{self.knowns[name]!r}"
                 )
@@ -1439,8 +1529,11 @@ class IterativeResolver:
                 eq.raw if eq is not None
                 else (raw_for_msg or "system-solve")
             )
+            prefix = (
+                self._loc(eq) if eq is not None else self.component_name
+            )
             raise ValidationError(
-                f"{self.component_name}: equation `{raw}` would assign "
+                f"{prefix}: equation `{raw}` would assign "
                 f"{name}={value!r} but {name} was explicitly supplied as None"
             )
 
@@ -1647,7 +1740,7 @@ class IterativeResolver:
                 continue
             except Exception as exc:
                 raise ValidationError(
-                    f"{self.component_name}: constraint `{c.raw}` "
+                    f"{self._loc(c)}: constraint `{c.raw}` "
                     f"failed to evaluate: {exc}"
                 ) from exc
             self._pending_constraints.remove(i)
@@ -1670,7 +1763,7 @@ class IterativeResolver:
                                 f"{self.component_name}.{name}: {exc}"
                             ) from exc
                 detail = _enrich_constraint_failure(c.expr, full_ns)
-                msg = f"{self.component_name}: constraint violated: `{c.raw}`"
+                msg = f"{self._loc(c)}: constraint violated: `{c.raw}`"
                 if detail:
                     msg += f": {detail}"
                 raise ValidationError(msg)

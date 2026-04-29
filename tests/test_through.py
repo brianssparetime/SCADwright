@@ -123,7 +123,7 @@ def test_attach_fuse_custom_eps():
 def test_attach_fuse_bottom_face():
     """fuse on bottom face pushes upward into other."""
     ceiling = cube([40, 40, 2]).up(20)
-    pendant = cube([5, 5, 10]).attach(ceiling, face="bottom", at="top", fuse=True)
+    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", at="top", fuse=True)
     bb = bbox(pendant)
     # top face of pendant at z=20, pushed 0.01 up into ceiling -> z=20.01
     assert bb.max[2] == pytest.approx(20.01)
@@ -132,7 +132,7 @@ def test_attach_fuse_bottom_face():
 def test_attach_fuse_side_face():
     """fuse on a side face pushes into the side."""
     wall = cube([2, 40, 40])
-    shelf = cube([20, 30, 3]).attach(wall, face="rside", at="lside", fuse=True)
+    shelf = cube([20, 30, 3]).attach(wall, on="rside", at="lside", fuse=True)
     bb = bbox(shelf)
     # Without fuse: lside at x=2. With fuse: pushed 0.01 into wall.
     assert bb.min[0] == pytest.approx(1.99)

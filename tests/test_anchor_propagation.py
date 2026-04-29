@@ -114,7 +114,7 @@ def test_csg_drops_custom_anchors():
 def test_attach_uses_propagated_custom_anchor():
     post = Post()
     moved_post = post.translate([20, 0, 0])
-    peg = cube([3, 3, 4]).attach(moved_post, face="tip")
+    peg = cube([3, 3, 4]).attach(moved_post, on="tip")
     bb = bbox(peg)
     # tip of moved post is at (22.5, 2.5, 10). Peg's bottom should be there.
     assert bb.min[2] == pytest.approx(10.0)
