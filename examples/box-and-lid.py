@@ -203,7 +203,9 @@ class Lid(Component):
                 .through(outer, axis="z")
             )
 
-        return difference(outer, *cutters)
+        return difference(outer, *cutters).add_text(
+            label="LID", relief=0.5, on="top", font_size=12,
+        )
 
 
 # =============================================================================

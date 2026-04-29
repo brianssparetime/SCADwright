@@ -17,7 +17,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Intermediate | [`v-block.py`](v-block.py) | Trigonometry inside `equations` (`sin`, `tan`). Three concrete subclasses, each pinning a different pair of values. |
 | Intermediate | [`wall-hook.py`](wall-hook.py) | Two Components joined with `attach()` at a named anchor. |
 | Intermediate | [`battery-holder.py`](battery-holder.py) | A `namedtuple` spec drives the design. A custom transform. One cradle per battery, via a list built inside `equations`. |
-| Intermediate | [`box-and-lid.py`](box-and-lid.py) | A `Lid` that reads values off a `Box` (the `Box` is a parameter on the `Lid`). `build()` written as a series of `yield` lines. |
+| Intermediate | [`box-and-lid.py`](box-and-lid.py) | A `Lid` that reads values off a `Box` (the `Box` is a parameter on the `Lid`). `build()` written as a series of `yield` lines. `add_text()` labels the lid. |
 | Complex | [`electronics-case.py`](electronics-case.py) | `namedtuple` specs for the PCB and its ports. Three custom transforms. Separate variants for print vs. display. |
 | Complex | [`lens-housing.py`](lens-housing.py) | A helper that turns each lens element into a record with precomputed fields. A conditional that picks between two body shapes. A `halve()` section view in the print variant. |
 
@@ -128,12 +128,13 @@ A snap-on enclosure: a rounded-corner box with chamfered bottom edges and four i
 - A custom transform (`chamfer_top`) uses `bbox()` to size itself to whatever shape it's applied to.
 - The `equations` list combines an equation (`inner_w = outer_w - 2*wall_thk`), bounds on several dimensions, and a comparison between dimensions (`lip_thk < wall_thk`).
 - `.through(parent)` on the lip cutout and the lid recess extends them automatically with no manual EPS.
+- `.add_text()` puts a raised `LID` label centered on the lid's top face — one chained call, no manual extrude or transform.
 
 ![Box and lid](images/BoxAndLid.png)
 
 *Left: display variant, lid floated above the box with the centering lip and pylons visible through the gap. Right: print variant, box and inverted lid laid out on the bed.*
 
-**Reference:** [Param(Component)](../docs/components.md#param-for-non-floats-and-defaults) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes)
+**Reference:** [Param(Component)](../docs/components.md#param-for-non-floats-and-defaults) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [add_text()](../docs/add_text.md)
 
 ---
 
