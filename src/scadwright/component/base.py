@@ -123,21 +123,6 @@ def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
             cloned.__set_name__(cls, name)
 
 
-def _parse_params_string(cls, params: dict[str, Param]) -> None:
-    """Auto-create ``Param(float)`` for each name listed in ``params = "..."``."""
-    params_str = cls.__dict__.get("params", None)
-    if not isinstance(params_str, str):
-        return
-    tokens = [n.strip() for n in params_str.replace(",", " ").split() if n.strip()]
-    for tok in tokens:
-        if tok not in params:
-            p = Param(float)
-            p._auto_declared = True
-            p.__set_name__(cls, tok)
-            setattr(cls, tok, p)
-            params[tok] = p
-
-
 def _register_equations(cls, params: dict[str, Param]) -> None:
     """Parse ``equations = [...]`` into the unified representation and
     auto-declare any Params introduced by names appearing in equations
@@ -466,7 +451,6 @@ class Component(Node):
         super().__init_subclass__(**kwargs)
         params = _collect_params_from_mro(cls)
         _apply_class_attr_overrides(cls, params)
-        _parse_params_string(cls, params)
         _register_equations(cls, params)
         cls.__params__ = params
         cls.__anchor_defs__ = _collect_anchor_defs(cls)

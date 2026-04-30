@@ -51,9 +51,10 @@ class Param:
         self.default = default
         self.doc = doc
         self._name: str = ""  # set by __set_name__
-        # True when the metaclass auto-created this Param from a name appearing
-        # in `equations` or `params = "..."`. Used solely to add a hint to the
-        # coercion error when a non-float value lands on an auto-declared float.
+        # True when the metaclass auto-created this Param from a name
+        # appearing in `equations`. Used solely to add a hint to the
+        # coercion error when a non-float value lands on an auto-declared
+        # float.
         self._auto_declared: bool = False
 
         vs = list(validators)
@@ -166,66 +167,6 @@ class Param:
 
     def has_default(self) -> bool:
         return self.default is not _MISSING
-
-    @staticmethod
-    def group(names: str, type: type | None = None, **kwargs) -> None:
-        """Declare several Params sharing the same type and validators.
-
-        Call from inside a Component class body:
-
-            class Tube(Component):
-                Param.group("h id od thk", float, positive=True)
-                fn = Param(int, default=None)
-                equations = ["od == id + 2*thk"]
-
-        Every name in `names` becomes an independent `Param(type, **kwargs)`
-        on the class. `names` is space- or comma-separated. Per-param
-        overrides are just separate declarations on following lines.
-
-        Note: attributes are injected into the enclosing class-body namespace
-        via frame introspection. IDEs and static type checkers may not see
-        them as class attributes. If you need IDE completion for these
-        fields, declare them individually.
-        """
-        import sys
-
-        # Normalize: accept both space and comma separators.
-        tokens = [n.strip() for n in names.replace(",", " ").split()]
-        if not tokens:
-            raise ValidationError("Param.group: names must be non-empty")
-
-        dupes = {n for n in tokens if tokens.count(n) > 1}
-        if dupes:
-            raise ValidationError(
-                f"Param.group: duplicate name(s) in {names!r}: {sorted(dupes)}"
-            )
-
-        try:
-            frame = sys._getframe(1)
-        except ValueError:
-            raise ValidationError(
-                "Param.group() must be called inside a class body"
-            ) from None
-
-        # Class bodies have `__qualname__` set in their namespace during
-        # class construction (distinguishes them from module/function frames).
-        if "__qualname__" not in frame.f_locals:
-            raise ValidationError(
-                "Param.group() must be called inside a class body"
-            )
-
-        namespace = frame.f_locals
-        class_qualname = namespace.get("__qualname__", "<unknown>")
-        for name in tokens:
-            if name in namespace:
-                raise ValidationError(
-                    f"Param.group: name {name!r} is already defined in class "
-                    f"{class_qualname!r}. Param.group doesn't override existing "
-                    f"declarations — either remove the earlier definition, pick "
-                    f"a different name, or omit {name!r} from the group and "
-                    f"declare only the others."
-                )
-            namespace[name] = Param(type, **kwargs)
 
 
 # --- Validator helpers ---

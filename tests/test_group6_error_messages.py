@@ -88,33 +88,3 @@ def test_scalar_rejection_for_2d_shows_2vec_form():
     assert "y=0" in msg
 
 
-# --- 6d: Param.group collision names the class ---
-
-
-def test_param_group_collision_names_the_class():
-    try:
-        class MyWidget(Component):
-            width = Param(float)
-            Param.group("width height", float, positive=True)
-
-            def build(self):
-                return cube(1)
-    except ValidationError as e:
-        msg = str(e)
-        assert "'width'" in msg
-        # __qualname__ inside a function includes the enclosing scope, e.g.
-        # 'test_param_group_collision_names_the_class.<locals>.MyWidget'.
-        assert "MyWidget" in msg
-        assert "already defined" in msg
-
-
-def test_param_group_collision_suggests_remediation():
-    try:
-        class _Collide(Component):
-            w = Param(float)
-            Param.group("w", float)
-            def build(self): return cube(1)
-    except ValidationError as e:
-        msg = str(e)
-        # Remediation hints visible to the user:
-        assert "remove" in msg.lower() or "different name" in msg.lower()
