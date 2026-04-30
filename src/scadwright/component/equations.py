@@ -80,11 +80,12 @@ def _extract_name_annotations(
     escapes inside single-quoted strings.
 
     Type-tag recognition: after consuming an identifier (with or
-    without a leading ``?``), if the very next character is ``:`` and
-    the character after starts an identifier, the type is captured
-    and both ``:`` and the type-identifier are stripped. The colon
-    must be immediately adjacent — ``count: int`` (with a space) is
-    not a type tag.
+    without a leading ``?``), if the next non-whitespace character is
+    ``:`` and the next non-whitespace character after that starts an
+    identifier, the type is captured and the ``:`` and surrounding
+    whitespace and type identifier are stripped from the cleaned
+    output. All four spacings work: ``count:int``, ``count: int``,
+    ``count :int``, ``count : int``.
     """
     out: list[str] = []
     optional: set[str] = set()
@@ -100,18 +101,27 @@ def _extract_name_annotations(
         return eq_str[start:j], j
 
     def _maybe_type_tag(name: str, after: int) -> int:
-        """If the chars at ``after`` form ``:type``, record and return
-        the new position; otherwise return ``after`` unchanged."""
-        if (
-            after < n
-            and eq_str[after] == ":"
-            and after + 1 < n
-            and (eq_str[after + 1].isalpha() or eq_str[after + 1] == "_")
-        ):
-            type_name, type_end = _read_identifier(after + 1)
-            typed[name] = type_name
-            return type_end
-        return after
+        """If the chars at ``after`` form ``[ws]:[ws]type``, record and
+        return the position after the type identifier; otherwise return
+        ``after`` unchanged.
+
+        Whitespace (spaces or tabs) on either side of the ``:`` is
+        accepted. Newlines are not — a type tag is always within a
+        single logical line.
+        """
+        j = after
+        while j < n and eq_str[j] in " \t":
+            j += 1
+        if j >= n or eq_str[j] != ":":
+            return after
+        j += 1
+        while j < n and eq_str[j] in " \t":
+            j += 1
+        if j >= n or not (eq_str[j].isalpha() or eq_str[j] == "_"):
+            return after
+        type_name, type_end = _read_identifier(j)
+        typed[name] = type_name
+        return type_end
 
     while i < n:
         c = eq_str[i]

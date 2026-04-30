@@ -67,10 +67,38 @@ def test_scanner_ignores_dict_key_colons_in_strings():
     assert typed == {}
 
 
-def test_scanner_requires_no_space_before_colon():
-    # `count: int` (with a space) is NOT a type tag.
+def test_scanner_accepts_space_after_colon():
+    # `count: int` works.
     cleaned, opt, typed = _extract_name_annotations("count: int = 5")
-    assert typed == {}
+    assert cleaned == "count = 5"
+    assert typed == {"count": "int"}
+
+
+def test_scanner_accepts_space_before_colon():
+    # `count :int` works.
+    cleaned, opt, typed = _extract_name_annotations("count :int = 5")
+    assert cleaned == "count = 5"
+    assert typed == {"count": "int"}
+
+
+def test_scanner_accepts_spaces_around_colon():
+    # `count : int` works.
+    cleaned, opt, typed = _extract_name_annotations("count : int = 5")
+    assert cleaned == "count = 5"
+    assert typed == {"count": "int"}
+
+
+def test_scanner_accepts_tab_around_colon():
+    cleaned, opt, typed = _extract_name_annotations("count\t:\tint = 5")
+    assert cleaned == "count = 5"
+    assert typed == {"count": "int"}
+
+
+def test_scanner_accepts_optional_with_whitespace_tag():
+    cleaned, opt, typed = _extract_name_annotations("?direction : bool")
+    assert cleaned == "direction"
+    assert opt == {"direction"}
+    assert typed == {"direction": "bool"}
 
 
 def test_scanner_left_alone_inside_string_literal():
