@@ -114,6 +114,163 @@ def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
 
 
 # =============================================================================
+# Multi-line `equations = """..."""` splitter
+# =============================================================================
+
+
+def _split_equations_text(text: str) -> list[str]:
+    """Split a multi-line ``equations`` string into logical equation lines.
+
+    Mirrors the lexical conventions of the per-line scanners
+    (``_extract_optional_markers``, ``_split_top_level_equals``): single,
+    double, and triple-quoted string literals are recognized so a ``#``
+    or quote inside a literal isn't misread as a comment or boundary.
+
+    A logical line ends at a newline, except when:
+
+    - the newline lies inside a string literal (kept verbatim — an
+      unterminated literal is left for downstream parsing to surface);
+    - bracket/paren/brace depth is positive (the line continues);
+    - the newline is preceded by a ``\\`` outside strings/comments (the
+      backslash and newline are swallowed, the line continues). A ``\\``
+      that falls inside a ``#`` comment does NOT continue the line —
+      matching Python.
+
+    After splitting, each logical line is stripped; empty lines and
+    whole-line ``#`` comments are dropped. Inline comments mid-line
+    survive — the per-line scanners that consume each entry already
+    handle them.
+    """
+    lines: list[str] = []
+    buf: list[str] = []
+    i = 0
+    n = len(text)
+    in_comment = False
+
+    def _flush() -> None:
+        s = "".join(buf).strip()
+        buf.clear()
+        if not s or s.startswith("#"):
+            return
+        lines.append(s)
+
+    while i < n:
+        c = text[i]
+
+        # Inside an end-of-line `#` comment: scan to newline, then end the
+        # logical line. A trailing backslash inside a comment does NOT
+        # continue the line (Python semantics).
+        if in_comment:
+            if c == "\n":
+                in_comment = False
+                _flush()
+                i += 1
+                continue
+            buf.append(c)
+            i += 1
+            continue
+
+        # Triple-quoted string — copy through the closing triple verbatim,
+        # newlines included.
+        if c in ("'", '"') and text[i:i + 3] == c * 3:
+            end = text.find(c * 3, i + 3)
+            if end == -1:
+                buf.append(text[i:])
+                i = n
+                break
+            buf.append(text[i:end + 3])
+            i = end + 3
+            continue
+
+        # Single-line string literal — copy through the matching quote,
+        # honoring backslash escapes.
+        if c in ("'", '"'):
+            quote = c
+            j = i + 1
+            while j < n and text[j] != quote:
+                if text[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            buf.append(text[i:min(j + 1, n)])
+            i = min(j + 1, n)
+            continue
+
+        # Start of a comment: stay on this logical line until the next
+        # newline (handled above).
+        if c == "#":
+            in_comment = True
+            buf.append(c)
+            i += 1
+            continue
+
+        # Backslash continuation: `\` immediately before `\n` (outside
+        # strings and comments) swallows both, gluing this line to the
+        # next.
+        if c == "\\" and i + 1 < n and text[i + 1] == "\n":
+            i += 2
+            continue
+
+        # Newline outside strings/comments: continue the logical line if
+        # any bracket is open; otherwise flush.
+        if c == "\n":
+            depth = _bracket_depth("".join(buf))
+            if depth > 0:
+                buf.append(" ")
+                i += 1
+                continue
+            _flush()
+            i += 1
+            continue
+
+        buf.append(c)
+        i += 1
+
+    if in_comment:
+        in_comment = False
+    _flush()
+    return lines
+
+
+def _bracket_depth(s: str) -> int:
+    """Net bracket/paren/brace depth in ``s``, ignoring quoted regions.
+
+    Used by ``_split_equations_text`` to decide whether a newline
+    continues the current logical line. Triple-quoted and single-quoted
+    string literals are skipped so brackets inside literals don't count.
+    """
+    depth = 0
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c in ("'", '"') and s[i:i + 3] == c * 3:
+            end = s.find(c * 3, i + 3)
+            i = n if end == -1 else end + 3
+            continue
+        if c in ("'", '"'):
+            quote = c
+            j = i + 1
+            while j < n and s[j] != quote:
+                if s[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            i = min(j + 1, n)
+            continue
+        if c == "#":
+            eol = s.find("\n", i)
+            i = n if eol == -1 else eol
+            continue
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        i += 1
+    return depth
+
+
+# =============================================================================
 # Cardinality helpers (used in `equations` strings via the curated namespace)
 # =============================================================================
 

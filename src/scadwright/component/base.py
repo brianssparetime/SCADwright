@@ -150,7 +150,23 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
     forbids user supply. Every free name in any equation or constraint
     becomes a ``Param(float)`` if it isn't already declared.
     """
-    all_eq_strs = list(cls.__dict__.get("equations", None) or [])
+    raw_eqs = cls.__dict__.get("equations", None)
+    if isinstance(raw_eqs, str):
+        from scadwright.component.equations import _split_equations_text
+        all_eq_strs = _split_equations_text(raw_eqs)
+    elif raw_eqs:
+        from scadwright.component.equations import _split_equations_text
+        # List entries may themselves be multi-line strings — expand each
+        # through the splitter. Single-line entries return ``[entry]`` so
+        # pure list-form input is byte-identical to before.
+        all_eq_strs = []
+        for entry in raw_eqs:
+            if isinstance(entry, str) and "\n" in entry:
+                all_eq_strs.extend(_split_equations_text(entry))
+            else:
+                all_eq_strs.append(entry)
+    else:
+        all_eq_strs = []
     if not all_eq_strs:
         if not hasattr(cls, "_unified_equations"):
             cls._unified_equations = []
