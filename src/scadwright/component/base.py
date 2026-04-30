@@ -732,7 +732,19 @@ def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict) -> None
     # Push every resolved value into kwargs so the rest of the auto-init
     # picks it up. Skip None-valued keys for params that weren't supplied
     # to avoid over-supplying optionals back into the kwargs.
+    override_names = getattr(cls, "_override_names", frozenset())
     for name, value in resolved.items():
+        # Override semantic: if the caller passed name=None for an
+        # override target, the resolver's pre-resolve filled the
+        # value via the override pattern. Prefer the resolver's
+        # value over the caller's None.
+        if (
+            name in override_names
+            and kwargs.get(name) is None
+            and value is not None
+        ):
+            kwargs[name] = value
+            continue
         if name in kwargs:
             continue
         kwargs[name] = value

@@ -702,6 +702,24 @@ def _check_eq_placement(
             _walk(node.body, in_iftest, raw, loc)
             _walk(node.orelse, in_iftest, raw, loc)
             return
+        # Comprehension generators carry `if` filter clauses that are
+        # also Python-level `if` conditions — `==` inside them is fine.
+        if isinstance(node, (
+            ast.GeneratorExp, ast.ListComp, ast.SetComp, ast.DictComp,
+        )):
+            # Element / key / value: not in an `if` test.
+            if isinstance(node, ast.DictComp):
+                _walk(node.key, in_iftest, raw, loc)
+                _walk(node.value, in_iftest, raw, loc)
+            else:
+                _walk(node.elt, in_iftest, raw, loc)
+            for gen in node.generators:
+                _walk(gen.iter, in_iftest, raw, loc)
+                _walk(gen.target, in_iftest, raw, loc)
+                # Each `if` clause is an `if`-condition.
+                for ifclause in gen.ifs:
+                    _walk(ifclause, True, raw, loc)
+            return
         for child in ast.iter_child_nodes(node):
             _walk(child, in_iftest, raw, loc)
 
@@ -1554,9 +1572,19 @@ class IterativeResolver:
                 rhs_node = eq.lhs
             if target_name is None:
                 continue
-            # User-supplied targets fall through to consistency-check.
-            if target_name in self._supplied_names:
+            # User-supplied non-None values fall through to the
+            # consistency-check path. An explicit ``name=None`` from
+            # the caller is treated the same as "not supplied" — it
+            # selects the default branch of the override pattern.
+            if (
+                target_name in self._supplied_names
+                and self.knowns.get(target_name) is not None
+            ):
                 continue
+            # Drop the explicit-None binding so the override evaluates
+            # cleanly. The pre-resolve overwrites it with the RHS.
+            if target_name in self.knowns and self.knowns[target_name] is None:
+                del self.knowns[target_name]
 
             # Evaluate the RHS with the target bound to None. The pre-
             # resolution check (_check_non_float_solver_target for

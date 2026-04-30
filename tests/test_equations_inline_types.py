@@ -484,6 +484,118 @@ def test_eq_with_not_inside_if_allowed():
     assert len(eqs) == 1
 
 
+def test_eq_inside_comprehension_if_clause_allowed():
+    # `==` inside a comprehension's `if` filter is a Python-level
+    # `if` condition — should be allowed by the placement rule.
+    eqs, _, _, _ = parse_equations_unified([
+        "result = tuple(x for x in items if x == target)",
+    ])
+    assert len(eqs) == 1
+
+
+def test_eq_in_comprehension_element_rejected():
+    # The comprehension's element expression is NOT an `if`-condition
+    # context. `==` here is a top-level comparison and must be rejected.
+    with pytest.raises(ValidationError, match="`==` as a top-level"):
+        parse_equations_unified([
+            "result = tuple(x == 5 for x in items)",
+        ])
+
+
+# =============================================================================
+# Typed-and-optional override coercion
+# =============================================================================
+
+
+def test_typed_int_override_or_form_widens_default_correctly():
+    # `?count:int = ?count or 1` — when not supplied, RHS yields the
+    # int literal `1`, which fits the int Param. No coercion drama.
+    class C(Component):
+        equations = ["?count:int = ?count or 1"]
+        def build(self): return cube(1)
+
+    assert C().count == 1
+    assert isinstance(C().count, int)
+
+
+def test_typed_float_override_int_default_widens_to_float():
+    # `?radius:float` (explicit float tag — though :float isn't in the
+    # allowlist) — use untagged float instead. Pre-resolve gives int 1,
+    # _coerce_for_param widens to 1.0 because Param.type is float.
+    class C(Component):
+        equations = ["?radius = ?radius or 1"]
+        def build(self): return cube(1)
+
+    assert C().radius == 1.0
+    assert isinstance(C().radius, float)
+
+
+def test_typed_tuple_override_with_empty_tuple_default():
+    class C(Component):
+        equations = [
+            "?items:tuple = ?items if ?items is not None else ()",
+            "len(items) >= 0",
+        ]
+        def build(self): return cube(1)
+
+    assert C().items == ()
+    assert isinstance(C().items, tuple)
+    c = C(items=(1, 2, 3))
+    assert c.items == (1, 2, 3)
+
+
+def test_typed_str_override_with_string_default():
+    class C(Component):
+        equations = [
+            "?axis:str = 'z' if ?axis is None else ?axis",
+            "axis in ('x', 'y', 'z')",
+        ]
+        def build(self): return cube(1)
+
+    assert C().axis == "z"
+    assert C(axis="x").axis == "x"
+
+
+def test_typed_bool_override_with_false_default():
+    class C(Component):
+        equations = [
+            "?n_shape:bool = False if ?n_shape is None else ?n_shape",
+        ]
+        def build(self): return cube(1)
+
+    assert C().n_shape is False
+    assert C(n_shape=True).n_shape is True
+
+
+# =============================================================================
+# Explicit-None contradicting an override
+# =============================================================================
+
+
+def test_explicit_none_treated_as_not_supplied_or_form():
+    # `Component(count=None)` is functionally equivalent to
+    # `Component()` for an override target — the `?` sigil declares
+    # the parameter optional, and explicit None selects the default
+    # branch of the override pattern.
+    class C(Component):
+        equations = ["?count:int = ?count or 1"]
+        def build(self): return cube(1)
+
+    assert C().count == 1
+    assert C(count=None).count == 1
+    assert C(count=4).count == 4
+
+
+def test_explicit_none_treated_as_not_supplied_is_none_form():
+    class C(Component):
+        equations = ["?count:int = 5 if ?count is None else ?count"]
+        def build(self): return cube(1)
+
+    assert C().count == 5
+    assert C(count=None).count == 5
+    assert C(count=10).count == 10
+
+
 def test_scanner_does_not_grab_python_style_annotation_in_call():
     # `func(arg:int)` is not valid Python in an expression context
     # but the equations DSL only uses expressions — verify the scanner
