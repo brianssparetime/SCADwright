@@ -233,3 +233,106 @@ def test_repo_lints_clean():
         f"{len(violations)} violation(s) in {file_count} file(s):\n"
         + "\n".join(v.format() for v in violations)
     )
+
+
+# =============================================================================
+# --full mode: import-time class-define-time errors
+# =============================================================================
+
+
+def test_file_defines_component_subclass_detection():
+    src = """
+class C(Component):
+    pass
+"""
+    tree = ast.parse(src)
+    assert lint._file_defines_component_subclass(tree) is True
+
+    src2 = "x = 5\n"
+    assert lint._file_defines_component_subclass(ast.parse(src2)) is False
+
+
+def test_full_mode_catches_classdef_validation_error(tmp_path):
+    p = tmp_path / "broken.py"
+    p.write_text(
+        "from scadwright import Component\n"
+        "from scadwright.primitives import cube\n"
+        "class Bad(Component):\n"
+        "    equations = ['count == 1']\n"
+        "    def build(self): return cube(1)\n"
+    )
+    violations = lint.lint_file(p, full=True)
+    assert any(v.rule == "component-classdef-error" for v in violations)
+    msg = next(
+        v.message for v in violations if v.rule == "component-classdef-error"
+    )
+    assert "Bad.equations[0]" in msg
+    assert "==" in msg
+
+
+def test_full_mode_ignores_import_error(tmp_path):
+    """--full surfaces only ValidationError. ImportError or other
+    runtime failures during module load are out of scope — they're
+    caught by normal pytest runs."""
+    p = tmp_path / "imp_broken.py"
+    p.write_text(
+        "from scadwright import Component\n"
+        "import nonexistent_module_xyz\n"
+        "class Stub(Component):\n"
+        "    def build(self): pass\n"
+    )
+    violations = lint.lint_file(p, full=True)
+    rules = {v.rule for v in violations}
+    assert "import-error" not in rules
+    assert "component-classdef-error" not in rules
+
+
+def test_full_mode_clean_on_valid_file(tmp_path):
+    p = tmp_path / "ok.py"
+    p.write_text(
+        "from scadwright import Component\n"
+        "from scadwright.primitives import cube\n"
+        "class Tube(Component):\n"
+        "    equations = ['od = id + 2*thk', 'h, id, od, thk > 0']\n"
+        "    def build(self): return cube(self.h)\n"
+    )
+    violations = lint.lint_file(p, full=True)
+    classdef = [v for v in violations if v.rule == "component-classdef-error"]
+    assert classdef == []
+
+
+def test_default_mode_skips_classdef_check(tmp_path):
+    """Without --full, a file with a Component classdef error should not
+    surface the import-time check."""
+    p = tmp_path / "broken.py"
+    p.write_text(
+        "from scadwright import Component\n"
+        "from scadwright.primitives import cube\n"
+        "class Bad(Component):\n"
+        "    equations = ['count == 1']\n"
+        "    def build(self): return cube(1)\n"
+    )
+    violations = lint.lint_file(p, full=False)
+    assert all(v.rule != "component-classdef-error" for v in violations)
+
+
+def test_full_mode_skips_files_without_components(tmp_path):
+    """Cheap pre-filter: a file with no Component subclass shouldn't
+    trigger the import path."""
+    p = tmp_path / "no_components.py"
+    p.write_text("x = 5\ndef helper(): return 42\n")
+    # If the import path were taken, we'd get a successful no-op. The
+    # cheap check is that no import-error or classdef-error fires.
+    violations = lint.lint_file(p, full=True)
+    rules = {v.rule for v in violations}
+    assert "component-classdef-error" not in rules
+
+
+def test_full_mode_clean_on_repo():
+    """Regression guard: --full mode on the default paths is also clean."""
+    _, violations = lint.run(lint.DEFAULT_PATHS, full=True)
+    assert violations == [], (
+        "Lint --full caught "
+        f"{len(violations)} violation(s):\n"
+        + "\n".join(v.format() for v in violations)
+    )

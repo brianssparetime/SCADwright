@@ -2,12 +2,16 @@
 
 Walks Python files under the given paths (default: ``examples/`` and
 ``src/scadwright/shapes/``) and flags patterns that ``docs/style-guide.md``
-says to avoid. Runs on pure AST -- no imports, no execution.
+says to avoid. The fast path is pure AST -- no imports, no execution.
+A separate ``--full`` mode also imports each Component class and
+surfaces any class-define-time ``ValidationError`` as a lint violation,
+so equations errors become visible in the editor save loop without
+running tests.
 
 Usage:
-    python tools/lint_scadwright.py                    # default paths
+    python tools/lint_scadwright.py                    # AST-only fast path
+    python tools/lint_scadwright.py --full             # + import-time checks
     python tools/lint_scadwright.py examples/ src/     # custom paths
-    python tools/lint_scadwright.py --format=diff      # one-line-per-violation
 
 Exit code 0 on clean, 1 on violations, 2 on internal errors.
 
@@ -19,8 +23,8 @@ Rules currently enforced (see docs/style-guide.md for rationale):
   scope it locally inside the function that needs it.
 
 - ``no-param-float``: a ``Param(float)`` call without ``default=``.
-  Floats belong in ``equations`` or ``params=``. ``Param(float,
-  default=None)`` is the deliberate opt-out pattern and is allowed.
+  Floats belong in ``equations``. ``Param(float, default=None)`` is the
+  deliberate opt-out pattern and is allowed.
 
 - ``translate-single-axis``: ``.translate([x, 0, 0])`` or any permutation
   with two zero literals. Use the directional helper
@@ -32,6 +36,13 @@ Rules currently enforced (see docs/style-guide.md for rationale):
   values as derivations (single ``=``), validation as predicates. The
   framework-level hook still exists as an internal escape, but example
   and shape-library code must stay declarative.
+
+- ``component-classdef-error`` (``--full`` only): a ``ValidationError``
+  raised when the file is imported. Surfaces equations-DSL errors
+  (type tags, ``==`` placement, override patterns, etc.) at lint time
+  rather than at construction or test time. Other import-time failures
+  (ImportError, registry collisions, etc.) are ignored — those are
+  out of scope for the lint and surface during normal test runs.
 
 The linter does not understand comments, so if you need to violate a
 rule deliberately, refactor rather than suppress.
@@ -253,6 +264,86 @@ RULES: list[Callable[[Path, ast.Module], list[Violation]]] = [
 
 
 # =============================================================================
+# Full-mode rule: import-time class-define-time errors
+# =============================================================================
+#
+# Loads each file that defines Component subclasses and surfaces any
+# ValidationError raised during class definition. This catches every
+# parser-level correctness check (==-placement, type-allowlist, bool-in-
+# arithmetic, non-float-as-solver-target, override-RHS-evaluable, self-
+# reference, mutual-inconsistency) in one pass. Single source of truth —
+# the framework's existing checks run; the lint just collects failures.
+
+
+def _file_defines_component_subclass(tree: ast.Module) -> bool:
+    """Cheap pre-filter: does the AST contain a class whose bases name
+    `Component`? Avoids importing files that have nothing to check."""
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for base in node.bases:
+            if isinstance(base, ast.Name) and (
+                base.id == "Component" or base.id.endswith("Component")
+            ):
+                return True
+            if isinstance(base, ast.Attribute) and (
+                base.attr == "Component" or base.attr.endswith("Component")
+            ):
+                return True
+    return False
+
+
+def check_component_classdef_errors(path: Path) -> list[Violation]:
+    """Import the file and surface ValidationErrors raised at class-def time.
+
+    Returns a single Violation per file at most — the first
+    ValidationError stops module loading, and that's typically the only
+    error the user can act on until it's fixed.
+
+    Only ``ValidationError`` is surfaced. Other import-time failures
+    (ImportError, registry collisions when a Component file is loaded
+    twice with global side effects, etc.) are ignored — those are
+    caught by pytest at normal test time and aren't the equations-DSL
+    correctness errors this mode targets.
+    """
+    import importlib.util
+
+    # Stable module name so re-running the lint doesn't accumulate
+    # duplicates in sys.modules.
+    mod_name = f"_scadwright_lint_{path.stem}_{abs(hash(str(path.resolve())))}"
+    try:
+        spec = importlib.util.spec_from_file_location(mod_name, path)
+        if spec is None or spec.loader is None:
+            return []
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException as exc:
+            from scadwright.errors import ValidationError as _ValErr
+            if not isinstance(exc, _ValErr):
+                # Non-ValidationError failures are out of scope.
+                return []
+            line = 0
+            if hasattr(exc, "source_location") and exc.source_location is not None:
+                loc = exc.source_location
+                if getattr(loc, "line", None):
+                    line = loc.line
+            return [
+                Violation(
+                    path=path,
+                    line=line,
+                    col=0,
+                    rule="component-classdef-error",
+                    message=str(exc).replace("\n", " | "),
+                )
+            ]
+    finally:
+        sys.modules.pop(mod_name, None)
+    return []
+
+
+# =============================================================================
 # File discovery + driver
 # =============================================================================
 
@@ -260,7 +351,7 @@ RULES: list[Callable[[Path, ast.Module], list[Violation]]] = [
 DEFAULT_PATHS = ("examples", "src/scadwright/shapes")
 
 
-def lint_file(path: Path) -> list[Violation]:
+def lint_file(path: Path, *, full: bool = False) -> list[Violation]:
     try:
         source = path.read_text()
     except (OSError, UnicodeDecodeError) as exc:
@@ -284,6 +375,8 @@ def lint_file(path: Path) -> list[Violation]:
     violations: list[Violation] = []
     for rule in RULES:
         violations.extend(rule(path, tree))
+    if full and _file_defines_component_subclass(tree):
+        violations.extend(check_component_classdef_errors(path))
     return violations
 
 
@@ -298,12 +391,12 @@ def collect_files(paths: Iterable[str]) -> list[Path]:
     return files
 
 
-def run(paths: Iterable[str]) -> tuple[int, list[Violation]]:
+def run(paths: Iterable[str], *, full: bool = False) -> tuple[int, list[Violation]]:
     """Lint the given paths. Returns (file_count, violations)."""
     files = collect_files(paths)
     violations: list[Violation] = []
     for f in files:
-        violations.extend(lint_file(f))
+        violations.extend(lint_file(f, full=full))
     return len(files), violations
 
 
@@ -316,10 +409,19 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         help=f"files or directories to lint (default: {' '.join(DEFAULT_PATHS)})",
     )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help=(
+            "also import each file containing a Component subclass and "
+            "surface ValidationErrors raised at class definition time as "
+            "lint violations. Slower (imports the framework + sympy)."
+        ),
+    )
     args = parser.parse_args(argv)
     paths = args.paths or list(DEFAULT_PATHS)
 
-    file_count, violations = run(paths)
+    file_count, violations = run(paths, full=args.full)
     if not violations:
         print(f"clean: {file_count} file(s) checked.")
         return 0
