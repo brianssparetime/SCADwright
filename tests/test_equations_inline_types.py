@@ -439,6 +439,69 @@ def test_user_supplied_override_consistency_check():
 # =============================================================================
 
 
+def test_override_rhs_not_evaluable_when_lhs_none_rejected_float():
+    # Float-typed override pattern with arithmetic on the target
+    # itself: `radius + 1` throws when radius is None. Class-define-
+    # time error, not a runtime failure.
+    with pytest.raises(ValidationError, match="cannot be evaluated when"):
+        class C(Component):
+            equations = ["?radius = ?radius + 1"]
+            def build(self): return cube(1)
+
+
+def test_override_rhs_not_evaluable_when_lhs_none_rejected_via_call():
+    # `len(items)` raises TypeError on None too.
+    with pytest.raises(ValidationError, match="cannot be evaluated when"):
+        class C(Component):
+            equations = ["?n = len(?n)"]
+            def build(self): return cube(1)
+
+
+def test_int_override_with_arithmetic_rejected():
+    # `?pitch:int = 2 * x` is NOT one of the three accepted override
+    # shapes for a non-float type. _check_non_float_solver_target
+    # rejects it with the "cannot be derived" message.
+    with pytest.raises(
+        ValidationError, match="cannot be derived from an equation"
+    ):
+        class C(Component):
+            x = Param(float, default=2.0)
+            equations = ["?pitch:int = 2 * x"]
+            def build(self): return cube(1)
+
+
+def test_eq_with_or_inside_if_allowed():
+    eqs, _, _, _ = parse_equations_unified([
+        "x = a if axis == 'xy' or axis == 'xz' else b",
+    ])
+    assert len(eqs) == 1
+
+
+def test_eq_with_not_inside_if_allowed():
+    eqs, _, _, _ = parse_equations_unified([
+        "x = a if not (axis == 'xy') else b",
+    ])
+    assert len(eqs) == 1
+
+
+def test_scanner_does_not_grab_python_style_annotation_in_call():
+    # `func(arg:int)` is not valid Python in an expression context
+    # but the equations DSL only uses expressions — verify the scanner
+    # behaves predictably on this shape. Equations don't actually use
+    # call-with-annotation patterns, but pin behavior so a future
+    # change doesn't accidentally widen the strip rule.
+    cleaned, opt, typed = _extract_name_annotations("y = func(arg:int)")
+    # The scanner currently strips `:int` after `arg` because it's
+    # syntactically just an identifier-followed-by-colon-identifier.
+    # This is fine because the cleaned form is still valid in a Python
+    # call expression and the type tag, if applied to `arg`, is
+    # inert (arg isn't an equation target with that type — class-
+    # define-time validation would flag any inconsistency).
+    assert "arg" in typed
+    assert typed["arg"] == "int"
+    assert cleaned == "y = func(arg)"
+
+
 def test_cardinality_helper_with_optionals_still_works():
     # ?fillet and ?chamfer are NOT equation targets, so they keep
     # their None-means-not-supplied semantic and the cardinality

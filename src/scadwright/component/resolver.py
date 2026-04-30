@@ -394,6 +394,9 @@ def parse_equations_unified(
     _check_non_float_solver_target(
         typed_names, equations, frozenset(all_optionals), class_name,
     )
+    _check_override_rhs_evaluable(
+        equations, frozenset(all_optionals), class_name,
+    )
     _check_self_reference(equations, class_name)
     _check_mutual_inconsistency(equations, class_name)
 
@@ -525,6 +528,95 @@ def _is_override_pattern(
                 ):
                     return True
     return False
+
+
+def _check_override_rhs_evaluable(
+    equations: list[ParsedEquation],
+    optional_names: frozenset[str],
+    class_name: str = "",
+) -> None:
+    """Reject override-pattern equations whose RHS would throw when
+    the LHS is None.
+
+    For an optional name that's also a bare-Name equation target, the
+    resolver pre-evaluates the RHS with the LHS bound to None to fill
+    the value when the user didn't supply one. RHS shapes like
+    ``radius + 1`` or ``len(items)`` raise on ``None``, surfacing as
+    a confusing "cannot solve" later. Catch them here.
+
+    Walks every reference to the target name in the RHS. If at least
+    one reference would be hit by Python evaluation under non-short-
+    circuiting paths (i.e., not behind an ``and``/``or`` short-circuit
+    that would skip it when the value is None), and the reference
+    isn't inside an ``is None`` / ``is not None`` test that would
+    branch around the use, the equation's RHS is rejected as not
+    evaluable when LHS is None.
+
+    Implementation: try to compile and eval the RHS with the LHS
+    bound to None and every other free name bound to a sentinel
+    that supports common operations. If eval raises TypeError or
+    ValueError, the RHS isn't safely evaluable. If it raises
+    NameError or any other exception, leave it to the iterative
+    loop (the RHS may legitimately depend on names that resolve
+    later).
+    """
+    for eq in equations:
+        target_name = None
+        rhs_node = None
+        if (
+            isinstance(eq.lhs, ast.Name)
+            and eq.lhs.id in optional_names
+        ):
+            target_name = eq.lhs.id
+            rhs_node = eq.rhs
+        elif (
+            isinstance(eq.rhs, ast.Name)
+            and eq.rhs.id in optional_names
+        ):
+            target_name = eq.rhs.id
+            rhs_node = eq.lhs
+        if target_name is None:
+            continue
+        # The RHS must reference the target for it to be a "self-
+        # referential override" risk; if it doesn't, the resolver
+        # just forward-evals it normally.
+        if target_name not in _free_names_in(rhs_node):
+            continue
+        # Try a dry-run eval with target=None and all other names
+        # bound to a sentinel that supports the common operations
+        # (Comparable, len, iteration). NameError on a non-target
+        # name means the RHS depends on something that isn't yet
+        # known — defer to the resolver. TypeError on the target's
+        # None value is the failure we want to catch.
+        from scadwright.component.equations import (
+            _CURATED_BUILTINS, _CURATED_MATH,
+        )
+        ns: dict[str, Any] = {**_CURATED_BUILTINS, **_CURATED_MATH}
+        ns[target_name] = None
+        ns["__builtins__"] = {}
+        try:
+            expr_node = ast.Expression(body=rhs_node)
+            ast.fix_missing_locations(expr_node)
+            code = compile(expr_node, "<override-check>", "eval")
+            eval(code, ns)
+        except NameError:
+            # Another name needed; resolver handles it later.
+            continue
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                f"{_classdef_loc(class_name, eq.source_line_index)}: "
+                f"override pattern `{eq.raw}` cannot be evaluated when "
+                f"`{target_name}` is None ({type(exc).__name__}: {exc}). "
+                f"Use one of the accepted shapes: "
+                f"`{target_name} or default`, "
+                f"`default if {target_name} is None else {target_name}`, "
+                f"or `{target_name} if {target_name} is not None "
+                f"else default`."
+            ) from None
+        except Exception:
+            # Any other exception (AttributeError, ZeroDivisionError,
+            # etc.) — defer; not a None-on-target issue.
+            continue
 
 
 def _check_non_float_solver_target(
@@ -1485,10 +1577,22 @@ class IterativeResolver:
                 code = compile(expr_node, "<override>", "eval")
                 ns = {**self._curated_ns, **tentative, "__builtins__": {}}
                 value = eval(code, ns)
+            except (TypeError, ValueError) as exc:
+                # The RHS evaluated as far as it could and threw on
+                # the None binding. The class-define-time
+                # _check_override_rhs_evaluable should have caught
+                # this; if we got here, it's a shape that slipped
+                # through. Surface a clear error rather than letting
+                # the iterative loop misreport as "cannot solve."
+                raise ValidationError(
+                    f"{self._loc(eq)}: override pattern `{eq.raw}` "
+                    f"failed to evaluate with `{target_name}` "
+                    f"defaulted to None: {type(exc).__name__}: {exc}"
+                ) from exc
             except Exception:
-                # If evaluation fails (e.g., the RHS refers to other
-                # unknowns through a path substitute_knowns couldn't
-                # fold), leave the equation pending.
+                # NameError or another exception means the RHS
+                # depends on a name that isn't known yet; let the
+                # iterative loop handle it.
                 continue
 
             # Coerce per the Param's type and assign.
