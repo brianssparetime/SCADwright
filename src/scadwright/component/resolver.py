@@ -477,90 +477,75 @@ def _check_bool_in_arithmetic(
         _walk(c.expr, c.raw, loc)
 
 
-def _is_override_pattern(
-    target_name: str, rhs: ast.AST, optional_names: frozenset[str],
-) -> bool:
-    """True if ``rhs`` is one of the accepted optional-default override
-    shapes: ``name or const``, ``const if name is None else name``, or
-    ``name if name is not None else const``.
+def _override_rhs_dry_run(
+    target_name: str, rhs: ast.AST,
+) -> str:
+    """Dry-run an override RHS with ``target_name`` bound to None.
 
-    Used by :func:`_check_non_float_solver_target` to allow non-float
-    typed names on the LHS of an equation when the equation is the
-    optional-default override pattern, not a solver target.
+    Returns one of three strings:
+
+    - ``"override"`` — the RHS evaluates to a definite non-None value
+      when the target is None. The equation is the optional-default
+      override pattern; the resolver should pre-resolve it.
+    - ``"unsafe"`` — the RHS raises ``TypeError`` or ``ValueError``
+      when the target is None (e.g., ``target + 1``, ``len(target)``,
+      ``max(target, 1)``). The equation is malformed for an override
+      and should be rejected at class-define time.
+    - ``"defer"`` — the RHS depends on other names that aren't yet
+      known (NameError), or its evaluation requires runtime info we
+      can't simulate. Treat as not-an-override; the resolver's
+      iterative loop will fill the target normally if possible.
+
+    The other free names in the RHS are bound to a sentinel that
+    behaves benignly under common operations so the discriminator
+    isn't fooled by side-effect-free uses of those names.
     """
-    if target_name not in optional_names:
-        return False
+    if target_name not in _free_names_in(rhs):
+        # No self-reference; not an override pattern. The iterative
+        # loop will forward-eval the RHS normally.
+        return "defer"
 
-    # Shape 1: BoolOp(Or, [Name(target), <constant>]) — `name or 1`.
-    # The first operand reads the (possibly-None) input; if truthy it
-    # short-circuits; otherwise the second operand provides the default.
-    if isinstance(rhs, ast.BoolOp) and isinstance(rhs.op, ast.Or):
-        if (
-            len(rhs.values) >= 2
-            and isinstance(rhs.values[0], ast.Name)
-            and rhs.values[0].id == target_name
-        ):
-            return True
+    from scadwright.component.equations import (
+        _CURATED_BUILTINS, _CURATED_MATH,
+    )
 
-    # Shape 2 / 3: IfExp with `name is None` or `name is not None` test.
-    if isinstance(rhs, ast.IfExp) and isinstance(rhs.test, ast.Compare):
-        cmp = rhs.test
-        if (
-            len(cmp.ops) == 1
-            and isinstance(cmp.left, ast.Name)
-            and cmp.left.id == target_name
-            and len(cmp.comparators) == 1
-            and isinstance(cmp.comparators[0], ast.Constant)
-            and cmp.comparators[0].value is None
-        ):
-            if isinstance(cmp.ops[0], ast.Is):
-                # `default if name is None else name`
-                if (
-                    isinstance(rhs.orelse, ast.Name)
-                    and rhs.orelse.id == target_name
-                ):
-                    return True
-            if isinstance(cmp.ops[0], ast.IsNot):
-                # `name if name is not None else default`
-                if (
-                    isinstance(rhs.body, ast.Name)
-                    and rhs.body.id == target_name
-                ):
-                    return True
-    return False
+    ns: dict[str, Any] = {**_CURATED_BUILTINS, **_CURATED_MATH}
+    ns[target_name] = None
+    ns["__builtins__"] = {}
+
+    try:
+        expr_node = ast.Expression(body=rhs)
+        ast.fix_missing_locations(expr_node)
+        code = compile(expr_node, "<override-check>", "eval")
+        result = eval(code, ns)
+    except NameError:
+        return "defer"
+    except (TypeError, ValueError):
+        return "unsafe"
+    except Exception:
+        return "defer"
+
+    # The RHS evaluated. If it produced None, the override pattern
+    # would default the target back to None — useless. Treat as
+    # defer so the iterative loop has a chance.
+    if result is None:
+        return "defer"
+    return "override"
 
 
-def _check_override_rhs_evaluable(
+def _classify_override_targets(
     equations: list[ParsedEquation],
     optional_names: frozenset[str],
-    class_name: str = "",
-) -> None:
-    """Reject override-pattern equations whose RHS would throw when
-    the LHS is None.
+) -> dict[int, tuple[str, str]]:
+    """For each equation whose bare-Name target is an optional name,
+    classify via :func:`_override_rhs_dry_run`.
 
-    For an optional name that's also a bare-Name equation target, the
-    resolver pre-evaluates the RHS with the LHS bound to None to fill
-    the value when the user didn't supply one. RHS shapes like
-    ``radius + 1`` or ``len(items)`` raise on ``None``, surfacing as
-    a confusing "cannot solve" later. Catch them here.
-
-    Walks every reference to the target name in the RHS. If at least
-    one reference would be hit by Python evaluation under non-short-
-    circuiting paths (i.e., not behind an ``and``/``or`` short-circuit
-    that would skip it when the value is None), and the reference
-    isn't inside an ``is None`` / ``is not None`` test that would
-    branch around the use, the equation's RHS is rejected as not
-    evaluable when LHS is None.
-
-    Implementation: try to compile and eval the RHS with the LHS
-    bound to None and every other free name bound to a sentinel
-    that supports common operations. If eval raises TypeError or
-    ValueError, the RHS isn't safely evaluable. If it raises
-    NameError or any other exception, leave it to the iterative
-    loop (the RHS may legitimately depend on names that resolve
-    later).
+    Returns a dict mapping equation index → (target_name, classification)
+    where classification is ``"override"``, ``"unsafe"``, or ``"defer"``.
+    Equations without an optional-name bare-Name target are absent.
     """
-    for eq in equations:
+    out: dict[int, tuple[str, str]] = {}
+    for i, eq in enumerate(equations):
         target_name = None
         rhs_node = None
         if (
@@ -577,46 +562,39 @@ def _check_override_rhs_evaluable(
             rhs_node = eq.lhs
         if target_name is None:
             continue
-        # The RHS must reference the target for it to be a "self-
-        # referential override" risk; if it doesn't, the resolver
-        # just forward-evals it normally.
-        if target_name not in _free_names_in(rhs_node):
+        out[i] = (target_name, _override_rhs_dry_run(target_name, rhs_node))
+    return out
+
+
+def _check_override_rhs_evaluable(
+    equations: list[ParsedEquation],
+    optional_names: frozenset[str],
+    class_name: str = "",
+) -> None:
+    """Reject override-pattern equations whose RHS would throw when
+    the LHS is None.
+
+    Uses :func:`_override_rhs_dry_run` to discriminate. ``"unsafe"``
+    classifications raise immediately; ``"override"`` and ``"defer"``
+    are accepted (the latter falls through to the iterative loop or
+    to the non-float-target check, depending on the typing).
+    """
+    classifications = _classify_override_targets(equations, optional_names)
+    for i, (target_name, kind) in classifications.items():
+        if kind != "unsafe":
             continue
-        # Try a dry-run eval with target=None and all other names
-        # bound to a sentinel that supports the common operations
-        # (Comparable, len, iteration). NameError on a non-target
-        # name means the RHS depends on something that isn't yet
-        # known — defer to the resolver. TypeError on the target's
-        # None value is the failure we want to catch.
-        from scadwright.component.equations import (
-            _CURATED_BUILTINS, _CURATED_MATH,
+        eq = equations[i]
+        raise ValidationError(
+            f"{_classdef_loc(class_name, eq.source_line_index)}: "
+            f"override pattern `{eq.raw}` cannot be evaluated when "
+            f"`{target_name}` is None — the RHS raises (TypeError or "
+            f"ValueError) on that binding. Use a shape that handles "
+            f"None gracefully: `{target_name} or default`, "
+            f"`default if {target_name} is None else {target_name}`, "
+            f"`{target_name} if {target_name} is not None else default`, "
+            f"or any other expression that yields a value when "
+            f"`{target_name}` is None."
         )
-        ns: dict[str, Any] = {**_CURATED_BUILTINS, **_CURATED_MATH}
-        ns[target_name] = None
-        ns["__builtins__"] = {}
-        try:
-            expr_node = ast.Expression(body=rhs_node)
-            ast.fix_missing_locations(expr_node)
-            code = compile(expr_node, "<override-check>", "eval")
-            eval(code, ns)
-        except NameError:
-            # Another name needed; resolver handles it later.
-            continue
-        except (TypeError, ValueError) as exc:
-            raise ValidationError(
-                f"{_classdef_loc(class_name, eq.source_line_index)}: "
-                f"override pattern `{eq.raw}` cannot be evaluated when "
-                f"`{target_name}` is None ({type(exc).__name__}: {exc}). "
-                f"Use one of the accepted shapes: "
-                f"`{target_name} or default`, "
-                f"`default if {target_name} is None else {target_name}`, "
-                f"or `{target_name} if {target_name} is not None "
-                f"else default`."
-            ) from None
-        except Exception:
-            # Any other exception (AttributeError, ZeroDivisionError,
-            # etc.) — defer; not a None-on-target issue.
-            continue
 
 
 def _check_non_float_solver_target(
@@ -631,10 +609,10 @@ def _check_non_float_solver_target(
     The resolver works over floats; it cannot derive int / bool / str
     / tuple / list / dict values from algebraic equations. A non-float-
     typed name as a bare-Name target on either side of an equation is
-    a class-define-time error, except when the equation matches the
-    optional-default override pattern (an optional name that gets its
-    value from the equation's RHS rather than from the resolver's
-    sympy step).
+    a class-define-time error, except when the equation is an
+    optional-default override pattern (the equation's RHS evaluates
+    to a non-None value when the target is None — see
+    :func:`_override_rhs_dry_run`).
     """
     non_float_typed = {
         n for n, t in typed_names.items()
@@ -643,7 +621,9 @@ def _check_non_float_solver_target(
     if not non_float_typed:
         return
 
-    for eq in equations:
+    classifications = _classify_override_targets(equations, optional_names)
+
+    for i, eq in enumerate(equations):
         bare_targets = []
         if isinstance(eq.lhs, ast.Name):
             bare_targets.append((eq.lhs.id, eq.rhs))
@@ -652,17 +632,19 @@ def _check_non_float_solver_target(
         for name, other in bare_targets:
             if name not in non_float_typed:
                 continue
-            if _is_override_pattern(name, other, optional_names):
+            # Override path: dry-run says the RHS yields a value with
+            # target=None. Allowed regardless of type.
+            if classifications.get(i, ("", ""))[1] == "override":
                 continue
             raise ValidationError(
                 f"{_classdef_loc(class_name, eq.source_line_index)}: "
                 f"name `{name}` is tagged `:{typed_names[name]}` and "
                 f"cannot be derived from an equation. Non-float-typed "
-                f"names must be supplied by the caller or filled by the "
-                f"optional-default pattern "
-                f"(`?{name}:{typed_names[name]} = expr if ?{name} is None"
-                f" else ?{name}` or `?{name}:{typed_names[name]} = "
-                f"?{name} or default`). Offending equation: `{eq.raw}`."
+                f"names must be supplied by the caller or filled by an "
+                f"optional-default pattern whose RHS yields a value "
+                f"when `{name}` is None (e.g., `?{name}:"
+                f"{typed_names[name]} = ?{name} or default`). "
+                f"Offending equation: `{eq.raw}`."
             )
 
 

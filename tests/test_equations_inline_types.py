@@ -435,6 +435,74 @@ def test_user_supplied_override_consistency_check():
 
 
 # =============================================================================
+# Override pattern: arbitrary RHS that handles None gracefully
+# =============================================================================
+#
+# The dry-run discriminator accepts any RHS that evaluates without
+# TypeError/ValueError when the target is bound to None. These tests
+# pin shapes that the prior closed-shape recognizer would have rejected
+# but are semantically valid override patterns.
+
+
+def test_override_truthy_form():
+    # `?n if ?n else default` — the truthy variant of `?n or default`.
+    class C(Component):
+        equations = ["?angle = ?angle if ?angle else 90.0"]
+        def build(self): return cube(1)
+
+    assert C().angle == 90.0
+    assert C(angle=45.0).angle == 45.0
+
+
+def test_override_max_with_or_fallback():
+    # `max(?theta or 0, 1)` — None or 0 = 0, then max(0, 1) = 1.
+    class C(Component):
+        equations = ["?theta = max(?theta or 0, 1)"]
+        def build(self): return cube(1)
+
+    assert C().theta == 1.0
+    assert C(theta=5).theta == 5.0
+
+
+def test_override_typed_with_max_or_fallback():
+    # Same shape, int-typed. Dry-run accepts what the closed-shape
+    # recognizer would have rejected.
+    class C(Component):
+        equations = ["?count:int = max(?count or 0, 1)"]
+        def build(self): return cube(1)
+
+    assert C().count == 1
+    assert isinstance(C().count, int)
+    assert C(count=5).count == 5
+
+
+def test_override_arithmetic_with_or_fallback():
+    # `(?n or 0) + 10` — None handled by the inner `or`, then arithmetic.
+    class C(Component):
+        equations = ["?offset = (?offset or 0) + 10"]
+        def build(self): return cube(1)
+
+    assert C().offset == 10.0
+
+
+def test_override_unsafe_max_without_fallback_rejected():
+    # `max(?n, 1)` raises TypeError when n is None — None can't be
+    # compared to int. The dry-run catches this and rejects.
+    with pytest.raises(ValidationError, match="raises"):
+        class C(Component):
+            equations = ["?n = max(?n, 1)"]
+            def build(self): return cube(1)
+
+
+def test_override_unsafe_len_rejected():
+    # `len(?items)` raises TypeError when items is None.
+    with pytest.raises(ValidationError, match="raises"):
+        class C(Component):
+            equations = ["?items = len(?items) + 1"]
+            def build(self): return cube(1)
+
+
+# =============================================================================
 # Existing patterns still work (regression guards)
 # =============================================================================
 
