@@ -171,6 +171,7 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         if not hasattr(cls, "_unified_equations"):
             cls._unified_equations = []
             cls._unified_constraints = []
+            cls._override_names = frozenset()
         return
 
     from scadwright.component.equations import (
@@ -181,7 +182,7 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         parse_equations_unified,
     )
 
-    unified_eqs, unified_constraints, optional_names = (
+    unified_eqs, unified_constraints, optional_names, typed_names = (
         parse_equations_unified(all_eq_strs, class_name=cls.__name__)
     )
 
@@ -245,12 +246,29 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
             prev = target_is_numeric_only.get(name, True)
             target_is_numeric_only[name] = prev and other_numeric
 
+    # Reject collisions between an inline `:type` tag and an explicit
+    # `Param(...)` declaration on the class. One declaration site per
+    # name; the inline form is for auto-declared Params only.
+    from scadwright.component.equations import _INLINE_TYPE_ALLOWLIST
+    for name in typed_names:
+        existing = cls.__dict__.get(name)
+        if isinstance(existing, Param):
+            raise ValidationError(
+                f"{cls.__name__}: name `{name}` has both an inline "
+                f"`:{typed_names[name]}` type tag in `equations` and an "
+                f"explicit `Param(...)` declaration. Use one or the "
+                f"other."
+            )
+
     # Auto-declare optional Params first so the auto-declare loop below
     # finds the existing default=None Param rather than creating a
-    # required one. Optionals are float by spec (the `?` sigil).
+    # required one. The `?` sigil makes the Param optional; an inline
+    # type tag (if any) sets the type, otherwise float.
     for name in optional_names:
-        if name not in params:
-            _declare_param(name, type_=float, default=None)
+        if name in params:
+            continue
+        type_ = _INLINE_TYPE_ALLOWLIST.get(typed_names.get(name, ""), float)
+        _declare_param(name, type_=type_, default=None)
 
     # Auto-declare every free name in any equation or any constraint
     # that isn't already a Param and isn't in the curated namespace.
@@ -265,6 +283,10 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         if name in params:
             continue
         if name in curated:
+            continue
+        # Inline `:type` tag wins over the numeric/non-numeric inference.
+        if name in typed_names:
+            _declare_param(name, type_=_INLINE_TYPE_ALLOWLIST[typed_names[name]])
             continue
         # Default to float for constraint-only names and numeric targets.
         # Targets of non-numeric equations (tuples, comparisons, etc.)
@@ -285,6 +307,19 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         if name not in params:
             continue
         params[name].validators = tuple(params[name].validators) + (validator,)
+
+    # Optional names that are also bare-Name targets of an equation:
+    # the equation provides the value when the user doesn't supply
+    # one. The resolver skips applying the None default at startup
+    # for these so the equation can fill them in via the existing
+    # forward-eval path.
+    eq_lhs_target_names: set[str] = set()
+    for eq in unified_eqs:
+        if isinstance(eq.lhs, ast.Name):
+            eq_lhs_target_names.add(eq.lhs.id)
+        if isinstance(eq.rhs, ast.Name):
+            eq_lhs_target_names.add(eq.rhs.id)
+    cls._override_names = frozenset(optional_names & eq_lhs_target_names)
 
     cls._unified_equations = unified_eqs
     cls._unified_constraints = unified_constraints
@@ -688,6 +723,7 @@ def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict) -> None
         params=params,
         supplied=dict(kwargs),
         component_name=cls.__name__,
+        override_names=getattr(cls, "_override_names", frozenset()),
     )
     try:
         resolved = resolver.resolve()

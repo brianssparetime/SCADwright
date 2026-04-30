@@ -6,8 +6,11 @@ shared pieces:
 
 - ``_require_sympy``: imports sympy and raises a helpful ImportError
   when it isn't installed.
-- ``_extract_optional_markers``: strips the ``?`` sigil from an
-  equations-list string and returns the names that were prefixed.
+- ``_extract_name_annotations``: strips the ``?`` sigil and ``:type``
+  tags from an equations string, returning the cleaned text plus the
+  optional-name set and typed-name dict.
+- ``_INLINE_TYPE_ALLOWLIST``: closed set of type names accepted in
+  ``name:type`` annotations.
 - ``_CURATED_BUILTINS`` and ``_CURATED_MATH``: the names available
   inside derivation and predicate expressions. Anything not in these
   (or in the Component's Param/derivation set) is rejected at
@@ -24,6 +27,20 @@ import math
 from typing import Any
 
 
+# =============================================================================
+# Inline type-annotation allowlist
+# =============================================================================
+#
+# Closed set of type names accepted in ``name:type`` annotations inside
+# ``equations`` text. Maps the textual type name to the runtime type. No
+# namespace lookup; custom classes use ``Param(CustomType)`` instead.
+
+_INLINE_TYPE_ALLOWLIST: dict[str, type] = {
+    "bool": bool, "int": int, "str": str,
+    "tuple": tuple, "list": list, "dict": dict,
+}
+
+
 def _require_sympy():
     """Import sympy, or raise ImportError with extras-install hint."""
     try:
@@ -36,28 +53,66 @@ def _require_sympy():
 
 
 # =============================================================================
-# Optional-parameter sigil: `?name`
+# Sigil and type-tag extraction: `?name` and `name:type`
 # =============================================================================
 
 
-def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
-    """Strip ``?name`` prefixes from an equations-list string.
+def _extract_name_annotations(
+    eq_str: str,
+) -> tuple[str, set[str], dict[str, str]]:
+    """Strip ``?`` sigils and ``:type`` tags from an equations string.
 
-    Returns ``(cleaned, optional_names)`` — the cleaned string with every
-    ``?`` removed, and the set of names that were prefixed. The sigil
-    marks a Param as optional (auto-declared ``Param(float, default=None)``).
+    Returns ``(cleaned, optional_names, typed_names)``:
+
+    - ``cleaned``: the input with every ``?`` and every ``:type``
+      annotation stripped. The bare identifier remains in place.
+    - ``optional_names``: identifiers that carried a ``?`` prefix.
+      They auto-declare as ``Param(type, default=None)`` (or
+      ``Param(float, default=None)`` if no type tag).
+    - ``typed_names``: identifier → type-name string for every
+      identifier carrying a ``:type`` tag. Type-name validation
+      against the allowlist happens downstream.
 
     A hand-rolled scanner, not a regex, so string literals and ``#``
-    comments are respected: a literal ``?`` inside ``"..."`` or
-    ``'...'`` is left alone. Handles single-quote and double-quote
-    forms, triple-quoted strings (no escape processing inside, matching
-    Python semantics), and backslash escapes inside single-quoted
-    strings.
+    comments are respected: a literal ``?`` or ``:`` inside ``"..."``
+    or ``'...'`` or after ``#`` is left alone. Handles single-quote
+    and double-quote forms, triple-quoted strings, and backslash
+    escapes inside single-quoted strings.
+
+    Type-tag recognition: after consuming an identifier (with or
+    without a leading ``?``), if the very next character is ``:`` and
+    the character after starts an identifier, the type is captured
+    and both ``:`` and the type-identifier are stripped. The colon
+    must be immediately adjacent — ``count: int`` (with a space) is
+    not a type tag.
     """
     out: list[str] = []
     optional: set[str] = set()
+    typed: dict[str, str] = {}
     i = 0
     n = len(eq_str)
+
+    def _read_identifier(start: int) -> tuple[str, int]:
+        """Read an identifier starting at ``start``; return (name, end)."""
+        j = start
+        while j < n and (eq_str[j].isalnum() or eq_str[j] == "_"):
+            j += 1
+        return eq_str[start:j], j
+
+    def _maybe_type_tag(name: str, after: int) -> int:
+        """If the chars at ``after`` form ``:type``, record and return
+        the new position; otherwise return ``after`` unchanged."""
+        if (
+            after < n
+            and eq_str[after] == ":"
+            and after + 1 < n
+            and (eq_str[after + 1].isalpha() or eq_str[after + 1] == "_")
+        ):
+            type_name, type_end = _read_identifier(after + 1)
+            typed[name] = type_name
+            return type_end
+        return after
+
     while i < n:
         c = eq_str[i]
 
@@ -66,7 +121,7 @@ def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
             end = eq_str.find(c * 3, i + 3)
             if end == -1:
                 out.append(eq_str[i:])
-                return "".join(out), optional
+                return "".join(out), optional, typed
             out.append(eq_str[i:end + 3])
             i = end + 3
             continue
@@ -90,27 +145,47 @@ def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
             eol = eq_str.find("\n", i)
             if eol == -1:
                 out.append(eq_str[i:])
-                return "".join(out), optional
+                return "".join(out), optional, typed
             out.append(eq_str[i:eol])
             i = eol
             continue
 
         # Optional sigil: `?` followed directly by an identifier start.
+        # Strip the `?`, optionally consume a `:type` tag.
         if c == "?" and i + 1 < n and (eq_str[i + 1].isalpha() or eq_str[i + 1] == "_"):
-            j = i + 1
-            while j < n and (eq_str[j].isalnum() or eq_str[j] == "_"):
-                j += 1
-            name = eq_str[i + 1:j]
+            name, name_end = _read_identifier(i + 1)
             optional.add(name)
             out.append(name)
-            i = j
+            i = _maybe_type_tag(name, name_end)
+            continue
+
+        # Bare identifier start: read the identifier, then check for a
+        # `:type` tag immediately after. We can't proactively skip
+        # identifiers that aren't type-tagged because we'd lose the
+        # ability to scan the next char — but the bookkeeping cost is
+        # cheap: only commit the strip if a `:identifier` follows.
+        if c.isalpha() or c == "_":
+            name, name_end = _read_identifier(i)
+            out.append(name)
+            i = _maybe_type_tag(name, name_end)
             continue
 
         # Plain character.
         out.append(c)
         i += 1
 
-    return "".join(out), optional
+    return "".join(out), optional, typed
+
+
+def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
+    """Backward-compat wrapper around :func:`_extract_name_annotations`.
+
+    Returns just ``(cleaned, optional_names)``, discarding the typed-
+    names dict. Callers that need type tags should use
+    :func:`_extract_name_annotations` directly.
+    """
+    cleaned, optional, _typed = _extract_name_annotations(eq_str)
+    return cleaned, optional
 
 
 # =============================================================================

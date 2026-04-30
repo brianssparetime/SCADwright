@@ -27,18 +27,19 @@ def test_param_unknown_kwarg_rejected():
         _Box(depth=3)
 
 
-def test_param_str_to_float_coercion():
-    """Non-obvious coercion path that's worth pinning."""
-    b = _Box(width="3.14")
-    assert b.width == pytest.approx(3.14)
+def test_param_str_to_float_rejected():
+    """Strict typing rejects str → float; the user passes the wrong
+    type and gets a clear error."""
+    with pytest.raises(ValidationError, match="expected float, got str"):
+        _Box(width="3.14")
 
 
-def test_param_bad_coercion_raises():
-    with pytest.raises(ValidationError, match="cannot coerce"):
+def test_param_bad_type_raises():
+    with pytest.raises(ValidationError, match="expected float, got str"):
         _Box(width="not a number")
 
 
-# --- Auto-declared float hint on bad coercion ---
+# --- Auto-declared float hint on type mismatch ---
 
 
 class _AutoFloatFromEquation(Component):
@@ -52,7 +53,7 @@ class _AutoFloatFromEquation(Component):
 
 
 def test_auto_declared_float_hints_explicit_declaration():
-    with pytest.raises(ValidationError, match="cannot coerce") as exc_info:
+    with pytest.raises(ValidationError, match="expected float") as exc_info:
         _AutoFloatFromEquation(size=(1, 2, 3))
     msg = str(exc_info.value)
     assert "auto-declared as Param(float)" in msg
@@ -60,9 +61,9 @@ def test_auto_declared_float_hints_explicit_declaration():
 
 
 def test_user_declared_float_no_hint():
-    """Explicit Param(float) coercion failures must NOT carry the auto-declare
+    """Explicit Param(float) type mismatches must NOT carry the auto-declare
     hint — the user already chose the type."""
-    with pytest.raises(ValidationError, match="cannot coerce") as exc_info:
+    with pytest.raises(ValidationError, match="expected float") as exc_info:
         _Box(width="not a number")
     assert "auto-declared" not in str(exc_info.value)
 

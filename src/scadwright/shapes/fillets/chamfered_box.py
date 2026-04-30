@@ -28,7 +28,7 @@ class ChamferedBox(Component):
     equations = [
         "?fillet > 0",
         "?chamfer > 0",
-        "len(size) == 3",
+        "len(size) = 3",
         "exactly_one(?fillet, ?chamfer)",
         "edge = ?fillet if ?fillet else ?chamfer",                                 # active edge radius
         "all(s > 2 * edge for s in size)",                                         # every side fits

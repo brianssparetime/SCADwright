@@ -40,15 +40,19 @@ def test_param_int_rejects_non_integer_float():
     assert "truncate" in msg
 
 
-def test_param_int_accepts_integer_valued_float():
-    """Param(int) should accept 3.0 (integer-valued float)."""
+def test_param_int_rejects_integer_valued_float():
+    """Asymmetric coercion: Param(int) does NOT accept 3.0. The user
+    passes the wrong type; the framework says so and lets them fix
+    the call."""
     class C(Component):
         count = Param(int, positive=True)
         def build(self): return cube([1, 1, 1])
 
-    c = C(count=3.0)
-    assert c.count == 3
-    assert isinstance(c.count, int)
+    with pytest.raises(ValidationError) as exc_info:
+        C(count=3.0)
+    msg = str(exc_info.value)
+    assert "C.count" in msg
+    assert "expected int" in msg
 
 
 def test_param_int_rejects_string_cleanly():
@@ -60,7 +64,8 @@ def test_param_int_rejects_string_cleanly():
         C(count="not a number")
     msg = str(exc_info.value)
     assert "C.count" in msg
-    assert "cannot coerce" in msg
+    assert "expected int" in msg
+    assert "got str" in msg
 
 
 def test_param_namedtuple_wrong_type_clean_error():
@@ -74,7 +79,8 @@ def test_param_namedtuple_wrong_type_clean_error():
         C(spec="not a spec")
     msg = str(exc_info.value)
     assert "C.spec" in msg
-    assert "cannot coerce" in msg
+    assert "expected Spec" in msg
+    assert "got str" in msg
     assert "Spec" in msg
 
 
@@ -123,23 +129,23 @@ def test_through_non_overlapping_error_unchanged():
 
 
 def test_contradictory_constant_equations():
-    """a == 1 AND a == 2 surfaces as inconsistent at class-definition time."""
+    """a = 1 AND a = 2 surfaces as inconsistent at class-definition time."""
     with pytest.raises(ValidationError) as exc_info:
         class C(Component):
-            equations = ["a == 1", "a == 2"]
+            equations = ["a = 1", "a = 2"]
             def build(self): return cube([1, 1, 1])
     msg = str(exc_info.value)
     assert "inconsistent" in msg
     assert "a" in msg
-    assert "`a == 1`" in msg
-    assert "`a == 2`" in msg
+    assert "`a = 1`" in msg
+    assert "`a = 2`" in msg
 
 
 def test_contradictory_expression_equations():
-    """Non-constant contradictions (a+b==1, a+b==5) also flagged at class-def."""
+    """Non-constant contradictions (a+b=1, a+b=5) also flagged at class-def."""
     with pytest.raises(ValidationError) as exc_info:
         class C(Component):
-            equations = ["a + b == 1", "a + b == 5"]
+            equations = ["a + b = 1", "a + b = 5"]
             def build(self): return cube([1, 1, 1])
     msg = str(exc_info.value)
     assert "inconsistent" in msg
@@ -148,7 +154,7 @@ def test_contradictory_expression_equations():
 def test_underspecified_equations_lists_options():
     """Underspecified case still produces 'need one of: {...}'."""
     class C(Component):
-        equations = ["a + b + c == 10", "a, b, c > 0"]
+        equations = ["a + b + c = 10", "a, b, c > 0"]
         def build(self): return cube([1, 1, 1])
 
     with pytest.raises(ValidationError) as exc_info:
@@ -161,14 +167,14 @@ def test_underspecified_equations_lists_options():
 def test_equation_violated_with_user_inputs():
     """Single equation with a contradicting user value gives a clean error."""
     class C(Component):
-        equations = ["a == 5"]
+        equations = ["a = 5"]
         def build(self): return cube([1, 1, 1])
 
     with pytest.raises(ValidationError) as exc_info:
         C(a=7)
     msg = str(exc_info.value)
     assert "equation violated" in msg
-    assert "a == 5" in msg
+    assert "a = 5" in msg
     assert "7" in msg
 
 
@@ -176,7 +182,7 @@ def test_unknown_equation_function_caught_at_class_def():
     """Typo in a math function name is caught when the class is defined."""
     with pytest.raises(ValidationError) as exc_info:
         class C(Component):
-            equations = ["y == snh(x)", "x, y > 0"]
+            equations = ["y = snh(x)", "x, y > 0"]
             def build(self): return cube([1, 1, 1])
     msg = str(exc_info.value)
     assert "cannot parse equation" in msg or "cannot parse" in msg

@@ -26,7 +26,7 @@ from scadwright.primitives import cube
 def test_algebraic_equality_stays_solver_not_predicate():
     # Pure algebra on both sides → solver equation, not predicate.
     class C(Component):
-        equations = ["od == id + 2*thk", "id, od, thk > 0"]
+        equations = ["od = id + 2*thk", "id, od, thk > 0"]
         def build(self): return cube(1)
 
     c = C(id=8, thk=1)
@@ -47,14 +47,14 @@ def test_algebraic_constraint_stays_constraint_not_predicate():
 def test_len_comparison_becomes_predicate():
     class C(Component):
         size = Param(tuple)
-        equations = ["len(size) == 3"]
+        equations = ["len(size) = 3"]
         def build(self): return cube(1)
 
     C(size=(1, 2, 3))  # passes
     with pytest.raises(ValidationError) as exc_info:
         C(size=(1, 2))
     msg = str(exc_info.value)
-    assert "len(size) == 3" in msg
+    assert "len(size) = 3" in msg
 
 
 def test_attribute_comparison_becomes_predicate():
@@ -276,7 +276,7 @@ def test_mixed_equality_constraint_cross_derivation_predicate():
     class C(Component):
         spec = Param(Spec)
         equations = [
-            "od == id + 2*thk",          # solver
+            "od = id + 2*thk",          # solver
             "id, od, thk > 0",            # constraint (fast path)
             "id < od",                    # cross-constraint (fast path)
             "depth > 0",

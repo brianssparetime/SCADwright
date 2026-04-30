@@ -198,24 +198,31 @@ def test_derivation_with_truthy_conditional():
 # =============================================================================
 
 
-def test_question_on_target_in_equality_raises():
-    # ``?fillet == x + 1`` makes ``fillet`` optional (None by default)
-    # AND uses the equation to pin it to a value — contradictory. Same
-    # rejection as the ``=`` form; the framework treats both identically.
-    with pytest.raises(ValidationError, match="cannot be marked optional"):
+def test_top_level_eq_outside_if_raises():
+    # ``?fillet == x + 1`` is no longer an equation; ``==`` is a Python
+    # comparison and is rejected when it appears outside an ``if``
+    # condition. The old ``=``-form rejection (target marked optional)
+    # is covered by ``test_question_on_assign_target_raises`` below.
+    with pytest.raises(ValidationError, match="`==` as a top-level"):
         class C(Component):
             equations = ["?fillet == x + 1"]
             def build(self): return cube(1)
 
 
-def test_question_on_assign_target_raises():
-    # An equation `?pitch = 2 * x` would mark `pitch` as optional (None
-    # by default) AND pin it to a value via the equation — contradictory.
-    with pytest.raises(ValidationError, match="cannot be marked optional"):
-        class C(Component):
-            equations = ["?pitch = 2 * x"]
-            x = Param(float, default=1.0)
-            def build(self): return cube(1)
+def test_question_on_assign_target_resolves_via_equation():
+    # An equation `?pitch = 2 * x` makes `pitch` optional: when the
+    # user doesn't supply it, the equation fills the value (the
+    # optional-default override path). When the user does supply it,
+    # the equation consistency-checks.
+    class C(Component):
+        x = Param(float, default=1.0)
+        equations = ["?pitch = 2 * x"]
+        def build(self): return cube(1)
+
+    c = C()
+    assert c.pitch == 2.0
+    c2 = C(pitch=4.0, x=2.0)
+    assert c2.pitch == 4.0
 
 
 def test_question_on_reserved_name_raises():

@@ -112,6 +112,15 @@ class Param:
             invalidate()
 
     def _coerce(self, value: Any, instance, loc=None) -> Any:
+        """Asymmetric strict type check.
+
+        ``int → float`` is the one allowed widening — every int is a
+        valid floating-point value, and dimensional inputs in 3D
+        modeling are written as whole numbers (`Tube(thk=1)`,
+        `cube([10, 10, 5])`). Every other type is strict isinstance:
+        ``:bool`` rejects ``int``, ``:int`` rejects ``float``, ``:str``
+        rejects non-strings, etc.
+        """
         if self.type is None or value is None:
             return value
         # Reject booleans-as-numbers BEFORE the isinstance check, because
@@ -134,21 +143,26 @@ class Param:
                 f"{int(value)}; pass an int or round explicitly if intended).",
                 source_location=loc,
             )
-        try:
-            return self.type(value)
-        except (TypeError, ValueError) as exc:
-            msg = (
-                f"{type(instance).__name__}.{self._name}: cannot coerce "
-                f"{value!r} to {self.type.__name__}: {exc}"
+        # Asymmetric int → float widening. Lossless and matches Python's
+        # arithmetic semantics where `1 + 1.5` yields `2.5` without any
+        # explicit conversion at the source level.
+        if self.type is float and isinstance(value, int):
+            return float(value)
+        # Strict reject for everything else: no `bool(value)`, no
+        # `str(value)`, no `tuple(value)`. The user passes the wrong
+        # type; the framework says so and lets them fix the call.
+        msg = (
+            f"{type(instance).__name__}.{self._name}: expected "
+            f"{self.type.__name__}, got {type(value).__name__} ({value!r})"
+        )
+        if self._auto_declared and self.type is float:
+            msg += (
+                f"\nHint: `{self._name}` was auto-declared as Param(float) "
+                f"from its appearance in `equations`. For a non-float value, "
+                f"declare it explicitly above the equations list, e.g. "
+                f"`{self._name} = Param(tuple)`."
             )
-            if self._auto_declared and self.type is float:
-                msg += (
-                    f"\nHint: `{self._name}` was auto-declared as Param(float) "
-                    f"from its appearance in `equations`. For a non-float value, "
-                    f"declare it explicitly above the equations list, e.g. "
-                    f"`{self._name} = Param(tuple)`."
-                )
-            raise ValidationError(msg, source_location=loc) from exc
+        raise ValidationError(msg, source_location=loc)
 
     def has_default(self) -> bool:
         return self.default is not _MISSING

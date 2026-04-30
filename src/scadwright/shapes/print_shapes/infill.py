@@ -22,7 +22,7 @@ class HoneycombPanel(Component):
     size = Param(tuple)
     equations = [
         "cell_size, wall_thk > 0",
-        "len(size) == 3",
+        "len(size) = 3",
     ]
 
     def build(self):
@@ -70,7 +70,7 @@ class GridPanel(Component):
     size = Param(tuple)
     equations = [
         "cell_size, wall_thk > 0",
-        "len(size) == 3",
+        "len(size) = 3",
     ]
 
     def build(self):
@@ -107,7 +107,7 @@ class TriGridPanel(Component):
     size = Param(tuple)
     equations = [
         "cell_size, wall_thk > 0",
-        "len(size) == 3",
+        "len(size) = 3",
     ]
 
     def build(self):

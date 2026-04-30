@@ -157,7 +157,7 @@ def test_called_outside_class_body_raises():
 
 class _WithEquations(Component):
     Param.group("h id od thk", float, positive=True)
-    equations = ["od == id + 2*thk"]
+    equations = ["od = id + 2*thk"]
 
     def build(self):
         return cube(self.h)

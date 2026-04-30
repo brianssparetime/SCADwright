@@ -37,7 +37,7 @@ def _make_param(default=None):
 
 
 def test_standalone_simple_solve():
-    eqs, cons, _ = parse_equations_unified(["od == id + 2*thk"])
+    eqs, cons, _, _ = parse_equations_unified(["od = id + 2*thk"])
     params = {"id": _make_param(), "od": _make_param(), "thk": _make_param()}
     r = IterativeResolver(eqs, cons, params, {"id": 8, "thk": 1}, "T")
     out = r.resolve()
@@ -45,7 +45,7 @@ def test_standalone_simple_solve():
 
 
 def test_standalone_solve_each_direction():
-    eqs, cons, _ = parse_equations_unified(["od == id + 2*thk"])
+    eqs, cons, _, _ = parse_equations_unified(["od = id + 2*thk"])
     params = {"id": _make_param(), "od": _make_param(), "thk": _make_param()}
 
     out = IterativeResolver(eqs, cons, params, {"id": 8, "od": 10}, "T").resolve()
@@ -56,7 +56,7 @@ def test_standalone_solve_each_direction():
 
 
 def test_standalone_consistency_check_passes():
-    eqs, cons, _ = parse_equations_unified(["od == id + 2*thk"])
+    eqs, cons, _, _ = parse_equations_unified(["od = id + 2*thk"])
     params = {"id": _make_param(), "od": _make_param(), "thk": _make_param()}
     out = IterativeResolver(
         eqs, cons, params, {"id": 8, "od": 10, "thk": 1}, "T"
@@ -65,7 +65,7 @@ def test_standalone_consistency_check_passes():
 
 
 def test_standalone_consistency_check_fails():
-    eqs, cons, _ = parse_equations_unified(["od == id + 2*thk"])
+    eqs, cons, _, _ = parse_equations_unified(["od = id + 2*thk"])
     params = {"id": _make_param(), "od": _make_param(), "thk": _make_param()}
     with pytest.raises(ValidationError, match="equation violated"):
         IterativeResolver(
@@ -74,7 +74,7 @@ def test_standalone_consistency_check_fails():
 
 
 def test_standalone_insufficient():
-    eqs, cons, _ = parse_equations_unified(["od == id + 2*thk"])
+    eqs, cons, _, _ = parse_equations_unified(["od = id + 2*thk"])
     params = {"id": _make_param(), "od": _make_param(), "thk": _make_param()}
     with pytest.raises(ValidationError, match="cannot solve"):
         IterativeResolver(eqs, cons, params, {"id": 8}, "T").resolve()
@@ -82,9 +82,9 @@ def test_standalone_insufficient():
 
 def test_standalone_system_solve():
     # Two equations, two unknowns, neither solvable single-handedly.
-    eqs, cons, _ = parse_equations_unified([
-        "a + b == 5",
-        "a - b == 1",
+    eqs, cons, _, _ = parse_equations_unified([
+        "a + b = 5",
+        "a - b = 1",
     ])
     params = {"a": _make_param(), "b": _make_param()}
     out = IterativeResolver(eqs, cons, params, {}, "T").resolve()
@@ -93,8 +93,8 @@ def test_standalone_system_solve():
 
 
 def test_standalone_quadratic_with_validator():
-    eqs, cons, _ = parse_equations_unified([
-        "area == 3.141592653589793 * r**2",
+    eqs, cons, _, _ = parse_equations_unified([
+        "area = 3.141592653589793 * r**2",
     ])
     params = {
         "area": Param(float),
@@ -107,7 +107,7 @@ def test_standalone_quadratic_with_validator():
 
 
 def test_standalone_forward_eval_with_max():
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "edge = max(a - b, 0.5)",
     ])
     params = {"a": _make_param(), "b": _make_param()}
@@ -118,7 +118,7 @@ def test_standalone_forward_eval_with_max():
 
 
 def test_standalone_forward_eval_with_tuple():
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "positions = tuple(i * pitch for i in range(count))",
     ])
     params = {
@@ -133,7 +133,7 @@ def test_standalone_forward_eval_with_tuple():
 
 def test_standalone_attribute_access():
     Spec = namedtuple("Spec", "d length")
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "pitch = spec.d + 2 * clearance",
     ])
     params = {
@@ -148,8 +148,8 @@ def test_standalone_attribute_access():
 
 
 def test_standalone_constraint_passes():
-    eqs, cons, _ = parse_equations_unified([
-        "od == id + 2*thk",
+    eqs, cons, _, _ = parse_equations_unified([
+        "od = id + 2*thk",
         "id < od",
     ])
     params = {"id": _make_param(), "od": _make_param(), "thk": _make_param()}
@@ -160,7 +160,7 @@ def test_standalone_constraint_passes():
 
 
 def test_standalone_constraint_fails():
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "id < od",
     ])
     params = {"id": _make_param(), "od": _make_param()}
@@ -169,8 +169,8 @@ def test_standalone_constraint_fails():
 
 
 def test_standalone_per_param_validator_fires():
-    eqs, cons, _ = parse_equations_unified([
-        "x == 5 - y",
+    eqs, cons, _, _ = parse_equations_unified([
+        "x = 5 - y",
     ])
     params = {
         "x": Param(float, positive=True),
@@ -183,7 +183,7 @@ def test_standalone_per_param_validator_fires():
 
 def test_standalone_chained_derivation():
     # b depends on a; c depends on b.
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "b = a * 2",
         "c = b + 1",
     ])
@@ -196,7 +196,7 @@ def test_standalone_chained_derivation():
 def test_standalone_chained_derivation_reverse_order():
     # Same as above but the equations list has the dependent first;
     # iterative loop should still resolve.
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "c = b + 1",
         "b = a * 2",
     ])
@@ -207,7 +207,7 @@ def test_standalone_chained_derivation_reverse_order():
 
 
 def test_standalone_optional_skipped_when_none():
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "?fillet > 0",
     ])
     params = {"fillet": Param(float, default=None)}
@@ -216,7 +216,7 @@ def test_standalone_optional_skipped_when_none():
 
 
 def test_standalone_optional_constraint_fires_when_set():
-    eqs, cons, _ = parse_equations_unified([
+    eqs, cons, _, _ = parse_equations_unified([
         "?fillet > 0",
     ])
     params = {"fillet": Param(float, default=None)}
@@ -233,7 +233,7 @@ def test_standalone_supplied_none_with_pinned_equation_inconsistent():
     declares the optional Param explicitly and uses a derivation that
     pins it to a fixed value.
     """
-    eqs, cons, _ = parse_equations_unified(["x = 5"])
+    eqs, cons, _, _ = parse_equations_unified(["x = 5"])
     params = {"x": Param(float, default=None)}
     with pytest.raises(ValidationError, match="explicitly supplied as None"):
         IterativeResolver(eqs, cons, params, {"x": None}, "T").resolve()
@@ -250,7 +250,7 @@ class _NewBox(Component):
     id = Param(float, positive=True)
     od = Param(float, positive=True)
     thk = Param(float, positive=True)
-    equations = ["od == id + 2*thk"]
+    equations = ["od = id + 2*thk"]
 
     def build(self):
         return cube(self.h)
@@ -328,7 +328,7 @@ class _NewChamferedBox(Component):
     equations = [
         "?fillet > 0",
         "?chamfer > 0",
-        "len(size) == 3",
+        "len(size) = 3",
         "exactly_one(?fillet, ?chamfer)",
         "edge = ?fillet if ?fillet else ?chamfer",
         "all(s > 2 * edge for s in size)",
@@ -410,7 +410,7 @@ class _NewCommaConstraint(Component):
     _use_iterative_resolver = True
     equations = [
         "h, id, od, thk > 0",
-        "od == id + 2*thk",
+        "od = id + 2*thk",
     ]
 
     def build(self):
@@ -466,7 +466,7 @@ class _NonBareLhs(Component):
     a = Param(float)
     b = Param(float)
     foo = Param(float)
-    equations = ["max(a, b) == foo"]
+    equations = ["max(a, b) = foo"]
 
     def build(self):
         return cube(1)
@@ -491,7 +491,7 @@ class _NonInvertableMixed(Component):
     x = Param(float)
     y = Param(tuple)
     c = Param(float)
-    equations = ["x * len(y) == c"]
+    equations = ["x * len(y) = c"]
 
     def build(self):
         return cube(1)
@@ -506,7 +506,7 @@ def test_eq_with_non_invertable_factor_rearranges():
 
 class _LenEqConsistency(Component):
     size = Param(tuple)
-    equations = ["len(size) == 3"]
+    equations = ["len(size) = 3"]
 
     def build(self):
         return cube(1)
@@ -532,8 +532,8 @@ class _MultiBranch(Component):
     # cross-equation constraint ``angle < 180`` rules out the second
     # via ``angle = 2 * half_angle``, leaving a unique solution.
     equations = [
-        "max_d == 2 * groove_depth * sin(half_angle * pi / 180)",
-        "angle == 2 * half_angle",
+        "max_d = 2 * groove_depth * sin(half_angle * pi / 180)",
+        "angle = 2 * half_angle",
         "max_d, groove_depth, angle, half_angle > 0",
         "angle < 180",
     ]
@@ -554,13 +554,13 @@ def test_multi_branch_disambiguated_by_cross_constraint():
 
 
 def test_comma_eq_broadcast_is_equation():
-    eqs, cons, _ = parse_equations_unified(["x, y == 5"])
+    eqs, cons, _, _ = parse_equations_unified(["x, y = 5"])
     assert len(eqs) == 2
     assert len(cons) == 0
 
 
 def test_comma_other_op_still_constraint():
-    eqs, cons, _ = parse_equations_unified(["x, y > 0"])
+    eqs, cons, _, _ = parse_equations_unified(["x, y > 0"])
     assert len(eqs) == 0
     assert len(cons) == 2
 

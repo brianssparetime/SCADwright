@@ -134,7 +134,7 @@ class RoundedBox(Component):
     size = Param(tuple)  # (x, y, z)
     equations = [
         "r > 0",
-        "len(size) == 3",
+        "len(size) = 3",
         "all(s > 2 * r for s in size)",
     ]
 

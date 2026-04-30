@@ -189,19 +189,21 @@ def _classdef_loc_multi(class_name: str, items) -> str:
 def _split_top_level_equals(
     line: str, class_name: str = "", source_index: int = 0,
 ) -> tuple[str, str] | None:
-    """Find the single top-level ``=`` (or ``==``) and split the line.
+    """Find the single top-level ``=`` and split the line.
 
-    Returns ``(lhs_text, rhs_text)`` if exactly one top-level equality
-    operator is found, else ``None`` (the line is a constraint, not an
-    equation).
+    Returns ``(lhs_text, rhs_text)`` if exactly one top-level ``=`` is
+    found, else ``None`` (the line is a constraint, not an equation).
+
+    Only a lone ``=`` is the equation operator. ``==`` is a Python
+    comparison and is recognized but skipped (placement validation
+    elsewhere ensures it appears only inside ``if`` conditions).
+    ``<=``, ``>=``, ``!=`` are also skipped as comparison operators.
 
     "Top-level" means: not inside ``(...)``, ``[...]``, ``{...}``, not
     inside a single/double/triple-quoted string, not inside a ``#``
-    comment. The scanner treats ``==``, ``<=``, ``>=``, ``!=`` as a
-    single non-equation operator: only a lone ``=`` or a lone ``==``
-    counts as the equation operator.
+    comment.
 
-    Multiple top-level equality operators raise ``ValidationError``
+    Multiple top-level ``=`` operators raise ``ValidationError``
     (chained assignment / over-specified line). The caller controls the
     error message; this helper raises with a descriptive prefix that
     callers can extend.
@@ -263,15 +265,14 @@ def _split_top_level_equals(
         elif c == "}":
             brace_depth -= 1
 
-        # Skip operators that contain `=` but aren't equation operators.
-        # The order matters: check the two-character forms before `=`.
+        # `==` — Python comparison; skip as two characters. Must be
+        # checked before the lone `=` case below.
+        if c == "=" and i + 1 < n and line[i + 1] == "=":
+            i += 2
+            continue
+
+        # `=` (equation operator) — only the lone form, only at depth 0.
         if c == "=" and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
-            # `==` (equation operator, treat the same as `=`).
-            if i + 1 < n and line[i + 1] == "=":
-                found.append((i, i + 2))
-                i += 2
-                continue
-            # `=` (equation operator).
             found.append((i, i + 1))
             i += 1
             continue
@@ -288,8 +289,7 @@ def _split_top_level_equals(
         raise ValidationError(
             f"{_classdef_loc(class_name, source_index)}: cannot parse equation "
             f"{line!r}: chained assignment not allowed "
-            f"(more than one top-level `=` / `==`); write each equation on "
-            f"its own line."
+            f"(more than one top-level `=`); write each equation on its own line."
         )
     start, end = found[0]
     lhs_text = line[:start].strip()
@@ -309,10 +309,11 @@ def parse_equations_unified(
 ) -> tuple[
     list[ParsedEquation], list[ParsedConstraint],
     frozenset[str],
+    dict[str, str],
 ]:
     """Parse the equations list into the unified representation.
 
-    Returns ``(equations, constraints, all_optionals)``.
+    Returns ``(equations, constraints, all_optionals, typed_names)``.
 
     Per-line classification, comma-expansion, malformed-shape rejection,
     self-reference detection, and mutual-inconsistency detection all
@@ -323,9 +324,16 @@ def parse_equations_unified(
     ``class_name`` (optional) is the owning Component's class name. When
     set, error messages prefix with ``ClassName.equations[N]:``; when
     empty, the prefix is just ``equations[N]:``.
+
+    ``typed_names`` maps each name carrying an inline ``:type`` tag to
+    its type-name string. The type names are validated against the
+    inline allowlist here; cross-site type agreement is enforced at the
+    same time. Auto-declare consumes the dict downstream.
     """
     from scadwright.component.equations import (
-        _extract_optional_markers, _require_sympy,
+        _INLINE_TYPE_ALLOWLIST,
+        _extract_name_annotations,
+        _require_sympy,
     )
 
     _require_sympy()
@@ -333,11 +341,35 @@ def parse_equations_unified(
     equations: list[ParsedEquation] = []
     constraints: list[ParsedConstraint] = []
     all_optionals: set[str] = set()
+    typed_names: dict[str, str] = {}
+    # Track which source line each type assertion came from so
+    # disagreement errors can point at both sites.
+    typed_first_seen: dict[str, int] = {}
 
     for source_index, raw in enumerate(eq_strs):
-        cleaned, line_opts = _extract_optional_markers(raw)
+        cleaned, line_opts, line_typed = _extract_name_annotations(raw)
         all_optionals |= line_opts
         line_opts_frozen = frozenset(line_opts)
+
+        # Validate type-tag allowlist + cross-site agreement.
+        for name, type_name in line_typed.items():
+            if type_name not in _INLINE_TYPE_ALLOWLIST:
+                raise ValidationError(
+                    f"{_classdef_loc(class_name, source_index)}: unknown "
+                    f"type tag `:{type_name}` on `{name}` in {raw!r}; "
+                    f"allowed types are "
+                    f"{sorted(_INLINE_TYPE_ALLOWLIST)}."
+                )
+            if name in typed_names and typed_names[name] != type_name:
+                raise ValidationError(
+                    f"{_classdef_loc(class_name, source_index)}: type "
+                    f"disagreement on `{name}`: tagged `:{type_name}` "
+                    f"here but `:{typed_names[name]}` at "
+                    f"{_classdef_loc(class_name, typed_first_seen[name])}."
+                )
+            if name not in typed_names:
+                typed_names[name] = type_name
+                typed_first_seen[name] = source_index
 
         # Step 1: split on a top-level equation operator. If the line
         # has one, it's an equation; otherwise it's a constraint.
@@ -356,7 +388,12 @@ def parse_equations_unified(
             )
 
     # Class-def-time validation passes.
+    _check_eq_placement(equations, constraints, class_name)
     _check_unknown_function_calls(equations, constraints, class_name)
+    _check_bool_in_arithmetic(typed_names, equations, constraints, class_name)
+    _check_non_float_solver_target(
+        typed_names, equations, frozenset(all_optionals), class_name,
+    )
     _check_self_reference(equations, class_name)
     _check_mutual_inconsistency(equations, class_name)
 
@@ -364,7 +401,225 @@ def parse_equations_unified(
         equations,
         constraints,
         frozenset(all_optionals),
+        typed_names,
     )
+
+
+_NUMERIC_YIELDING_CALLS = frozenset({
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "sqrt", "log", "exp", "abs", "ceil", "floor",
+    "min", "max", "sum", "round",
+    "int", "float",
+})
+
+_ARITHMETIC_BINOPS = (
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv,
+    ast.Mod, ast.Pow,
+)
+
+
+def _check_bool_in_arithmetic(
+    typed_names: dict[str, str],
+    equations: list[ParsedEquation],
+    constraints: list[ParsedConstraint],
+    class_name: str = "",
+) -> None:
+    """Reject `:bool`-tagged names that participate in arithmetic.
+
+    Python silently treats `True` as `1` in arithmetic, which masks
+    bugs like ``x = direction * 2``. A bool-tagged name may appear in
+    truthy contexts (``if direction``, ``not direction``, comparisons)
+    and as an equation target/value; arithmetic operands and numeric-
+    yielding calls reject it at class-define time.
+    """
+    bool_names = {n for n, t in typed_names.items() if t == "bool"}
+    if not bool_names:
+        return
+
+    def _walk(node: ast.AST, raw: str, loc: str) -> None:
+        # Arithmetic operand check: a Name in bool_names appearing as
+        # the left or right of an arithmetic BinOp is a category error.
+        if isinstance(node, ast.BinOp) and isinstance(node.op, _ARITHMETIC_BINOPS):
+            for side in (node.left, node.right):
+                if isinstance(side, ast.Name) and side.id in bool_names:
+                    raise ValidationError(
+                        f"{loc}: bool-tagged name `{side.id}` used as an "
+                        f"arithmetic operand in `{raw}`; bools can be "
+                        f"tested in conditions but not used in arithmetic."
+                    )
+        # Numeric-yielding call: a Name in bool_names passed to sin/sqrt
+        # /min/etc. is similarly a category error.
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in _NUMERIC_YIELDING_CALLS
+        ):
+            for arg in node.args:
+                if isinstance(arg, ast.Name) and arg.id in bool_names:
+                    raise ValidationError(
+                        f"{loc}: bool-tagged name `{arg.id}` passed to "
+                        f"numeric-yielding call `{node.func.id}` in "
+                        f"`{raw}`; bools can be tested in conditions but "
+                        f"not used as numeric arguments."
+                    )
+        for child in ast.iter_child_nodes(node):
+            _walk(child, raw, loc)
+
+    for eq in equations:
+        loc = _classdef_loc(class_name, eq.source_line_index)
+        _walk(eq.lhs, eq.raw, loc)
+        _walk(eq.rhs, eq.raw, loc)
+    for c in constraints:
+        loc = _classdef_loc(class_name, c.source_line_index)
+        _walk(c.expr, c.raw, loc)
+
+
+def _is_override_pattern(
+    target_name: str, rhs: ast.AST, optional_names: frozenset[str],
+) -> bool:
+    """True if ``rhs`` is one of the accepted optional-default override
+    shapes: ``name or const``, ``const if name is None else name``, or
+    ``name if name is not None else const``.
+
+    Used by :func:`_check_non_float_solver_target` to allow non-float
+    typed names on the LHS of an equation when the equation is the
+    optional-default override pattern, not a solver target.
+    """
+    if target_name not in optional_names:
+        return False
+
+    # Shape 1: BoolOp(Or, [Name(target), <constant>]) — `name or 1`.
+    # The first operand reads the (possibly-None) input; if truthy it
+    # short-circuits; otherwise the second operand provides the default.
+    if isinstance(rhs, ast.BoolOp) and isinstance(rhs.op, ast.Or):
+        if (
+            len(rhs.values) >= 2
+            and isinstance(rhs.values[0], ast.Name)
+            and rhs.values[0].id == target_name
+        ):
+            return True
+
+    # Shape 2 / 3: IfExp with `name is None` or `name is not None` test.
+    if isinstance(rhs, ast.IfExp) and isinstance(rhs.test, ast.Compare):
+        cmp = rhs.test
+        if (
+            len(cmp.ops) == 1
+            and isinstance(cmp.left, ast.Name)
+            and cmp.left.id == target_name
+            and len(cmp.comparators) == 1
+            and isinstance(cmp.comparators[0], ast.Constant)
+            and cmp.comparators[0].value is None
+        ):
+            if isinstance(cmp.ops[0], ast.Is):
+                # `default if name is None else name`
+                if (
+                    isinstance(rhs.orelse, ast.Name)
+                    and rhs.orelse.id == target_name
+                ):
+                    return True
+            if isinstance(cmp.ops[0], ast.IsNot):
+                # `name if name is not None else default`
+                if (
+                    isinstance(rhs.body, ast.Name)
+                    and rhs.body.id == target_name
+                ):
+                    return True
+    return False
+
+
+def _check_non_float_solver_target(
+    typed_names: dict[str, str],
+    equations: list[ParsedEquation],
+    optional_names: frozenset[str],
+    class_name: str = "",
+) -> None:
+    """Reject non-float-typed names appearing as bare-Name targets of
+    equations the resolver would solve.
+
+    The resolver works over floats; it cannot derive int / bool / str
+    / tuple / list / dict values from algebraic equations. A non-float-
+    typed name as a bare-Name target on either side of an equation is
+    a class-define-time error, except when the equation matches the
+    optional-default override pattern (an optional name that gets its
+    value from the equation's RHS rather than from the resolver's
+    sympy step).
+    """
+    non_float_typed = {
+        n for n, t in typed_names.items()
+        if t in ("int", "bool", "str", "tuple", "list", "dict")
+    }
+    if not non_float_typed:
+        return
+
+    for eq in equations:
+        bare_targets = []
+        if isinstance(eq.lhs, ast.Name):
+            bare_targets.append((eq.lhs.id, eq.rhs))
+        if isinstance(eq.rhs, ast.Name):
+            bare_targets.append((eq.rhs.id, eq.lhs))
+        for name, other in bare_targets:
+            if name not in non_float_typed:
+                continue
+            if _is_override_pattern(name, other, optional_names):
+                continue
+            raise ValidationError(
+                f"{_classdef_loc(class_name, eq.source_line_index)}: "
+                f"name `{name}` is tagged `:{typed_names[name]}` and "
+                f"cannot be derived from an equation. Non-float-typed "
+                f"names must be supplied by the caller or filled by the "
+                f"optional-default pattern "
+                f"(`?{name}:{typed_names[name]} = expr if ?{name} is None"
+                f" else ?{name}` or `?{name}:{typed_names[name]} = "
+                f"?{name} or default`). Offending equation: `{eq.raw}`."
+            )
+
+
+def _check_eq_placement(
+    equations: list[ParsedEquation],
+    constraints: list[ParsedConstraint],
+    class_name: str = "",
+) -> None:
+    """Reject ``==`` outside an ``if`` condition.
+
+    `=` is the equation operator; `==` is a Python comparison whose
+    only legitimate use in equations is inside the ``test`` of a
+    conditional expression (``a if cond == 1 else b``). A bare
+    ``count == 1`` line outside an ``if`` is almost certainly the
+    user reaching for the equation operator, so we surface a clear
+    error rather than silently letting it be a constraint.
+    """
+
+    def _walk(node: ast.AST, in_iftest: bool, raw: str, loc: str) -> None:
+        if isinstance(node, ast.Compare):
+            for op in node.ops:
+                if isinstance(op, ast.Eq) and not in_iftest:
+                    raise ValidationError(
+                        f"{loc}: cannot use `==` as a top-level "
+                        f"comparison in `{raw}`; use `=` for an "
+                        f"equation, `in (...)` for membership, or "
+                        f"wrap in `if` to use as a comparison inside "
+                        f"a conditional expression."
+                    )
+            # Children of a Compare never become an IfExp.test on their
+            # own, so propagate the flag unchanged.
+            for child in ast.iter_child_nodes(node):
+                _walk(child, in_iftest, raw, loc)
+            return
+        if isinstance(node, ast.IfExp):
+            _walk(node.test, True, raw, loc)
+            _walk(node.body, in_iftest, raw, loc)
+            _walk(node.orelse, in_iftest, raw, loc)
+            return
+        for child in ast.iter_child_nodes(node):
+            _walk(child, in_iftest, raw, loc)
+
+    for eq in equations:
+        loc = _classdef_loc(class_name, eq.source_line_index)
+        _walk(eq.lhs, False, eq.raw, loc)
+        _walk(eq.rhs, False, eq.raw, loc)
+    for c in constraints:
+        loc = _classdef_loc(class_name, c.source_line_index)
+        _walk(c.expr, False, c.raw, loc)
 
 
 def _check_unknown_function_calls(
@@ -509,22 +764,14 @@ def _emit_equation(
             ))
         return
 
-    # Reject `?` markers when the marked name is the unique bare-Name
-    # target of this equation. The sigil declares the name optional
-    # (Param-with-default-None); an equation pinning it to a value would
-    # contradict the explicit None.
-    bare_target = None
-    if isinstance(lhs, ast.Name):
-        bare_target = lhs.id
-    elif isinstance(rhs, ast.Name):
-        bare_target = rhs.id
-    if bare_target is not None and bare_target in line_opts:
-        raise ValidationError(
-            f"{_classdef_loc(class_name, source_index)}: equation "
-            f"{raw!r}: target name cannot be marked optional — "
-            f"`?{bare_target}` must be a Param, not the target of an "
-            f"equation."
-        )
+    # `?name` on a bare-Name target is the optional-default override
+    # shape: the equation's RHS supplies the value when the user
+    # didn't. The resolver skips applying the None default for these
+    # names at startup so the equation can fill them in normally. For
+    # non-float-typed names, ``_check_non_float_solver_target``
+    # validates that the override RHS matches one of the accepted
+    # shapes (`name or const`, `const if name is None else name`,
+    # `name if name is not None else const`).
 
     refs = frozenset(_free_names_in(lhs) | _free_names_in(rhs))
     out.append(ParsedEquation(
@@ -621,25 +868,52 @@ def _is_predicate_shape(expr: ast.AST) -> bool:
 # =============================================================================
 
 
-def _coerce_for_param(value: Any, param) -> Any:
-    """Coerce ``value`` to ``param``'s declared type if possible.
+def _coerce_for_param(
+    value: Any, param, *, name: str = "", component_name: str = "",
+) -> Any:
+    """Coerce ``value`` to ``param``'s declared type, asymmetrically.
 
-    Mirrors a subset of ``Param._coerce``: returns the value unchanged
-    when there's no Param, no declared type, the value is None, or the
-    value is already the right type. Otherwise attempts ``param.type(value)``
-    and returns the original on failure (downstream validators will
-    catch type mismatches with their own error messages).
+    Mirrors :meth:`Param._coerce`: only the lossless ``int → float``
+    widening is performed. Type mismatches raise ``ValidationError``
+    immediately so a user-supplied wrong-type value surfaces with the
+    type-mismatch error rather than slipping through to a downstream
+    constraint-violation that's harder to interpret.
     """
     if param is None or param.type is None or value is None:
         return value
+    if isinstance(value, bool) and param.type is not bool:
+        prefix = f"{component_name}.{name}" if component_name and name else name or "<param>"
+        raise ValidationError(
+            f"{prefix}: expected {param.type.__name__}, got bool"
+        )
     if isinstance(value, param.type):
         return value
-    if isinstance(value, bool) and param.type is not bool:
-        return value
-    try:
-        return param.type(value)
-    except (TypeError, ValueError):
-        return value
+    if param.type is float and isinstance(value, int):
+        return float(value)
+    if (
+        param.type is int
+        and isinstance(value, float)
+        and not value.is_integer()
+    ):
+        prefix = f"{component_name}.{name}" if component_name and name else name or "<param>"
+        raise ValidationError(
+            f"{prefix}: expected int, got non-integer float {value!r} "
+            f"(would silently truncate to {int(value)}; pass an int or "
+            f"round explicitly if intended)."
+        )
+    prefix = f"{component_name}.{name}" if component_name and name else name or "<param>"
+    msg = (
+        f"{prefix}: expected {param.type.__name__}, got "
+        f"{type(value).__name__} ({value!r})"
+    )
+    if getattr(param, "_auto_declared", False) and param.type is float:
+        msg += (
+            f"\nHint: `{name}` was auto-declared as Param(float) "
+            f"from its appearance in `equations`. For a non-float value, "
+            f"declare it explicitly above the equations list, e.g. "
+            f"`{name} = Param(tuple)`."
+        )
+    raise ValidationError(msg)
 
 
 # =============================================================================
@@ -1068,6 +1342,7 @@ class IterativeResolver:
         params: dict[str, Param],
         supplied: dict[str, Any],
         component_name: str,
+        override_names: frozenset[str] = frozenset(),
     ):
         from scadwright.component.equations import (
             _CURATED_BUILTINS, _CURATED_MATH,
@@ -1077,6 +1352,7 @@ class IterativeResolver:
         self.constraints = constraints
         self.params = params
         self.component_name = component_name
+        self._override_names = override_names
 
         # knowns: name → value, coerced via each Param's type so the
         # resolver sees the same form Param.__set__ would produce.
@@ -1089,7 +1365,10 @@ class IterativeResolver:
         # yields to a solver-found value when the equations + user
         # inputs are sufficient on their own.
         self.knowns: dict[str, Any] = {
-            name: _coerce_for_param(value, params.get(name))
+            name: _coerce_for_param(
+                value, params.get(name),
+                name=name, component_name=component_name,
+            )
             for name, value in supplied.items()
         }
         self._pending_defaults: dict[str, Any] = {}
@@ -1099,10 +1378,17 @@ class IterativeResolver:
             if not param.has_default():
                 continue
             if param.default is None:
+                # Override names are equation-filled, not None-defaulted.
+                # The optional sigil declares the parameter optional from
+                # the caller's view; the equation provides the value when
+                # the caller doesn't.
+                if name in override_names:
+                    continue
                 self.knowns[name] = None
             else:
                 self._pending_defaults[name] = _coerce_for_param(
                     param.default, param,
+                    name=name, component_name=component_name,
                 )
         self._supplied_names = set(supplied.keys())
 
@@ -1115,6 +1401,13 @@ class IterativeResolver:
         # surfaced errors.
         self._pending_eqs: list[int] = list(range(len(equations)))
         self._pending_constraints: list[int] = list(range(len(constraints)))
+
+        # Pre-resolve optional-name overrides before the iterative loop
+        # runs. For each equation whose bare-Name target is an override
+        # name and was NOT user-supplied, evaluate the RHS with the
+        # target bound to None and assign the result. The user-supplied
+        # case falls through to the normal consistency-check path.
+        self._preresolve_overrides()
 
     # --- error-location helpers ---
 
@@ -1132,6 +1425,80 @@ class IterativeResolver:
         aggregates). Lists each unique source-line index."""
         unique = sorted({i.source_line_index for i in items})
         return f"{self.component_name}.equations[{', '.join(str(i) for i in unique)}]"
+
+    # --- override pre-resolution ---
+
+    def _preresolve_overrides(self) -> None:
+        """Resolve optional-name overrides before the iterative loop.
+
+        For each equation whose bare-Name target is an override name
+        (optional + equation LHS target) AND the user did NOT supply
+        a value, evaluate the RHS with the target temporarily bound
+        to None and assign the result. The equation is then removed
+        from the pending list — already resolved.
+
+        If the user DID supply a value, leave the equation pending so
+        the iterative loop's normal consistency-check path runs.
+        """
+        if not self._override_names:
+            return
+
+        for i in list(self._pending_eqs):
+            eq = self.equations[i]
+            # Identify the bare-Name override target on either side.
+            target_name = None
+            rhs_node = None
+            if (
+                isinstance(eq.lhs, ast.Name)
+                and eq.lhs.id in self._override_names
+            ):
+                target_name = eq.lhs.id
+                rhs_node = eq.rhs
+            elif (
+                isinstance(eq.rhs, ast.Name)
+                and eq.rhs.id in self._override_names
+            ):
+                target_name = eq.rhs.id
+                rhs_node = eq.lhs
+            if target_name is None:
+                continue
+            # User-supplied targets fall through to consistency-check.
+            if target_name in self._supplied_names:
+                continue
+
+            # Evaluate the RHS with the target bound to None. The pre-
+            # resolution check (_check_non_float_solver_target for
+            # non-float types; the override-RHS evaluability check for
+            # all types) ensures the RHS is well-defined when the
+            # target is None.
+            tentative = dict(self.knowns)
+            tentative[target_name] = None
+            sub = substitute_knowns(rhs_node, tentative, self._curated_ns)
+            full_known = set(tentative) | set(self._curated_ns)
+            if find_unknowns(sub, full_known):
+                # Other names unknown; leave pending — the iterative
+                # loop will pick this up once those resolve.
+                continue
+            try:
+                expr_node = ast.Expression(body=sub)
+                ast.fix_missing_locations(expr_node)
+                code = compile(expr_node, "<override>", "eval")
+                ns = {**self._curated_ns, **tentative, "__builtins__": {}}
+                value = eval(code, ns)
+            except Exception:
+                # If evaluation fails (e.g., the RHS refers to other
+                # unknowns through a path substitute_knowns couldn't
+                # fold), leave the equation pending.
+                continue
+
+            # Coerce per the Param's type and assign.
+            param = self.params.get(target_name)
+            value = _coerce_for_param(
+                value, param,
+                name=target_name, component_name=self.component_name,
+            )
+            self.knowns[target_name] = value
+            self._pending_eqs.remove(i)
 
     # --- public ---
 

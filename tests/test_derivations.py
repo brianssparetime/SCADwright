@@ -125,10 +125,10 @@ def test_assign_target_overlaps_with_explicit_param():
 
 
 def test_assign_and_equality_targets_with_same_name():
-    # Both `a == b + 1` and `a = 5` constrain `a`. Solving as a system:
+    # Both `a = b + 1` and `a = 5` constrain `a`. Solving as a system:
     # a=5, b=4. Single consistent solution.
     class C(Component):
-        equations = ["a == b + 1", "a = 5"]
+        equations = ["a = b + 1", "a = 5"]
         def build(self): return cube(1)
 
     c = C()
@@ -301,7 +301,7 @@ def test_derivation_visible_in_build():
 def test_derivation_alongside_equation_solver():
     class C(Component):
         equations = [
-            "od == id + 2*thk",
+            "od = id + 2*thk",
             "id, od, thk > 0",
             "wall_mid = (od + id) / 2 / 2",  # mean wall-centerline radius
         ]

@@ -21,7 +21,7 @@ class _Box3(Component):
     id = Param(float, positive=True)
     od = Param(float, positive=True)
     thk = Param(float, positive=True)
-    equations = ["od == id + 2*thk"]
+    equations = ["od = id + 2*thk"]
 
     def build(self):
         return cube(self.h)
@@ -70,7 +70,7 @@ class _WithDefault(Component):
     id = Param(float, positive=True)
     od = Param(float, positive=True)
     thk = Param(float, positive=True, default=1.0)
-    equations = ["od == id + 2*thk"]
+    equations = ["od = id + 2*thk"]
 
     def build(self):
         return cube(self.h)
@@ -103,8 +103,8 @@ class _TwoEq(Component):
     d = Param(float, positive=True)
     thk = Param(float, positive=True)
     equations = [
-        "a == b + 2*thk",
-        "c == d + 2*thk",
+        "a = b + 2*thk",
+        "c = d + 2*thk",
     ]
 
     def build(self):
@@ -146,7 +146,7 @@ def test_equation_auto_creates_undeclared_params():
     auto-created as Param(float)."""
     class _AutoParam(Component):
         a = Param(float)
-        equations = ["a == b"]
+        equations = ["a = b"]
         def build(self): return cube(1)
 
     # b should be auto-created as a Param(float).
@@ -158,7 +158,7 @@ def test_equation_auto_creates_undeclared_params():
 def test_equation_auto_created_params_are_solvable():
     """Auto-created params from equations can be solved like any other."""
     class _AutoSolve(Component):
-        equations = ["od == id + 2*thk"]
+        equations = ["od = id + 2*thk"]
         def build(self): return cube(1)
 
     obj = _AutoSolve(id=10, thk=2)
@@ -187,7 +187,7 @@ def test_missing_operator_raises_at_class_def():
 class _Quadratic(Component):
     area = Param(float, positive=True)
     r = Param(float, positive=True)
-    equations = ["area == pi * r**2"]
+    equations = ["area = pi * r**2"]
 
     def build(self):
         return cube(1)
@@ -221,5 +221,5 @@ def test_sympy_missing_raises_helpful_import_error(monkeypatch):
     with pytest.raises(ImportError, match="no sympy"):
         class _ShouldFail(Component):
             a = Param(float)
-            equations = ["a == 5"]
+            equations = ["a = 5"]
             def build(self): return cube(1)

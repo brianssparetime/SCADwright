@@ -36,7 +36,7 @@ class _UnderspecBox(Component):
     id = Param(float, positive=True)
     od = Param(float, positive=True)
     thk = Param(float, positive=True)
-    equations = ["od == id + 2*thk"]
+    equations = ["od = id + 2*thk"]
 
     def build(self):
         return cube(self.h)
@@ -174,7 +174,7 @@ class _PredBox(Component):
     size = Param(tuple)
     r = Param(float, positive=True)
     equations = [
-        "len(size) == 3",
+        "len(size) = 3",
         "all(s > 2 * r for s in size)",
     ]
 
@@ -514,7 +514,7 @@ class _Quadratic(Component):
     area = Param(float, positive=True)
     r = Param(float, positive=True)
     equations = [
-        "area == 3.141592653589793 * r**2",
+        "area = 3.141592653589793 * r**2",
     ]
 
     def build(self):
