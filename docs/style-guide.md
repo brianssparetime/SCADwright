@@ -40,44 +40,79 @@ Use these features whenever they fit. They exist to eliminate boilerplate and ma
 
 ### Declare dimensional parameters with `equations`
 
-Float parameters that have arithmetic relationships belong in `equations`. Names are auto-declared as `Param(float)` — no manual `Param()` needed.
+Float parameters that have arithmetic relationships belong in `equations`. Names are auto-declared as `Param(float)`, no manual `Param()` needed. Write the block as a triple-quoted string:
 
 ```python
 class Tube(Component):
-    equations = [
-        "od = id + 2*thk",
-        "h, id, od, thk > 0",
-    ]
+    equations = """
+        od = id + 2*thk
+        h, id, od, thk > 0
+    """
 ```
+
+The triple-quoted form is preferred over the list-of-strings form. It reads like a spec rather than Python list ceremony, and editing it doesn't have the trailing-comma trap. The list form is still accepted (useful for programmatically-assembled equations); see the components doc.
 
 Specify any two of (id, od, thk) and SCADwright fills in the third. Bound rules (`> 0`) declare the parameter and attach validators in one step.
 
 Each line in `equations` is one of two things:
 
-- **An equation.** `"od = id + 2*thk"`, `"len(size) = 3"`, `"max(a, b) = foo"`, `"x * len(y) = c"`. Either side can be any expression. SCADwright fills in any value the system can solve from what you supplied; anything you over-supplied gets consistency-checked. Subscript and attribute expressions like `arr[0]` or `spec.foo` are reads — the resolver consistency-checks them but never mutates them.
+- **An equation.** `"od = id + 2*thk"`, `"len(size) = 3"`, `"max(a, b) = foo"`, `"x * len(y) = c"`. Either side can be any expression. SCADwright fills in any value the system can solve from what you supplied; anything you over-supplied gets consistency-checked. Subscript and attribute expressions like `arr[0]` or `spec.foo` are reads; the resolver consistency-checks them but never mutates them.
 - **A rule.** `"id < od"`, `"all(s > 2*r for s in size)"`. Checked at construction; a falsy result raises `ValidationError`. Bound rules with a numeric bound (`"x > 0"`) compile to a per-Param validator that fires on direct assignment too.
 
 Comma broadcasts: `"x, y > 0"` is two rules; `"x, y = 5"` is two equations.
 
-`=` and `==` are accepted and mean the same thing. Prefer `=`.
+**`=` for equations, `==` only after `if`.** Use `=` for every equation, consistency-check, and rule that involves equality. Use `==` only inside the condition of an `if` expression (`x = a if axis == 'xy' else b`), the same way Python uses it. Top-level `==` outside an `if` is a class-define-time error pointing at the right form.
 
-**Optional inputs.** Prefix a name with `?` in the equations list (`"?fillet > 0"`) to make it optional. If omitted, the value is `None` and any rule referencing it skips. `?` can't appear on a name that's computed by another line. For the conditional idiom, write `?x if ?x else y` when the input has a positivity constraint; reach for the explicit `?x is None` form only when `0` or `False` is a legitimate value.
+**Optional inputs.** Prefix a name with `?` (`"?fillet > 0"`) to make it optional. If omitted, the value is `None` and any rule referencing it skips. For the conditional idiom, write `?x if ?x else y` when the input has a positivity constraint; reach for the explicit `?x is None` form only when `0` or `False` is a legitimate value.
+
+To give an optional input a default value, write the value in the equations block:
+
+```python
+class GridfinityBin(Component):
+    equations = """
+        grid_x:int > 0
+        grid_y:int > 0
+        ?dividers_x:int = ?dividers_x or 1     # default to one cell row
+    """
+```
+
+The `or` form picks the default when the caller omits the input or passes `None`. Use the explicit `?n if ?n is not None else default` form when `0` (or `False`, or `()`) is a legitimate value.
+
+### Declare non-float parameters with inline type tags
+
+For `int`, `bool`, `str`, `tuple`, `list`, `dict` parameters, write `:type` right after the name's first appearance in the equations block:
+
+```python
+class GridfinityBin(Component):
+    equations = """
+        grid_x:int > 0
+        grid_y:int > 0
+        axis:str in ('x', 'y', 'z')
+        len(size:tuple) = 3
+    """
+```
+
+The tag goes on the name's first reference and applies everywhere the name is used. Spacing around the colon is flexible (`count:int`, `count: int`, `count : int` all work).
+
+Type tags act like a check: the value the caller passes must match the type, otherwise SCADwright raises a clear error. The only conversion is whole-number `int` widening to `float` (`Tube(thk=1)` is fine for a float `thk`).
+
+**Compose with `?`** for optional non-float inputs: `?direction:bool` declares an optional bool, `?count:int` declares an optional int.
+
+**Constraints replace single-bound validators.** `count:int >= 3` does the same job as `Param(int, min=3)` and reads as part of the relationship-and-rule logic instead of off to the side.
 
 ### Let constraints declare float parameters
 
-A constraint auto-creates its operand as `Param(float)` and installs the validator in one line. Most dimensions have a natural bound — a length is positive, an angle lives in a range — so the constraint form covers the declaration and the validation together:
+A constraint auto-creates its operand as `Param(float)` and installs the validator in one line. Most dimensions have a natural bound (a length is positive, an angle lives in a range), so the constraint form covers the declaration and the validation together:
 
 ```python
 class FilletRing(Component):
-    equations = [
-        "id, od > 0",
-        "base_angle > 0",
-        "base_angle < 90",
-        "id < od",
-    ]
+    equations = """
+        id, od > 0
+        base_angle > 0
+        base_angle < 90
+        id < od
+    """
 ```
-
-`params = "..."` is the rare escape for floats that are genuinely unbounded *and* don't appear in any equation. See [Components → Other kinds of parameters](components.md#other-kinds-of-parameters).
 
 ### Declare anchors at class scope with `anchor()`
 
@@ -182,15 +217,16 @@ from scadwright.shapes import Tube, rounded_rect
 
 These features exist for cases the preferred patterns can't handle. If you reach for one, be ready to explain why the preferred way doesn't work.
 
-### `Param()` for non-float types
+### `Param()` for custom types
 
-`Param()` is for bools, strings, and object types — things that equations and `params=` can't express. Floats belong in equations or `params=`.
+`Param()` is the declaration site for custom types (namedtuples, spec classes, anything that isn't in the inline-tag allowlist of `bool`, `int`, `str`, `tuple`, `list`, `dict`). For those basic types, use an inline `:type` tag in the equations block instead.
 
 ```python
-n_shape = Param(bool, default=False)       # bool option
-spec = Param(BatterySpec)                  # object type
-slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
+spec = Param(BatterySpec)                                   # custom spec class
+spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)   # with a domain default
 ```
+
+Custom types are the only place `Param()` belongs. If you find yourself writing `Param(int, ...)`, `Param(bool, ...)`, etc. for a basic type, replace it with the inline `:type` tag.
 
 ### `.translate([x, y, z])` instead of directional helpers
 
@@ -239,10 +275,51 @@ w = Param(float)
 h = Param(float)
 
 # Right (any natural bound is a constraint):
-equations = ["w, h > 0"]
+equations = """
+    w, h > 0
+"""
 ```
 
-For a genuinely-unbounded float that doesn't appear in any equation (rare — signed offsets, freely-scaling coefficients), use `params = "name"`. But first check whether a constraint actually does apply — it usually does.
+### Don't use `Param(int|bool|str|tuple|list|dict|...)` when an inline type tag works
+
+The inline `:type` tag in equations replaces `Param()` for basic types. The tag goes where the name participates in a rule or equation, so the type and the constraint sit together:
+
+```python
+# Wrong:
+count = Param(int, min=1)
+axis = Param(str, one_of=("x", "y", "z"))
+equations = """
+    ...
+"""
+
+# Right (type, declaration, and constraint in the equations block):
+equations = """
+    count:int >= 1
+    axis:str in ('x', 'y', 'z')
+    ...
+"""
+```
+
+`Param()` is the right call only for custom types (namedtuples, spec classes).
+
+### Don't put a default on a basic-type Param
+
+Defaults on basic-type Params hide a parameter the caller probably should choose. When the default genuinely is the right behavior for "no input supplied" (an identity element, the overwhelmingly-common configuration), express it as an override pattern in the equations block instead:
+
+```python
+# Wrong (default hidden in Param decl):
+n_shape = Param(bool, default=False)
+dividers_x = Param(int, default=1, min=1)
+
+# Right (default lives in equations, visible alongside the rest of the logic):
+equations = """
+    ?n_shape:bool = False if ?n_shape is None else ?n_shape
+    ?dividers_x:int = ?dividers_x or 1
+    dividers_x >= 1
+"""
+```
+
+Defaults on `Param()` are reserved for custom-type parameters where the default value can't easily live in the equations block (a domain constant defined elsewhere, like `Param(BearingSpec, default=STANDARD_BEARING)`).
 
 ### Don't use a method where an equation works
 
@@ -267,20 +344,22 @@ Equations cover loop-generated tuples, namedtuple-field arithmetic (`spec.d + ..
 If a line is carrying both a computed value and a check on it, split them so each line is a single idea: one equation that names the intermediate, one rule that uses it.
 
 ```python
-# Wrong (one string, two ideas: which edge is active + every side fits it)
-equations = [
-    "?fillet > 0", "?chamfer > 0",
-    "exactly_one(?fillet, ?chamfer)",
-    "all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)",
-]
+# Wrong (one line carries two ideas: which edge is active + every side fits it)
+equations = """
+    ?fillet > 0
+    ?chamfer > 0
+    exactly_one(?fillet, ?chamfer)
+    all(s > 2 * (?fillet if ?fillet else ?chamfer) for s in size)
+"""
 
 # Right (one equation gives the active edge a name; one rule checks size)
-equations = [
-    "?fillet > 0", "?chamfer > 0",
-    "exactly_one(?fillet, ?chamfer)",
-    "edge = ?fillet if ?fillet else ?chamfer",
-    "all(s > 2 * edge for s in size)",
-]
+equations = """
+    ?fillet > 0
+    ?chamfer > 0
+    exactly_one(?fillet, ?chamfer)
+    edge = ?fillet if ?fillet else ?chamfer
+    all(s > 2 * edge for s in size)
+"""
 ```
 
 Adding an extra line is cheap (one more string, no boilerplate), and the equation expressions live inside Python strings so nested expressions don't get IDE support. Split any line where a reader would need to parse a sub-expression before they can parse the whole.
