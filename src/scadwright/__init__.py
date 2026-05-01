@@ -34,7 +34,7 @@ from scadwright.component import (
     one_of,
     positive,
 )
-from scadwright.api.args import arg, parse_args
+from scadwright.api.args import arg, from_json, parse_args
 from scadwright.api.clearances import DEFAULT_CLEARANCES, Clearances, clearances
 from scadwright.api.resolution import resolution
 from scadwright.api.variant import Variant, current_variant, register_variants, variant
@@ -87,6 +87,7 @@ __all__ = [
     "Variant",
     # CLI
     "arg",
+    "from_json",
     "parse_args",
     # Logging
     "get_logger",
