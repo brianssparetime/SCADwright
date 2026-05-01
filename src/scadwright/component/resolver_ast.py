@@ -32,6 +32,7 @@ from typing import Any
 # in scadwright.component.equations.
 _ALGEBRAIC_FUNCTION_NAMES = frozenset({
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "degrees", "radians",
     "sqrt", "log", "exp", "abs", "ceil", "floor",
     "min", "max", "Min", "Max",
 })

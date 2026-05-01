@@ -70,14 +70,27 @@ _ALGEBRAIC_FUNCTIONS = None  # populated lazily; needs sympy
 
 
 def _ensure_algebraic_functions() -> dict:
-    """Lazy import of sympy to build the algebraic function table."""
+    """Lazy import of sympy to build the algebraic function table.
+
+    Trig wrappers fold the degree↔radian conversion into the symbolic
+    tree itself (`sp.sin(x * sp.pi / 180)` and friends). This keeps the
+    DSL aligned with `scadwright.math` (degrees in, degrees out) while
+    still giving sympy a fully-symbolic expression to solve, simplify,
+    and substitute through.
+    """
     global _ALGEBRAIC_FUNCTIONS
     if _ALGEBRAIC_FUNCTIONS is None:
         import sympy as sp
         _ALGEBRAIC_FUNCTIONS = {
-            "sin": sp.sin, "cos": sp.cos, "tan": sp.tan,
-            "asin": sp.asin, "acos": sp.acos, "atan": sp.atan,
-            "atan2": sp.atan2,
+            "sin": lambda x: sp.sin(x * sp.pi / 180),
+            "cos": lambda x: sp.cos(x * sp.pi / 180),
+            "tan": lambda x: sp.tan(x * sp.pi / 180),
+            "asin": lambda x: sp.asin(x) * 180 / sp.pi,
+            "acos": lambda x: sp.acos(x) * 180 / sp.pi,
+            "atan": lambda x: sp.atan(x) * 180 / sp.pi,
+            "atan2": lambda y, x: sp.atan2(y, x) * 180 / sp.pi,
+            "degrees": lambda x: x * 180 / sp.pi,
+            "radians": lambda x: x * sp.pi / 180,
             "sqrt": sp.sqrt, "log": sp.log, "exp": sp.exp,
             "abs": sp.Abs, "ceil": sp.ceiling, "floor": sp.floor,
             "min": sp.Min, "max": sp.Max,
@@ -410,6 +423,7 @@ def parse_equations_unified(
 
 _NUMERIC_YIELDING_CALLS = frozenset({
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "degrees", "radians",
     "sqrt", "log", "exp", "abs", "ceil", "floor",
     "min", "max", "sum", "round",
     "int", "float",
@@ -1483,6 +1497,12 @@ class IterativeResolver:
                     name=name, component_name=component_name,
                 )
         self._supplied_names = set(supplied.keys())
+        # Tracks which `_pending_defaults` entries actually fire (i.e., the
+        # iterative loop stalled on the name and the default was applied).
+        # Read after `resolve()` to classify a name as caller-input vs
+        # Param-default vs equation-derived in downstream consumers
+        # (e.g. the emit-time glossary).
+        self._applied_defaults: set[str] = set()
 
         # Curated namespace for evaluation (does not include knowns).
         self._curated_ns = {**_CURATED_BUILTINS, **_CURATED_MATH}
@@ -1643,6 +1663,7 @@ class IterativeResolver:
                 for name, value in self._pending_defaults.items():
                     if name not in self.knowns:
                         self.knowns[name] = value
+                        self._applied_defaults.add(name)
                 self._pending_defaults = {}
                 continue
             # System-solve fallback for coupled equations.

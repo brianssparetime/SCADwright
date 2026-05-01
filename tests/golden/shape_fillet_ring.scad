@@ -4,6 +4,11 @@
 $fn = 24;
 
 // FilletRing
+//  base_angle = 30  (input)
+//  fn         = 24  (input)
+//  id         = 10  (input)
+//  od         = 20  (input)
+//  slant      = 'outwards'  (default)
 difference() {
     cylinder(h=5.7735, r1=10, r2=0, center=false);
     translate([0, 0, -0.01]) {

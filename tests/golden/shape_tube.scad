@@ -4,6 +4,11 @@
 $fn = 24;
 
 // Tube
+//  fn  = 24  (input)
+//  h   = 15  (input)
+//  id  = 10  (input)
+//  thk = 2  (input)
+//  od  = id + 2 * thk = 14
 difference() {
     cylinder(h=15, r=7, center=false);
     translate([0, 0, -0.01]) {

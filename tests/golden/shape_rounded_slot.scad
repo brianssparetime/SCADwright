@@ -5,6 +5,10 @@ $fn = 16;
 
 linear_extrude(height=3, center=false) {
     // RoundedSlot
+    //  fn     = 16  (input)
+    //  length = 20  (input)
+    //  width  = 4  (input)
+    //  radius = width / 2 = 2
     union() {
         square([16, 4], center=true);
         translate([8, 0, 0]) {

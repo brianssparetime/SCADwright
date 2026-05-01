@@ -45,7 +45,7 @@ def test_other_module_constant_not_flagged():
 
 
 # =============================================================================
-# no-param-float
+# no-param-basic-type
 # =============================================================================
 
 
@@ -54,37 +54,88 @@ def test_bare_param_float_flagged():
 class C:
     x = Param(float)
 """
-    v = _violations(src, lint.check_param_float)
+    v = _violations(src, lint.check_param_basic_type)
     assert len(v) == 1
-    assert v[0].rule == "no-param-float"
+    assert v[0].rule == "no-param-basic-type"
 
 
-def test_param_float_with_default_none_allowed():
+def test_param_float_with_default_none_still_flagged():
+    # The default-exempt carve-out is gone: `Param(float, default=...)`
+    # on a reusable Component is itself an anti-pattern (style-guide
+    # line 258). Even the opt-out form should migrate to the inline
+    # `?name:float` sigil + override pattern.
     src = """
 class C:
     x = Param(float, default=None)
 """
-    assert _violations(src, lint.check_param_float) == []
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+    assert v[0].rule == "no-param-basic-type"
 
 
-def test_param_float_with_numeric_default_allowed():
-    # Engineering defaults (e.g., pressure_angle=20.0) are allowed per the
-    # current style-guide reading; opt-out is the `default=None` case that
-    # the linter knows about. Any `default=` present is considered
-    # intentional and not flagged.
+def test_param_float_with_numeric_default_flagged():
     src = """
 class C:
     angle = Param(float, default=20.0)
 """
-    assert _violations(src, lint.check_param_float) == []
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+    assert v[0].rule == "no-param-basic-type"
 
 
-def test_param_int_not_flagged():
+def test_param_int_flagged():
     src = """
 class C:
     count = Param(int, positive=True)
 """
-    assert _violations(src, lint.check_param_float) == []
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+    assert v[0].rule == "no-param-basic-type"
+
+
+def test_param_bool_flagged():
+    src = """
+class C:
+    flip = Param(bool)
+"""
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+
+
+def test_param_str_flagged():
+    src = """
+class C:
+    axis = Param(str, one_of=("x", "y", "z"))
+"""
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+
+
+def test_param_tuple_flagged():
+    src = """
+class C:
+    size = Param(tuple)
+"""
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+
+
+def test_param_list_flagged():
+    src = """
+class C:
+    holes = Param(list)
+"""
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
+
+
+def test_param_dict_flagged():
+    src = """
+class C:
+    opts = Param(dict)
+"""
+    v = _violations(src, lint.check_param_basic_type)
+    assert len(v) == 1
 
 
 def test_param_of_namedtuple_not_flagged():
@@ -92,7 +143,17 @@ def test_param_of_namedtuple_not_flagged():
 class C:
     spec = Param(BatterySpec)
 """
-    assert _violations(src, lint.check_param_float) == []
+    assert _violations(src, lint.check_param_basic_type) == []
+
+
+def test_param_message_names_the_offending_type():
+    src = """
+class C:
+    count = Param(int)
+"""
+    v = _violations(src, lint.check_param_basic_type)
+    assert "Param(int)" in v[0].message
+    assert "name:int" in v[0].message
 
 
 # =============================================================================

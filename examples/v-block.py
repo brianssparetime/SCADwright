@@ -37,8 +37,8 @@ class VBlock(Component):
     equations = """
         # V-groove trig: any two of (angle, max_d, groove_depth) solve the third.
         half_angle = angle / 2
-        max_d = 2 * groove_depth * sin(half_angle * pi / 180)
-        contact_width = 2 * groove_depth * tan(half_angle * pi / 180)
+        max_d = 2 * groove_depth * sin(half_angle)
+        contact_width = 2 * groove_depth * tan(half_angle)
 
         # positivity:
         angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0

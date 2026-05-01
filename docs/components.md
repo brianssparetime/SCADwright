@@ -64,7 +64,7 @@ Don't start a name with an underscore (`_`); those are reserved for SCADwright i
 Any Python expression in an equation can use these pieces:
 
 - Arithmetic: `+`, `-`, `*`, `/`, `**`, parentheses.
-- Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `log`, `exp`, `abs`, `ceil`, `floor`, `min`, `max`, `pi`, `e`.
+- Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `degrees`, `radians`, `sqrt`, `log`, `exp`, `abs`, `ceil`, `floor`, `min`, `max`, `pi`, `e`. Trig functions take and return **degrees**, matching SCAD and `scadwright.math`.
 - Conditional: `a if cond else b`.
 - Reading a field or an item out of an input: `spec.d`, `arr[0]`, `holes[i]`.
 - Tuples, lists, dicts, comprehensions: `tuple(...)`, `list(...)`, `range(...)`, `len(...)`, `sum(...)`, `sorted(...)`, `tuple(i*pitch for i in range(count))`.

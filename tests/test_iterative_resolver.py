@@ -532,7 +532,7 @@ class _MultiBranch(Component):
     # cross-equation constraint ``angle < 180`` rules out the second
     # via ``angle = 2 * half_angle``, leaving a unique solution.
     equations = [
-        "max_d = 2 * groove_depth * sin(half_angle * pi / 180)",
+        "max_d = 2 * groove_depth * sin(half_angle)",
         "angle = 2 * half_angle",
         "max_d, groove_depth, angle, half_angle > 0",
         "angle < 180",

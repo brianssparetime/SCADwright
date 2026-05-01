@@ -4,6 +4,9 @@
 $fn = 24;
 
 // Sector
+//  angles = [0, 60]  (input)
+//  fn     = 24  (input)
+//  r      = 10  (input)
 intersection() {
     circle(r=10);
     polygon(points=[[0, 0], [20, 0], [10, 17.3205]]);

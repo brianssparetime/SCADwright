@@ -28,7 +28,7 @@ class PolyHole(Component):
     equations = """
         d, h > 0
         sides:int >= 3
-        circumradius = (d / 2) / cos(pi / sides)
+        circumradius = (d / 2) / cos(180 / sides)
     """
 
     def build(self):

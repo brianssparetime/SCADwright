@@ -174,7 +174,7 @@ class LensHood(Component):
         hood_clr >= 0
         id_coupler = housing_upper_od + hood_clr
         od_coupler = id_coupler + 2 * wall_thk
-        flare_od = housing_upper_od + 2 * hood_length * tan((90 - hood_base_angle) * pi / 180)
+        flare_od = housing_upper_od + 2 * hood_length * tan(90 - hood_base_angle)
     """
 
     def build(self):                                       # framework hook: required; returns the shape

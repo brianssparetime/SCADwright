@@ -65,8 +65,8 @@ A machinist's V-block: a rectangular block with a V-shaped groove along its leng
 ```python
 equations = """
     half_angle = angle / 2
-    max_d = 2 * groove_depth * sin(half_angle * pi / 180)
-    contact_width = 2 * groove_depth * tan(half_angle * pi / 180)
+    max_d = 2 * groove_depth * sin(half_angle)
+    contact_width = 2 * groove_depth * tan(half_angle)
     angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0
     angle < 180
     groove_depth < block_h

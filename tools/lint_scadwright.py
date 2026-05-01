@@ -22,9 +22,12 @@ Rules currently enforced (see docs/style-guide.md for rationale):
   when an epsilon is genuinely unavoidable (non-axis-aligned cutters),
   scope it locally inside the function that needs it.
 
-- ``no-param-float``: a ``Param(float)`` call without ``default=``.
-  Floats belong in ``equations``. ``Param(float, default=None)`` is the
-  deliberate opt-out pattern and is allowed.
+- ``no-param-basic-type``: a ``Param(<basic-type>)`` call where
+  ``<basic-type>`` is one of ``float``, ``int``, ``bool``, ``str``,
+  ``tuple``, ``list``, ``dict`` — every type in the equations DSL's
+  inline-tag allowlist. Use the inline ``:type`` tag in equations
+  instead. ``Param()`` is reserved for custom types (namedtuples, spec
+  classes, anything outside the allowlist).
 
 - ``translate-single-axis``: ``.translate([x, 0, 0])`` or any permutation
   with two zero literals. Use the directional helper
@@ -119,8 +122,26 @@ def check_module_level_eps(path: Path, tree: ast.Module) -> list[Violation]:
     return violations
 
 
-def check_param_float(path: Path, tree: ast.Module) -> list[Violation]:
-    """Flag `Param(float)` without `default=` (prefer equations or params=)."""
+# Types in the equations DSL's inline-tag allowlist (mirrors
+# ``_INLINE_TYPE_ALLOWLIST`` in ``scadwright.component.equations``) plus
+# ``float`` — every basic type that an inline ``:type`` tag (or implicit
+# ``Param(float)`` auto-declaration) covers.
+_BASIC_PARAM_TYPES = frozenset({
+    "float", "int", "bool", "str", "tuple", "list", "dict",
+})
+
+
+def check_param_basic_type(path: Path, tree: ast.Module) -> list[Violation]:
+    """Flag `Param(<basic-type>)`, with or without `default=`.
+
+    Basic-type Params are obsolete: every type in the inline-tag
+    allowlist (`bool`, `int`, `str`, `tuple`, `list`, `dict`) plus
+    `float` should be declared via the inline `:type` tag inside an
+    equation or constraint line. Per `docs/style-guide.md`, even an
+    engineering default (`pressure_angle=20.0`) should live as an
+    override pattern in the equations block, not as a `default=` on a
+    reusable Component's Param.
+    """
     violations: list[Violation] = []
 
     for node in ast.walk(tree):
@@ -134,28 +155,25 @@ def check_param_float(path: Path, tree: ast.Module) -> list[Violation]:
             pass
         else:
             continue
-        # First positional arg must be the literal `float`.
+        # First positional arg must be a bare Name in the basic-type set.
         if not node.args:
             continue
         first = node.args[0]
-        if not (isinstance(first, ast.Name) and first.id == "float"):
+        if not (isinstance(first, ast.Name) and first.id in _BASIC_PARAM_TYPES):
             continue
-        # Allow if a `default=` kwarg is present (e.g., default=None for
-        # the opt-out pattern, or default=<value> for engineering defaults
-        # on universal shapes like pressure_angle=20.0).
-        has_default = any(kw.arg == "default" for kw in node.keywords)
-        if has_default:
-            continue
+        type_name = first.id
         violations.append(
             Violation(
                 path=path,
                 line=node.lineno,
                 col=node.col_offset,
-                rule="no-param-float",
+                rule="no-param-basic-type",
                 message=(
-                    "Param(float) without default. Floats belong in "
-                    "`equations` (if they participate in arithmetic or "
-                    "constraints) or `params=\"...\"` (if they don't)."
+                    f"Param({type_name}) is obsolete. Use the inline "
+                    f"`:type` tag in `equations` instead, e.g. "
+                    f"`name:{type_name}` on a constraint or equation line. "
+                    f"`Param()` is reserved for custom types "
+                    f"(namedtuples, spec classes, etc.)."
                 ),
             )
         )
@@ -257,7 +275,7 @@ def check_component_setup(path: Path, tree: ast.Module) -> list[Violation]:
 
 RULES: list[Callable[[Path, ast.Module], list[Violation]]] = [
     check_module_level_eps,
-    check_param_float,
+    check_param_basic_type,
     check_translate_single_axis,
     check_component_setup,
 ]

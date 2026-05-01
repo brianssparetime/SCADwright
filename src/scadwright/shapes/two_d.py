@@ -166,7 +166,7 @@ class Teardrop(Component):
     # overhanging surface is steep enough to print unsupported.
     equations = """
         ?tip_angle = ?tip_angle or 45.0
-        tip_height = r / cos(tip_angle * pi / 180)
+        tip_height = r / cos(tip_angle)
         r > 0
         tip_angle > 0
         tip_angle < 90

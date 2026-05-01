@@ -260,7 +260,7 @@ The triple-quoted block form is preferred. The list form is also accepted (usefu
 "?offset = ?offset if ?offset is not None else 0"  # safe when 0 is legitimate
 ```
 
-Order doesn't matter; the resolver iterates until everything resolves. Equations see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`, cardinality helpers, math funcs) plus the Component's Params.
+Order doesn't matter; the resolver iterates until everything resolves. Equations see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`, cardinality helpers, math funcs) plus the Component's Params. Trig (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`) takes and returns **degrees**, matching SCAD and `scadwright.math`.
 
 ### `=` for equations, `==` only after `if`
 

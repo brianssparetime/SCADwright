@@ -4,6 +4,9 @@
 $fn = 8;
 
 // RoundedBox
+//  fn   = 8  (input)
+//  r    = 1  (input)
+//  size = [20, 10, 5]  (input)
 minkowski() {
     cube([18, 8, 3], center=true);
     sphere(r=1);

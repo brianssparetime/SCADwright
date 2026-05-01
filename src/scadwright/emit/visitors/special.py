@@ -18,9 +18,19 @@ class _SpecialVisitorMixin:
 
     def visit_component(self, n) -> None:
         # Emit a leading comment naming the Component class so a reader can
-        # find where each part starts in the generated file.
+        # find where each part starts in the generated file. When the
+        # `glossary` flag is set, also emit one comment line per resolved
+        # equation name so the reader can map inlined literals in the
+        # geometry below back to their named, derived form. The
+        # construction-site source location stays under the `debug` flag
+        # (via `_maybe_source_comment`) — it varies by call site, which
+        # would make otherwise-identical emits compare unequal.
         if self.pretty and self.section_labels:
             self._line(f"// {type(n).__name__}")
+            if getattr(self, "glossary", False):
+                from scadwright.component.glossary import format_glossary
+                for line in format_glossary(n):
+                    self._line(f"//{line}")
         self._maybe_source_comment(n)
         self.visit(n._get_built_tree())
 

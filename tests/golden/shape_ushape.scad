@@ -2,6 +2,14 @@
 // edit the Python source and regenerate.
 
 // UShapeChannel
+//  channel_height = 8  (input)
+//  channel_length = 20  (input)
+//  channel_width  = 10  (input)
+//  wall_thk       = 2  (input)
+//  n_shape        = false  (default)
+//  outer_width    = channel_width + 2 * wall_thk = 14
+//  outer_height   = channel_height + wall_thk = 10
+//  bottom_width   = outer_width = 14
 difference() {
     cube([14, 20, 10], center=false);
     translate([2, -0.01, 2]) {

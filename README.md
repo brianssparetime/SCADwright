@@ -8,14 +8,19 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
 
 **SCADwright keeps the basic OpenSCAD model and primitives, but SCADwright goes way beyond just a python wrapper,  offering additional functionality not easily possible with OpenSCAD**:
 
- - equation-based components with externally accessible attributes and bounding boxes.
- - ability to add new transforms to the language
- - placing text on geometric objects (plates, cylinders, cones) is easy
+ - Components that 
+   - accept any set of arguments from which the rest can be calculated, using defined equations
+   - enforce constraints and validate arguments, also through the same equations
+   - expose their attributes, calculations, and bounding boxes (even attachment points) to other parts of your code
+   - are about as easy to write as they are to call - virtually no boilerplate
  - a library of reusable shapes out of the box
  - auto-EPS adjustment on difference() and union()
- - surface-based attachment
+ - surface-based attachment, in a single chaining command
+ - placing text on geometric objects (plates, cylinders, cones) is easy
+ - ability to add new transforms to the language
  - smart centering built into new components by default
- - separate print/display/debug views
+ - separate print/display/integration/debug arrangements of your part
+ - python-style chaining (e.g. `shape.linear_extrude(height=15).left(10)`, rather than OpenSCAD's transform-first and object-last notation)
  - scripts you can parametrize from the command line
  - real error messages with line numbers
  - and automated tests
@@ -28,18 +33,18 @@ eliminate boiler plate,** and make constructs simple to use in common cases for 
 object-oriented python or advanced OpenSCAD, while retaining full python capabilities and a low-level interface
 for exceptional cases.
 
-SCADwright calls OpenSCAD only at render time. The Python side has no external dependencies, but sympy is highly recommended to enable full functionality.  I've taken some care to make emitted SCAD relatively human-readable.
+SCADwright calls OpenSCAD only at render time. The Python side has no external dependencies, but sympy is highly recommended to enable full functionality.  I've taken some care to make emitted SCAD human-readable.
 
 If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build123d, or other Python+CAD tools, see [How is SCADwright different?](docs/how_is_scadwright_different.md) for a side-by-side.
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
 
-## SCADwright addresses the most painful and vexatious limitations of OpenSCAD in 15 ways:
+## SCADwright addresses 15 annoying limitations of OpenSCAD:
 
 ### 1.  Components make what they know accessible externally; modules can't.
 
-When you write a parametric module in OpenSCAD — say a bracket with mount-hole positions — the caller has no way to ask where those holes are. You are forced to compute the offsets outside the object, or in two places, or  hard-code them.
+When you write a parametric module in OpenSCAD — say a bracket with mount-hole positions — the caller has no way to ask where those holes are. You are forced to compute the offsets outside the object, or in two places, or hard-code them.
 
 In SCADwright, parametric parts are [Python classes called Components](docs/components.md). The caller can read any attribute of other Components freely, and use that information to construct other parts to fit.
 
@@ -57,13 +62,13 @@ b = Bracket(width=80, height=5)
 print(b.width)               # readable; no geometry built yet
 ```
 
-### 2. A component's key equations are all defined together, with constraints and solving for unsupplied arguments
+### 2. Define a component once, call it with any set of sufficient arguments, the framework handles the rest by solving equations, and no boilerplate to achieve this.  Components are as nice to use as they are to write.
 
 Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od = id + 2*thk`. 
 
 In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time — after you've already waited.
 
-In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint)
+In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint).
 
 You don't even need to isolate a variable on the left of the equation like you do with programming languages.
 
@@ -84,18 +89,34 @@ Tube(h=10, od=10, thk=1)     # id solved = 8
 Tube(h=10, id=8, thk=-1)     # ValidationError: thk must be positive
 ```
 
-And equations aren't limited to scalar arithmetic. Either side can be any Python expression: build a tuple with a comprehension, pick between values with a conditional, read fields and items off the inputs.
+Trigonometry uses degrees, like OpenSCAD.
+
+```python
+class RightTriangle(Component):
+    equations = """
+        tan(alpha) = opp/adj
+        cos(alpha) = adj/hyp
+    """
+
+    def build(self): ...
+
+RightTriangle(opp=3, adj=4)         # solves for alpha = 36.87, hyp = 5
+RightTriangle(hyp=5, alpha=36.87)   # solves for opp = 3, adj = 4
+```
+
+
+Equations aren't limited to scalar arithmetic. Either side can be any Python expression: build a tuple with a comprehension, pick between values with a conditional, read fields and items off the inputs.
 
 ```python
 class BatteryHolder(Component):
     spec = Param(BatterySpec)
     equations = """
-        count:int > 0
-        wall_thk, clearance, end_clearance > 0
+        count:int > 0                                             # constraint 
+        wall_thk, clearance, end_clearance > 0                    # constraint 
         pitch = spec.d + 2*clearance                              # field read on a namedtuple input
         outer_w = count * pitch + 2*end_clearance                 # arithmetic
         positions = tuple(i*pitch for i in range(count))          # tuple from a comprehension
-        len(size:tuple) = 3                                       # consistency check on an input
+        len(positions:tuple) = count                              # redundant consistency
     """
 ```
 
@@ -110,6 +131,8 @@ class FilletedBracket(Component):
         edge < thk / 2                             # downstream check uses the synthesized name
     """
 
+    def build(self): ...
+
 FilletedBracket(w=40, l=20, thk=4, r=1)               # absolute
 FilletedBracket(w=40, l=20, thk=4, r_frac=0.25)       # 25% of thk
 FilletedBracket(w=40, l=20, thk=4)                    # ValidationError: exactly_one(?r, ?r_frac) — neither set
@@ -117,8 +140,45 @@ FilletedBracket(w=40, l=20, thk=4, r=1, r_frac=0.25)  # ValidationError: both se
 ```
 
 
+### 3. No more EPS on every union/diff; the framework handles it
 
-### 3. SCADwright lets you build reusable transforms in addition to resuable objects
+In OpenSCAD, when two shapes share a face in a `difference()` or `union()`, the result has artifacts unless you manually extend the shapes by a tiny epsilon. Every project defines `eps = 0.01` and litters it through every cut and join.
+
+SCADwright handles this automatically.
+
+```python
+from scadwright.boolops import difference, union
+from scadwright.primitives import cube, cylinder
+
+box = cube([20, 20, 10])
+part = difference(box, cylinder(h=10, r=3).through(box))     # through-hole, no manual eps
+```
+
+`through(parent)` detects which faces of the cutter are flush with the parent and extends them automatically. For joints, `attach(fuse=True)` overlaps parts at the contact face. See [Eliminating epsilon overlap](docs/auto-eps_fuse_and_through.md).
+
+### 4. SCADwright's Component library lets you focus on your part, not the parts it's made of
+
+OpenSCAD has no built-in module library, only primitives. 
+
+SCADwright offers a [shape library](docs/shapes/) with 50+ ready-made Components across geometric, mechanical, fastener, gear, and print-oriented categories.  These eliminate sub-tasks, so you don't have to roll your own tubes, rounded rectangles, screw holes, or look up M3 bolt head diameters, hex profiles, and clearance hole sizes each time. Did I mention gears?
+
+![Shape library](docs/shapes/images/hero.png)
+
+```python
+from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bearing
+
+cap = Tube(h=10, id=8, thk=1)                     # od solved: 10
+gear = SpurGear(module=2, teeth=20, h=5)          # involute profile; .pitch_r readable on the instance
+bolt = Bolt(size="M3", length=10)                 # ISO dimensions from data tables
+bearing = Bearing.of("608")                       # 8x22x7, ready for fit-check
+panel = HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
+```
+
+Every shape is a Component — you can read its computed dimensions, attach other parts to it, and pass it into boolean operations. See the [shape library docs](docs/shapes/) for the full catalog.
+
+Fit tolerances flow project-wide. Set `Clearances(sliding=0.05, press=0.08, snap=0.2, finger=0.2)` once on your `Design` class and every `AlignmentPin`, `PressFitPeg`, `SnapPin`, and `TabSlot` inherits automatically; override per-scope, per-Component, or per-call. See [Clearances](docs/clearances.md).
+
+### 5. SCADwright lets you build reusable transforms in addition to reusable objects
 
 In OpenSCAD you can't write `cube(10).chamfer_top(depth=1)` — there's no way to add a transform that works on any shape.
 
@@ -136,44 +196,6 @@ def chamfer_top(node, *, depth):
 part = cube([10, 10, 5]).chamfer_top(depth=1)
 ```
 
-
-### 4. No more EPS on every union/diff; the framework handles it
-
-In OpenSCAD, when two shapes share a face in a `difference()` or `union()`, the result has artifacts unless you manually extend the shapes by a tiny epsilon. Every project defines `eps = 0.01` and litters it through every cut and join.
-
-SCADwright handles this automatically.
-
-```python
-from scadwright.boolops import difference, union
-from scadwright.primitives import cube, cylinder
-
-box = cube([20, 20, 10])
-part = difference(box, cylinder(h=10, r=3).through(box))     # through-hole, no manual eps
-```
-
-`through(parent)` detects which faces of the cutter are flush with the parent and extends them automatically. For joints, `attach(fuse=True)` overlaps parts at the contact face. See [Eliminating epsilon overlap](docs/auto-eps_fuse_and_through.md).
-
-### 5. SCADwright's Component library let you focus on your part, the not parts it's made of
-
-OpenSCAD has no built-in module library, only primitives. Every project starts with reinventing tubes, rounded rectangles, and screw holes. Need an M3 bolt? Look up the head diameter, compute the hex profile, get the clearance hole size right. Need a gear? That's a week.
-
-SCADwright ships a [shape library](docs/shapes/) with 50+ ready-made Components across mechanical, fastener, gear, and print-oriented categories:
-
-![Shape library](docs/shapes/images/hero.png)
-
-```python
-from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bearing
-
-cap = Tube(h=10, id=8, thk=1)                    # od solved: 10
-gear = SpurGear(module=2, teeth=20, h=5)          # involute profile; .pitch_r readable on the instance
-bolt = Bolt(size="M3", length=10)                 # ISO dimensions from data tables
-bearing = Bearing.of("608")                       # 8x22x7, ready for fit-check
-panel = HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
-```
-
-Every shape is a Component — you can read its computed dimensions, attach other parts to it, and pass it into boolean operations. See the [shape library docs](docs/shapes/) for the full catalog.
-
-Fit tolerances flow project-wide. Set `Clearances(sliding=0.05, press=0.08, snap=0.2, finger=0.2)` once on your `Design` class and every `AlignmentPin`, `PressFitPeg`, `SnapPin`, and `TabSlot` inherits automatically; override per-scope, per-Component, or per-call. See [Clearances](docs/clearances.md).
 
 ### 6. Putting text on a plate, cylinder, cone, or funnel is easy - one operator
 
@@ -245,7 +267,7 @@ scadwright build widget.py --variant=display
 ```
 
 
-### 8. Positioning parts relative to each other easily without extra calcuation
+### 8. Positioning parts relative to each other easily without extra calculation
 
 In OpenSCAD, stacking a lid on a box means computing `translate([0, 0, box_height])` by hand. If you add a spacer or change a dimension, every downstream offset needs updating.
 
@@ -263,7 +285,7 @@ Insert a spacer between any two parts and nothing downstream needs to change. Co
 
 See [Anchors and attachment](docs/anchors.md) for the full reference.
 
-### 9. Parts know their bounds without needing to render, allowing print-bed tests and overlap tests.
+### 9. Parts know their bounds without needing to render, allowing print-bed tests and overlap tests
 
 In OpenSCAD, the only way to know how big something is (whether it fits on your print bed, whether two parts overlap, whether a lid is wider than its box) is to render it and eyeball the result.
 
@@ -520,7 +542,7 @@ This makes it simple to see the results of changes with a single click.  As long
 
 ## SCADwright and modeling with AI
 
-Compared to OpenSCAD, building a model wiht AI in SCADwright (and the MCP below) is faster and lets you take bigger steps than just building in OpenSCAD directly.
+Compared to OpenSCAD, building a model with AI in SCADwright (and the MCP below) is faster and lets you take bigger steps than just building in OpenSCAD directly.
 
 Claude Code summarized the key benefits of its working in SCADwright over OpenSCAD as:
  - equations and constraints catch a lot of lazy or under-specified mistakes with explicit errors - ones that, in OpenSCAD, might otherwise might result in a less scrutable error or slip through entirely 
@@ -543,7 +565,7 @@ Is there AI generated code in here?  Yes.  It's 2026.
 
 Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands, of incremental iterations, and a fair amount of hand-coding and human-writing (including this bit right here).
 
-Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intutive and naively simple, and working through hard trade-offs in detail though examples.  I've been writing code longer than Python has been a language (and I've been writing serious code longer than Python has been a serious language) - I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
+Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intuitive and naively simple, and working through hard trade-offs in detail through examples.  I've been writing code longer than Python has been a language (and I've been writing serious code longer than Python has been a serious language) - I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
 
 In parallel, I'm actually using this framework for my current 3d printing projects: the [Bronica S2 lens housing](/examples/lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) both leverage this 
 framework and motivated its completion.
@@ -556,6 +578,6 @@ I've taken great care to produce excellent documentation that's easy to consume.
 
 For a quick intro, see [How to organize a project](docs/organizing_a_project.md).
 
-This framework also includes [examples of projects at various levels of difficulty click](examples/README.md)
+This framework also includes [examples of projects at various levels of difficulty](examples/README.md).
 
 If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build123d, or other Python+CAD tools, see [How is SCADwright different?](docs/how_is_scadwright_different.md) for a side-by-side.

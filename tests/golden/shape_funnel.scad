@@ -4,6 +4,13 @@
 $fn = 24;
 
 // Funnel
+//  bot_id = 10  (input)
+//  fn     = 24  (input)
+//  h      = 20  (input)
+//  thk    = 2  (input)
+//  top_id = 14  (input)
+//  bot_od = bot_id + 2 * thk = 14
+//  top_od = top_id + 2 * thk = 18
 difference() {
     cylinder(h=20, r1=7, r2=9, center=false);
     translate([0, 0, -0.01]) {

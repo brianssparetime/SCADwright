@@ -409,8 +409,16 @@ _CURATED_BUILTINS: dict[str, Any] = {
 
 
 _CURATED_MATH: dict[str, Any] = {
-    "sin": math.sin, "cos": math.cos, "tan": math.tan,
-    "asin": math.asin, "acos": math.acos, "atan": math.atan, "atan2": math.atan2,
+    # Trig in degrees, matching SCAD and `scadwright.math` (`scmath`).
+    "sin": lambda x: math.sin(math.radians(x)),
+    "cos": lambda x: math.cos(math.radians(x)),
+    "tan": lambda x: math.tan(math.radians(x)),
+    "asin": lambda x: math.degrees(math.asin(x)),
+    "acos": lambda x: math.degrees(math.acos(x)),
+    "atan": lambda x: math.degrees(math.atan(x)),
+    "atan2": lambda y, x: math.degrees(math.atan2(y, x)),
+    # Explicit conversion helpers, available for interop with raw-radian values.
+    "degrees": math.degrees, "radians": math.radians,
     "sqrt": math.sqrt, "log": math.log, "exp": math.exp,
     "ceil": math.ceil, "floor": math.floor,
     "pi": math.pi, "e": math.e, "inf": math.inf,

@@ -51,6 +51,7 @@ class SCADEmitter(
         debug: bool = False,
         banner: bool = True,
         section_labels: bool = True,
+        glossary: bool = True,
         scad_use: list[str] | None = None,
         scad_include: list[str] | None = None,
     ):
@@ -59,6 +60,7 @@ class SCADEmitter(
         self.debug = debug
         self.banner = banner
         self.section_labels = section_labels
+        self.glossary = glossary
         self.scad_use = list(scad_use) if scad_use else []
         self.scad_include = list(scad_include) if scad_include else []
         self.indent = 0
@@ -238,13 +240,14 @@ def emit(
     debug: bool = False,
     banner: bool = True,
     section_labels: bool = True,
+    glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
 ) -> None:
     t0 = time.perf_counter()
     SCADEmitter(
         out, pretty=pretty, debug=debug, banner=banner,
-        section_labels=section_labels,
+        section_labels=section_labels, glossary=glossary,
         scad_use=scad_use, scad_include=scad_include,
     ).emit_root(node)
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
@@ -269,11 +272,12 @@ def emit_str(
     debug: bool = False,
     banner: bool = True,
     section_labels: bool = True,
+    glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
 ) -> str:
     buf = io.StringIO()
     emit(node, buf, pretty=pretty, debug=debug, banner=banner,
-         section_labels=section_labels,
+         section_labels=section_labels, glossary=glossary,
          scad_use=scad_use, scad_include=scad_include)
     return buf.getvalue()

@@ -22,9 +22,12 @@ def test_fillet_ring_inwards_emits():
 
 
 def test_fillet_ring_slant_default_is_outwards():
+    # Compare geometry only: the glossary truthfully marks the defaulted
+    # call as `(default)` and the explicit call as `(input)`, so the
+    # comment blocks differ even though the SCAD geometry is identical.
     default = FilletRing(id=10, od=20, base_angle=30)
     outer = FilletRing(id=10, od=20, base_angle=30, slant="outwards")
-    assert emit_str(default) == emit_str(outer)
+    assert emit_str(default, glossary=False) == emit_str(outer, glossary=False)
 
 
 def test_fillet_ring_inwards_differs_from_outwards():

@@ -37,6 +37,7 @@ _log = get_logger("scadwright.component")
 # numeric-yielding callables.
 _NUMERIC_CALL_NAMES = frozenset({
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+    "degrees", "radians",
     "sqrt", "log", "exp", "abs", "ceil", "floor",
     "min", "max", "sum", "round",
     "int", "float",
@@ -695,9 +696,12 @@ def _resolve_clearance_kwarg(cls, kwargs: dict) -> None:
     kwargs["clearance"] = resolve_clearance(category)
 
 
-def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict) -> None:
+def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict):
     """Replace the legacy bucketed pipeline with the unified iterative
-    resolver. Mutates ``kwargs`` in place to add resolved values.
+    resolver. Mutates ``kwargs`` in place to add resolved values, and
+    returns the resolver so the caller can read post-resolve metadata
+    (`_supplied_names`, `_applied_defaults`, `knowns`) for the emit-time
+    glossary.
     """
     from scadwright.component.resolver import IterativeResolver
 
@@ -732,6 +736,7 @@ def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict) -> None
         if name in kwargs:
             continue
         kwargs[name] = value
+    return resolver
 
 
 def _make_param_init(cls, params: dict[str, Param]):
@@ -763,8 +768,9 @@ def _make_param_init(cls, params: dict[str, Param]):
         has_eqs_or_constraints = bool(
             cls._unified_equations or cls._unified_constraints
         )
+        resolver = None
         if has_eqs_or_constraints:
-            _run_iterative_resolver(cls, params, kwargs)
+            resolver = _run_iterative_resolver(cls, params, kwargs)
 
         missing = [n for n in required if n not in kwargs]
         if missing:
@@ -774,6 +780,22 @@ def _make_param_init(cls, params: dict[str, Param]):
 
         # Initialize the Component base (sets source_location and _built_tree).
         Component.__init__(self, _source_location=loc)
+
+        # Stash resolver metadata for the emit-time glossary. Three
+        # disjoint name sets cover every entry in the resolved knowns:
+        # caller-supplied, Param-default-applied, equation-derived. The
+        # third is implicit (knowns − supplied − defaults) and computed
+        # on demand by the formatter.
+        if resolver is not None:
+            object.__setattr__(
+                self, "_glossary_supplied", frozenset(resolver._supplied_names),
+            )
+            object.__setattr__(
+                self, "_glossary_defaults", frozenset(resolver._applied_defaults),
+            )
+            object.__setattr__(
+                self, "_glossary_knowns", dict(resolver.knowns),
+            )
 
         # Apply each Param via Param.__set__ (coerces and validates).
         for name in required + optional:

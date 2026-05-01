@@ -3,6 +3,9 @@
 
 union() {
     // Tube
+    //  h   = 20  (input)
+    //  od  = 20  (input)
+    //  thk = 2  (input)
     difference() {
         cylinder(h=20, r=10, center=false);
         translate([0, 0, -0.01]) {

@@ -32,7 +32,7 @@ class BevelGear(Component):
         cone_angle > 0
         cone_angle < 90
         pitch_r = module * teeth / 2
-        base_r = pitch_r * cos(pressure_angle * pi / 180)
+        base_r = pitch_r * cos(pressure_angle)
         outer_r = pitch_r + module
         root_r = pitch_r - 1.25 * module
     """

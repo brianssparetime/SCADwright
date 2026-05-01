@@ -3,6 +3,10 @@
 
 union() {
     // Funnel
+    //  bot_od = 20  (input)
+    //  h      = 20  (input)
+    //  thk    = 2  (input)
+    //  top_od = 10  (input)
     difference() {
         cylinder(h=20, r1=10, r2=5, center=false);
         translate([0, 0, -0.01]) {
