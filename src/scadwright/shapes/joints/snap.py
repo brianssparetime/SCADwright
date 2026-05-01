@@ -24,10 +24,10 @@ class SnapHook(Component):
     A 45° ramp (typical) is ``hook_height == hook_depth``.
     """
 
-    equations = [
-        "arm_length, hook_depth, hook_height, thk, width > 0",
-        "hook_height <= arm_length",
-    ]
+    equations = """
+        arm_length, hook_depth, hook_height, thk, width > 0
+        hook_height <= arm_length
+    """
 
     def build(self):
         arm = cube([self.width, self.thk, self.arm_length], center="x")
@@ -83,14 +83,14 @@ class SnapPin(Component):
 
     _clearance_category = "snap"
 
-    equations = [
-        "d, h, slot_width, slot_depth, barb_depth, barb_height, clearance > 0",
-        "socket_d = d + 2 * clearance",
-        "slot_depth < h",
-        "barb_height <= slot_depth",
-        "slot_width < d",
-        "barb_depth < d / 2",
-    ]
+    equations = """
+        d, h, slot_width, slot_depth, barb_depth, barb_height, clearance > 0
+        socket_d = d + 2 * clearance
+        slot_depth < h
+        barb_height <= slot_depth
+        slot_width < d
+        barb_depth < d / 2
+    """
 
     base = anchor(at=(0, 0, 0), normal=(0, 0, -1))
     tip = anchor(at="0, 0, h", normal=(0, 0, 1))

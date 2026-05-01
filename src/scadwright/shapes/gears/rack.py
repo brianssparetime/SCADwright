@@ -20,15 +20,15 @@ class Rack(Component):
     ``h`` is the extrusion depth (z-axis).
     """
 
-    equations = [
-        "module, length, h > 0",
-        "pressure_angle > 0",
-        "pressure_angle <= 45",
-    ]
-    teeth = Param(int, min=1)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;
     # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
-    pressure_angle = Param(float, default=20.0)
+    equations = """
+        module, length, h > 0
+        teeth:int >= 1
+        ?pressure_angle = ?pressure_angle or 20.0
+        pressure_angle > 0
+        pressure_angle <= 45
+    """
 
     def build(self):
         m = self.module

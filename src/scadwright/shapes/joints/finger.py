@@ -27,12 +27,12 @@ class TabSlot(Component):
 
     _clearance_category = "finger"
 
-    equations = [
-        "tab_w, tab_h, tab_d, clearance > 0",
-        "slot_w = tab_w + 2 * clearance",
-        "slot_h = tab_h + clearance",
-        "slot_d = tab_d + 2 * clearance",
-    ]
+    equations = """
+        tab_w, tab_h, tab_d, clearance > 0
+        slot_w = tab_w + 2 * clearance
+        slot_h = tab_h + clearance
+        slot_d = tab_d + 2 * clearance
+    """
 
     def build(self):
         return cube([self.tab_w, self.tab_d, self.tab_h], center="xy")
@@ -54,7 +54,7 @@ class GripTab(Component):
     base than the tip by 2*taper).
     """
 
-    equations = ["tab_w, tab_h, tab_d, taper >= 0"]
+    equations = "tab_w, tab_h, tab_d, taper >= 0"
 
     def build(self):
         # Tapered (or straight, when taper == 0) prism via linear_extrude

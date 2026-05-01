@@ -23,9 +23,11 @@ class Bolt(Component):
     shaft extending downward.
     """
 
-    size = Param(str)
-    equations = ["length > 0"]
-    head = Param(str, default="socket")
+    equations = """
+        length > 0
+        len(size:str) > 0
+        ?head:str = ?head or "socket"
+    """
 
     tip = anchor(at=(0, 0, 0), normal=(0, 0, -1))
 

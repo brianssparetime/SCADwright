@@ -25,11 +25,11 @@ class PolyHole(Component):
     Subtract like any cutter — ``through(parent)`` still works.
     """
 
-    equations = [
-        "circumradius = (d / 2) / cos(pi / sides)",
-        "d, h > 0",
-    ]
-    sides = Param(int, min=3)
+    equations = """
+        d, h > 0
+        sides:int >= 3
+        circumradius = (d / 2) / cos(pi / sides)
+    """
 
     def build(self):
         return cylinder(h=self.h, r=self.circumradius, fn=self.sides)

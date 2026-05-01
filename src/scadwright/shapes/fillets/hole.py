@@ -22,9 +22,7 @@ class Countersink(Component):
     Use ``.through(parent)`` to auto-extend for clean cuts.
     """
 
-    equations = [
-        "shaft_d, head_d, head_depth, shaft_depth > 0",
-    ]
+    equations = "shaft_d, head_d, head_depth, shaft_depth > 0"
 
     tip = anchor(at=(0, 0, 0), normal=(0, 0, -1))
 
@@ -50,9 +48,7 @@ class Counterbore(Component):
     Use ``.through(parent)`` to auto-extend for clean cuts.
     """
 
-    equations = [
-        "shaft_d, head_d, head_depth, shaft_depth > 0",
-    ]
+    equations = "shaft_d, head_d, head_depth, shaft_depth > 0"
 
     tip = anchor(at=(0, 0, 0), normal=(0, 0, -1))
 

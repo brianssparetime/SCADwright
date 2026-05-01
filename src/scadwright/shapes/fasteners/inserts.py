@@ -25,10 +25,10 @@ class HeatSetPocket(Component):
     """
 
     spec = Param(InsertSpec)
-    equations = [
-        "hole_d = spec.hole_d",
-        "hole_depth = spec.hole_depth",
-    ]
+    equations = """
+        hole_d = spec.hole_d
+        hole_depth = spec.hole_depth
+    """
 
     @classmethod
     def of(cls, size: str, **kwargs):
@@ -54,11 +54,12 @@ class CaptiveNutPocket(Component):
     """
 
     spec = Param(NutSpec)
-    equations = [
-        "depth > 0",
-        "af = spec.af",
-    ]
-    channel_axis = Param(str, default="x", one_of=("x", "y"))
+    equations = """
+        depth > 0
+        af = spec.af
+        ?channel_axis:str = ?channel_axis or "x"
+        channel_axis in ("x", "y")
+    """
 
     @classmethod
     def of(cls, size: str, **kwargs):

@@ -16,13 +16,13 @@ class Torus(Component):
     ``angle`` sweeps a partial torus (default 360 for a full ring).
     """
 
-    equations = [
-        "major_r, minor_r > 0",
-        "angle > 0",
-        "angle <= 360",
-        "minor_r < major_r",
-    ]
-    angle = Param(float, default=360.0)
+    equations = """
+        major_r, minor_r > 0
+        ?angle = ?angle or 360.0
+        angle > 0
+        angle <= 360
+        minor_r < major_r
+    """
 
     def build(self):
         cross = circle(r=self.minor_r).right(self.major_r)

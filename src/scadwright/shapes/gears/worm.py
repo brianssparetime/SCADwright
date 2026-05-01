@@ -19,17 +19,18 @@ class Worm(Component):
     ``leads`` is the number of thread starts (1 = single-start).
     """
 
-    equations = [
-        "module, length, shaft_r > 0",
-        "pressure_angle > 0",
-        "pressure_angle <= 45",
-        "pitch = pi * module",
-        "thread_r = shaft_r + module",
-    ]
-    leads = Param(int, default=1, min=1)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;
     # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
-    pressure_angle = Param(float, default=20.0)
+    equations = """
+        module, length, shaft_r > 0
+        ?leads:int = ?leads or 1
+        leads >= 1
+        ?pressure_angle = ?pressure_angle or 20.0
+        pressure_angle > 0
+        pressure_angle <= 45
+        pitch = pi * module
+        thread_r = shaft_r + module
+    """
 
     def build(self):
         # Trapezoidal thread cross-section.
@@ -65,19 +66,19 @@ class WormGear(Component):
     The gear axis is along z, perpendicular to the worm axis.
     """
 
-    equations = [
-        "module, h > 0",
-        "pressure_angle > 0",
-        "pressure_angle <= 45",
-        "pitch_r = module * teeth / 2",
-        "base_r = pitch_r * cos(pressure_angle * pi / 180)",
-        "outer_r = pitch_r + module",
-        "root_r = pitch_r - 1.25 * module",
-    ]
-    teeth = Param(int, min=12)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;
     # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
-    pressure_angle = Param(float, default=20.0)
+    equations = """
+        module, h > 0
+        teeth:int >= 12
+        ?pressure_angle = ?pressure_angle or 20.0
+        pressure_angle > 0
+        pressure_angle <= 45
+        pitch_r = module * teeth / 2
+        base_r = pitch_r * cos(pressure_angle * pi / 180)
+        outer_r = pitch_r + module
+        root_r = pitch_r - 1.25 * module
+    """
 
     def build(self):
         profile = spur_profile(self.module, self.teeth, self.pressure_angle)

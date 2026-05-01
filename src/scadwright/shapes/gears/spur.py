@@ -25,22 +25,22 @@ class SpurGear(Component):
     ``base_r``) are available as attributes on the instance.
     """
 
-    equations = [
-        "module, h > 0",
-        "pressure_angle > 0",
-        "pressure_angle <= 45",
-        "helix_angle >= -45",
-        "helix_angle <= 45",
-        "pitch_r = module * teeth / 2",
-        "base_r = pitch_r * cos(pressure_angle * pi / 180)",
-        "outer_r = pitch_r + module",
-        "root_r = pitch_r - 1.25 * module",
-    ]
-    teeth = Param(int, min=6)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;
     # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
-    pressure_angle = Param(float, default=20.0)
-    helix_angle = Param(float, default=0.0)
+    equations = """
+        module, h > 0
+        teeth:int >= 6
+        ?pressure_angle = ?pressure_angle or 20.0
+        ?helix_angle = ?helix_angle if ?helix_angle is not None else 0.0
+        pressure_angle > 0
+        pressure_angle <= 45
+        helix_angle >= -45
+        helix_angle <= 45
+        pitch_r = module * teeth / 2
+        base_r = pitch_r * cos(pressure_angle * pi / 180)
+        outer_r = pitch_r + module
+        root_r = pitch_r - 1.25 * module
+    """
 
     def build(self):
         profile = spur_profile(self.module, self.teeth, self.pressure_angle)

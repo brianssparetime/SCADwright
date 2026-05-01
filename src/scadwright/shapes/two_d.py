@@ -65,8 +65,10 @@ class Sector(Component):
     like any other primitive — no Sector-specific resolution knob.
     """
 
-    equations = ["r > 0"]
-    angles = Param(tuple)  # (start_deg, end_deg)
+    equations = """
+        r > 0
+        len(angles:tuple) = 2                       # (start_deg, end_deg)
+    """
 
     def build(self):
         start, end = float(self.angles[0]), float(self.angles[1])
@@ -86,12 +88,12 @@ class Sector(Component):
 class Arc(Component):
     """Annular ring segment: a band between r-width/2 and r+width/2 from `angles[0]` to `angles[1]`."""
 
-    equations = [
-        "inner_r = r - width / 2",
-        "outer_r = r + width / 2",
-        "r, width > 0",
-    ]
-    angles = Param(tuple)
+    equations = """
+        inner_r = r - width / 2
+        outer_r = r + width / 2
+        r, width > 0
+        len(angles:tuple) = 2
+    """
 
     def build(self):
         outer = Sector(r=self.outer_r, angles=self.angles)
@@ -103,8 +105,10 @@ class Arc(Component):
 class RoundedEndsArc(Component):
     """Arc with rounded (capsule) endpoints."""
 
-    equations = ["r, width, end_r > 0"]
-    angles = Param(tuple)
+    equations = """
+        r, width, end_r > 0
+        len(angles:tuple) = 2
+    """
 
     def build(self):
         arc = Arc(r=self.r, angles=self.angles, width=self.width)
@@ -126,10 +130,10 @@ class RoundedSlot(Component):
     is the diameter of the caps (and the height of the rectangle).
     """
 
-    equations = [
-        "radius = width / 2",
-        "length, width > 0",
-    ]
+    equations = """
+        radius = width / 2
+        length, width > 0
+    """
 
     def build(self):
         r = self.radius
@@ -158,17 +162,17 @@ class Teardrop(Component):
     ``tip_height`` is computed at construction from ``r`` and ``tip_angle``.
     """
 
-    equations = [
-        "tip_height = r / cos(tip_angle * pi / 180)",
-        "r > 0",
-        "tip_angle > 0",
-        "tip_angle < 90",
-        "?cap_h > r",
-        "?cap_h < tip_height",
-    ]
     # 45° is the canonical FDM-printability threshold: at that slope every
     # overhanging surface is steep enough to print unsupported.
-    tip_angle = Param(float, default=45.0)
+    equations = """
+        ?tip_angle = ?tip_angle or 45.0
+        tip_height = r / cos(tip_angle * pi / 180)
+        r > 0
+        tip_angle > 0
+        tip_angle < 90
+        ?cap_h > r
+        ?cap_h < tip_height
+    """
 
     def build(self):
         alpha = math.radians(self.tip_angle)
@@ -202,10 +206,10 @@ class Keyhole(Component):
     the head center to the slot-end cap center.
     """
 
-    equations = [
-        "r_big, r_slot, slot_length > 0",
-        "r_slot < r_big",
-    ]
+    equations = """
+        r_big, r_slot, slot_length > 0
+        r_slot < r_big
+    """
 
     def build(self):
         head = circle(r=self.r_big)

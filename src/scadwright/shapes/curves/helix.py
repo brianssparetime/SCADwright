@@ -16,10 +16,10 @@ class Helix(Component):
     The helix rises along the z-axis, centered on the origin.
     """
 
-    equations = [
-        "r, wire_r, pitch, turns > 0",
-    ]
-    points_per_turn = Param(int, default=36)
+    equations = """
+        r, wire_r, pitch, turns > 0
+        ?points_per_turn:int = ?points_per_turn or 36
+    """
 
     def build(self):
         path = helix_path(
@@ -39,11 +39,11 @@ class Spring(Component):
     ends are achieved by adding partial turns at zero pitch at each end.
     """
 
-    equations = [
-        "r, wire_r, pitch, turns > 0",
-    ]
-    flat_ends = Param(bool, default=True)
-    points_per_turn = Param(int, default=36)
+    equations = """
+        r, wire_r, pitch, turns > 0
+        ?flat_ends:bool = True if ?flat_ends is None else ?flat_ends
+        ?points_per_turn:int = ?points_per_turn or 36
+    """
 
     def build(self):
         ppt = self.points_per_turn

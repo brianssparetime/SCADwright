@@ -18,8 +18,6 @@ class _BeltPulley(Component):
     and above z=belt_width.
     """
 
-    teeth = Param(int, min=10)
-
     def build(self):
         body = Tube(h=self.belt_width, od=self.od, id=self.bore_d)
         top = Tube(h=self.flange_h, od=self.flange_d, id=self.bore_d).up(self.belt_width)
@@ -37,13 +35,14 @@ class GT2Pulley(_BeltPulley):
     The pulley is centered on the origin, bore along z.
     """
 
-    equations = [
-        "bore_d, belt_width > 0",
-        "pitch_d = teeth * 2.0 / pi",
-        "od = pitch_d + 1.0",
-        "flange_d = od + 2.0",
-        "flange_h = 0.8",
-    ]
+    equations = """
+        bore_d, belt_width > 0
+        teeth:int >= 10
+        pitch_d = teeth * 2.0 / pi
+        od = pitch_d + 1.0
+        flange_d = od + 2.0
+        flange_h = 0.8
+    """
 
 
 class HTDPulley(_BeltPulley):
@@ -53,10 +52,11 @@ class HTDPulley(_BeltPulley):
     diameter. Flanges extend 1.0mm beyond the body on each side.
     """
 
-    equations = [
-        "bore_d, belt_width, pitch > 0",
-        "pitch_d = teeth * pitch / pi",
-        "od = pitch_d + 1.5",
-        "flange_d = od + 2.0",
-        "flange_h = 1.0",
-    ]
+    equations = """
+        bore_d, belt_width, pitch > 0
+        teeth:int >= 10
+        pitch_d = teeth * pitch / pi
+        od = pitch_d + 1.5
+        flange_d = od + 2.0
+        flange_h = 1.0
+    """

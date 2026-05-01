@@ -15,11 +15,11 @@ class Dome(Component):
     is given (the inner sphere has radius ``r - thk``).
     """
 
-    equations = [
-        "r > 0",
-        "?thk > 0",
-        "?thk < r",
-    ]
+    equations = """
+        r > 0
+        ?thk > 0
+        ?thk < r
+    """
 
     def build(self):
         # Full sphere clipped to z >= 0.
@@ -43,12 +43,12 @@ class SphericalCap(Component):
         SphericalCap(cap_dia=30, cap_height=5)
     """
 
-    equations = [
-        "cap_r = cap_dia / 2",
-        "cap_r**2 = cap_height * (2 * sphere_r - cap_height)",
-        "cap_height, cap_dia, cap_r, sphere_r > 0",
-        "cap_height <= 2 * sphere_r",
-    ]
+    equations = """
+        cap_r = cap_dia / 2
+        cap_r**2 = cap_height * (2 * sphere_r - cap_height)
+        cap_height, cap_dia, cap_r, sphere_r > 0
+        cap_height <= 2 * sphere_r
+    """
 
     def build(self):
         s = sphere(r=self.sphere_r).up(self.sphere_r - self.cap_height)

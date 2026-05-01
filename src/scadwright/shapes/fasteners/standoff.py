@@ -14,9 +14,7 @@ class Standoff(Component):
     a ``mount_top`` anchor at the top face for attaching mounted parts.
     """
 
-    equations = [
-        "od, id, h > 0",
-    ]
+    equations = "od, id, h > 0"
 
     mount_top = anchor(at="0, 0, h", normal=(0, 0, 1))
 

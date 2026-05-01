@@ -16,8 +16,11 @@ class Prism(Component):
     from ``r``, the result is a frustum (tapered prism).
     """
 
-    equations = ["r, h > 0", "?top_r > 0"]
-    sides = Param(int, min=3)
+    equations = """
+        r, h > 0
+        ?top_r > 0
+        sides:int >= 3
+    """
 
     def build(self):
         n = self.sides
@@ -44,8 +47,10 @@ class Pyramid(Component):
     The base sits on z=0, centered on the origin in XY.
     """
 
-    equations = ["r, h > 0"]
-    sides = Param(int, min=3)
+    equations = """
+        r, h > 0
+        sides:int >= 3
+    """
 
     def build(self):
         n = self.sides

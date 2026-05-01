@@ -27,12 +27,12 @@ class AlignmentPin(Component):
 
     _clearance_category = "sliding"
 
-    equations = [
-        "d, h, lead_in, clearance > 0",
-        "socket_d = d + 2 * clearance",
-        "lead_in < h",
-        "lead_in < d / 2",
-    ]
+    equations = """
+        d, h, lead_in, clearance > 0
+        socket_d = d + 2 * clearance
+        lead_in < h
+        lead_in < d / 2
+    """
 
     base = anchor(at=(0, 0, 0), normal=(0, 0, -1))
     tip = anchor(at="0, 0, h", normal=(0, 0, 1))
@@ -79,13 +79,13 @@ class PressFitPeg(Component):
 
     _clearance_category = "press"
 
-    equations = [
-        "shaft_d, shaft_h, flange_d, flange_h, lead_in, clearance > 0",
-        "socket_d = shaft_d - 2 * clearance",
-        "flange_d > shaft_d",
-        "lead_in < shaft_h",
-        "lead_in < shaft_d / 2",
-    ]
+    equations = """
+        shaft_d, shaft_h, flange_d, flange_h, lead_in, clearance > 0
+        socket_d = shaft_d - 2 * clearance
+        flange_d > shaft_d
+        lead_in < shaft_h
+        lead_in < shaft_d / 2
+    """
 
     seat = anchor(at="0, 0, flange_h", normal=(0, 0, -1))
     tip = anchor(at="0, 0, flange_h + shaft_h", normal=(0, 0, 1))

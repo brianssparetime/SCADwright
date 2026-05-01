@@ -18,21 +18,20 @@ class ChamferedBox(Component):
     The result is centered on the origin.
     """
 
-    size = Param(tuple)
     # `?fillet` / `?chamfer` auto-declare as Param(float, default=None); the
     # positivity rules skip when unset. `exactly_one(...)` enforces that
     # the caller specifies one and only one. The `edge` line then names
     # whichever is set so the size check reads as one idea. Truthy form
     # (`?fillet if ?fillet else ?chamfer`) is safe because the positivity
     # rule rejects 0, leaving None as the only falsy value.
-    equations = [
-        "?fillet > 0",
-        "?chamfer > 0",
-        "len(size) = 3",
-        "exactly_one(?fillet, ?chamfer)",
-        "edge = ?fillet if ?fillet else ?chamfer",                                 # active edge radius
-        "all(s > 2 * edge for s in size)",                                         # every side fits
-    ]
+    equations = """
+        ?fillet > 0
+        ?chamfer > 0
+        len(size:tuple) = 3
+        exactly_one(?fillet, ?chamfer)
+        edge = ?fillet if ?fillet else ?chamfer       # active edge radius
+        all(s > 2 * edge for s in size)               # every side fits
+    """
 
     def build(self):
         x, y, z = self.size

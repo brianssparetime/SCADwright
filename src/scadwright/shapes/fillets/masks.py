@@ -29,8 +29,11 @@ class FilletMask(Component):
     ``length`` is the extent along that axis.
     """
 
-    equations = ["r, length > 0"]
-    axis = Param(str, default="z", one_of=("x", "y", "z"))
+    equations = """
+        r, length > 0
+        ?axis:str = ?axis or "z"
+        axis in ("x", "y", "z")
+    """
 
     def build(self):
         r = self.r
@@ -60,8 +63,11 @@ class ChamferMask(Component):
     depth (distance removed from each face of the edge).
     """
 
-    equations = ["size, length > 0"]
-    axis = Param(str, default="z", one_of=("x", "y", "z"))
+    equations = """
+        size, length > 0
+        ?axis:str = ?axis or "z"
+        axis in ("x", "y", "z")
+    """
 
     def build(self):
         s = self.size

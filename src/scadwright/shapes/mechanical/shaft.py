@@ -20,7 +20,7 @@ class DShaft(Component):
         DShaft(d=5, flat_depth=0.5).linear_extrude(height=20)
     """
 
-    equations = ["d, flat_depth > 0"]
+    equations = "d, flat_depth > 0"
 
     def build(self):
         r = self.d / 2
@@ -43,7 +43,7 @@ class KeyedShaft(Component):
         KeyedShaft(d=10, key_w=3, key_h=1.5).linear_extrude(height=30)
     """
 
-    equations = ["d, key_w, key_h > 0"]
+    equations = "d, key_w, key_h > 0"
 
     def build(self):
         r = self.d / 2

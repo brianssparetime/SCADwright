@@ -21,10 +21,10 @@ class Tube(Component):
     od = outer diameter, id = inner diameter, thk = wall thickness.
     """
 
-    equations = [
-        "od = id + 2*thk",
-        "h, id, od, thk > 0",
-    ]
+    equations = """
+        od = id + 2*thk
+        h, id, od, thk > 0
+    """
 
     outer_wall = anchor(
         at="od/2, 0, h/2",
@@ -69,11 +69,11 @@ class Funnel(Component):
     The framework solves for the missing diameters.
     """
 
-    equations = [
-        "bot_od = bot_id + 2*thk",
-        "top_od = top_id + 2*thk",
-        "h, thk, bot_id, bot_od, top_id, top_od > 0",
-    ]
+    equations = """
+        bot_od = bot_id + 2*thk
+        top_od = top_id + 2*thk
+        h, thk, bot_id, bot_od, top_id, top_od > 0
+    """
 
     outer_wall = anchor(
         at="(bot_od + top_od) / 4.0, 0, h/2",
@@ -131,12 +131,11 @@ class RoundedBox(Component):
     Implementation: minkowski(cube(size - 2r), sphere(r)). Centered on origin.
     """
 
-    size = Param(tuple)  # (x, y, z)
-    equations = [
-        "r > 0",
-        "len(size) = 3",
-        "all(s > 2 * r for s in size)",
-    ]
+    equations = """
+        r > 0
+        len(size:tuple) = 3                         # (x, y, z)
+        all(s > 2 * r for s in size)
+    """
 
     def build(self):
         x, y, z = self.size
@@ -165,13 +164,14 @@ class FilletRing(Component):
     id and od (height `tan(base_angle) * (od - id) / 2`).
     """
 
-    equations = [
-        "id, od > 0",
-        "base_angle > 0",
-        "base_angle < 90",
-        "id < od",
-    ]
-    slant = Param(str, default="outwards", one_of=("outwards", "inwards"))
+    equations = """
+        id, od > 0
+        base_angle > 0
+        base_angle < 90
+        id < od
+        ?slant:str = ?slant or "outwards"
+        slant in ("outwards", "inwards")
+    """
 
     def build(self):
         angle_rad = math.radians(self.base_angle)
@@ -210,11 +210,11 @@ class Capsule(Component):
     capsule, rotate the result: ``Capsule(r=3, length=20).rotate([0, 90, 0])``.
     """
 
-    equations = [
-        "straight_length = length - 2 * r",
-        "r, length > 0",
-        "straight_length > 0",
-    ]
+    equations = """
+        straight_length = length - 2 * r
+        r, length > 0
+        straight_length > 0
+    """
 
     base = anchor(at=(0, 0, 0), normal=(0, 0, -1))
     tip = anchor(at="0, 0, length", normal=(0, 0, 1))
@@ -236,11 +236,11 @@ class RectTube(Component):
     per-axis dimensions is sufficient.
     """
 
-    equations = [
-        "outer_w = inner_w + 2 * wall_thk",
-        "outer_d = inner_d + 2 * wall_thk",
-        "h, outer_w, outer_d, inner_w, inner_d, wall_thk > 0",
-    ]
+    equations = """
+        outer_w = inner_w + 2 * wall_thk
+        outer_d = inner_d + 2 * wall_thk
+        h, outer_w, outer_d, inner_w, inner_d, wall_thk > 0
+    """
 
     def build(self):
         outer = cube([self.outer_w, self.outer_d, self.h], center="xy")
@@ -266,10 +266,11 @@ class Prismoid(Component):
     degenerate polyhedron faces.
     """
 
-    equations = [
-        "bot_w, bot_d, top_w, top_d, h > 0",
-    ]
-    shift = Param(tuple, default=(0.0, 0.0))
+    equations = """
+        bot_w, bot_d, top_w, top_d, h > 0
+        ?shift:tuple = ?shift or (0.0, 0.0)
+        len(shift) = 2
+    """
 
     top_face = anchor(at="shift[0], shift[1], h", normal=(0, 0, 1))
 
@@ -316,12 +317,12 @@ class Wedge(Component):
 
     # `?fillet` auto-declares as Param(float, default=None); the
     # rules skip silently when it is unset.
-    equations = [
-        "base_w, base_h, thk > 0",
-        "?fillet > 0",
-        "?fillet < base_w / 2",
-        "?fillet < base_h / 2",
-    ]
+    equations = """
+        base_w, base_h, thk > 0
+        ?fillet > 0
+        ?fillet < base_w / 2
+        ?fillet < base_h / 2
+    """
 
     def build(self):
         if self.fillet is None:
@@ -356,8 +357,10 @@ class PieSlice(Component):
     ``Sector(r, angles).linear_extrude(height=h)`` inline.
     """
 
-    equations = ["r, h > 0"]
-    angles = Param(tuple)
+    equations = """
+        r, h > 0
+        len(angles:tuple) = 2
+    """
 
     def build(self):
         return Sector(r=self.r, angles=self.angles).linear_extrude(height=self.h)
@@ -371,13 +374,13 @@ class UShapeChannel(Component):
     solves the rest.  Set `n_shape=True` to flip the opening downward.
     """
 
-    equations = [
-        "outer_width = channel_width + 2 * wall_thk",
-        "outer_height = channel_height + wall_thk",
-        "bottom_width = outer_width",
-        "channel_width, channel_height, outer_width, outer_height, wall_thk, channel_length > 0",
-    ]
-    n_shape = Param(bool, default=False)
+    equations = """
+        outer_width = channel_width + 2 * wall_thk
+        outer_height = channel_height + wall_thk
+        bottom_width = outer_width
+        channel_width, channel_height, outer_width, outer_height, wall_thk, channel_length > 0
+        ?n_shape:bool = False if ?n_shape is None else ?n_shape
+    """
 
     # Channel opening: top by default, bottom when flipped via n_shape.
     # Both position and normal switch on n_shape — the string-expression

@@ -21,21 +21,21 @@ class BevelGear(Component):
     For a 90-degree gear pair, each gear has ``cone_angle=45``.
     """
 
-    equations = [
-        "module, h > 0",
-        "pressure_angle > 0",
-        "pressure_angle <= 45",
-        "cone_angle > 0",
-        "cone_angle < 90",
-        "pitch_r = module * teeth / 2",
-        "base_r = pitch_r * cos(pressure_angle * pi / 180)",
-        "outer_r = pitch_r + module",
-        "root_r = pitch_r - 1.25 * module",
-    ]
-    teeth = Param(int, min=6)
     # ISO 4033 convention — almost every gear-cutting application uses 20°;
     # 14.5° is a legacy carryover, 25° is a niche high-strength variant.
-    pressure_angle = Param(float, default=20.0)
+    equations = """
+        module, h > 0
+        teeth:int >= 6
+        ?pressure_angle = ?pressure_angle or 20.0
+        pressure_angle > 0
+        pressure_angle <= 45
+        cone_angle > 0
+        cone_angle < 90
+        pitch_r = module * teeth / 2
+        base_r = pitch_r * cos(pressure_angle * pi / 180)
+        outer_r = pitch_r + module
+        root_r = pitch_r - 1.25 * module
+    """
 
     def build(self):
         profile = spur_profile(self.module, self.teeth, self.pressure_angle)

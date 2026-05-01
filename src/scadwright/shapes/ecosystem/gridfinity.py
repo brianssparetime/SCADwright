@@ -53,13 +53,13 @@ class GridfinityBase(Component):
     grid sizes or custom magnet/screw dimensions.
     """
 
-    grid_x = Param(int, min=1)
-    grid_y = Param(int, min=1)
     spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
-    equations = [
-        "outer_w = grid_x * spec.grid_unit",
-        "outer_l = grid_y * spec.grid_unit",
-    ]
+    equations = """
+        grid_x:int >= 1
+        grid_y:int >= 1
+        outer_w = grid_x * spec.grid_unit
+        outer_l = grid_y * spec.grid_unit
+    """
 
     def build(self):
         s = self.spec
@@ -99,16 +99,17 @@ class GridfinityBin(Component):
     along x. Override ``spec`` for non-standard variants.
     """
 
-    grid_x = Param(int, min=1)
-    grid_y = Param(int, min=1)
-    height_units = Param(int, min=1)
-    dividers_x = Param(int, default=1, min=1)
     spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
-    equations = [
-        "outer_w = grid_x * spec.grid_unit - spec.bin_clearance",
-        "outer_l = grid_y * spec.grid_unit - spec.bin_clearance",
-        "total_h = height_units * spec.height_unit + spec.lip_height",
-    ]
+    equations = """
+        grid_x:int >= 1
+        grid_y:int >= 1
+        height_units:int >= 1
+        ?dividers_x:int = ?dividers_x or 1
+        dividers_x >= 1
+        outer_w = grid_x * spec.grid_unit - spec.bin_clearance
+        outer_l = grid_y * spec.grid_unit - spec.bin_clearance
+        total_h = height_units * spec.height_unit + spec.lip_height
+    """
 
     def build(self):
         s = self.spec

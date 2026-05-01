@@ -16,11 +16,11 @@ class VentSlots(Component):
     a parent or use standalone.
     """
 
-    equations = [
-        "width, height, thk > 0",
-        "slot_width, slot_height > 0",
-    ]
-    slot_count = Param(int, min=1)
+    equations = """
+        width, height, thk > 0
+        slot_width, slot_height > 0
+        slot_count:int >= 1
+    """
 
     def build(self):
         panel = cube([self.width, self.height, self.thk], center="xy")

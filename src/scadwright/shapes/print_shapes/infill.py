@@ -19,11 +19,10 @@ class HoneycombPanel(Component):
     wall thickness between cells.
     """
 
-    size = Param(tuple)
-    equations = [
-        "cell_size, wall_thk > 0",
-        "len(size) = 3",
-    ]
+    equations = """
+        cell_size, wall_thk > 0
+        len(size:tuple) = 3
+    """
 
     def build(self):
         x, y, z = self.size
@@ -67,11 +66,10 @@ class GridPanel(Component):
     the grid spacing.
     """
 
-    size = Param(tuple)
-    equations = [
-        "cell_size, wall_thk > 0",
-        "len(size) = 3",
-    ]
+    equations = """
+        cell_size, wall_thk > 0
+        len(size:tuple) = 3
+    """
 
     def build(self):
         x, y, z = self.size
@@ -104,11 +102,10 @@ class TriGridPanel(Component):
     length. ``wall_thk`` is wall thickness.
     """
 
-    size = Param(tuple)
-    equations = [
-        "cell_size, wall_thk > 0",
-        "len(size) = 3",
-    ]
+    equations = """
+        cell_size, wall_thk > 0
+        len(size:tuple) = 3
+    """
 
     def build(self):
         x, y, z = self.size

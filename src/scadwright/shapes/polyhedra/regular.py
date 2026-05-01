@@ -15,7 +15,7 @@ class Tetrahedron(Component):
     Centered on the origin with one vertex pointing up (+z).
     """
 
-    equations = ["r > 0"]
+    equations = "r > 0"
 
     def build(self):
         # Apex at +z; three base vertices in a ring at z = -r/3.
@@ -37,7 +37,7 @@ class Octahedron(Component):
     Centered on the origin with vertices on the axes.
     """
 
-    equations = ["r > 0"]
+    equations = "r > 0"
 
     def build(self):
         # Equator ring of 4 vertices at z=0 plus apex (+z) and nadir (-z).
@@ -59,7 +59,7 @@ class Dodecahedron(Component):
     Centered on the origin.
     """
 
-    equations = ["r > 0"]
+    equations = "r > 0"
 
     def build(self):
         r = self.r
@@ -104,7 +104,7 @@ class Icosahedron(Component):
     Centered on the origin.
     """
 
-    equations = ["r > 0"]
+    equations = "r > 0"
 
     def build(self):
         r = self.r

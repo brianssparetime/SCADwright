@@ -22,11 +22,11 @@ class HexNut(Component):
     """
 
     spec = Param(NutSpec)
-    equations = [
-        "af = spec.af",
-        "h = spec.h",
-        "d = spec.d",
-    ]
+    equations = """
+        af = spec.af
+        h = spec.h
+        d = spec.d
+    """
 
     @classmethod
     def of(cls, size: str, **kwargs):
@@ -52,11 +52,11 @@ class SquareNut(Component):
     """
 
     spec = Param(NutSpec)
-    equations = [
-        "af = spec.af",
-        "h = spec.h",
-        "d = spec.d",
-    ]
+    equations = """
+        af = spec.af
+        h = spec.h
+        d = spec.d
+    """
 
     @classmethod
     def of(cls, size: str, **kwargs):

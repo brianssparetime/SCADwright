@@ -60,11 +60,11 @@ class Bearing(Component):
     """
 
     spec = Param(BearingSpec)
-    equations = [
-        "id = spec.id",
-        "od = spec.od",
-        "width = spec.width",
-    ]
+    equations = """
+        id = spec.id
+        od = spec.od
+        width = spec.width
+    """
 
     @classmethod
     def of(cls, series: str, **kwargs):
