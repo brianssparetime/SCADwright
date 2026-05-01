@@ -48,7 +48,7 @@ from scadwright import Component
 from scadwright.primitives import cube
 
 class Bracket(Component):
-    equations = ["width, height > 0"]
+    equations = "width, height > 0"
 
     def build(self):
         return cube([self.width, self.width, self.height])
@@ -59,9 +59,9 @@ print(b.width)               # readable; no geometry built yet
 
 ### 2. A component's key equations are all defined together, with constraints and solving for unsupplied arguments
 
-Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od == id + 2*thk`. 
+Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od = id + 2*thk`. 
 
-In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time -- after you've already waited.
+In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time — after you've already waited.
 
 In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint)
 
@@ -71,10 +71,10 @@ You don't even need to isolate a variable on the left of the equation like you d
 from scadwright import Component
 
 class Tube(Component):
-    equations = [
-        "od - id = 2*thk",                 # structural relationship: solve for the missing one
-        "h, id, od, thk > 0",              # constraints
-    ]
+    equations = """
+        od - id = 2*thk                    # structural relationship: solve for the missing one
+        h, id, od, thk > 0                 # constraints
+    """
 
     def build(self): ...
 
@@ -89,27 +89,26 @@ And equations aren't limited to scalar arithmetic. Either side can be any Python
 ```python
 class BatteryHolder(Component):
     spec = Param(BatterySpec)
-    count = Param(int, positive=True)
-    size = Param(tuple)                                           # non-float Params are declared explicitly
-    equations = [
-        "wall_thk, clearance, end_clearance > 0",
-        "pitch = spec.d + 2*clearance",                           # field read on a namedtuple input
-        "outer_w = count * pitch + 2*end_clearance",              # arithmetic
-        "positions = tuple(i*pitch for i in range(count))",       # tuple from a comprehension
-        "len(size) = 3",                                          # consistency check on an input
-    ]
+    equations = """
+        count:int > 0
+        wall_thk, clearance, end_clearance > 0
+        pitch = spec.d + 2*clearance                              # field read on a namedtuple input
+        outer_w = count * pitch + 2*end_clearance                 # arithmetic
+        positions = tuple(i*pitch for i in range(count))          # tuple from a comprehension
+        len(size:tuple) = 3                                       # consistency check on an input
+    """
 ```
 
 Equations also handle optional inputs. Prefix a name with `?` to declare it optional; rules and equations that reference it auto-skip when it's not set. The `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` helpers cover the common XOR/OR validation shapes in one line each.
 
 ```python
 class FilletedBracket(Component):
-    equations = [
-        "w, l, thk > 0",
-        "exactly_one(?r, ?r_frac)",                # absolute radius or fraction-of-thk; one and only one
-        "r = ?r if ?r else ?r_frac * thk",         # synthesize the active value
-        "r < thk / 2",                             # downstream check uses the synthesized name
-    ]
+    equations = """
+        w, l, thk > 0
+        exactly_one(?r, ?r_frac)                   # absolute radius or fraction-of-thk; one and only one
+        edge = ?r if ?r else ?r_frac * thk         # synthesize the active value
+        edge < thk / 2                             # downstream check uses the synthesized name
+    """
 
 FilletedBracket(w=40, l=20, thk=4, r=1)               # absolute
 FilletedBracket(w=40, l=20, thk=4, r_frac=0.25)       # 25% of thk
@@ -172,7 +171,7 @@ bearing = Bearing.of("608")                       # 8x22x7, ready for fit-check
 panel = HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
 ```
 
-Every shape is a Component -- you can read its computed dimensions, attach other parts to it, and pass it into boolean operations. See the [shape library docs](docs/shapes/) for the full catalog.
+Every shape is a Component — you can read its computed dimensions, attach other parts to it, and pass it into boolean operations. See the [shape library docs](docs/shapes/) for the full catalog.
 
 Fit tolerances flow project-wide. Set `Clearances(sliding=0.05, press=0.08, snap=0.2, finger=0.2)` once on your `Design` class and every `AlignmentPin`, `PressFitPeg`, `SnapPin`, and `TabSlot` inherits automatically; override per-scope, per-Component, or per-call. See [Clearances](docs/clearances.md).
 
@@ -266,7 +265,7 @@ See [Anchors and attachment](docs/anchors.md) for the full reference.
 
 ### 9. Parts know their bounds without needing to render, allowing print-bed tests and overlap tests.
 
-In OpenSCAD, the only way to know how big something is -- whether it fits on your print bed, whether two parts overlap, whether a lid is wider than its box -- is to render it and eyeball the result.
+In OpenSCAD, the only way to know how big something is (whether it fits on your print bed, whether two parts overlap, whether a lid is wider than its box) is to render it and eyeball the result.
 
 SCADwright [computes bounding boxes from the AST](docs/introspection.md), without rendering. You can query them, assert against them, and use them to position parts relative to each other:
 
@@ -288,13 +287,13 @@ assert_no_collision(box, lid)              # parts don't overlap?
 
 In OpenSCAD, `center=true` works on primitives but not on modules. If your module builds a shape at the origin and you want it centered, you compute the offset yourself. Every module that needs centering reinvents the same translate-by-half-size logic.
 
-In SCADwright, every Component accepts [`center=`](docs/primitives_3d.md) as a constructor kwarg -- same syntax as `cube(center=...)`, with per-axis control:
+In SCADwright, every Component accepts [`center=`](docs/primitives_3d.md) as a constructor kwarg — same syntax as `cube(center=...)`, with per-axis control:
 
 ```python
 from scadwright.shapes import UShapeChannel
 
 u = UShapeChannel(wall_thk=2, channel_length=50, channel_width=10, center="xy")
-u.outer_width                              # still readable -- it's still a Component
+u.outer_width                              # still readable — it's still a Component
 ```
 
 The Component author doesn't write any centering code. The framework computes the bounding box after `build()` and translates the requested axes to the origin. For Components where the geometric center isn't the right reference point, override `center_origin()` to return a custom one.
@@ -396,7 +395,7 @@ def test_widget_geometry_pinned():
     assert tree_hash(Widget(width=40)) == "a1b2c3d4e5f6..."
 ```
 
-If any dimension, transform, or boolean op changes, the hash changes and the test fails -- before you ever open OpenSCAD.
+If any dimension, transform, or boolean op changes, the hash changes and the test fails — before you ever open OpenSCAD.
 
 
 ## Quick example
@@ -430,10 +429,10 @@ from scadwright.boolops import difference
 from scadwright.primitives import cylinder
 
 class Tube(Component):
-    equations = [
-        "od = id + 2*thk",
-        "h, id, od, thk > 0",
-    ]
+    equations = """
+        od = id + 2*thk
+        h, id, od, thk > 0
+    """
 
     def build(self):
         return difference(
@@ -442,13 +441,13 @@ class Tube(Component):
         )
 
 t = Tube(h=30, id=20, thk=2)      # od solved = 24.0
-print(t.od)                        # 24.0 -- readable without rendering
+print(t.od)                        # 24.0 — readable without rendering
 render(t, "tube.scad")
 ```
 
 ## Quick example (with a Component and @variant)
 
-Building on the Tube above, add a Design with variants -- a display view showing the tube upright, and a print view that halves it into two concave-down pieces spaced apart for the print bed:
+Building on the Tube above, add a Design with variants — a display view showing the tube upright, and a print view that halves it into two concave-down pieces spaced apart for the print bed:
 
 ```python
 from scadwright import Component, bbox
@@ -457,10 +456,10 @@ from scadwright.design import Design, run, variant
 from scadwright.primitives import cylinder
 
 class Tube(Component):
-    equations = [
-        "od = id + 2*thk",
-        "h, id, od, thk > 0",
-    ]
+    equations = """
+        od = id + 2*thk
+        h, id, od, thk > 0
+    """
 
     def build(self):
         return difference(
@@ -533,7 +532,7 @@ Whichever AI assistant you use, dropping the [style guide](docs/style-guide.md) 
 
 ### MCP
 
-If you're developing with Claude Code, install the [OpenSCAD MCP server](https://github.com/quellant/openscad-mcp). It gives Claude the ability to render your `.scad` output, visually inspect the result, and catch geometry errors without you having to open OpenSCAD yourself. SCADwright's generated SCAD is fully compatible -- Claude can build your script, render it through the MCP, and iterate on the design in a tight feedback loop.
+If you're developing with Claude Code, install the [OpenSCAD MCP server](https://github.com/quellant/openscad-mcp). It gives Claude the ability to render your `.scad` output, visually inspect the result, and catch geometry errors without you having to open OpenSCAD yourself. SCADwright's generated SCAD is fully compatible — Claude can build your script, render it through the MCP, and iterate on the design in a tight feedback loop.
 
 
 ## Is this AI generated slop?
