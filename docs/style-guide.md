@@ -15,6 +15,25 @@ The dividing line is prose-vs-code: if it's a sentence *about* the project, writ
 
 ---
 
+## Prose conventions
+
+### Em dashes
+
+The em-dash glyph `—` is allowed and preferred over `--`. The double-hyphen `--` renders as an em dash in markdown but reads poorly in source; use the real glyph.
+
+What's not allowed is the **double-em-dash bracketing style** — using a pair of em dashes to set off a parenthetical clause, like writing "the parser — which had been rewritten — finally worked." That construction reads as overwrought English prose. Use commas, parentheses, semicolons, or separate sentences instead.
+
+A single em dash is fine; it's the paired aside form that's the smell.
+
+```
+Good:    The parser, which had been rewritten, finally worked.
+Good:    The framework checks every line — that's the whole point.
+Bad:     The framework -- which checks every line -- is strict.
+Bad:     The framework — which checks every line — is strict.
+```
+
+---
+
 ## Preferred patterns
 
 Use these features whenever they fit. They exist to eliminate boilerplate and make intent clear.
@@ -96,7 +115,7 @@ cyl = cylinder(r=4, h=15).attach(base_part)
 cap = SphericalCap(cap_dia=8, cap_height=5).attach(cyl)
 ```
 
-Defaults are `on="top"`, `at="bottom"` -- bottom of self on top of other. Use `fuse=True` on joints to eliminate coincident-surface seams in unions.
+Defaults are `on="top"`, `at="bottom"` — bottom of self on top of other. Use `fuse=True` on joints to eliminate coincident-surface seams in unions.
 
 ### Use `through(parent)` for cutters in `difference()`
 
@@ -165,7 +184,7 @@ These features exist for cases the preferred patterns can't handle. If you reach
 
 ### `Param()` for non-float types
 
-`Param()` is for bools, strings, and object types -- things that equations and `params=` can't express. Floats belong in equations or `params=`.
+`Param()` is for bools, strings, and object types — things that equations and `params=` can't express. Floats belong in equations or `params=`.
 
 ```python
 n_shape = Param(bool, default=False)       # bool option
