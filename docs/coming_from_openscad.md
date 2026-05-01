@@ -58,7 +58,7 @@ part = difference(
 render(part, "plate.scad")
 ```
 
-The shapes and operations are the same -- `difference`, `cylinder`, `minkowski` (via `rounded_rect`). The differences: Python variables instead of SCAD globals, `fn=32` passed to the primitives (or use `with resolution(fn=32):`), and `render()` at the end to write the output file. No `module` declaration needed for a one-off part.
+The shapes and operations are the same — `difference`, `cylinder`, `minkowski` (via `rounded_rect`). The differences: Python variables instead of SCAD globals, `fn=32` passed to the primitives (or use `with resolution(fn=32):`), and `render()` at the end to write the output file. No `module` declaration needed for a one-off part.
 
 ## Control flow
 
@@ -104,7 +104,7 @@ SCADwright — inside a `Component.build()`, use plain Python:
 
 ```python
 class Widget(Component):
-    mode = Param(str, one_of=("solid", "round"))
+    equations = "mode:str in ('solid', 'round')"
 
     def build(self):
         if self.mode == "solid":
@@ -189,12 +189,12 @@ bracket(40, 20);
 SCADwright — [Components](components.md):
 
 ```python
-from scadwright import Component, Param
+from scadwright import Component
 from scadwright.boolops import difference
 from scadwright.primitives import cube, cylinder
 
 class Bracket(Component):
-    equations = ["width, height > 0"]
+    equations = "width, height > 0"
 
     def build(self):
         return difference(
@@ -205,7 +205,7 @@ class Bracket(Component):
 Bracket(width=40, height=20)
 ```
 
-Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry an `equations` list — equations SCADwright fills in for you and rules it checks when you make the part. See [Components](components.md).
+Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry an `equations` block of relationships SCADwright fills in for you and rules it checks when you make the part. See [Components](components.md).
 
 ### User-defined functions
 
@@ -285,13 +285,16 @@ SCAD's `assert(condition, "message")` is a render-time check. SCADwright offers 
 
 ```python
 # 1. Rules in `equations`: bounds and inequalities, runs at construction.
-equations = ["width > 0", "width > thk"]
+equations = """
+    width > 0
+    width > thk
+"""
 
-# 2. Rules in `equations` with arbitrary Python: same list, any boolean expression.
-equations = [
-    "len(size) = 3",
-    "all(e.dia <= throat for e in elements)",
-]
+# 2. Rules in `equations` with arbitrary Python: same block, any boolean expression.
+equations = """
+    len(size) = 3
+    all(e.dia <= throat for e in elements)
+"""
 
 # 3. Geometry assertions: runs at bbox time, useful for assemblies.
 from scadwright.asserts import assert_fits_in
@@ -310,7 +313,7 @@ Fully supported as chained methods: `.highlight()`, `.background()`, `.disable()
 
 ### `$preview`
 
-OpenSCAD sets `$preview = true` during F5 preview and `false` during F6 render. SCADwright doesn't have a direct equivalent -- the closest concept is [variants](variants.md):
+OpenSCAD sets `$preview = true` during F5 preview and `false` during F6 render. SCADwright doesn't have a direct equivalent — the closest concept is [variants](variants.md):
 
 ```python
 from scadwright.design import Design, run, variant
@@ -379,11 +382,11 @@ If you're coming from BOSL2, you may be used to its `attach()` / `anchor()` syst
 - Components declare custom anchors at class scope: `mount = anchor(at="w/2, w/2, thk", normal=(0,0,1))`.
 - `orient=True` adds rotation so anchor normals oppose each other (faces touching).
 
-Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and they don't shift the origin. SCADwright keeps `center=` for origin control and `attach()` for positioning -- two separate concepts.
+Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and they don't shift the origin. SCADwright keeps `center=` for origin control and `attach()` for positioning — two separate concepts.
 
 See [Anchors and attachment](anchors.md) for the full reference.
 
-SCADwright also automates epsilon overlap -- `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps joints. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md).
+SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps joints. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md).
 
 ## Text on a 3D shape
 

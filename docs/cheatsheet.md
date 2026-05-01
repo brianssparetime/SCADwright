@@ -204,10 +204,10 @@ part.only()                # !part — render ONLY this subtree
 
 ```python
 class Tube(Component):
-    equations = [
-        "od = id + 2*thk",                 # equation; bare names auto-declared as floats
-        "h, id, od, thk > 0",              # rule (positivity bound on each name)
-    ]
+    equations = """
+        od = id + 2*thk                    # equation; bare names auto-declared as floats
+        h, id, od, thk > 0                 # rule (positivity bound on each name)
+    """
 
     def build(self):
         return difference(
@@ -220,15 +220,14 @@ t.od                                      # readable without building
 render(t, "tube.scad")                    # build runs now, caches result
 ```
 
-### `equations` list — equations and rules
+### `equations` block — equations and rules
 
-Each line is one of two things:
+The triple-quoted block form is preferred. The list form is also accepted (useful for programmatically-assembled equations). Each line is one of two things:
 
 ```python
 # Equation — write what's true about your part. Either side can be any
 # expression. SCADwright fills in any value the system can solve from
 # what you supplied, and checks anything you over-supplied for agreement.
-# `=` and `==` are accepted and mean the same thing.
 "od = id + 2*thk"
 "pitch = spec.d + 2 * (clearance + wall_thk)"
 "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))"
@@ -249,35 +248,65 @@ Each line is one of two things:
 
 # Optional input: prefix a name with `?` to let the caller omit it.
 # When omitted, the value is None and any rule referencing it skips.
-# `?` can't appear on a name that's computed by another line.
 "?fillet > 0"
 "exactly_one(?fillet, ?chamfer)"           # one and only one is set
 "at_least_one(?a, ?b)"                     # one or more is set
 "at_most_one(?a, ?b, ?c)"                  # zero or one is set
 "all_or_none(?a, ?b)"                      # all are set or none are
 "edge = ?fillet if ?fillet else ?chamfer"  # pick whichever is set
+
+# Default value for an optional input (override pattern):
+"?dividers:int = ?dividers or 1"           # default 1 when not specified
+"?offset = ?offset if ?offset is not None else 0"  # safe when 0 is legitimate
 ```
 
-Order doesn't matter — the resolver iterates until everything resolves. Equations see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`, cardinality helpers, math funcs) plus the Component's Params.
+Order doesn't matter; the resolver iterates until everything resolves. Equations see a curated namespace (`range`/`tuple`/`len`/`min`/`max`/`all`/`any`, cardinality helpers, math funcs) plus the Component's Params.
 
-### Declaring params
+### `=` for equations, `==` only after `if`
+
+Use `=` for every equation, consistency-check, and rule that involves equality. Use `==` only inside the condition of an `if` expression, the same way Python uses it. Top-level `==` outside an `if` is rejected at class-define time.
+
+```python
+"od = id + 2*thk"                          # equation: =
+"len(size) = 3"                            # consistency-check: =
+"x = a if axis == 'xy' else b"             # ==, but only inside the if condition
+```
+
+### Type tags for non-float parameters
+
+Write `:type` after a name's first appearance to declare it as something other than float. Allowed: `bool`, `int`, `str`, `tuple`, `list`, `dict`. Spaces around the colon are fine.
+
+```python
+"count:int >= 1"                                   # integer count, must be positive
+"axis:str in ('x', 'y', 'z')"                      # enum-style choice
+"len(size:tuple) = 3"                              # 3-tuple
+"x = 1 if ?direction:bool else 2"                  # bool used in a conditional
+"?dividers:int = ?dividers or 1"                   # int with override-pattern default
+```
+
+The tag goes on the name's first reference and applies everywhere it's used. The check is strict: passing a float where an int is expected is an error. The one allowed conversion is whole-number int → float (so `Tube(thk=1)` is fine for a float `thk`).
+
+### Declaring parameters
 
 ```python
 # 1. equations (primary) — auto-declares floats, solves, validates
-equations = [
-    "od = id + 2*thk",                 # equation; SCADwright fills in or checks
-    "h, id, od, thk > 0",              # bound rule auto-declares + validates
-    "base_angle > 0", "base_angle < 90",
-]
+equations = """
+    od = id + 2*thk                # equation; SCADwright fills in or checks
+    h, id, od, thk > 0             # bound rule auto-declares + validates
+    base_angle > 0
+    base_angle < 90
+"""
 
-# 2. params — only for unbounded floats that don't appear in any equation (rare)
-params = "phase_offset"
+# 2. inline type tags — non-float types declared in the equations block
+equations = """
+    count:int >= 1
+    axis:str in ('x', 'y', 'z')
+    len(size:tuple) = 3
+"""
 
-# 3. Param — non-floats, defaults, enums (required for tuples, ints, bools, custom types)
-size = Param(tuple)                            # so equations can use len(size), size[0], etc.
-label = Param(str)
-count = Param(int, positive=True)
-mode = Param(str, default="A", one_of=("A","B"))
+# 3. Param — custom types only (namedtuples, spec classes)
+spec = Param(BatterySpec)
+spec = Param(GridfinitySpec, default=STANDARD_GRIDFINITY)
 
 # 4. anchor — named attachment points (→ anchors.md)
 mount = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))

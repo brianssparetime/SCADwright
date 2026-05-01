@@ -41,9 +41,7 @@ from scadwright.boolops import difference
 from scadwright.primitives import cube, cylinder
 
 class Plate(Component):
-    equations = [
-        "width, length, thk, hole_d, hole_spacing > 0",
-    ]
+    equations = "width, length, thk, hole_d, hole_spacing > 0"
 
     def build(self):
         body = cube([self.width, self.length, self.thk], center="xy")
@@ -76,7 +74,7 @@ render(plate, "plate.scad")
 
 The subclass reads like a parts list. Every measurement appears once. The generic `Plate` stays portable; the concrete `MyPlate` holds the project-specific numbers. Equations still work the same way on the subclass; if `Plate` solved `od` from `id` and `thk`, so does `MyPlate`.
 
-As the Component grows, you'll sometimes need values worked out from other values (something with a loop, a conditional, or a field or item read from an input). Add those as `name = expression` lines in the same [`equations` list](components.md#parameters-the-equations-list). For checks that aren't simple bounds (a tuple's length, a rule that loops over elements, a choice between options), add a comparison or boolean rule to the same list.
+As the Component grows, you'll sometimes need values worked out from other values (something with a loop, a conditional, or a field or item read from an input). Add those as `name = expression` lines in the same [`equations` block](components.md#parameters-equations). For checks that aren't simple bounds (a tuple's length, a rule that loops over elements, a choice between options), add a comparison or boolean rule to the same block.
 
 ### Stage 3: Add a Design with variants
 
@@ -136,7 +134,7 @@ class Plate(Component):
 
 # Right: Plate stays reusable; MyPlate holds the project number.
 class Plate(Component):
-    equations = ["width > 0"]
+    equations = "width > 0"
 
 class MyPlate(Plate):
     width = 80

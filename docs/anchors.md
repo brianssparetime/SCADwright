@@ -71,7 +71,7 @@ Declare anchors at class scope with the `anchor()` descriptor, alongside equatio
 from scadwright import Component, anchor
 
 class Bracket(Component):
-    equations = ["w, thk, depth > 0"]
+    equations = "w, thk, depth > 0"
 
     mount_face = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
 

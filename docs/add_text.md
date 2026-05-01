@@ -32,7 +32,7 @@ plate.add_text(label="SIDE",  relief=0.3, on="rside", font_size=4)
 
 # Custom Component anchor:
 class Bracket(Component):
-    equations = ["w, thk > 0"]
+    equations = "w, thk > 0"
     badge = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
     def build(self):
         return cube([self.w, self.w, self.thk])
