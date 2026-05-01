@@ -47,7 +47,7 @@ class ElementHolder(Component):
     DIA_CLEAR = 0.4
 
     element = Param(Element)
-    equations = ["od > 0"]
+    equations = "od > 0"
 
     def build(self):                                       # framework hook: required; returns the shape
         e = self.element
@@ -105,20 +105,20 @@ class LensHousing(Component):
 
     FRONT_FILLET_OFFSET = 5.0   # aperture rim inset from the front element's grip ID
 
-    elements = Param(tuple)
-    equations = [
-        "lower_housing_od = lower_housing_id + barrel_thk",
-        "hood_base_angle = 90 - fov_angle / 2",
-        "lower_housing_od, lower_housing_id, lower_housing_len, barrel_thk > 0",
-        "flange_flange_od, flange_flange_len, fov_angle, hood_base_angle > 0",
-        "unconstricted = tuple(e for e in elements if not e.constricted)",
-        "max_upper_ele_dia = max((e.dia for e in unconstricted), default=0.0)",
-        "is_wide = max_upper_ele_dia > lower_housing_id",
-        "expansion_funnel_len = min((e.face_z_bot for e in unconstricted), default=inf)",
-        "upper_housing_len = max(e.face_z_top for e in elements)",
-        "upper_housing_od = (max_upper_ele_dia + barrel_thk) if is_wide else flange_flange_od",
-        "all(not e.constricted or e.throat_dia_required <= lower_housing_id for e in elements)",
-    ]
+    equations = """
+        len(elements:tuple) > 0
+        lower_housing_od = lower_housing_id + barrel_thk
+        hood_base_angle = 90 - fov_angle / 2
+        lower_housing_od, lower_housing_id, lower_housing_len, barrel_thk > 0
+        flange_flange_od, flange_flange_len, fov_angle, hood_base_angle > 0
+        unconstricted = tuple(e for e in elements if not e.constricted)
+        max_upper_ele_dia = max((e.dia for e in unconstricted), default=0.0)
+        is_wide = max_upper_ele_dia > lower_housing_id
+        expansion_funnel_len = min((e.face_z_bot for e in unconstricted), default=inf)
+        upper_housing_len = max(e.face_z_top for e in elements)
+        upper_housing_od = (max_upper_ele_dia + barrel_thk) if is_wide else flange_flange_od
+        all(not e.constricted or e.throat_dia_required <= lower_housing_id for e in elements)
+    """
 
     def build(self):
         lower_id = self.lower_housing_id
@@ -169,13 +169,13 @@ class LensHood(Component):
     Built in its mounted orientation: coupler at z=0, funnel flaring upward.
     The print variant flips it."""
 
-    equations = [
-        "housing_upper_od, hood_base_angle, wall_thk, hood_length, coupler_overlap > 0",
-        "hood_clr >= 0",
-        "id_coupler = housing_upper_od + hood_clr",
-        "od_coupler = id_coupler + 2 * wall_thk",
-        "flare_od = housing_upper_od + 2 * hood_length * tan((90 - hood_base_angle) * pi / 180)",
-    ]
+    equations = """
+        housing_upper_od, hood_base_angle, wall_thk, hood_length, coupler_overlap > 0
+        hood_clr >= 0
+        id_coupler = housing_upper_od + hood_clr
+        od_coupler = id_coupler + 2 * wall_thk
+        flare_od = housing_upper_od + 2 * hood_length * tan((90 - hood_base_angle) * pi / 180)
+    """
 
     def build(self):                                       # framework hook: required; returns the shape
         coupler = Tube(

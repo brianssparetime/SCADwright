@@ -141,13 +141,13 @@ class CaseBase(Component):
     """
 
     pcb = Param(PCBSpec)
-    equations = [
-        "wall_thk, floor_thk, standoff_h, wall_h, corner_r, clearance, standoff_outer_d > 0",
-        "inner_size = (pcb.width + 2 * clearance, pcb.length + 2 * clearance, standoff_h + pcb.component_clearance)",
-        "outer_size = (inner_size[0] + 2 * wall_thk, inner_size[1] + 2 * wall_thk, floor_thk + wall_h)",
-        "pcb_top_z = floor_thk + standoff_h + pcb.thk",
-        "mount_positions = tuple((x - pcb.width / 2, y - pcb.length / 2) for (x, y) in pcb.mount_holes)",
-    ]
+    equations = """
+        wall_thk, floor_thk, standoff_h, wall_h, corner_r, clearance, standoff_outer_d > 0
+        inner_size = (pcb.width + 2 * clearance, pcb.length + 2 * clearance, standoff_h + pcb.component_clearance)
+        outer_size = (inner_size[0] + 2 * wall_thk, inner_size[1] + 2 * wall_thk, floor_thk + wall_h)
+        pcb_top_z = floor_thk + standoff_h + pcb.thk
+        mount_positions = tuple((x - pcb.width / 2, y - pcb.length / 2) for (x, y) in pcb.mount_holes)
+    """
 
     def build(self):                                       # framework hook: required; returns the shape
         w, l, h = self.outer_size
@@ -198,8 +198,10 @@ class CaseLid(Component):
     """
 
     base = Param(CaseBase)
-    equations = ["thk, vent_slot_w, vent_slot_l, vent_spacing, screw_d, screw_head_d, screw_head_depth > 0"]
-    vent_count = Param(int, positive=True)
+    equations = """
+        thk, vent_slot_w, vent_slot_l, vent_spacing, screw_d, screw_head_d, screw_head_depth > 0
+        vent_count:int > 0
+    """
 
     def build(self):
         b = self.base

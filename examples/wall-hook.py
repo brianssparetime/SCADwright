@@ -27,11 +27,11 @@ class WallPlate(Component):
     """Rectangular wall mounting plate with two countersunk screw holes
     and a front-face anchor where an accessory attaches."""
 
-    equations = [
-        "w, h, thk, corner_r, screw_d, screw_head_d, screw_head_depth > 0",
-        "screw_d < screw_head_d",
-        "screw_head_depth < thk",
-    ]
+    equations = """
+        w, h, thk, corner_r, screw_d, screw_head_d, screw_head_depth > 0
+        screw_d < screw_head_d
+        screw_head_depth < thk
+    """
 
     # Front-face anchor at the plate's center, pointing +Z. A hook, peg,
     # holder, or other accessory attaches here with its own -Z base anchor.
@@ -63,10 +63,10 @@ class WallPlate(Component):
 class JHook(Component):
     """A J-hook: vertical stem, quarter-torus elbow, perpendicular tip."""
 
-    equations = [
-        "stem_d, stem_len, tip_len, elbow_r > 0",
-        "elbow_r > stem_d / 2",                           # bend must clear the tube's inner edge
-    ]
+    equations = """
+        stem_d, stem_len, tip_len, elbow_r > 0
+        elbow_r > stem_d / 2                              # bend must clear the tube's inner edge
+    """
 
     # Base of the stem, pointing -Z so attach() mates cleanly with a +Z
     # face anchor on the parent.

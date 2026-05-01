@@ -63,22 +63,22 @@ A machinist's V-block: a rectangular block with a V-shaped groove along its leng
 - Chained `.through(parent, axis="x").through(parent, axis="z")` on the V-cutter extends it automatically at both ends and the top. No manual EPS.
 
 ```python
-equations = [
-    "half_angle = angle / 2",
-    "max_d = 2 * groove_depth * sin(half_angle * pi / 180)",
-    "contact_width = 2 * groove_depth * tan(half_angle * pi / 180)",
-    "angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0",
-    "angle < 180",
-    "groove_depth < block_h",
-    "contact_width < block_w",
-]
+equations = """
+    half_angle = angle / 2
+    max_d = 2 * groove_depth * sin(half_angle * pi / 180)
+    contact_width = 2 * groove_depth * tan(half_angle * pi / 180)
+    angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0
+    angle < 180
+    groove_depth < block_h
+    contact_width < block_w
+"""
 ```
 
 ![V-block set](images/VBlockSet.png)
 
 *Left: display variant with three V-blocks, each holding a rod. Different specification pairs produce different angles, depths, and rod capacities. Right: print variant, a single V-block.*
 
-**Reference:** [the equations list](../docs/components.md#parameters-the-equations-list) · [through()](../docs/auto-eps_fuse_and_through.md) · [concrete subclasses](../docs/organizing_a_project.md#concrete-subclasses)
+**Reference:** [the equations block](../docs/components.md#parameters-equations) · [through()](../docs/auto-eps_fuse_and_through.md) · [concrete subclasses](../docs/organizing_a_project.md#concrete-subclasses)
 
 ---
 
@@ -115,7 +115,7 @@ A desk-tray battery caddy: N cylindrical cells of a chosen type sit in wells alo
 
 *Left: display variant, six ghost AA cells seated in their cradles with tops protruding above the tray. Right: print variant, the bare tray showing the cradle geometry.*
 
-**Reference:** [Param() for non-floats](../docs/components.md#param-for-non-floats-and-defaults) · [custom transforms](../docs/custom_transforms.md) · [the equations list](../docs/components.md#parameters-the-equations-list) · [variants](../docs/variants.md) · [shape library](../docs/shapes/README.md)
+**Reference:** [Param() for custom types](../docs/components.md#param-for-custom-types) · [custom transforms](../docs/custom_transforms.md) · [the equations block](../docs/components.md#parameters-equations) · [variants](../docs/variants.md) · [shape library](../docs/shapes/README.md)
 
 ---
 
@@ -134,7 +134,7 @@ A snap-on enclosure: a rounded-corner box with chamfered bottom edges and four i
 
 *Left: display variant, lid floated above the box with the centering lip and pylons visible through the gap. Right: print variant, box and inverted lid laid out on the bed.*
 
-**Reference:** [Param(Component)](../docs/components.md#param-for-non-floats-and-defaults) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [add_text()](../docs/add_text.md)
+**Reference:** [Param(Component)](../docs/components.md#param-for-custom-types) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [add_text()](../docs/add_text.md)
 
 ---
 
@@ -171,7 +171,7 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 
 *Left: display variant, housing with clip-on hood floated above it. Right: print variant, housing halved and splayed for a section view alongside the inverted hood.*
 
-**Reference:** [the equations list](../docs/components.md#parameters-the-equations-list) · [halve()](../docs/composition_helpers.md#halve) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes)
+**Reference:** [the equations block](../docs/components.md#parameters-equations) · [halve()](../docs/composition_helpers.md#halve) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes)
 
 ---
 

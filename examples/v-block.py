@@ -34,18 +34,20 @@ class VBlock(Component):
     top of the groove) is always computed.
     """
 
-    equations = [
+    equations = """
         # V-groove trig: any two of (angle, max_d, groove_depth) solve the third.
-        "half_angle = angle / 2",
-        "max_d = 2 * groove_depth * sin(half_angle * pi / 180)",
-        "contact_width = 2 * groove_depth * tan(half_angle * pi / 180)",
+        half_angle = angle / 2
+        max_d = 2 * groove_depth * sin(half_angle * pi / 180)
+        contact_width = 2 * groove_depth * tan(half_angle * pi / 180)
+
         # positivity:
-        "angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0",
+        angle, max_d, groove_depth, contact_width, block_w, block_l, block_h > 0
+
         # physical bounds:
-        "angle < 180",
-        "groove_depth < block_h",
-        "contact_width < block_w",
-    ]
+        angle < 180
+        groove_depth < block_h
+        contact_width < block_w
+    """
 
     def build(self):                                       # framework hook: required; returns the shape
         body = cube([self.block_l, self.block_w, self.block_h], center="xy")

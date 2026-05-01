@@ -74,17 +74,17 @@ class BatteryHolder(Component):
     Each well is a cylindrical pocket sunk into a rounded-corner tray."""
 
     spec = Param(BatterySpec)
-    count = Param(int, positive=True)
-    equations = [
-        "wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_height, scoop_depth > 0",
-        "corner_r >= 0",
-        "tray_depth > floor_thk",
-        "tray_depth < spec.length",
-        "pitch = spec.d + 2 * (clearance + wall_thk)",
-        "outer_w = count * pitch + 2 * end_clearance",
-        "outer_l = pitch + 2 * side_clearance",
-        "cradle_positions = tuple(-(count - 1) * pitch / 2 + i * pitch for i in range(count))",
-    ]
+    equations = """
+        count:int > 0
+        wall_thk, clearance, end_clearance, side_clearance, floor_thk, tray_depth, scoop_width, scoop_height, scoop_depth > 0
+        corner_r >= 0
+        tray_depth > floor_thk
+        tray_depth < spec.length
+        pitch = spec.d + 2 * (clearance + wall_thk)
+        outer_w = count * pitch + 2 * end_clearance
+        outer_l = pitch + 2 * side_clearance
+        cradle_positions = tuple(-(count - 1) * pitch / 2 + i * pitch for i in range(count))
+    """
 
     def build(self):                                       # framework hook: required; returns the shape
         body = rounded_rect(self.outer_w, self.outer_l, r=self.corner_r).linear_extrude(height=self.tray_depth)

@@ -64,21 +64,21 @@ class Box(Component):
     off this Box directly.
     """
 
-    equations = [
-        "inner_w = outer_w - 2 * wall_thk",
-        "inner_l = outer_l - 2 * wall_thk",
-        "inner_h = height - floor_thk",
-        "outer_w, outer_l, inner_w, inner_l, inner_h > 0",
-        "wall_thk, floor_thk, height, pylon_od, corner_inset, lip_thk > 0",
-        "corner_r, chamfer, lip_height, lip_clearance >= 0",
-        "lip_thk < wall_thk",
-        "inner_corner_r = max(corner_r - wall_thk, 0.5)",
-        "pylon_positions = tuple("
-        "    (sx * (outer_w / 2 - corner_inset), sy * (outer_l / 2 - corner_inset))"
-        "    for sx in (+1, -1) for sy in (+1, -1)"
-        ")",
-    ]
     screw = Param(ScrewSpec)
+    equations = """
+        inner_w = outer_w - 2 * wall_thk
+        inner_l = outer_l - 2 * wall_thk
+        inner_h = height - floor_thk
+        outer_w, outer_l, inner_w, inner_l, inner_h > 0
+        wall_thk, floor_thk, height, pylon_od, corner_inset, lip_thk > 0
+        corner_r, chamfer, lip_height, lip_clearance >= 0
+        lip_thk < wall_thk
+        inner_corner_r = max(corner_r - wall_thk, 0.5)
+        pylon_positions = tuple(
+            (sx * (outer_w / 2 - corner_inset), sy * (outer_l / 2 - corner_inset))
+            for sx in (+1, -1) for sy in (+1, -1)
+        )
+    """
 
     def build(self):                                       # framework hook: required; returns the shape
         # Local EPS for the hull-slab trick (layer thickness, not coplanar
@@ -151,7 +151,7 @@ class Lid(Component):
     """
 
     box = Param(Box)
-    equations = ["height > 0"]
+    equations = "height > 0"
 
     def build(self):                                       # framework hook: required; returns the shape
         # Local EPS for the hull-slab trick (layer thickness, not coplanar overlap).
