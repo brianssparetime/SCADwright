@@ -710,6 +710,118 @@ def test_scanner_does_not_grab_python_style_annotation_in_call():
     assert cleaned == "y = func(arg)"
 
 
+# =============================================================================
+# Scanner: bracket-depth suppresses tag recognition
+# =============================================================================
+#
+# Inside `[...]` or `{...}`, a `:` after an identifier is a slice or
+# dict-key separator, not a type tag. Tag recognition is suppressed in
+# those contexts. Parens (`(...)`) do NOT suppress — tags are valid
+# inside grouping/call syntax. These tests pin both sides of the rule
+# so a future scanner edit can't widen or narrow it accidentally.
+
+
+def test_scanner_dict_literal_bare_name_keys_not_mis_tagged():
+    """`{x: 1, y: 2}` — colons are dict-key separators, not tags."""
+    cleaned, opt, typed = _extract_name_annotations("d = {x: 1, y: 2}")
+    assert cleaned == "d = {x: 1, y: 2}"
+    assert typed == {}
+
+
+def test_scanner_dict_comprehension_bare_name_keys_not_mis_tagged():
+    """`{i: i * pitch for i in range(n)}` — colon is dict-key, not tag."""
+    cleaned, opt, typed = _extract_name_annotations(
+        "lookup = {i: i * pitch for i in range(n)}"
+    )
+    assert cleaned == "lookup = {i: i * pitch for i in range(n)}"
+    assert typed == {}
+
+
+def test_scanner_slice_with_identifier_not_mis_tagged():
+    """`arr[start:stop]` — colon is a slice separator, not a tag."""
+    cleaned, opt, typed = _extract_name_annotations("x = arr[start:stop]")
+    assert cleaned == "x = arr[start:stop]"
+    assert typed == {}
+
+
+def test_scanner_slice_three_part_with_identifiers_not_mis_tagged():
+    """`arr[start:stop:step]` — both colons are slice separators."""
+    cleaned, opt, typed = _extract_name_annotations(
+        "x = arr[start:stop:step]"
+    )
+    assert cleaned == "x = arr[start:stop:step]"
+    assert typed == {}
+
+
+def test_scanner_nested_dict_in_call_arg_not_mis_tagged():
+    """A dict literal inside a call still suppresses tag recognition."""
+    cleaned, opt, typed = _extract_name_annotations("y = f({k: v})")
+    assert cleaned == "y = f({k: v})"
+    assert typed == {}
+
+
+def test_scanner_nested_brackets_track_depth_correctly():
+    """Brackets close out: tag should be recognized again after the
+    closing bracket. This regression-guards a depth-tracking bug where
+    the counter gets stuck."""
+    cleaned, opt, typed = _extract_name_annotations(
+        "y = arr[start:stop] + count:int"
+    )
+    assert cleaned == "y = arr[start:stop] + count"
+    assert typed == {"count": "int"}
+
+
+def test_scanner_set_literal_unaffected():
+    """Set literals have no `:` to confuse, but verify the scanner
+    handles them cleanly (no spurious extraction)."""
+    cleaned, opt, typed = _extract_name_annotations("s = {a, b, c}")
+    assert cleaned == "s = {a, b, c}"
+    assert typed == {}
+
+
+def test_scanner_set_comprehension_unaffected():
+    cleaned, opt, typed = _extract_name_annotations(
+        "s = {x for x in items}"
+    )
+    assert cleaned == "s = {x for x in items}"
+    assert typed == {}
+
+
+def test_scanner_paren_does_not_suppress_tag():
+    """Tags inside `(...)` remain recognized — parens don't gate."""
+    cleaned, opt, typed = _extract_name_annotations(
+        "y = (count:int) + 1"
+    )
+    assert cleaned == "y = (count) + 1"
+    assert typed == {"count": "int"}
+
+
+def test_scanner_tag_inside_call_argument_still_recognized():
+    """`len(size:tuple) = 3` — paren depth doesn't suppress tags."""
+    cleaned, opt, typed = _extract_name_annotations("len(size:tuple) = 3")
+    assert cleaned == "len(size) = 3"
+    assert typed == {"size": "tuple"}
+
+
+def test_scanner_optional_inside_dict_left_alone():
+    """`{?x: 1}` — `?` strip still happens (it's a separate sigil pass),
+    but the colon is NOT a tag. Pin the cleaned shape."""
+    cleaned, opt, typed = _extract_name_annotations("d = {?x: 1}")
+    assert cleaned == "d = {x: 1}"
+    assert opt == {"x"}
+    assert typed == {}
+
+
+def test_scanner_dict_followed_by_top_level_tag():
+    """After the dict closes, top-level tag recognition resumes."""
+    cleaned, opt, typed = _extract_name_annotations(
+        "x = {a: b} ; count:int = 5"
+    )
+    # `x = {a: b}` left untouched; `count:int` stripped.
+    assert "{a: b}" in cleaned
+    assert typed == {"count": "int"}
+
+
 def test_cardinality_helper_with_optionals_still_works():
     # ?fillet and ?chamfer are NOT equation targets, so they keep
     # their None-means-not-supplied semantic and the cardinality

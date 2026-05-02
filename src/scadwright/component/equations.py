@@ -86,12 +86,25 @@ def _extract_name_annotations(
     whitespace and type identifier are stripped from the cleaned
     output. All four spacings work: ``count:int``, ``count: int``,
     ``count :int``, ``count : int``.
+
+    Tag recognition is suppressed inside ``[...]`` and ``{...}`` — in
+    those contexts the ``:`` is a slice separator or a dict-key
+    separator, not a type-tag separator. Tags inside ``(...)`` are
+    still recognized (parens are grouping or call syntax; ``:`` has no
+    other meaning there). Strings and comments are eaten before any
+    bracket counting, so brackets inside them don't affect depth.
     """
     out: list[str] = []
     optional: set[str] = set()
     typed: dict[str, str] = {}
     i = 0
     n = len(eq_str)
+    # Net depth of `[` and `{` combined; `(` is not counted because
+    # tags are valid inside parens (`len(size:tuple) = 3`,
+    # `func(arg:int)`, `(?count:int) > 0`). Inside `[...]` `:` is a
+    # slice colon; inside `{...}` `:` is a dict-key colon — both
+    # suppress tag recognition.
+    bracket_depth = 0
 
     def _read_identifier(start: int) -> tuple[str, int]:
         """Read an identifier starting at ``start``; return (name, end)."""
@@ -161,12 +174,13 @@ def _extract_name_annotations(
             continue
 
         # Optional sigil: `?` followed directly by an identifier start.
-        # Strip the `?`, optionally consume a `:type` tag.
+        # Strip the `?`, optionally consume a `:type` tag (only when not
+        # inside `[...]`/`{...}` — see depth note above).
         if c == "?" and i + 1 < n and (eq_str[i + 1].isalpha() or eq_str[i + 1] == "_"):
             name, name_end = _read_identifier(i + 1)
             optional.add(name)
             out.append(name)
-            i = _maybe_type_tag(name, name_end)
+            i = _maybe_type_tag(name, name_end) if bracket_depth == 0 else name_end
             continue
 
         # Bare identifier start: read the identifier, then check for a
@@ -174,11 +188,22 @@ def _extract_name_annotations(
         # identifiers that aren't type-tagged because we'd lose the
         # ability to scan the next char — but the bookkeeping cost is
         # cheap: only commit the strip if a `:identifier` follows.
+        # Suppressed inside `[...]`/`{...}` so slice and dict-key colons
+        # aren't mis-read as tags.
         if c.isalpha() or c == "_":
             name, name_end = _read_identifier(i)
             out.append(name)
-            i = _maybe_type_tag(name, name_end)
+            i = _maybe_type_tag(name, name_end) if bracket_depth == 0 else name_end
             continue
+
+        # Bracket/brace depth tracking. Parens are NOT counted: tags are
+        # legitimate inside `(...)`. Negative depth from unmatched
+        # closers is harmless — downstream parsing surfaces the syntax
+        # error; we just continue to behave like top level.
+        if c == "[" or c == "{":
+            bracket_depth += 1
+        elif c == "]" or c == "}":
+            bracket_depth -= 1
 
         # Plain character.
         out.append(c)
