@@ -1,45 +1,45 @@
 # SCADwright VSCode extension
 
-Two things:
+Two things this extension does:
 
-1. **Editor-title icons** (Kill, Preview, Render) that shell out to the `scadwright` CLI for the active file.
-2. **Syntax highlighting inside `equations` blocks** — a TextMate grammar injection that lights up the small DSL inside `equations = """..."""` strings on top of normal Python coloring.
+1. Adds **Kill / Preview / Render** icons to the editor title bar, so you can build and view a scadwright script without leaving VSCode.
+2. Colors the small equation language inside `equations = """..."""` blocks, so the `?` sigils, `:type` tags, math functions, and operators show up with their own colors instead of all looking like one string.
 
-The extension activates on any Python file. The icons only appear when the open file matches `import scadwright` / `from scadwright …`; editing in or out of that pattern updates the icons live. The grammar injection runs everywhere but is contextual — it only fires on `equations = """..."""` (or `equations = [...]`) at line start, so unrelated triple-quoted strings aren't affected.
+The extension activates on any Python file. The icons only appear on files that have `import scadwright` or `from scadwright …`. The coloring only fires on assignments to the literal name `equations` at the start of a line.
 
 ## Install
 
 Two options.
 
-### Option A — symlink (recommended for development)
+### Option A: symlink (good for trying it out)
 
-Drops the live folder into VSCode's extensions directory. Edits to the grammar or `extension.js` take effect on the next `Developer: Reload Window`. No build step.
+Drops the live folder into VSCode's extensions directory. Edits to the extension take effect on the next "Reload Window," no build step needed.
 
 ```
 ln -s "$(pwd)/vscode" "$HOME/.vscode/extensions/scadwright-local.scadwright-vscode-0.1.0"
 ```
 
-Then `Cmd+Shift+P` → `Developer: Reload Window` in VSCode. To remove later: `rm` the symlink, reload window.
+Then in VSCode: `Cmd+Shift+P` → `Developer: Reload Window`. To remove later, delete the symlink and reload the window.
 
-### Option B — package and install (recommended for distribution)
+### Option B: package and install
 
-Requires `vsce`:
+You'll need `vsce`:
 
 ```
-npm install -g @vscode/vsce       # one-time
+npm install -g @vscode/vsce
 ```
 
 Then:
 
 ```
 cd vscode
-vsce package                       # produces scadwright-vscode-0.1.0.vsix
+vsce package
 code --install-extension scadwright-vscode-0.1.0.vsix
 ```
 
 Reload VSCode.
 
-If you don't want a global vsce install, `npx @vscode/vsce package` works too.
+If you'd rather not install `vsce` globally, `npx @vscode/vsce package` works too.
 
 ## Settings
 
@@ -47,34 +47,36 @@ If you don't want a global vsce install, `npx @vscode/vsce package` works too.
 | --- | --- | --- |
 | `scadwright.scadwrightCommand` | `scadwright` | Command to invoke for the SCADwright CLI. Use a full path if it isn't on `PATH`. |
 | `scadwright.openscadCommand` | `openscad` | Command to invoke OpenSCAD. |
-| `scadwright.variant` | `""` | Variant passed to `scadwright build --variant=…`. Empty = no flag. |
+| `scadwright.variant` | `""` | Variant passed to `scadwright build --variant=…`. Empty means no flag. |
 | `scadwright.saveBeforeBuild` | `true` | Save the active file before running `scadwright build`. |
 
-## Editor-title commands
+## What the icons do
 
-- **Kill OpenSCAD** — `pkill -f openscad` (or `taskkill /F /IM openscad.exe` on Windows). Handy when a preview window is stuck.
-- **Preview** — shells out to `scadwright preview <file.py>`, which builds the script's `MODEL` to a stable temp `.scad` file (keyed on script + variant) and launches OpenSCAD on it. Re-clicking Preview overwrites the same temp file, so an already-open OpenSCAD window auto-reloads the change.
-- **Render** — shells out to `scadwright render <file.py>`, which builds to a temp `.scad` and then invokes `openscad -o <file>.stl` headless. Output streams to the SCADwright channel.
+- **Kill OpenSCAD**: stops any running `openscad` process. Handy when a preview window is stuck.
+- **Preview**: runs `scadwright preview <file.py>`, which builds the script's `MODEL` to a temporary `.scad` file (keyed on the script and variant) and launches OpenSCAD on it. Clicking Preview again overwrites the same temp file, so an already-open OpenSCAD window auto-reloads.
+- **Render**: runs `scadwright render <file.py>`, which builds to a temp `.scad` and then invokes `openscad -o <file>.stl` headlessly to produce an STL.
 
-## Syntax highlighting in `equations` blocks
+## Coloring inside `equations` blocks
 
-Inside a Component class, an `equations = """..."""` block (or the list form `equations = [...]`) carries scadwright's small DSL — not arbitrary Python. The grammar injection picks out the DSL elements on top of the standard Python colors:
+Inside a Component class, an `equations = """..."""` block (or the list form `equations = [...]`) carries scadwright's small equation language. The extension picks out the equation-language elements on top of the regular Python coloring:
 
 | Element | Examples |
 | --- | --- |
 | Optional sigil | `?fillet`, `?count`, `?direction:bool` |
 | Inline `:type` tag | `count:int`, `axis:str`, `len(size:tuple)` |
 | Cardinality helpers | `exactly_one(?fillet, ?chamfer)`, `at_least_one(...)`, `at_most_one(...)`, `all_or_none(...)` |
-| Curated math functions | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `log`, `exp`, `abs`, `ceil`, `floor`, `min`, `max`, `sum`, `round`, `degrees`, `radians` |
-| Curated namespace builtins | `range`, `tuple`, `list`, `dict`, `set`, `frozenset`, `zip`, `enumerate`, `len`, `int`, `float`, `bool`, `str`, `all`, `any`, `sorted`, `reversed` |
-| Curated constants | `pi`, `e`, `inf`, `True`, `False`, `None` |
-| Operators | `=` (the lone equation operator), `==`, `!=`, `<`, `<=`, `>`, `>=`, arithmetic (`+ - * / // % **`), boolean (`and`, `or`, `not`), conditional (`if`, `else`), membership/identity (`in`, `not in`, `is`, `is not`) |
-| Literals | numeric (`0`, `3.14`, `1e-6`), nested string literals (`'xy'`, `"AAA"`) |
+| Math functions | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `log`, `exp`, `abs`, `ceil`, `floor`, `min`, `max`, `sum`, `round`, `degrees`, `radians` |
+| Builtins | `range`, `tuple`, `list`, `dict`, `set`, `frozenset`, `zip`, `enumerate`, `len`, `int`, `float`, `bool`, `str`, `all`, `any`, `sorted`, `reversed` |
+| Constants | `pi`, `e`, `inf`, `True`, `False`, `None` |
+| Operators | `=` (the lone equation operator), `==`, `!=`, `<`, `<=`, `>`, `>=`, arithmetic (`+ - * / // % **`), boolean (`and`, `or`, `not`), conditional (`if`, `else`), membership and identity (`in`, `not in`, `is`, `is not`) |
+| Literals | numbers (`0`, `3.14`, `1e-6`), strings (`'xy'`, `"AAA"`) |
 | Comments | inline `# ...` to end of line |
 
-### Theming
+The coloring is contextual: it triggers only on assignments to the literal name `equations` at the start of a line. Docstrings, regular triple-quoted strings, and `self.equations = ...` assignments are left alone.
 
-The injection assigns scadwright-specific scopes (e.g. `keyword.operator.optional.scadwright`) with secondary Python scopes as fallbacks (e.g. `storage.modifier.python`). Themes that don't know about the scadwright-specific scopes still render reasonable colors via the fallbacks. Themes that *want* to customize can target the `*.scadwright` scopes directly via `editor.tokenColorCustomizations` in VSCode settings:
+### Picking different colors
+
+The extension assigns each equation-language element two color names. The first is scadwright-specific (for example, `keyword.operator.optional.scadwright`); the second is a Python equivalent that themes already know how to color (for example, `storage.modifier.python`). Themes that don't know about the scadwright names still render reasonable colors via the Python ones. To customize, target the `*.scadwright` names directly in your VSCode settings:
 
 ```jsonc
 "editor.tokenColorCustomizations": {
@@ -91,22 +93,23 @@ The injection assigns scadwright-specific scopes (e.g. `keyword.operator.optiona
 }
 ```
 
-Run `Developer: Inspect Editor Tokens and Scopes` from the command palette and click any token in an `equations` block to see what scopes it carries — useful for pinning custom colors.
+To find the color name for any specific token, run `Developer: Inspect Editor Tokens and Scopes` from the command palette and click the token. The popup lists every name attached to it.
 
-### Recognized scopes
+### Color names by element
 
-| Custom scope | Fallback | Used for |
+| Element | scadwright name | Python fallback |
 | --- | --- | --- |
-| `keyword.operator.optional.scadwright` | `storage.modifier.python` | The `?` sigil |
-| `keyword.operator.type-annotation.scadwright` | `punctuation.separator.annotation.python` | The `:` in a `:type` tag |
-| `support.type.builtin.scadwright` | `support.type.python` | The type name in a `:type` tag (`int`, `bool`, …) |
-| `keyword.operator.equation.scadwright` | `keyword.operator.assignment.python` | The lone `=` (equation operator, not Python assignment) |
-| `support.function.cardinality.scadwright` | `support.function.builtin.python` | `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` |
-| `support.function.math.scadwright` | `support.function.builtin.python` | Curated math functions |
-| `support.function.builtin.scadwright` | `support.function.builtin.python` | Curated namespace builtins |
-| `constant.language.scadwright` | `constant.numeric.python` | `pi`, `e`, `inf` |
+| The `?` sigil | `keyword.operator.optional.scadwright` | `storage.modifier.python` |
+| The `:` in a `:type` tag | `keyword.operator.type-annotation.scadwright` | `punctuation.separator.annotation.python` |
+| The type name (`int`, `bool`, …) | `support.type.builtin.scadwright` | `support.type.python` |
+| The lone `=` equation operator | `keyword.operator.equation.scadwright` | `keyword.operator.assignment.python` |
+| `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` | `support.function.cardinality.scadwright` | `support.function.builtin.python` |
+| Math functions | `support.function.math.scadwright` | `support.function.builtin.python` |
+| Builtins | `support.function.builtin.scadwright` | `support.function.builtin.python` |
+| `pi`, `e`, `inf` | `constant.language.scadwright` | `constant.numeric.python` |
 
 ### Limits
 
-- TextMate grammars can't track bracket depth across lines, so a `:` inside a slice (`arr[start:int]`) or dict literal (`{i: ...}`) inside an equation may mis-color the word after the `:` as a type tag. The runtime scanner correctly suppresses tag recognition inside `[...]`/`{...}` — this is purely visual.
-- This is highlighting, not validation or autocomplete. A typo in a cardinality helper (`exactlyone`) won't be flagged red; it surfaces at class-define time when the file imports. Autocomplete on Param names, go-to-definition for derived names, and validation would need a language server, which isn't shipped here.
+The coloring can't always tell when a `:` inside an equation belongs to a slice (`arr[start:int]`) or a dict key (`{i: ...}`) versus a `:type` tag, so a slice or dict-key colon followed by an identifier may briefly color the identifier as if it were a type tag. The actual equation parser handles this correctly; the visual mismatch is cosmetic.
+
+The extension provides coloring only. Validation, autocomplete on parameter names, and go-to-definition would need additional tooling beyond what coloring can do. A typo in a cardinality helper still surfaces when the file imports, with a clear error pointing at the offending line.
