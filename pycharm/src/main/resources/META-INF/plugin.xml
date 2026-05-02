@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.scadwright.pycharm</id>
     <name>SCADwright</name>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <vendor>scadwright-local</vendor>
 
     <description><![CDATA[
@@ -12,11 +12,18 @@
             <li><b>Render</b> — build the active script and render to STL via headless OpenSCAD.</li>
             <li><b>Kill OpenSCAD</b> — stop any running OpenSCAD process.</li>
         </ul>
-        <p>Phase 1: actions only. Phase 2 will add equation-language highlighting and completion
-        inside <code>equations = """..."""</code> blocks.</p>
+        <p>Inside <code>equations = """..."""</code> blocks (and <code>equations = ["..."]</code> lists),
+        equation contents get syntax highlighting and code completion for the curated namespace
+        of math functions, builtins, cardinality helpers, type tags, and constants.</p>
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>0.2.0</h3>
+        <ul>
+            <li>Equation DSL highlighting and completion inside <code>equations = """..."""</code>
+            assignments (and list-of-strings form). Type-tag completion after <code>:</code>;
+            curated math/builtin/cardinality function completion with auto-paren insertion.</li>
+        </ul>
         <h3>0.1.0</h3>
         <ul>
             <li>Initial release. Three editor-toolbar actions (Preview / Render / Kill OpenSCAD)
@@ -35,6 +42,25 @@
             instance="com.scadwright.settings.ScadwrightSettingsConfigurable"
             id="com.scadwright.settings"
             displayName="SCADwright"/>
+
+        <!-- Phase 2: equations DSL injected language. -->
+        <fileType
+            name="SCADwright Equations"
+            implementationClass="com.scadwright.language.ScadwrightEquationsFileType"
+            fieldName="INSTANCE"
+            language="ScadwrightEquations"
+            extensions="scadeq"/>
+        <lang.parserDefinition
+            language="ScadwrightEquations"
+            implementationClass="com.scadwright.language.ScadwrightEquationsParserDefinition"/>
+        <lang.syntaxHighlighterFactory
+            language="ScadwrightEquations"
+            implementationClass="com.scadwright.language.ScadwrightEquationsSyntaxHighlighterFactory"/>
+        <multiHostInjector
+            implementation="com.scadwright.language.EquationsInjector"/>
+        <completion.contributor
+            language="ScadwrightEquations"
+            implementationClass="com.scadwright.language.EquationsCompletionContributor"/>
     </extensions>
 
     <actions>
