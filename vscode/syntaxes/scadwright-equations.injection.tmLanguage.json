@@ -1,0 +1,271 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SCADwright Equations Injection",
+  "scopeName": "scadwright.equations.injection",
+  "injectionSelector": "L:source.python",
+  "patterns": [
+    { "include": "#equations-triple-string" },
+    { "include": "#equations-list" }
+  ],
+  "repository": {
+    "equations-triple-string": {
+      "comment": "Match `equations = \"\"\"...\"\"\"` at line start. The optional string prefix (r/b/f/u/t and combinations) is captured but never produces semantic differences here — the contents are scadwright-DSL either way.",
+      "begin": "^\\s*(equations)\\s*(=)\\s*([rRbBuUfFtT]{0,2})(\"\"\"|''')",
+      "beginCaptures": {
+        "1": { "name": "variable.other.scadwright" },
+        "2": { "name": "keyword.operator.assignment.python" },
+        "3": { "name": "storage.type.string.python" },
+        "4": { "name": "punctuation.definition.string.begin.python" }
+      },
+      "end": "(\\4)",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.string.end.python" }
+      },
+      "contentName": "meta.embedded.block.scadwright-equations",
+      "patterns": [
+        { "include": "#equation-line-patterns" }
+      ]
+    },
+
+    "equations-list": {
+      "comment": "Match `equations = [...]` and treat each \"...\"/'...' element inside as an embedded equation line.",
+      "begin": "^\\s*(equations)\\s*(=)\\s*(\\[)",
+      "beginCaptures": {
+        "1": { "name": "variable.other.scadwright" },
+        "2": { "name": "keyword.operator.assignment.python" },
+        "3": { "name": "punctuation.section.brackets.begin.python" }
+      },
+      "end": "(\\])",
+      "endCaptures": {
+        "1": { "name": "punctuation.section.brackets.end.python" }
+      },
+      "patterns": [
+        { "include": "#equations-list-string" },
+        { "include": "#trailing-comma" }
+      ]
+    },
+
+    "equations-list-string": {
+      "patterns": [
+        {
+          "comment": "Triple-quoted entry inside a list — multi-line equation expansion.",
+          "begin": "([rRbBuUfFtT]{0,2})(\"\"\"|''')",
+          "beginCaptures": {
+            "1": { "name": "storage.type.string.python" },
+            "2": { "name": "punctuation.definition.string.begin.python" }
+          },
+          "end": "(\\2)",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.string.end.python" }
+          },
+          "contentName": "meta.embedded.block.scadwright-equations",
+          "patterns": [
+            { "include": "#equation-line-patterns" }
+          ]
+        },
+        {
+          "comment": "Single-line double-quoted entry.",
+          "begin": "([rRbBuUfFtT]{0,2})(\")",
+          "beginCaptures": {
+            "1": { "name": "storage.type.string.python" },
+            "2": { "name": "punctuation.definition.string.begin.python" }
+          },
+          "end": "(\")",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.string.end.python" }
+          },
+          "contentName": "meta.embedded.block.scadwright-equations",
+          "patterns": [
+            { "include": "#equation-line-patterns" }
+          ]
+        },
+        {
+          "comment": "Single-line single-quoted entry.",
+          "begin": "([rRbBuUfFtT]{0,2})(')",
+          "beginCaptures": {
+            "1": { "name": "storage.type.string.python" },
+            "2": { "name": "punctuation.definition.string.begin.python" }
+          },
+          "end": "(')",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.string.end.python" }
+          },
+          "contentName": "meta.embedded.block.scadwright-equations",
+          "patterns": [
+            { "include": "#equation-line-patterns" }
+          ]
+        }
+      ]
+    },
+
+    "trailing-comma": {
+      "match": ",",
+      "name": "punctuation.separator.element.python"
+    },
+
+    "equation-line-patterns": {
+      "comment": "Order matters: comments first (eat to EOL), then string and numeric literals, then 2-char operators before 1-char ones, then identifiers.",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#nested-string-double" },
+        { "include": "#nested-string-single" },
+        { "include": "#numeric-literal" },
+        { "include": "#optional-sigil" },
+        { "include": "#type-tag" },
+        { "include": "#cardinality-helper" },
+        { "include": "#math-function" },
+        { "include": "#curated-builtin" },
+        { "include": "#curated-constant" },
+        { "include": "#logical-keyword" },
+        { "include": "#conditional-keyword" },
+        { "include": "#flow-keyword" },
+        { "include": "#membership-keyword" },
+        { "include": "#identity-keyword" },
+        { "include": "#comparison-operator" },
+        { "include": "#equation-operator" },
+        { "include": "#arithmetic-operator" },
+        { "include": "#punctuation" }
+      ]
+    },
+
+    "comment": {
+      "match": "(#).*$",
+      "name": "comment.line.number-sign.python",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.python" }
+      }
+    },
+
+    "nested-string-double": {
+      "comment": "Double-quoted string literal inside an equation, e.g. axis in (\"x\", \"y\", \"z\"). Backslash-escaped quotes survive.",
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.python",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+
+    "nested-string-single": {
+      "begin": "'",
+      "end": "'",
+      "name": "string.quoted.single.python",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.python" }
+      ]
+    },
+
+    "numeric-literal": {
+      "patterns": [
+        {
+          "comment": "Float with optional exponent.",
+          "match": "\\b\\d+\\.\\d*([eE][+-]?\\d+)?\\b|\\b\\.\\d+([eE][+-]?\\d+)?\\b|\\b\\d+[eE][+-]?\\d+\\b",
+          "name": "constant.numeric.float.python"
+        },
+        {
+          "comment": "Plain integer.",
+          "match": "\\b\\d+\\b",
+          "name": "constant.numeric.integer.python"
+        }
+      ]
+    },
+
+    "optional-sigil": {
+      "comment": "The `?` sigil declaring a name as an optional Param. Matches only when followed by an identifier start so stray `?` doesn't get colored.",
+      "match": "\\?(?=[a-zA-Z_])",
+      "name": "keyword.operator.optional.scadwright keyword.operator.python"
+    },
+
+    "type-tag": {
+      "comment": "Inline `:type` annotation on a Param name. The colon and the type name share one rule so both color together. Loose match — TextMate can't track bracket depth, so a `:` inside a slice or dict literal will mis-color the type-name word. Acceptable: purely visual, nothing breaks.",
+      "match": "(:)\\s*\\b(bool|int|str|tuple|list|dict)\\b",
+      "captures": {
+        "1": { "name": "keyword.operator.type-annotation.scadwright punctuation.separator.annotation.python" },
+        "2": { "name": "support.type.builtin.scadwright support.type.python" }
+      }
+    },
+
+    "cardinality-helper": {
+      "comment": "Cardinality helpers from the curated namespace — only as call targets.",
+      "match": "\\b(exactly_one|at_least_one|at_most_one|all_or_none)\\b(?=\\s*\\()",
+      "name": "support.function.cardinality.scadwright support.function.builtin.python"
+    },
+
+    "math-function": {
+      "comment": "Curated math functions (degree-aware trig + algebra). Only as call targets.",
+      "match": "\\b(sin|cos|tan|asin|acos|atan|atan2|sqrt|log|exp|abs|ceil|floor|min|max|sum|round|degrees|radians)\\b(?=\\s*\\()",
+      "name": "support.function.math.scadwright support.function.builtin.python"
+    },
+
+    "curated-builtin": {
+      "comment": "Curated builtins (containers, sequence ops, type constructors). Only as call targets so a Param happening to be named `range` or `len` doesn't get function-colored.",
+      "match": "\\b(range|tuple|list|dict|set|frozenset|zip|enumerate|len|int|float|bool|str|all|any|sorted|reversed|isinstance)\\b(?=\\s*\\()",
+      "name": "support.function.builtin.scadwright support.function.builtin.python"
+    },
+
+    "curated-constant": {
+      "comment": "Curated constants exposed inside equations. `True`/`False`/`None` get the standard Python scope; pi/e/inf get a numeric scope so themes color them like literals.",
+      "patterns": [
+        {
+          "match": "\\b(True|False|None)\\b",
+          "name": "constant.language.python"
+        },
+        {
+          "match": "\\b(pi|e|inf)\\b",
+          "name": "constant.language.scadwright constant.numeric.python"
+        }
+      ]
+    },
+
+    "logical-keyword": {
+      "match": "\\b(and|or|not)\\b",
+      "name": "keyword.operator.logical.python"
+    },
+
+    "conditional-keyword": {
+      "match": "\\b(if|else)\\b",
+      "name": "keyword.control.conditional.python"
+    },
+
+    "flow-keyword": {
+      "comment": "`for` and `in` inside comprehensions. `in` overlaps with the membership operator but the scope is the same in most themes either way.",
+      "match": "\\b(for)\\b",
+      "name": "keyword.control.flow.python"
+    },
+
+    "membership-keyword": {
+      "match": "\\b(in|not\\s+in)\\b",
+      "name": "keyword.operator.logical.python"
+    },
+
+    "identity-keyword": {
+      "match": "\\b(is\\s+not|is)\\b",
+      "name": "keyword.operator.logical.python"
+    },
+
+    "comparison-operator": {
+      "comment": "Two-char comparisons must precede the bare `=` and `<`/`>`/`!` rules so they consume first.",
+      "match": "==|!=|<=|>=|<|>",
+      "name": "keyword.operator.comparison.python"
+    },
+
+    "equation-operator": {
+      "comment": "The lone `=` is scadwright's equation operator (not Python assignment). Distinct scope so themes can color it specially; falls back to keyword.operator.python for unaware themes.",
+      "match": "(?<!=)=(?!=)",
+      "name": "keyword.operator.equation.scadwright keyword.operator.assignment.python"
+    },
+
+    "arithmetic-operator": {
+      "match": "\\*\\*|//|[+\\-*/%]",
+      "name": "keyword.operator.arithmetic.python"
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "match": "[(){}\\[\\]]", "name": "punctuation.section.python" },
+        { "match": ",", "name": "punctuation.separator.element.python" },
+        { "match": "\\.", "name": "punctuation.separator.period.python" }
+      ]
+    }
+  }
+}

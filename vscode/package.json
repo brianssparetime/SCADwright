@@ -98,6 +98,16 @@
           "description": "Save the active file before invoking scadwright build."
         }
       }
-    }
+    },
+    "grammars": [
+      {
+        "scopeName": "scadwright.equations.injection",
+        "path": "./syntaxes/scadwright-equations.injection.tmLanguage.json",
+        "injectTo": ["source.python"],
+        "embeddedLanguages": {
+          "meta.embedded.block.scadwright-equations": "python"
+        }
+      }
+    ]
   }
 }
