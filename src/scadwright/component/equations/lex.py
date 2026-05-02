@@ -1,30 +1,29 @@
-"""Curated namespace and helpers used by the iterative equation resolver.
+"""Hand-rolled scanners for the equations DSL.
 
-The actual equation-solving and constraint-checking machinery lives in
-``scadwright.component.resolver``. This module holds the small
-shared pieces:
+Three scanners share a common discipline (string-literal awareness,
+``#``-comment awareness, bracket-depth tracking where it matters):
 
-- ``_require_sympy``: imports sympy and raises a helpful ImportError
-  when it isn't installed.
-- ``_extract_name_annotations``: strips the ``?`` sigil and ``:type``
-  tags from an equations string, returning the cleaned text plus the
-  optional-name set and typed-name dict.
-- ``_INLINE_TYPE_ALLOWLIST``: closed set of type names accepted in
-  ``name:type`` annotations.
-- ``_CURATED_BUILTINS`` and ``_CURATED_MATH``: the names available
-  inside derivation and predicate expressions. Anything not in these
-  (or in the Component's Param/derivation set) is rejected at
-  class-definition time.
-- The cardinality helpers (``exactly_one``, ``at_least_one``,
-  ``at_most_one``, ``all_or_none``) registered into the curated
-  namespace so users can write
-  ``"exactly_one(?fillet, ?chamfer)"`` etc.
+- ``_extract_name_annotations`` — strips the ``?`` sigil and ``:type``
+  tags from a single equations line, returning the cleaned text plus
+  the optional-name set and typed-name dict.
+- ``_extract_optional_markers`` — backward-compat wrapper that returns
+  just ``(cleaned, optional_names)``.
+- ``_split_equations_text`` — splits a multi-line ``equations``
+  string into logical equation lines, honoring triple-quoted strings,
+  bracket continuations, and ``\\``-newline continuations.
+- ``_bracket_depth`` — net bracket/paren/brace depth used by the
+  splitter for line continuation.
+
+``_INLINE_TYPE_ALLOWLIST`` (the closed set of type names accepted in
+``name:type`` annotations) lives here so the scanner-side validation
+shares the table with the auto-declare path downstream.
+
+``_require_sympy`` raises a helpful ``ImportError`` when sympy isn't
+installed; the resolver and the equation parser call it at the points
+they're about to use sympy.
 """
 
 from __future__ import annotations
-
-import math
-from typing import Any
 
 
 # =============================================================================
@@ -378,114 +377,3 @@ def _bracket_depth(s: str) -> int:
             depth -= 1
         i += 1
     return depth
-
-
-# =============================================================================
-# Cardinality helpers (used in `equations` strings via the curated namespace)
-# =============================================================================
-
-
-def _exactly_one(*args: Any) -> bool:
-    """True iff exactly one argument is not None."""
-    return sum(1 for x in args if x is not None) == 1
-
-
-def _at_least_one(*args: Any) -> bool:
-    """True iff at least one argument is not None."""
-    return any(x is not None for x in args)
-
-
-def _at_most_one(*args: Any) -> bool:
-    """True iff zero or one argument is not None. Vacuously True for ()."""
-    return sum(1 for x in args if x is not None) <= 1
-
-
-def _all_or_none(*args: Any) -> bool:
-    """True iff every argument is None, or every argument is not None.
-
-    Vacuously True for ().
-    """
-    set_count = sum(1 for x in args if x is not None)
-    return set_count == 0 or set_count == len(args)
-
-
-# =============================================================================
-# Curated namespace for derivation and predicate evaluation
-# =============================================================================
-
-
-_CURATED_BUILTINS: dict[str, Any] = {
-    "range": range, "tuple": tuple, "list": list, "dict": dict,
-    "set": set, "frozenset": frozenset,
-    "zip": zip, "enumerate": enumerate,
-    "sum": sum, "abs": abs, "round": round, "len": len,
-    "min": min, "max": max,
-    "int": int, "float": float, "bool": bool, "str": str,
-    "all": all, "any": any,
-    "sorted": sorted, "reversed": reversed,
-    "True": True, "False": False, "None": None,
-    # Cardinality helpers. Each checks `x is not None` on every argument;
-    # pair naturally with the `?` sigil (`exactly_one(?a, ?b)` etc.).
-    "exactly_one": _exactly_one,
-    "at_least_one": _at_least_one,
-    "at_most_one": _at_most_one,
-    "all_or_none": _all_or_none,
-}
-
-
-_CURATED_MATH: dict[str, Any] = {
-    # Trig in degrees, matching SCAD and `scadwright.math` (`scmath`).
-    "sin": lambda x: math.sin(math.radians(x)),
-    "cos": lambda x: math.cos(math.radians(x)),
-    "tan": lambda x: math.tan(math.radians(x)),
-    "asin": lambda x: math.degrees(math.asin(x)),
-    "acos": lambda x: math.degrees(math.acos(x)),
-    "atan": lambda x: math.degrees(math.atan(x)),
-    "atan2": lambda y, x: math.degrees(math.atan2(y, x)),
-    # Explicit conversion helpers, available for interop with raw-radian values.
-    "degrees": math.degrees, "radians": math.radians,
-    "sqrt": math.sqrt, "log": math.log, "exp": math.exp,
-    "ceil": math.ceil, "floor": math.floor,
-    "pi": math.pi, "e": math.e, "inf": math.inf,
-}
-
-
-# =============================================================================
-# Function-name allowlists used by the resolver and class-define-time checks
-# =============================================================================
-#
-# Two related but distinct sets. Each answers a different question, so
-# membership differs — keep them separate even though they overlap.
-
-
-# Calls that return a single scalar number AND expect numeric arguments.
-# Used to (a) auto-declare a Param as float when the equation RHS is
-# provably numeric (``base._yields_scalar_numeric``) and (b) reject
-# ``:bool``-tagged names passed as numeric arguments
-# (``checks._check_bool_in_arithmetic``). The two questions share the
-# same answer in this DSL because the curated namespace's numeric
-# producers are also the ones that demand numeric inputs.
-_NUMERIC_FUNCTION_NAMES = frozenset({
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "degrees", "radians",
-    "sqrt", "log", "exp", "abs", "ceil", "floor",
-    "min", "max", "sum", "round",
-    "int", "float",
-})
-
-
-# Calls sympy can reason about symbolically. Subset of
-# ``_NUMERIC_FUNCTION_NAMES`` minus ``{sum, round, int, float}`` — sympy
-# can't symbolically invert sequence folds (``sum``), discontinuous
-# rounding (``round``), or type coercions (``int``/``float``) — plus
-# ``{Min, Max}`` as the sympy-idiom capitalized aliases. Used by
-# ``resolver_ast.is_fully_algebraic`` to gate ``sympy.solve`` on a
-# substituted expression. Must stay aligned with the lambda dict in
-# ``resolver/sympy_bridge._ensure_algebraic_functions``; that function
-# asserts equality on first call.
-_ALGEBRAIC_FUNCTION_NAMES = frozenset({
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "degrees", "radians",
-    "sqrt", "log", "exp", "abs", "ceil", "floor",
-    "min", "max", "Min", "Max",
-})
