@@ -534,11 +534,17 @@ The `scadwright` command becomes available.
 SCADwright has no required dependencies beyond Python's standard library, however, equation solving (the `equations` class attribute) requires sympy, installed via `pip install 'scadwright[equations]'`.  Installing this is highly recommended for the full functionality of SCADwright.
 
 
-## VS Code extension 
+## IDE integration
 
-Included in this project is [a Visual Studio Code extension](/vscode/) that detects when you open a python SCADwright file and shows icons to preview in OpenSCAD, render to a file, or kill any OpenSCAD instances.  
+This project ships editor integrations for both VS Code and PyCharm. Both detect when you open a Python SCADwright file and add icons to preview in OpenSCAD, render to a file, or kill any running OpenSCAD instances. Clicking preview is enough to see the results of a change: as long as the generated filename is the same (same script, same variant), an already-open OpenSCAD window auto-reloads, saving the time of closing and reopening the application.
 
-This makes it simple to see the results of changes with a single click.  As long as the generated filename is the same (i.e. you're invoking the same variant), clicking preview will auotmatically update the code in an open OpenSCAD instance and re-preview it, saving the time of closing and re-opening the application.
+### VS Code
+
+[The Visual Studio Code extension](/vscode/) provides the three preview/render/kill actions, plus syntax coloring inside `equations = """..."""` blocks via TextMate injection.
+
+### PyCharm
+
+[The PyCharm plugin](/pycharm/) provides the same three actions and goes a step further on the equations side: it uses PyCharm's native language injection to give both syntax coloring and autocomplete inside `equations = """..."""` blocks (type names after `:`, and the curated namespace of math functions, builtins, cardinality helpers, and constants at expression position).
 
 ## SCADwright and modeling with AI
 
