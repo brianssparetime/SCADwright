@@ -404,31 +404,38 @@ def _emit_constraint(
     ))
 
 
+# =============================================================================
+# Comma-broadcast shape detection
+# =============================================================================
+#
+# Python's parser handles ``x, y > 0`` and ``x, y = 5`` very differently
+# because of operator precedence: the comma binds looser than assignment
+# but tighter than comparison. We get two sister shapes that the
+# emitters need to recognize:
+#
+# - LHS comma-list with a value-side (``x, y = expr``) — the LHS parses
+#   as a Tuple of bare Names. Detected by ``_bare_name_tuple``, used in
+#   ``_emit_equation``'s broadcast branch.
+# - Constraint comma-list (``x, y > 0``) — Python parses this as
+#   ``Tuple([x, y, Compare(z, Gt, 0)])`` so the trailing Compare gets
+#   absorbed into the tuple. Detected by ``_comma_expanded_compare``,
+#   used in ``_emit_constraint``.
+#
+# Kept side-by-side so the two parser-edge cases stay legible together.
+
+
 def _bare_name_tuple(node: ast.expr) -> list[ast.Name] | None:
     """Return the list of Names if ``node`` is a Tuple of bare Names.
 
-    Used to detect comma-broadcast targets. Returns None for any other
-    shape, including a Tuple containing non-Name elements.
+    Used by ``_emit_equation`` to detect comma-broadcast equation
+    targets (``x, y = 5``). Returns None for any other shape,
+    including a Tuple containing non-Name elements.
     """
     if not isinstance(node, ast.Tuple):
         return None
     if not all(isinstance(e, ast.Name) for e in node.elts):
         return None
     return list(node.elts)
-
-
-def _is_predicate_shape(expr: ast.AST) -> bool:
-    """True if ``expr`` is a boolean expression we accept as a constraint."""
-    if isinstance(expr, ast.Compare):
-        return True
-    if isinstance(expr, ast.BoolOp):
-        return True
-    if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
-        return True
-    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name):
-        if expr.func.id in _PREDICATE_CALL_NAMES:
-            return True
-    return False
 
 
 def _comma_expanded_compare(expr: ast.AST):
@@ -460,3 +467,22 @@ def _comma_expanded_compare(expr: ast.AST):
     ):
         return list(expr.left.elts), expr.ops[0], expr.comparators[0]
     return None
+
+
+# =============================================================================
+# Predicate shape recognition (constraint vs equation classification)
+# =============================================================================
+
+
+def _is_predicate_shape(expr: ast.AST) -> bool:
+    """True if ``expr`` is a boolean expression we accept as a constraint."""
+    if isinstance(expr, ast.Compare):
+        return True
+    if isinstance(expr, ast.BoolOp):
+        return True
+    if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
+        return True
+    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name):
+        if expr.func.id in _PREDICATE_CALL_NAMES:
+            return True
+    return False
