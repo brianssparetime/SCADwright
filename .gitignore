@@ -89,5 +89,13 @@ vscode/*.vsix
 vscode/.vscode-test/
 vscode/out/
 
+# PyCharm/IntelliJ plugin build artifacts. The plugin source lives in
+# `pycharm/`; these are produced by `./gradlew build`, `runIde`, or the
+# Gradle daemon — none of them belong in the repo.
+pycharm/.gradle/
+pycharm/build/
+pycharm/out/
+pycharm/*.iml
+
 # Jupyter
 .ipynb_checkpoints/
