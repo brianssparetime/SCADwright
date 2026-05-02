@@ -376,6 +376,8 @@ scadwright build widget.py --width=80
 scadwright build widget.py --help          # lists arguments with defaults
 ```
 
+For inputs that don't fit nicely on the command line (a list of holes with positions and diameters, or a parts table), put them in a JSON file and read it inside the script with `from_json()`. Run with `scadwright build widget.py --from-json holes.json`.
+
 ### 14. Resolution ($fn) is managed for you, but easily overridable
 
 In OpenSCAD, you either set `$fn` globally (too coarse) or pass it to every single primitive call (tedious and easy to miss one). There's no middle ground.
