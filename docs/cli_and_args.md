@@ -5,10 +5,10 @@ SCADwright gives you two ways to render a script: call `render(...)` from inside
 Imports used on this page:
 
 ```python
-from scadwright import arg, parse_args
+from scadwright import arg, parse_args, from_json
 ```
 
-The CLI also lets you parametrize a script — declare named parameters once, then override them from the command line.
+The CLI also lets you parametrize a script — declare named parameters once, then override them from the command line, and pass complex / nested data via one or more JSON files.
 
 ## `scadwright build`
 
@@ -103,6 +103,47 @@ ns = parse_args()
 ```
 
 Forces command-line argument parsing immediately and returns the result as a standard `argparse.Namespace`. Most scripts don't need this — `arg()` handles parsing on first use. Call `parse_args()` if you want all parameters resolved before any other code runs.
+
+## Passing complex data via JSON: `from_json`
+
+`arg()` is the right tool for a handful of scalar parameters. When a script needs structured input — a list of holes with positions and diameters, a nested clearances table, a parts list — pass a JSON file with `--from-json` and read it with `from_json()`:
+
+```python
+from scadwright import from_json
+
+spec = from_json() or {}                          # whole payload
+holes = spec.get("holes", [])
+```
+
+Run with:
+
+```
+scadwright build widget.py --from-json holes.json
+```
+
+`--from-json` may be supplied more than once. Multiple payloads are disambiguated by file basename:
+
+```python
+design = from_json("design.json")                 # selects holes.json by name
+caps   = from_json("caps.json", required=True)    # parse-time error if missing
+```
+
+```
+scadwright build widget.py --from-json design.json --from-json caps.json
+```
+
+**Call shapes:**
+
+- `from_json()` — single-payload mode. Returns the lone payload's parsed content, or `None` if no `--from-json` was supplied. Raises `SCADwrightError` if more than one `--from-json` is supplied without a name to pick.
+- `from_json("name.json")` — named mode. Returns the payload whose basename matches `name`, or `None` if not supplied.
+- `from_json(..., required=True)` — turn missing into a parse-time error.
+
+**Notes:**
+
+- Matching is by basename only. The runner can pass `/tmp/long/path/design.json`; the script reads it as `from_json("design.json")` regardless of where it lives on disk.
+- Two `--from-json` paths sharing the same basename collide and surface as a `SCADwrightError` at parse time.
+- The flag is registered lazily on the first `from_json()` call, so a script that doesn't use JSON inputs doesn't pollute its `--help` with an unused flag.
+- Malformed JSON, missing files, and unreadable paths surface as `SCADwrightError` with the offending path.
 
 ---
 

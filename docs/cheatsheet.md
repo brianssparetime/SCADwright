@@ -12,7 +12,7 @@ from scadwright import (
     emit, emit_str, render,
     resolution,
     clearances, Clearances, DEFAULT_CLEARANCES,
-    arg, parse_args,
+    arg, parse_args, from_json,
 )
 from scadwright.primitives import (
     cube, sphere, cylinder, polyhedron,
@@ -556,9 +556,15 @@ echo("count:", n=4, _node=cube(1))                       # mixed args + wrap
 
 ```python
 # In widget.py:
-from scadwright import arg
+from scadwright import arg, from_json
 from scadwright.primitives import cube
 width = arg("width", default=40, type=float, help="widget width")
+
+# Pass complex/nested data via JSON (single payload):
+spec = from_json() or {}                                    # None if --from-json not supplied
+# Multiple JSON payloads disambiguated by basename:
+design = from_json("design.json")                           # None if not supplied
+caps   = from_json("caps.json", required=True)              # parse-time error if missing
 
 MODEL = cube([width, width, 20])
 ```
@@ -566,6 +572,8 @@ MODEL = cube([width, width, 20])
 ```bash
 scadwright build widget.py --width=80 --fn=128
 scadwright build widget.py --variant=print -o widget_print.scad
+scadwright build widget.py --from-json design.json          # one payload
+scadwright build widget.py --from-json design.json --from-json caps.json
 scadwright build widget.py --help
 scadwright preview widget.py                                # build + open in OpenSCAD GUI
 scadwright render widget.py -o widget.stl                   # build + headless STL render
