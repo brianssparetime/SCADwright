@@ -1,17 +1,19 @@
-"""Asymmetric strict type coercion for resolver-bound values.
+"""Resolver-facing wrapper around the canonical type-coercion helper.
 
-Mirrors :meth:`scadwright.component.params.Param._coerce`: only the
-lossless ``int → float`` widening is performed. A type-mismatch surfaces
-``ValidationError`` immediately so a user-supplied wrong-type value is
-caught with the type message rather than slipping through to a
-downstream constraint failure that's harder to interpret.
+The actual asymmetric strict type check lives in
+:func:`scadwright.component.params._coerce_value` so that
+``Param.__set__`` and the resolver share one implementation. This
+module supplies the call-site-friendly signature used by
+:class:`IterativeResolver`: pass a ``Param`` object plus its name and
+the owning component name, and the wrapper unpacks them into the
+canonical helper.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from scadwright.errors import ValidationError
+from scadwright.component.params import _coerce_value
 
 
 def _coerce_for_param(
@@ -19,44 +21,17 @@ def _coerce_for_param(
 ) -> Any:
     """Coerce ``value`` to ``param``'s declared type, asymmetrically.
 
-    Mirrors :meth:`Param._coerce`: only the lossless ``int → float``
-    widening is performed. Type mismatches raise ``ValidationError``
-    immediately so a user-supplied wrong-type value surfaces with the
-    type-mismatch error rather than slipping through to a downstream
-    constraint-violation that's harder to interpret.
+    Thin wrapper over :func:`scadwright.component.params._coerce_value`
+    that takes a ``Param`` (or ``None``) and unpacks its declared type
+    plus the auto-declared flag. ``param=None`` and ``param.type=None``
+    both short-circuit at the helper to a no-op pass-through.
     """
-    if param is None or param.type is None or value is None:
+    if param is None:
         return value
-    if isinstance(value, bool) and param.type is not bool:
-        prefix = f"{component_name}.{name}" if component_name and name else name or "<param>"
-        raise ValidationError(
-            f"{prefix}: expected {param.type.__name__}, got bool"
-        )
-    if isinstance(value, param.type):
-        return value
-    if param.type is float and isinstance(value, int):
-        return float(value)
-    if (
-        param.type is int
-        and isinstance(value, float)
-        and not value.is_integer()
-    ):
-        prefix = f"{component_name}.{name}" if component_name and name else name or "<param>"
-        raise ValidationError(
-            f"{prefix}: expected int, got non-integer float {value!r} "
-            f"(would silently truncate to {int(value)}; pass an int or "
-            f"round explicitly if intended)."
-        )
-    prefix = f"{component_name}.{name}" if component_name and name else name or "<param>"
-    msg = (
-        f"{prefix}: expected {param.type.__name__}, got "
-        f"{type(value).__name__} ({value!r})"
+    return _coerce_value(
+        value,
+        type_=param.type,
+        auto_declared=getattr(param, "_auto_declared", False),
+        name=name,
+        component_name=component_name,
     )
-    if getattr(param, "_auto_declared", False) and param.type is float:
-        msg += (
-            f"\nHint: `{name}` was auto-declared as Param(float) "
-            f"from its appearance in `equations`. For a non-float value, "
-            f"declare it explicitly above the equations list, e.g. "
-            f"`{name} = Param(tuple)`."
-        )
-    raise ValidationError(msg)

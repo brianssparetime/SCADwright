@@ -113,60 +113,88 @@ class Param:
             invalidate()
 
     def _coerce(self, value: Any, instance, loc=None) -> Any:
-        """Asymmetric strict type check.
-
-        ``int → float`` is the one allowed widening — every int is a
-        valid floating-point value, and dimensional inputs in 3D
-        modeling are written as whole numbers (`Tube(thk=1)`,
-        `cube([10, 10, 5])`). Every other type is strict isinstance:
-        ``:bool`` rejects ``int``, ``:int`` rejects ``float``, ``:str``
-        rejects non-strings, etc.
-        """
-        if self.type is None or value is None:
-            return value
-        # Reject booleans-as-numbers BEFORE the isinstance check, because
-        # `isinstance(True, int)` is True in Python — without this guard,
-        # Param(int) would silently accept bool.
-        if isinstance(value, bool) and self.type is not bool:
-            raise ValidationError(
-                f"{type(instance).__name__}.{self._name}: expected {self.type.__name__}, got bool",
-                source_location=loc,
-            )
-        if isinstance(value, self.type):
-            return value
-        # For int, reject non-integer numerics rather than silently truncating.
-        # `int(3.5)` in Python returns 3 — that's almost always a user bug,
-        # not an intent to round down.
-        if self.type is int and isinstance(value, float) and not value.is_integer():
-            raise ValidationError(
-                f"{type(instance).__name__}.{self._name}: expected int, "
-                f"got non-integer float {value!r} (would silently truncate to "
-                f"{int(value)}; pass an int or round explicitly if intended).",
-                source_location=loc,
-            )
-        # Asymmetric int → float widening. Lossless and matches Python's
-        # arithmetic semantics where `1 + 1.5` yields `2.5` without any
-        # explicit conversion at the source level.
-        if self.type is float and isinstance(value, int):
-            return float(value)
-        # Strict reject for everything else: no `bool(value)`, no
-        # `str(value)`, no `tuple(value)`. The user passes the wrong
-        # type; the framework says so and lets them fix the call.
-        msg = (
-            f"{type(instance).__name__}.{self._name}: expected "
-            f"{self.type.__name__}, got {type(value).__name__} ({value!r})"
+        """Asymmetric strict type check — see :func:`_coerce_value`."""
+        return _coerce_value(
+            value,
+            type_=self.type,
+            auto_declared=self._auto_declared,
+            name=self._name,
+            component_name=type(instance).__name__,
+            loc=loc,
         )
-        if self._auto_declared and self.type is float:
-            msg += (
-                f"\nHint: `{self._name}` was auto-declared as Param(float) "
-                f"from its appearance in `equations`. For a non-float value, "
-                f"declare it explicitly above the equations list, e.g. "
-                f"`{self._name} = Param(tuple)`."
-            )
-        raise ValidationError(msg, source_location=loc)
 
     def has_default(self) -> bool:
         return self.default is not _MISSING
+
+
+def _coerce_value(
+    value: Any,
+    *,
+    type_: type | None,
+    auto_declared: bool = False,
+    name: str = "",
+    component_name: str = "",
+    loc: SourceLocation | None = None,
+) -> Any:
+    """Asymmetric strict type check shared by Param.__set__ and the resolver.
+
+    ``int → float`` is the one allowed widening — every int is a valid
+    floating-point value, and dimensional inputs in 3D modeling are
+    written as whole numbers (``Tube(thk=1)``, ``cube([10, 10, 5])``).
+    Every other type is strict isinstance: ``:bool`` rejects ``int``,
+    ``:int`` rejects ``float``, ``:str`` rejects non-strings, etc.
+
+    ``type_=None`` and ``value is None`` short-circuit (no coercion).
+    Booleans are rejected before the isinstance check because Python's
+    ``isinstance(True, int)`` is True — without the guard, ``:int``
+    would silently accept ``True``. Non-integer floats land on a
+    targeted error rather than silently truncating, since ``int(3.5)``
+    returning 3 is almost always a user bug, not an intent to round.
+
+    ``auto_declared`` enables a hint suggesting an explicit ``Param``
+    declaration when the float-widening fails for an auto-declared
+    name (the resolver sees this when an equation uses a name that was
+    auto-typed as float but the caller passed a tuple/etc.).
+    """
+    if type_ is None or value is None:
+        return value
+    prefix = (
+        f"{component_name}.{name}"
+        if component_name and name
+        else name or "<param>"
+    )
+    if isinstance(value, bool) and type_ is not bool:
+        raise ValidationError(
+            f"{prefix}: expected {type_.__name__}, got bool",
+            source_location=loc,
+        )
+    if isinstance(value, type_):
+        return value
+    if type_ is float and isinstance(value, int):
+        return float(value)
+    if (
+        type_ is int
+        and isinstance(value, float)
+        and not value.is_integer()
+    ):
+        raise ValidationError(
+            f"{prefix}: expected int, got non-integer float {value!r} "
+            f"(would silently truncate to {int(value)}; pass an int or "
+            f"round explicitly if intended).",
+            source_location=loc,
+        )
+    msg = (
+        f"{prefix}: expected {type_.__name__}, got "
+        f"{type(value).__name__} ({value!r})"
+    )
+    if auto_declared and type_ is float:
+        msg += (
+            f"\nHint: `{name}` was auto-declared as Param(float) "
+            f"from its appearance in `equations`. For a non-float value, "
+            f"declare it explicitly above the equations list, e.g. "
+            f"`{name} = Param(tuple)`."
+        )
+    raise ValidationError(msg, source_location=loc)
 
 
 # --- Validator helpers ---
