@@ -168,14 +168,15 @@ def _make_param_init(cls, params: dict[str, Param]):
         # third is implicit (knowns − supplied − defaults) and computed
         # on demand by the formatter.
         if resolver is not None:
+            from scadwright.component.glossary import _GlossaryState
             object.__setattr__(
-                self, "_glossary_supplied", frozenset(resolver._supplied_names),
-            )
-            object.__setattr__(
-                self, "_glossary_defaults", frozenset(resolver._applied_defaults),
-            )
-            object.__setattr__(
-                self, "_glossary_knowns", dict(resolver.knowns),
+                self,
+                "_glossary",
+                _GlossaryState(
+                    supplied=frozenset(resolver._supplied_names),
+                    defaults=frozenset(resolver._applied_defaults),
+                    knowns=dict(resolver.knowns),
+                ),
             )
 
         # Apply each Param via Param.__set__ (coerces and validates).

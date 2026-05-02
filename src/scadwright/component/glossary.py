@@ -15,10 +15,30 @@ quantities in the source ``equations`` block.
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass, field
 from typing import Any
 
 from scadwright.component.resolver.types import equation_bare_targets
 from scadwright.emit.format import _fmt_num
+
+
+@dataclass(frozen=True)
+class _GlossaryState:
+    """The three name-set views the glossary needs from the resolver.
+
+    ``knowns`` is the resolver's full ``{name: value}`` snapshot.
+    ``supplied`` and ``defaults`` are disjoint frozensets identifying
+    which keys came from the caller and which fired a Param default;
+    the third group (equation-derived) is implicit (knowns − supplied
+    − defaults) and computed on demand by the formatter.
+
+    Attached to the instance as a single attribute (``self._glossary``)
+    so the auto-init writes one object instead of three sibling
+    attrs and the formatter reads one object instead of three.
+    """
+    supplied: frozenset[str] = field(default_factory=frozenset)
+    defaults: frozenset[str] = field(default_factory=frozenset)
+    knowns: dict[str, Any] = field(default_factory=dict)
 
 
 def _fmt_value(value: Any) -> str:
@@ -67,14 +87,17 @@ def format_glossary(component) -> list[str]:
     """
     cls = type(component)
     equations = getattr(cls, "_unified_equations", []) or []
-    knowns = getattr(component, "_glossary_knowns", None)
+    state: _GlossaryState | None = getattr(component, "_glossary", None)
+    if state is None:
+        return []
+    knowns = state.knowns
     if not equations and not knowns:
         return []
     if not knowns:
         return []
 
-    supplied: frozenset[str] = getattr(component, "_glossary_supplied", frozenset())
-    defaults: frozenset[str] = getattr(component, "_glossary_defaults", frozenset())
+    supplied: frozenset[str] = state.supplied
+    defaults: frozenset[str] = state.defaults
     overrides: frozenset[str] = getattr(cls, "_override_names", frozenset())
     # Override-pattern fills (`?name = ?name or default`) act as defaults
     # from the caller's view — supplying the value or letting it default
