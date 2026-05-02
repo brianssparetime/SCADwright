@@ -81,5 +81,13 @@ env/
 *.swo
 *~
 
+# VSCode extension build artifacts (the extension source lives in `vscode/`;
+# these are produced by `vsce package`, `npm install`, or running the
+# extension under VSCode's test runner — none of them belong in the repo).
+vscode/node_modules/
+vscode/*.vsix
+vscode/.vscode-test/
+vscode/out/
+
 # Jupyter
 .ipynb_checkpoints/
