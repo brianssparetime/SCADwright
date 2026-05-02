@@ -25,23 +25,12 @@ from typing import Any
 
 from scadwright.ast.base import Node, SourceLocation
 from scadwright.api.resolution import resolution as _resolution
+from scadwright.component.equations import _NUMERIC_FUNCTION_NAMES
 from scadwright.component.params import Param, _MISSING
 from scadwright.errors import BuildError, SCADwrightError, ValidationError
 from scadwright._logging import get_logger
 
 _log = get_logger("scadwright.component")
-
-
-# Algebraic function names used in equations that produce numeric results.
-# Mirror of ``_ALGEBRAIC_FUNCTION_NAMES`` in resolver_ast plus a few extra
-# numeric-yielding callables.
-_NUMERIC_CALL_NAMES = frozenset({
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "degrees", "radians",
-    "sqrt", "log", "exp", "abs", "ceil", "floor",
-    "min", "max", "sum", "round",
-    "int", "float",
-})
 
 
 def _yields_scalar_numeric(node: ast.AST) -> bool:
@@ -81,7 +70,7 @@ def _yields_scalar_numeric(node: ast.AST) -> bool:
             and _yields_scalar_numeric(node.orelse)
         )
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-        if node.func.id not in _NUMERIC_CALL_NAMES:
+        if node.func.id not in _NUMERIC_FUNCTION_NAMES:
             return False
         return all(_yields_scalar_numeric(a) for a in node.args)
     return False

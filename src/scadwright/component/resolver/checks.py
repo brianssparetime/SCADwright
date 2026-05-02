@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 
+from scadwright.component.equations import _NUMERIC_FUNCTION_NAMES
 from scadwright.component.resolver.overrides import _classify_override_targets
 from scadwright.component.resolver.sympy_bridge import ast_to_sympy
 from scadwright.component.resolver.types import (
@@ -23,14 +24,6 @@ from scadwright.component.resolver_ast import is_fully_algebraic
 from scadwright.component.resolver_ast import _free_names as _free_names_in
 from scadwright.errors import ValidationError
 
-
-_NUMERIC_YIELDING_CALLS = frozenset({
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "degrees", "radians",
-    "sqrt", "log", "exp", "abs", "ceil", "floor",
-    "min", "max", "sum", "round",
-    "int", "float",
-})
 
 _ARITHMETIC_BINOPS = (
     ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv,
@@ -72,7 +65,7 @@ def _check_bool_in_arithmetic(
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id in _NUMERIC_YIELDING_CALLS
+            and node.func.id in _NUMERIC_FUNCTION_NAMES
         ):
             for arg in node.args:
                 if isinstance(arg, ast.Name) and arg.id in bool_names:

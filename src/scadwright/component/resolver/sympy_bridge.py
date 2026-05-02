@@ -25,11 +25,19 @@ def _ensure_algebraic_functions() -> dict:
     DSL aligned with `scadwright.math` (degrees in, degrees out) while
     still giving sympy a fully-symbolic expression to solve, simplify,
     and substitute through.
+
+    Asserts that the dict's keys match
+    ``scadwright.component.equations._ALGEBRAIC_FUNCTION_NAMES`` on
+    first build — this is the gate ``is_fully_algebraic`` consults
+    before handing an expression here, so drift between the two would
+    silently fail at solve time. The check runs once.
     """
     global _ALGEBRAIC_FUNCTIONS
     if _ALGEBRAIC_FUNCTIONS is None:
         import sympy as sp
-        _ALGEBRAIC_FUNCTIONS = {
+        from scadwright.component.equations import _ALGEBRAIC_FUNCTION_NAMES
+
+        table = {
             "sin": lambda x: sp.sin(x * sp.pi / 180),
             "cos": lambda x: sp.cos(x * sp.pi / 180),
             "tan": lambda x: sp.tan(x * sp.pi / 180),
@@ -44,6 +52,14 @@ def _ensure_algebraic_functions() -> dict:
             "min": sp.Min, "max": sp.Max,
             "Min": sp.Min, "Max": sp.Max,
         }
+        if set(table.keys()) != _ALGEBRAIC_FUNCTION_NAMES:
+            missing = _ALGEBRAIC_FUNCTION_NAMES - set(table.keys())
+            extra = set(table.keys()) - _ALGEBRAIC_FUNCTION_NAMES
+            raise RuntimeError(
+                f"sympy algebraic table drift: "
+                f"missing={sorted(missing)}, extra={sorted(extra)}"
+            )
+        _ALGEBRAIC_FUNCTIONS = table
     return _ALGEBRAIC_FUNCTIONS
 
 

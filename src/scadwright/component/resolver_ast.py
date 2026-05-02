@@ -27,15 +27,7 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-
-# Functions sympy understands as part of normal algebra. Mirrors the set
-# in scadwright.component.equations.
-_ALGEBRAIC_FUNCTION_NAMES = frozenset({
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-    "degrees", "radians",
-    "sqrt", "log", "exp", "abs", "ceil", "floor",
-    "min", "max", "Min", "Max",
-})
+from scadwright.component.equations import _ALGEBRAIC_FUNCTION_NAMES
 
 
 # Sentinel returned by the constant-fold path when eval fails. Distinct
