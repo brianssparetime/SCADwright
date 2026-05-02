@@ -232,67 +232,90 @@ def get_node_anchors(node) -> dict[str, "Anchor"]:
     - CSG nodes or primitives: returns only bbox-derived anchors (custom
       anchors are dropped by boolean operations).
     """
-    from scadwright.ast.custom import Custom
-    from scadwright.ast.transforms import (
-        Color,
-        Echo,
-        ForceRender,
-        Mirror,
-        MultMatrix,
-        PreviewModifier,
-        Rotate,
-        Scale,
-        Translate,
-    )
-    from scadwright.bbox import bbox as _bbox
-    from scadwright._custom_transforms.base import get_transform
-    from scadwright.component.base import Component
-    from scadwright.matrix import to_matrix
+    return _AnchorVisitor().visit(node)
 
-    if isinstance(node, Component):
-        return node.get_anchors()
 
-    # Spatial transforms: propagate child anchors through the transform.
-    if isinstance(node, (Translate, Rotate, Scale, Mirror, MultMatrix)):
-        child_anchors = get_node_anchors(node.child)
-        m = to_matrix(node)
-        return transform_anchors(child_anchors, m)
+# =============================================================================
+# AnchorVisitor — Visitor subclass walking the AST to compute named anchors
+# =============================================================================
 
-    # Non-spatial wrappers: pass through to child.
-    if isinstance(node, (Color, PreviewModifier, ForceRender)):
-        return get_node_anchors(node.child)
 
-    if isinstance(node, Echo) and node.child is not None:
-        return get_node_anchors(node.child)
+from scadwright.emit.visitor import Visitor as _Visitor  # noqa: E402
 
-    # Decoration transforms (e.g. add_text) preserve the host's anchors so
-    # chained decorations and post-decoration attach() calls work naturally.
-    if isinstance(node, Custom):
-        t = get_transform(node.name)
+
+class _AnchorVisitor(_Visitor):
+    """Compute a node's named anchors by walking the AST.
+
+    Returns ``dict[str, Anchor]``. Stateless: spatial transforms apply
+    on the way back up — each transform's ``visit_X`` recurses on the
+    child, then transforms the returned anchor positions and normals.
+    Components return their own ``get_anchors()`` dict (bbox-derived
+    plus custom anchors merged). Decoration custom transforms pass
+    through to the child so chained labels and post-decoration
+    ``attach()`` calls keep working.
+    """
+
+    # --- Component: own anchor collection. ---
+
+    def visit_component(self, n):
+        return n.get_anchors()
+
+    # --- Spatial transforms: recurse, then apply matrix to result. ---
+
+    def _visit_spatial(self, n):
+        from scadwright.matrix import to_matrix
+        return transform_anchors(self.visit(n.child), to_matrix(n))
+
+    def visit_Translate(self, n): return self._visit_spatial(n)
+    def visit_Rotate(self, n): return self._visit_spatial(n)
+    def visit_Scale(self, n): return self._visit_spatial(n)
+    def visit_Mirror(self, n): return self._visit_spatial(n)
+    def visit_MultMatrix(self, n): return self._visit_spatial(n)
+
+    # --- Pass-through wrappers. ---
+
+    def visit_Color(self, n): return self.visit(n.child)
+    def visit_PreviewModifier(self, n): return self.visit(n.child)
+    def visit_ForceRender(self, n): return self.visit(n.child)
+
+    def visit_Echo(self, n):
+        if n.child is None:
+            return self.generic_visit(n)
+        return self.visit(n.child)
+
+    # --- Custom: decoration transforms preserve host anchors. ---
+
+    def visit_Custom(self, n):
+        from scadwright._custom_transforms.base import get_transform
+
+        t = get_transform(n.name)
         if t is not None and getattr(t, "decoration", False):
-            return get_node_anchors(node.child)
+            return self.visit(n.child)
+        return self.generic_visit(n)
 
-    # Cylinder primitive: bbox-derived faces, plus rim metadata on
-    # top/bottom (so disk-rim arc text knows the radius), plus an
-    # `outer_wall` cylindrical/conical anchor for side-wall decoration.
-    from scadwright.ast.primitives import Cylinder as _Cylinder
-    if isinstance(node, _Cylinder):
-        bb = _bbox(node)
+    # --- Cylinder: bbox-derived faces plus rim/wall metadata. ---
+
+    def visit_Cylinder(self, n):
+        from scadwright.bbox import bbox as _bbox
+        bb = _bbox(n)
         anchors = anchors_from_bbox(bb)
-        rim_top, rim_bottom = _cylinder_rim_anchors(node)
+        rim_top, rim_bottom = _cylinder_rim_anchors(n)
         if rim_top is not None:
             anchors["top"] = rim_top
             anchors["+z"] = rim_top
         if rim_bottom is not None:
             anchors["bottom"] = rim_bottom
             anchors["-z"] = rim_bottom
-        wall = _cylinder_outer_wall_anchor(node)
+        wall = _cylinder_outer_wall_anchor(n)
         if wall is not None:
             anchors["outer_wall"] = wall
         return anchors
 
-    # Everything else (primitives, CSG, non-decoration custom): bbox-derived only.
-    return anchors_from_bbox(_bbox(node))
+    # --- Default: bbox-derived only (other primitives, CSG, etc). ---
+
+    def generic_visit(self, n):
+        from scadwright.bbox import bbox as _bbox
+        return anchors_from_bbox(_bbox(n))
 
 
 def _cylinder_rim_anchors(cyl):

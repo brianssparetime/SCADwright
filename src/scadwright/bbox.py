@@ -375,7 +375,7 @@ def bbox(node) -> BBox:
     Composes through transforms (via matrix), CSG (per-op), Components
     (materialized), and custom transforms (expanded).
     """
-    return _bbox_with_context(node, Matrix.identity())
+    return BBoxVisitor().visit(node)
 
 
 def resolved_transform(node) -> Matrix:
@@ -446,156 +446,195 @@ def _resize_scale(child_size, new_size, auto) -> tuple[float, float, float]:
     return (out[0], out[1], out[2])
 
 
-def _fold_child_bboxes(children, ctx: Matrix, combine) -> BBox:
-    """Compute each child's bbox under ctx, then fold with `combine`."""
-    it = iter(children)
-    result = _bbox_with_context(next(it), ctx)
-    for c in it:
-        result = combine(result, _bbox_with_context(c, ctx))
-    return result
+_DEGENERATE_BBOX = BBox(min=(0.0, 0.0, 0.0), max=(0.0, 0.0, 0.0))
 
 
-def _bbox_with_context(node, ctx: Matrix) -> BBox:
-    """Recursive helper threading the world transform context."""
-    from scadwright.ast.csg import (
-        Difference,
-        Hull,
-        Intersection,
-        Minkowski,
-        Union,
-    )
-    from scadwright.ast.custom import ChildrenMarker, Custom
-    from scadwright.ast.transforms import (
-        Color,
-        Echo,
-        ForceRender,
-        Mirror,
-        MultMatrix,
-        Offset,
-        PreviewModifier,
-        Projection,
-        Resize,
-        Rotate,
-        Scale,
-        Translate,
-    )
-    from scadwright.component.base import Component
-    from scadwright.matrix import to_matrix
+# =============================================================================
+# BBoxVisitor
+# =============================================================================
+#
+# Walks the AST returning a world-space ``BBox``. Stateful: ``self._ctx``
+# carries the current world transform matrix, pushed and popped via the
+# ``_scoped_ctx`` context manager when descending through transforms.
+# Each ``visit_X`` method handles one AST node category and either
+# composes into ``self._ctx``, passes through, or computes its own
+# bbox at the leaf and applies ``self._ctx``.
 
-    # Components: recurse into the materialized tree (cache lives on the instance).
-    if isinstance(node, Component):
-        # Use cache if present.
-        cached = getattr(node, "_bbox_cache", None)
-        if cached is not None:
-            # Cache holds the LOCAL bbox; transform by ctx.
-            return cached.transformed(ctx)
-        local = _bbox_with_context(node._get_built_tree(), Matrix.identity())
+
+from contextlib import contextmanager  # noqa: E402
+
+from scadwright.emit.visitor import Visitor  # noqa: E402
+
+
+class BBoxVisitor(Visitor):
+    """Compute a node's world-space AABB by walking the AST.
+
+    State: ``self._ctx`` is the current world transform matrix. Push and
+    pop with ``_scoped_ctx`` when descending through transforms;
+    ``visit_X`` methods read ``self._ctx`` to know the current frame.
+    Pure spatial transforms compose into the context; pass-through
+    wrappers leave it alone; ``Resize``/``Offset``/``Projection`` and
+    ``Component`` recurse with identity context and apply the outer
+    ``self._ctx`` to their result.
+    """
+
+    def __init__(self):
+        self._ctx: Matrix = Matrix.identity()
+
+    @contextmanager
+    def _scoped_ctx(self, ctx: Matrix):
+        prev = self._ctx
+        self._ctx = ctx
         try:
-            object.__setattr__(node, "_bbox_cache", local)
-        except AttributeError:
-            # Some Node subclasses freeze their instance dict; skipping the
-            # cache is harmless — we'll just recompute on the next access.
-            pass
-        return local.transformed(ctx)
+            yield
+        finally:
+            self._ctx = prev
 
-    # Transforms: compose into context, recurse, return child bbox in transformed frame.
-    if isinstance(node, (Translate, Rotate, Scale, Mirror, MultMatrix)):
-        m = to_matrix(node)
-        return _bbox_with_context(node.child, ctx @ m)
+    # --- Spatial transforms — compose into context. ---
 
-    # Projection: 3D -> 2D. Conservative: take child's XY extent, drop Z.
-    if isinstance(node, Projection):
-        child_bb = _bbox_with_context(node.child, Matrix.identity())
+    def _visit_transform(self, n) -> BBox:
+        from scadwright.matrix import to_matrix
+        with self._scoped_ctx(self._ctx @ to_matrix(n)):
+            return self.visit(n.child)
+
+    def visit_Translate(self, n): return self._visit_transform(n)
+    def visit_Rotate(self, n): return self._visit_transform(n)
+    def visit_Scale(self, n): return self._visit_transform(n)
+    def visit_Mirror(self, n): return self._visit_transform(n)
+    def visit_MultMatrix(self, n): return self._visit_transform(n)
+
+    # --- Pass-through wrappers. ---
+
+    def visit_Color(self, n): return self.visit(n.child)
+    def visit_ForceRender(self, n): return self.visit(n.child)
+
+    def visit_PreviewModifier(self, n):
+        if n.mode == "disable":
+            return _DEGENERATE_BBOX.transformed(self._ctx)
+        return self.visit(n.child)
+
+    def visit_Echo(self, n):
+        if n.child is None:
+            return _DEGENERATE_BBOX.transformed(self._ctx)
+        return self.visit(n.child)
+
+    # --- Special: recurse with identity ctx, apply outer ctx after. ---
+
+    def visit_Projection(self, n):
+        with self._scoped_ctx(Matrix.identity()):
+            child_bb = self.visit(n.child)
         return BBox(
             min=(child_bb.min[0], child_bb.min[1], 0.0),
             max=(child_bb.max[0], child_bb.max[1], 0.0),
-        ).transformed(ctx)
+        ).transformed(self._ctx)
 
-    # Color: identity for spatial purposes.
-    if isinstance(node, Color):
-        return _bbox_with_context(node.child, ctx)
-
-    # Preview modifiers: pass-through except `disable`, which treats child as absent.
-    if isinstance(node, PreviewModifier):
-        if node.mode == "disable":
-            return BBox(min=(0, 0, 0), max=(0, 0, 0)).transformed(ctx)
-        return _bbox_with_context(node.child, ctx)
-
-    # ForceRender: purely a preview/debug hint, passes bbox through.
-    if isinstance(node, ForceRender):
-        return _bbox_with_context(node.child, ctx)
-
-    # Echo: pass through child if present; bare echo is a zero-volume statement.
-    if isinstance(node, Echo):
-        if node.child is None:
-            return BBox(min=(0, 0, 0), max=(0, 0, 0)).transformed(ctx)
-        return _bbox_with_context(node.child, ctx)
-
-    # Offset: child is 2D; expand or contract XY extent by |r| or |delta|.
-    if isinstance(node, Offset):
-        child_bb = _bbox_with_context(node.child, Matrix.identity())
-        r = node.r if node.r is not None else node.delta
+    def visit_Offset(self, n):
+        with self._scoped_ctx(Matrix.identity()):
+            child_bb = self.visit(n.child)
+        r = n.r if n.r is not None else n.delta
         r = float(r)
         x0, x1 = child_bb.min[0] - r, child_bb.max[0] + r
         y0, y1 = child_bb.min[1] - r, child_bb.max[1] + r
         # Negative offsets can flip the bbox inside out; collapse to degenerate.
         if x1 < x0 or y1 < y0:
             c = child_bb.center
-            return BBox(min=(c[0], c[1], 0.0), max=(c[0], c[1], 0.0)).transformed(ctx)
-        return BBox(min=(x0, y0, 0.0), max=(x1, y1, 0.0)).transformed(ctx)
+            return BBox(
+                min=(c[0], c[1], 0.0), max=(c[0], c[1], 0.0),
+            ).transformed(self._ctx)
+        return BBox(
+            min=(x0, y0, 0.0), max=(x1, y1, 0.0),
+        ).transformed(self._ctx)
 
-    # Resize: compute child's bbox in current ctx then apply per-axis scale.
-    if isinstance(node, Resize):
-        # Child bbox in local frame (no extra ctx — we'll apply ctx after scaling).
-        child_local = _bbox_with_context(node.child, Matrix.identity())
-        scaled = child_local.transformed(Matrix.scale(*_resize_scale(child_local.size, node.new_size, node.auto)))
-        return scaled.transformed(ctx)
+    def visit_Resize(self, n):
+        with self._scoped_ctx(Matrix.identity()):
+            child_local = self.visit(n.child)
+        scaled = child_local.transformed(
+            Matrix.scale(
+                *_resize_scale(child_local.size, n.new_size, n.auto),
+            )
+        )
+        return scaled.transformed(self._ctx)
 
-    # Custom: expand and recurse.
-    if isinstance(node, Custom):
+    # --- Custom — expand and recurse. ---
+
+    def visit_Custom(self, n):
         from scadwright._custom_transforms.base import get_transform
         from scadwright.errors import BuildError
 
-        t = get_transform(node.name)
+        t = get_transform(n.name)
         if t is None:
-            raise BuildError(f"bbox: unregistered custom transform {node.name!r}")
-        expanded = t.expand(node.child, **node.kwargs_dict())
-        return _bbox_with_context(expanded, ctx)
+            raise BuildError(
+                f"bbox: unregistered custom transform {n.name!r}"
+            )
+        expanded = t.expand(n.child, **n.kwargs_dict())
+        return self.visit(expanded)
 
-    # ChildrenMarker has no spatial extent of its own — only appears in module
-    # body rendering. If we see it here, return a degenerate bbox at origin.
-    if isinstance(node, ChildrenMarker):
-        return BBox(min=(0, 0, 0), max=(0, 0, 0)).transformed(ctx)
+    def visit_ChildrenMarker(self, n):
+        return _DEGENERATE_BBOX.transformed(self._ctx)
 
-    # CSG.
-    if isinstance(node, (Union, Hull)):
-        # Hull is contained within the AABB of the union of operand bboxes.
-        return _fold_child_bboxes(node.children, ctx, BBox.union)
+    # --- CSG — fold children under same ctx. ---
 
-    if isinstance(node, Difference):
+    def _fold(self, children, combine) -> BBox:
+        it = iter(children)
+        result = self.visit(next(it))
+        for c in it:
+            result = combine(result, self.visit(c))
+        return result
+
+    def visit_Union(self, n):
+        # Hull and Union both bound by the union of operand AABBs.
+        return self._fold(n.children, BBox.union)
+
+    def visit_Hull(self, n):
+        return self._fold(n.children, BBox.union)
+
+    def visit_Difference(self, n):
         # Difference is at most as large as the first operand's bbox.
-        return _bbox_with_context(node.children[0], ctx)
+        return self.visit(n.children[0])
 
-    if isinstance(node, Intersection):
+    def visit_Intersection(self, n):
         def _intersect(a: BBox, b: BBox) -> BBox:
             inter = a.intersection(b)
             if inter is None:
-                # Disjoint → degenerate bbox at first operand's center (safe, conservative).
+                # Disjoint → degenerate bbox at first operand's center.
                 return BBox(min=a.center, max=a.center)
             return inter
+        return self._fold(n.children, _intersect)
 
-        return _fold_child_bboxes(node.children, ctx, _intersect)
-
-    if isinstance(node, Minkowski):
-        # Bbox of Minkowski sum: extents add componentwise.
+    def visit_Minkowski(self, n):
         def _mink(a: BBox, b: BBox) -> BBox:
             return BBox(
-                min=(a.min[0] + b.min[0], a.min[1] + b.min[1], a.min[2] + b.min[2]),
-                max=(a.max[0] + b.max[0], a.max[1] + b.max[1], a.max[2] + b.max[2]),
+                min=(
+                    a.min[0] + b.min[0],
+                    a.min[1] + b.min[1],
+                    a.min[2] + b.min[2],
+                ),
+                max=(
+                    a.max[0] + b.max[0],
+                    a.max[1] + b.max[1],
+                    a.max[2] + b.max[2],
+                ),
             )
+        return self._fold(n.children, _mink)
 
-        return _fold_child_bboxes(node.children, ctx, _mink)
+    # --- Component — cache + identity-ctx recurse + apply outer ctx. ---
 
-    # Primitive: take its local bbox, transform by ctx.
-    local = _local_bbox(node)
-    return local.transformed(ctx)
+    def visit_component(self, n):
+        cached = getattr(n, "_bbox_cache", None)
+        if cached is not None:
+            # Cache holds the LOCAL bbox; transform by the current ctx.
+            return cached.transformed(self._ctx)
+        with self._scoped_ctx(Matrix.identity()):
+            local = self.visit(n._get_built_tree())
+        try:
+            object.__setattr__(n, "_bbox_cache", local)
+        except AttributeError:
+            # Some Node subclasses freeze their instance dict; skipping
+            # the cache is harmless — we'll just recompute next access.
+            pass
+        return local.transformed(self._ctx)
+
+    # --- Default: primitives + extrudes via _local_bbox. ---
+
+    def generic_visit(self, n):
+        return _local_bbox(n).transformed(self._ctx)
