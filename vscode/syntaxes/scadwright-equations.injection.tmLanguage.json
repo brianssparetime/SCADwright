@@ -171,9 +171,9 @@
     },
 
     "optional-sigil": {
-      "comment": "The `?` sigil declaring a name as an optional Param. Matches only when followed by an identifier start so stray `?` doesn't get colored.",
+      "comment": "The `?` sigil declaring a name as an optional Param. Matches only when followed by an identifier start so stray `?` doesn't get colored. Fallback scope is `storage.modifier.python` — themes consistently color storage modifiers, and the `?` semantically *is* a modifier on the name's declaration (akin to TypeScript's `?` on optional parameters). Generic `keyword.operator.python` is uncolored in many themes.",
       "match": "\\?(?=[a-zA-Z_])",
-      "name": "keyword.operator.optional.scadwright keyword.operator.python"
+      "name": "keyword.operator.optional.scadwright storage.modifier.python"
     },
 
     "type-tag": {
