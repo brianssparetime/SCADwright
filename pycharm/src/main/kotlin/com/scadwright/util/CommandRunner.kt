@@ -159,15 +159,24 @@ object CommandRunner {
     }
 
     /**
-     * Resolve a usable absolute path to OpenSCAD, or null if none can
-     * be found. Order: configured setting (if absolute and exists),
-     * any login-shell PATH lookup, the standard macOS `.app` bundle.
+     * Resolve a usable path that scadwright should hand to its
+     * `--openscad` (or `$SCADWRIGHT_OPENSCAD`) lookup. Order:
+     * configured setting (if absolute and exists), login-shell PATH
+     * lookup, the standard macOS `.app` bundle.
+     *
+     * On macOS, when the answer is a `.app` bundle's inner binary,
+     * [appBundleLauncherFor] swaps in a tiny shell-script wrapper
+     * that goes through `open -a` instead of executing the binary
+     * directly. Bypassing Launch Services that way is what causes
+     * OpenSCAD's GPU/Metal context to fall back to software
+     * rendering (the laggy zoom symptom) — going through `open` gives
+     * the app its full launch-time setup.
      *
      * The result is set as `$SCADWRIGHT_OPENSCAD` on every spawned
-     * process; scadwright's CLI consults that variable before falling
-     * back to its own PATH search, which means the child OpenSCAD
-     * invocation works even when PyCharm's spawned environment knows
-     * nothing about Homebrew or `/Applications/`.
+     * scadwright process; the CLI consults that variable before
+     * falling back to its own PATH search, which means the child
+     * OpenSCAD invocation works even when PyCharm's spawned
+     * environment knows nothing about Homebrew or `/Applications/`.
      */
     private fun resolveOpenScad(): String? {
         val configured = ScadwrightSettings.getInstance().openscadCommand.trim()
@@ -175,22 +184,81 @@ object CommandRunner {
         // 1. User-configured absolute path that actually exists wins.
         if (configured.isNotEmpty() && (configured.contains('/') || configured.contains('\\'))) {
             val asFile = File(configured)
-            if (asFile.canExecute()) return asFile.absolutePath
+            if (asFile.canExecute()) {
+                return appBundleLauncherFor(asFile.absolutePath) ?: asFile.absolutePath
+            }
         }
 
         // 2. Try the user's interactive shell — covers Homebrew,
         // pyenv, and any custom PATH setup. Cheap subprocess.
-        whichInLoginShell(configured.ifEmpty { "openscad" })?.let { return it }
+        whichInLoginShell(configured.ifEmpty { "openscad" })?.let { found ->
+            return appBundleLauncherFor(found) ?: found
+        }
 
         // 3. macOS .app bundle locations. The GUI installer puts
         // OpenSCAD here; nothing on PATH points at it.
         if (!isWindows()) {
             for (path in MAC_OPENSCAD_LOCATIONS) {
-                if (File(path).canExecute()) return path
+                if (File(path).canExecute()) {
+                    return appBundleLauncherFor(path) ?: path
+                }
             }
         }
 
         return null
+    }
+
+    /**
+     * If [binaryPath] points into a macOS `.app` bundle's
+     * `Contents/MacOS/` directory, return the path to a
+     * bundle-launching wrapper script (extracting/regenerating it
+     * lazily). Otherwise return null and the caller uses [binaryPath]
+     * directly.
+     *
+     * Why the wrapper: a macOS GUI app launched via its inner binary
+     * skips Launch Services, which means the process doesn't get the
+     * proper GPU/Metal context, the proper window-server registration,
+     * or the proper sandbox setup. Symptoms include laggy 3D viewports
+     * (software-rendering fallback) and missing GPU acceleration.
+     * Routing the launch through `open -a` fixes all three.
+     *
+     * The wrapper lives under `~/.cache/scadwright-pycharm/`. Each
+     * invocation rewrites it so an upgrade that changes the wrapper
+     * shape takes effect on next click without manual cleanup.
+     */
+    private fun appBundleLauncherFor(binaryPath: String): String? {
+        if (isWindows()) return null
+        val appBundleRegex = Regex("^(.+\\.app)/Contents/MacOS/[^/]+$")
+        val match = appBundleRegex.find(binaryPath) ?: return null
+        val appPath = match.groupValues[1]
+        val cacheDir = File(System.getProperty("user.home"), ".cache/scadwright-pycharm")
+        cacheDir.mkdirs()
+        val wrapper = File(cacheDir, "openscad-launch.sh")
+
+        // The wrapper goes through `open` so the app gets a full
+        // Launch Services launch (proper GPU + sandbox + window
+        // registration). `-W` blocks until the app exits — which
+        // matters for headless render runs where scadwright depends
+        // on the openscad subprocess having actually finished writing
+        // the STL before scadwright itself returns. Preview runs
+        // block too, but the user typically wants the console to
+        // stay "running" until they close OpenSCAD anyway.
+        val script = """#!/bin/sh
+            |# Generated by scadwright-pycharm. Routes openscad
+            |# invocations through Launch Services so the app gets
+            |# its proper GPU/Metal/sandbox setup. Without this, the
+            |# 3D viewport falls back to software rendering and the
+            |# UI is noticeably laggy.
+            |exec /usr/bin/open -W -a "$appPath" --args "${'$'}@"
+            |""".trimMargin()
+
+        try {
+            wrapper.writeText(script)
+            wrapper.setExecutable(true)
+        } catch (_: Exception) {
+            return null
+        }
+        return wrapper.absolutePath
     }
 
     /**
