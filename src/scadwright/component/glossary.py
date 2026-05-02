@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 from typing import Any
 
+from scadwright.component.resolver.types import equation_bare_targets
 from scadwright.emit.format import _fmt_num
 
 
@@ -44,11 +45,8 @@ def _equation_target(eq) -> str | None:
     ``len(size) = 3`` or ``a + b = c`` aren't derivations of a single
     name and are skipped.
     """
-    if isinstance(eq.lhs, ast.Name):
-        return eq.lhs.id
-    if isinstance(eq.rhs, ast.Name):
-        return eq.rhs.id
-    return None
+    targets = equation_bare_targets(eq)
+    return targets[0][0] if targets else None
 
 
 def _equation_expression(eq, target: str) -> str:

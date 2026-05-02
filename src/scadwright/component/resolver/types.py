@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    pass
 
 
 # =============================================================================
@@ -85,3 +90,36 @@ _PREDICATE_CALL_NAMES = frozenset({
     "all", "any", "isinstance",
     "exactly_one", "at_least_one", "at_most_one", "all_or_none",
 })
+
+
+# =============================================================================
+# Bare-target enumeration
+# =============================================================================
+
+
+def equation_bare_targets(eq: "ParsedEquation") -> list[tuple[str, ast.AST]]:
+    """Return ``(target_name, other_side)`` pairs for bare-Name targets.
+
+    A bare-Name target is a side of the equation that is itself an
+    ``ast.Name`` — the resolver treats those names as candidate
+    output slots (it can fill them) and as candidate consistency-
+    check anchors (the user may also supply them). The other side
+    is the expression that's read against the target.
+
+    For ``a = b + 1`` the result is ``[("a", BinOp(b + 1))]``: only
+    the LHS is bare. For ``a = b`` (rare, both sides bare) the
+    result is ``[("a", Name(b)), ("b", Name(a))]``: both sides are
+    candidate targets reading against the other.
+
+    The list preserves declaration order: LHS-target first, RHS-
+    target second. Callers that want only one match can use
+    ``next(iter(...))`` or list-index 0; callers that want all
+    bare-Name target *names* can do
+    ``[name for name, _ in equation_bare_targets(eq)]``.
+    """
+    out: list[tuple[str, ast.AST]] = []
+    if isinstance(eq.lhs, ast.Name):
+        out.append((eq.lhs.id, eq.rhs))
+    if isinstance(eq.rhs, ast.Name):
+        out.append((eq.rhs.id, eq.lhs))
+    return out

@@ -13,7 +13,10 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-from scadwright.component.resolver.types import ParsedEquation
+from scadwright.component.resolver.types import (
+    ParsedEquation,
+    equation_bare_targets,
+)
 from scadwright.component.resolver_ast import _free_names as _free_names_in
 
 
@@ -88,18 +91,11 @@ def _classify_override_targets(
     for i, eq in enumerate(equations):
         target_name = None
         rhs_node = None
-        if (
-            isinstance(eq.lhs, ast.Name)
-            and eq.lhs.id in optional_names
-        ):
-            target_name = eq.lhs.id
-            rhs_node = eq.rhs
-        elif (
-            isinstance(eq.rhs, ast.Name)
-            and eq.rhs.id in optional_names
-        ):
-            target_name = eq.rhs.id
-            rhs_node = eq.lhs
+        for name, other in equation_bare_targets(eq):
+            if name in optional_names:
+                target_name = name
+                rhs_node = other
+                break
         if target_name is None:
             continue
         out[i] = (target_name, _override_rhs_dry_run(target_name, rhs_node))

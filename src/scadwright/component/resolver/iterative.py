@@ -23,6 +23,7 @@ from scadwright.component.resolver.sympy_bridge import (
 from scadwright.component.resolver.types import (
     ParsedConstraint,
     ParsedEquation,
+    equation_bare_targets,
 )
 from scadwright.component.resolver_ast import (
     find_unknowns,
@@ -168,18 +169,11 @@ class IterativeResolver:
             # Identify the bare-Name override target on either side.
             target_name = None
             rhs_node = None
-            if (
-                isinstance(eq.lhs, ast.Name)
-                and eq.lhs.id in self._override_names
-            ):
-                target_name = eq.lhs.id
-                rhs_node = eq.rhs
-            elif (
-                isinstance(eq.rhs, ast.Name)
-                and eq.rhs.id in self._override_names
-            ):
-                target_name = eq.rhs.id
-                rhs_node = eq.lhs
+            for name, other in equation_bare_targets(eq):
+                if name in self._override_names:
+                    target_name = name
+                    rhs_node = other
+                    break
             if target_name is None:
                 continue
             # User-supplied non-None values fall through to the
@@ -348,10 +342,7 @@ class IterativeResolver:
         """Raise if the equation pins a bare-Name target to a non-None
         value but the user explicitly supplied that name as None.
         """
-        for side, other in ((eq.lhs, eq.rhs), (eq.rhs, eq.lhs)):
-            if not isinstance(side, ast.Name):
-                continue
-            name = side.id
+        for name, other in equation_bare_targets(eq):
             if name not in self._supplied_names:
                 continue
             if self.knowns.get(name) is not None:
@@ -708,17 +699,17 @@ class IterativeResolver:
         while progress:
             progress = False
             for eq in self.equations:
-                bare = None
-                if (
-                    isinstance(eq.lhs, ast.Name)
-                    and eq.lhs.id not in tentative
-                ):
-                    bare = (eq.lhs.id, eq.rhs)
-                elif (
-                    isinstance(eq.rhs, ast.Name)
-                    and eq.rhs.id not in tentative
-                ):
-                    bare = (eq.rhs.id, eq.lhs)
+                # Take the first bare-Name target not already known.
+                # `equation_bare_targets` yields LHS first, RHS second
+                # — preserves the prior precedence on a Name=Name eq.
+                bare = next(
+                    (
+                        (name, other)
+                        for name, other in equation_bare_targets(eq)
+                        if name not in tentative
+                    ),
+                    None,
+                )
                 if bare is None:
                     continue
                 name, expr = bare

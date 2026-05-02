@@ -27,6 +27,7 @@ import ast
 
 from scadwright.component.equations import _NUMERIC_FUNCTION_NAMES
 from scadwright.component.params import Param, _MISSING
+from scadwright.component.resolver.types import equation_bare_targets
 from scadwright.errors import ValidationError
 
 
@@ -173,12 +174,11 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
     # that collide with the curated namespace. An equation `pi = 3.14`
     # would shadow `math.pi` inside the curated eval namespace and is
     # almost certainly a mistake.
-    eq_target_names: set[str] = set()
-    for eq in unified_eqs:
-        if isinstance(eq.lhs, ast.Name):
-            eq_target_names.add(eq.lhs.id)
-        if isinstance(eq.rhs, ast.Name):
-            eq_target_names.add(eq.rhs.id)
+    eq_target_names: set[str] = {
+        name
+        for eq in unified_eqs
+        for name, _ in equation_bare_targets(eq)
+    }
     reserved_targets = eq_target_names & curated
     if reserved_targets:
         name = sorted(reserved_targets)[0]
@@ -208,12 +208,7 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
     # through ``float()`` coercion.
     target_is_numeric_only: dict[str, bool] = {}
     for eq in unified_eqs:
-        bare_targets = []
-        if isinstance(eq.lhs, ast.Name):
-            bare_targets.append((eq.lhs.id, eq.rhs))
-        if isinstance(eq.rhs, ast.Name):
-            bare_targets.append((eq.rhs.id, eq.lhs))
-        for name, other_side in bare_targets:
+        for name, other_side in equation_bare_targets(eq):
             other_numeric = _yields_scalar_numeric(other_side)
             prev = target_is_numeric_only.get(name, True)
             target_is_numeric_only[name] = prev and other_numeric
@@ -285,13 +280,14 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
     # one. The resolver skips applying the None default at startup
     # for these so the equation can fill them in via the existing
     # forward-eval path.
-    eq_lhs_target_names: set[str] = set()
-    for eq in unified_eqs:
-        if isinstance(eq.lhs, ast.Name):
-            eq_lhs_target_names.add(eq.lhs.id)
-        if isinstance(eq.rhs, ast.Name):
-            eq_lhs_target_names.add(eq.rhs.id)
-    cls._override_names = frozenset(optional_names & eq_lhs_target_names)
+    eq_target_names_for_overrides: set[str] = {
+        name
+        for eq in unified_eqs
+        for name, _ in equation_bare_targets(eq)
+    }
+    cls._override_names = frozenset(
+        optional_names & eq_target_names_for_overrides
+    )
 
     cls._unified_equations = unified_eqs
     cls._unified_constraints = unified_constraints

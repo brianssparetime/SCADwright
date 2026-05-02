@@ -19,6 +19,7 @@ from scadwright.component.resolver.types import (
     ParsedEquation,
     _classdef_loc,
     _classdef_loc_multi,
+    equation_bare_targets,
 )
 from scadwright.component.resolver_ast import is_fully_algebraic
 from scadwright.component.resolver_ast import _free_names as _free_names_in
@@ -145,12 +146,7 @@ def _check_non_float_solver_target(
     classifications = _classify_override_targets(equations, optional_names)
 
     for i, eq in enumerate(equations):
-        bare_targets = []
-        if isinstance(eq.lhs, ast.Name):
-            bare_targets.append((eq.lhs.id, eq.rhs))
-        if isinstance(eq.rhs, ast.Name):
-            bare_targets.append((eq.rhs.id, eq.lhs))
-        for name, other in bare_targets:
+        for name, other in equation_bare_targets(eq):
             if name not in non_float_typed:
                 continue
             # Override path: dry-run says the RHS yields a value with
@@ -257,12 +253,11 @@ def _check_unknown_function_calls(
 
     # Names that appear as bare-Name targets of any equation (either
     # side) act like Param-bound names — exempt them from the call check.
-    eq_target_names: set[str] = set()
-    for eq in equations:
-        if isinstance(eq.lhs, ast.Name):
-            eq_target_names.add(eq.lhs.id)
-        if isinstance(eq.rhs, ast.Name):
-            eq_target_names.add(eq.rhs.id)
+    eq_target_names: set[str] = {
+        name
+        for eq in equations
+        for name, _ in equation_bare_targets(eq)
+    }
 
     allowed = (
         set(_CURATED_BUILTINS)
