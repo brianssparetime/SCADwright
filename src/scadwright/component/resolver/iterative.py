@@ -688,6 +688,73 @@ class IterativeResolver:
                     return False
         return True
 
+    def _propagate_forward(self, tentative: dict[str, Any]) -> None:
+        """Forward-eval pass over ``tentative`` until no new values
+        resolve. Mutates ``tentative`` in place.
+
+        For each equation with a bare-Name target that isn't in
+        ``tentative`` yet, substitute the other side against
+        ``tentative`` plus the curated namespace; if the substitution
+        is fully known, evaluate it and add the result to
+        ``tentative``. Iterate until a full pass yields no progress.
+
+        Eval errors (``ZeroDivisionError``, type mismatches, etc.) are
+        silently swallowed — the candidate world might just be
+        incomplete or downstream-incompatible, which is the caller's
+        decision to make. Used by feasibility filtering to extend a
+        tentative candidate world before constraint checks.
+        """
+        progress = True
+        while progress:
+            progress = False
+            for eq in self.equations:
+                bare = None
+                if (
+                    isinstance(eq.lhs, ast.Name)
+                    and eq.lhs.id not in tentative
+                ):
+                    bare = (eq.lhs.id, eq.rhs)
+                elif (
+                    isinstance(eq.rhs, ast.Name)
+                    and eq.rhs.id not in tentative
+                ):
+                    bare = (eq.rhs.id, eq.lhs)
+                if bare is None:
+                    continue
+                name, expr = bare
+                sub = substitute_knowns(expr, tentative, self._curated_ns)
+                full_known = set(tentative) | set(self._curated_ns)
+                if find_unknowns(sub, full_known):
+                    continue
+                try:
+                    val = self._eval_substituted(sub, tentative)
+                except Exception:
+                    continue
+                tentative[name] = val
+                progress = True
+
+    def _all_constraints_pass(self, tentative: dict[str, Any]) -> bool:
+        """True iff every constraint whose names are fully known under
+        ``tentative`` evaluates to a truthy value.
+
+        Constraints with any unknown name (or that raise during eval)
+        are skipped — same silent-skip behavior the resolver uses
+        elsewhere when checking constraints against partial knowns.
+        Returns False on the first definite-falsy result.
+        """
+        full_known = set(tentative) | set(self._curated_ns)
+        for c in self.constraints:
+            if find_unknowns(c.expr, full_known):
+                continue
+            try:
+                sub = substitute_knowns(c.expr, tentative, self._curated_ns)
+                val = self._eval_substituted(sub, tentative)
+            except Exception:
+                continue
+            if not val:
+                return False
+        return True
+
     def _filter_by_feasibility(
         self, target: str, candidates: list[float],
     ) -> list[float]:
@@ -706,55 +773,8 @@ class IterativeResolver:
         for cand in candidates:
             tentative = dict(self.knowns)
             tentative[target] = cand
-
-            # Forward-eval pass: keep substituting+evaluating until no
-            # new values resolve. Bounded by the number of unresolved
-            # equations.
-            progress = True
-            while progress:
-                progress = False
-                for eq in self.equations:
-                    bare = None
-                    if (
-                        isinstance(eq.lhs, ast.Name)
-                        and eq.lhs.id not in tentative
-                    ):
-                        bare = (eq.lhs.id, eq.rhs)
-                    elif (
-                        isinstance(eq.rhs, ast.Name)
-                        and eq.rhs.id not in tentative
-                    ):
-                        bare = (eq.rhs.id, eq.lhs)
-                    if bare is None:
-                        continue
-                    name, expr = bare
-                    sub = substitute_knowns(expr, tentative, self._curated_ns)
-                    full_known = set(tentative) | set(self._curated_ns)
-                    if find_unknowns(sub, full_known):
-                        continue
-                    try:
-                        val = self._eval_substituted(sub, tentative)
-                    except Exception:
-                        continue
-                    tentative[name] = val
-                    progress = True
-
-            # Check every constraint whose names are known in the
-            # tentative world. Any failure rules out this candidate.
-            full_known = set(tentative) | set(self._curated_ns)
-            feasible = True
-            for c in self.constraints:
-                if find_unknowns(c.expr, full_known):
-                    continue
-                try:
-                    sub = substitute_knowns(c.expr, tentative, self._curated_ns)
-                    val = self._eval_substituted(sub, tentative)
-                except Exception:
-                    continue
-                if not val:
-                    feasible = False
-                    break
-            if feasible:
+            self._propagate_forward(tentative)
+            if self._all_constraints_pass(tentative):
                 survivors.append(cand)
         return survivors
 
@@ -773,49 +793,8 @@ class IterativeResolver:
         for cand in candidates:
             tentative = dict(self.knowns)
             tentative.update(cand)
-            progress = True
-            while progress:
-                progress = False
-                for eq in self.equations:
-                    bare = None
-                    if (
-                        isinstance(eq.lhs, ast.Name)
-                        and eq.lhs.id not in tentative
-                    ):
-                        bare = (eq.lhs.id, eq.rhs)
-                    elif (
-                        isinstance(eq.rhs, ast.Name)
-                        and eq.rhs.id not in tentative
-                    ):
-                        bare = (eq.rhs.id, eq.lhs)
-                    if bare is None:
-                        continue
-                    name, expr = bare
-                    sub = substitute_knowns(expr, tentative, self._curated_ns)
-                    full_known = set(tentative) | set(self._curated_ns)
-                    if find_unknowns(sub, full_known):
-                        continue
-                    try:
-                        val = self._eval_substituted(sub, tentative)
-                    except Exception:
-                        continue
-                    tentative[name] = val
-                    progress = True
-
-            full_known = set(tentative) | set(self._curated_ns)
-            feasible = True
-            for c in self.constraints:
-                if find_unknowns(c.expr, full_known):
-                    continue
-                try:
-                    sub = substitute_knowns(c.expr, tentative, self._curated_ns)
-                    val = self._eval_substituted(sub, tentative)
-                except Exception:
-                    continue
-                if not val:
-                    feasible = False
-                    break
-            if feasible:
+            self._propagate_forward(tentative)
+            if self._all_constraints_pass(tentative):
                 survivors.append(cand)
         return survivors
 
