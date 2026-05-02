@@ -29,8 +29,14 @@ intellij {
 
 tasks {
     patchPluginXml {
+        // sinceBuild covers PyCharm 2024.1+. Phase 1 only uses stable
+        // platform APIs (AnAction, GeneralCommandLine, ConsoleView,
+        // BoundConfigurable, PersistentStateComponent), so we widen
+        // untilBuild aggressively to cover current and near-future
+        // PyCharm releases without forcing a rebuild every six months.
+        // Bump if a future IntelliJ Platform version breaks something.
         sinceBuild.set("241")
-        untilBuild.set("242.*")
+        untilBuild.set("263.*")
     }
 
     // Default test task setup — no tests yet, but having the toolchain
