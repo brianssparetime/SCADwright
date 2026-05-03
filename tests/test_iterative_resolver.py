@@ -649,3 +649,79 @@ def test_sympy_rearranges_through_arithmetic():
     # ``2 * x = 5`` with no bare-Name LHS — sympy isolates x.
     p = _SympyRearrange()
     assert p.x == pytest.approx(2.5)
+
+
+# =============================================================================
+# Error-message hint when an unresolved name is the base of an attribute access
+# =============================================================================
+
+
+class _AttributeBaseUnresolved(Component):
+    """Equations reference `b.xyz` where `b` is undeclared. The
+    resolver can't supply `b` because it isn't a Param, so the equation
+    stalls. The error message should call out `b` as an attribute base
+    so the user sees the actual cause, not just `b is unknown`."""
+
+    equations = """
+    x = b.xyz + 5
+    """
+
+    def build(self):
+        return cube(1)
+
+
+def test_attribute_base_hint_in_insufficient_message():
+    with pytest.raises(ValidationError) as exc:
+        _AttributeBaseUnresolved(x=10)
+    msg = str(exc.value)
+    assert "cannot solve" in msg
+    assert "attribute bases" in msg
+    assert "`b`" in msg
+    assert "b.xyz" in msg
+
+
+class _MultipleAttributeBases(Component):
+    """Two unresolved names, each used as an attribute base. Each
+    surfaces its own sample reads, sorted for deterministic message
+    output."""
+
+    equations = """
+    x = b.outer_d + 1
+    y = b.inner_d + 1
+    z = c.length
+    """
+
+    def build(self):
+        return cube(1)
+
+
+def test_attribute_base_hint_lists_each_unresolved_base():
+    with pytest.raises(ValidationError) as exc:
+        _MultipleAttributeBases()
+    msg = str(exc.value)
+    assert "attribute bases" in msg
+    assert "`b`" in msg
+    assert "`c`" in msg
+    # Each base shows at least one sample read.
+    assert "b.outer_d" in msg or "b.inner_d" in msg
+    assert "c.length" in msg
+
+
+class _NoAttributeAccess(Component):
+    """Plain underspecified Component — no attribute access anywhere.
+    The hint must NOT appear in the error message."""
+
+    equations = """
+    x = a + b
+    """
+
+    def build(self):
+        return cube(1)
+
+
+def test_no_attribute_hint_when_message_doesnt_apply():
+    with pytest.raises(ValidationError) as exc:
+        _NoAttributeAccess()
+    msg = str(exc.value)
+    assert "cannot solve" in msg
+    assert "attribute bases" not in msg

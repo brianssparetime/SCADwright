@@ -873,11 +873,65 @@ class IterativeResolver:
             )
         else:
             combos = "{" + ", ".join(sorted(unresolved)) + "}"
-        raise ValidationError(
+
+        # Sharpen the message when an unresolved name is the base of an
+        # attribute access (`b.xyz` where `b` is unknown). That shape
+        # almost always means the user wanted to read a field off
+        # something the equations namespace can't see — most often a
+        # Component-typed kwarg or a typoed Param name. Surface the
+        # specific names + sample reads so the diagnostic points at the
+        # cause rather than just listing `b` as missing.
+        attr_hints = self._attribute_base_hints(pending_eqs, unresolved)
+
+        message = (
             f"{self.component_name}: cannot solve for equation variables: "
             f"given {{{', '.join(given) or 'none'}}}, "
             f"need one of: {combos}"
         )
+        if attr_hints:
+            message += (
+                f". Names appearing as attribute bases: {attr_hints}. "
+                f"Equations only see the Component's own Params and the "
+                f"curated math/builtin namespace; to use a value from "
+                f"another object, declare it as a Param or pass its "
+                f"attribute as a kwarg evaluated outside the equations "
+                f"block."
+            )
+        raise ValidationError(message)
+
+    def _attribute_base_hints(
+        self,
+        pending_eqs: list[ParsedEquation],
+        unresolved: set[str],
+    ) -> str:
+        """Return a short ``"b (b.xyz, b.qpr)"``-style summary for any
+        unresolved name that appears as the value of an
+        :class:`ast.Attribute`. Empty string if none.
+        """
+        if not unresolved:
+            return ""
+        per_name: dict[str, list[str]] = {}
+        for eq in pending_eqs:
+            for side in (eq.lhs, eq.rhs):
+                for sub in ast.walk(side):
+                    if not isinstance(sub, ast.Attribute):
+                        continue
+                    base = sub.value
+                    if not isinstance(base, ast.Name):
+                        continue
+                    if base.id not in unresolved:
+                        continue
+                    reads = per_name.setdefault(base.id, [])
+                    read = f"{base.id}.{sub.attr}"
+                    if read not in reads:
+                        reads.append(read)
+        if not per_name:
+            return ""
+        parts = []
+        for name in sorted(per_name):
+            reads = per_name[name][:3]
+            parts.append(f"`{name}` ({', '.join(reads)})")
+        return ", ".join(parts)
 
     # --- AST → sympy ---
 
