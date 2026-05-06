@@ -39,6 +39,7 @@ having to re-write anything.
 ### SCADwright extended functionality:
 
 - [Components](components.md) — your own parametric parts as classes (replaces OpenSCAD modules)
+- [Specs and Adjustments](specs_and_adjustments.md) — shared dimensions across parts; printer-error fudges recorded inline
 - [Variants](variants.md) — print vs. display, multi-part assemblies, section views, resolution tiers
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
 - [Anchors and attachment](anchors.md) — named attachment points for positioning parts relative to each other
@@ -79,7 +80,7 @@ The public API is split into small, focused submodules. Import what you need:
 - `scadwright.errors` — `ValidationError`, `BuildError`, `EmitError`, `SCADwrightError`
 - `scadwright.asserts` — geometry assertions for tests
 
-The root namespace (`from scadwright import ...`) keeps the Component authoring surface (`Component`, `Param`, validators) and top-level tools (`bbox`, `tree_hash`, `emit`, `render`, `resolution`, `variant`, etc.).
+The root namespace (`from scadwright import ...`) keeps the Component authoring surface (`Component`, `Param`, `Spec`, `Adjustment`, validators) and top-level tools (`bbox`, `tree_hash`, `emit`, `render`, `resolution`, `variant`, etc.).
 
 Transforms also exist as chained methods on every shape (`cube(10).translate([5, 0, 0])`), which usually reads better for simple expressions; the standalone `translate(cube(10), [5, 0, 0])` form is available for cases where the subject is a complex expression already.
 

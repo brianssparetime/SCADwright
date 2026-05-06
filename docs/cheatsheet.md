@@ -6,7 +6,7 @@ One-page reference. Each section links to its full docs page for details.
 
 ```python
 from scadwright import (
-    Component, Param, materialize,
+    Component, Param, Spec, Adjustment, materialize,
     positive, non_negative, minimum, maximum, in_range, one_of,
     BBox, bbox, tight_bbox, tree_hash, Matrix, SourceLocation,
     emit, emit_str, render,
@@ -332,6 +332,96 @@ class Widget(Component):
 ```
 
 Returning a Node still works; prefer the generator form whenever a Component emits more than one part.
+
+## Specs and Adjustments &nbsp; &nbsp;[→ full](specs_and_adjustments.md)
+
+A Spec groups related dimensions in one place. Same `equations` syntax as a Component; no `build()`. Frozen after definition.
+
+```python
+class AA(Spec):
+    equations = """
+        d = 14.5
+        length = 50.5
+    """
+
+AA.d                                       # 14.5; class attr, no instance needed
+AA.length = 16.0                           # ValidationError: Spec is frozen
+```
+
+Read directly from any other part's `build()`:
+
+```python
+class Cradle(Component):
+    equations = "wall_thk > 0"
+    def build(self):
+        return cylinder(d=AA.d + 2*self.wall_thk, h=AA.length)
+```
+
+To use a Spec value inside another Component's `equations` block, declare a `Param()` and pass the Spec class:
+
+```python
+class Bracket(Component):
+    spec = Param()
+    equations = """
+        wall_thk > 0
+        outer_d = spec.d + 2 * wall_thk
+    """
+
+Bracket(spec=AA, wall_thk=2).outer_d        # readable from outside
+```
+
+### Specs that need inputs
+
+```python
+class PrinterProfile(Spec):
+    equations = """
+        ?profile:str = ?profile or "BAMBU_X1"
+        x_axis_overshoot = 0.3 if profile == "BAMBU_X1" else 0.1
+    """
+
+PrinterProfile(profile="BAMBU_X1").x_axis_overshoot     # 0.3
+PrinterProfile.x_axis_overshoot                          # AttributeError: instantiate first
+```
+
+Once any `?` input exists, class-level access errors and you instantiate.
+
+### Adjustments
+
+Layered on top of equation-resolved values. `+=`/`-=` for additive (mm offsets), `*=`/`/=` for multiplicative (proportions). One family per name.
+
+```python
+class CamMount(Spec):
+    equations = """
+        cam_barrel_od = 60.5
+        cam_barrel_od += 0.3   # printer X-axis overshoot, ID side
+        cam_barrel_od += 0.05  # extra slop for the o-ring
+    """
+
+CamMount.cam_barrel_od                     # 60.85
+```
+
+- The right side may reference any name except another adjusted name.
+- Comments are highly recommended (debugging fudges later is otherwise hard).
+- Skips silently when an `?` input on the right side resolves to None.
+- Other equations referencing the name still see the pre-adjust value.
+
+Rules read pre-adjust by default; wrap a name in `adjusted(...)` for the rare case you need post-adjust:
+
+```python
+"bore_id > cam_barrel_od + 0.1"            # pre-adjust slip-fit
+"adjusted(cam_barrel_od) + 10 < 256"       # post-adjust bed fit
+```
+
+Read the chain back:
+
+```python
+for adj in CamMount.adjustments_for("cam_barrel_od"):
+    adj.line, adj.delta, adj.comment       # 1-indexed line, signed delta, comment
+
+CamMount.all_adjustments()                 # {name: [Adjustment, ...]}
+```
+
+For a parameterized Spec, call `adjustments_for` and `all_adjustments` on the instance.
 
 ## Custom transforms &nbsp; &nbsp;[→ full](custom_transforms.md)
 
