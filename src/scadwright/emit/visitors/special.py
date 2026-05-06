@@ -17,14 +17,26 @@ class _SpecialVisitorMixin:
     """
 
     def visit_component(self, n) -> None:
-        # Emit a leading comment naming the Component class so a reader can
-        # find where each part starts in the generated file. When the
-        # `glossary` flag is set, also emit one comment line per resolved
-        # equation name so the reader can map inlined literals in the
-        # geometry below back to their named, derived form. The
-        # construction-site source location stays under the `debug` flag
-        # (via `_maybe_source_comment`) — it varies by call site, which
-        # would make otherwise-identical emits compare unequal.
+        # Hoisted form: the dedup pre-pass has already rendered this
+        # Component's cached subtree into a top-level SCAD module. Emit a
+        # call to that module here. Any source comment for the call site
+        # still goes above the call (it varies per reference), but the
+        # class header and glossary live inside the hoisted module body
+        # so a reader sees them once attached to the geometry.
+        module_name = self._hoisted_components.get(id(n))
+        if module_name is not None:
+            self._maybe_source_comment(n)
+            self._line(f"{module_name}();")
+            return
+        # Inline form: emit a leading comment naming the Component class
+        # so a reader can find where each part starts in the generated
+        # file. When the `glossary` flag is set, also emit one comment
+        # line per resolved equation name so the reader can map inlined
+        # literals in the geometry below back to their named, derived
+        # form. The construction-site source location stays under the
+        # `debug` flag (via `_maybe_source_comment`) — it varies by call
+        # site, which would make otherwise-identical emits compare
+        # unequal.
         if self.pretty and self.section_labels:
             self._line(f"// {type(n).__name__}")
             if getattr(self, "glossary", False):

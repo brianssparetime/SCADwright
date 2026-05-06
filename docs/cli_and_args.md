@@ -23,7 +23,11 @@ scadwright build widget.py --variant=print          # set render variant
 scadwright build widget.py --vpr=60,0,30            # set camera rotation ($vpr)
 scadwright build widget.py --vpd=200                # set camera distance ($vpd)
 scadwright build widget.py -v                       # show INFO logs while building
+scadwright build widget.py --no-dedup               # inline every Component reference
+scadwright build widget.py --dedup-threshold=10     # only hoist Components with ≥10 prims
 ```
+
+By default, when the same `Component` instance is referenced more than once and its built tree contains at least 5 primitives, the emitter writes it as a top-level `module` and replaces each reference with a call. This shrinks SCAD files where the same subassembly appears in many places (lap-split halves, gridded copies of a part) and keeps OpenSCAD's preview from re-evaluating duplicated geometry per frame. Pass `--no-dedup` to disable; pass `--dedup-threshold=N` to change the size cutoff.
 
 The script must define a top-level `MODEL` (a SCADwright shape). The CLI imports the script, finds `MODEL`, and renders it.
 
@@ -92,6 +96,8 @@ If you'd rather skip the CLI and just run the script with Python, call `render` 
 render(part, "out.scad")
 render(part, "out.scad", pretty=False)         # one-line output
 render(part, "out.scad", debug=True)           # source-line comments
+render(part, "out.scad", dedup=False)          # disable Component module hoisting
+render(part, "out.scad", dedup_prim_threshold=10)  # raise size cutoff (default 5)
 ```
 
 This works even when the script also defines `MODEL` for the CLI; the two paths don't conflict.

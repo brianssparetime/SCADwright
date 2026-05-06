@@ -18,11 +18,14 @@ def render(
     glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
+    dedup: bool = True,
+    dedup_prim_threshold: int = 5,
 ) -> Path:
     """Write SCAD source for `node` to `path`. Returns the Path."""
     p = Path(path)
     with p.open("w", encoding="utf-8") as f:
         emit(node, f, pretty=pretty, debug=debug, banner=banner,
              glossary=glossary,
-             scad_use=scad_use, scad_include=scad_include)
+             scad_use=scad_use, scad_include=scad_include,
+             dedup=dedup, dedup_prim_threshold=dedup_prim_threshold)
     return p

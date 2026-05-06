@@ -54,6 +54,8 @@ class SCADEmitter(
         glossary: bool = True,
         scad_use: list[str] | None = None,
         scad_include: list[str] | None = None,
+        dedup: bool = True,
+        dedup_prim_threshold: int = 5,
     ):
         self.out = out
         self.pretty = pretty
@@ -63,12 +65,20 @@ class SCADEmitter(
         self.glossary = glossary
         self.scad_use = list(scad_use) if scad_use else []
         self.scad_include = list(scad_include) if scad_include else []
+        self.dedup = dedup
+        self.dedup_prim_threshold = dedup_prim_threshold
         self.indent = 0
-        # Module hoisting state for custom transforms.
-        # _module_defs: hash -> "module name(params) { body }\n" SCAD source.
-        # _module_call_names: hash -> module name string.
+        # Module hoisting state for custom transforms and hoisted Components.
+        # _module_defs: opaque key -> "module name(params) { body }\n" SCAD source.
+        #   Custom uses a bare 8-char hex hash; Component dedup uses a
+        #   "comp:<8-char-hex>" prefix to namespace the two cleanly.
+        # _module_call_names: same key -> module name string.
         self._module_defs: dict[str, str] = {}
         self._module_call_names: dict[str, str] = {}
+        # Component-dedup dispatch: id(component) -> module name. Populated
+        # by the pre-pass in emit_root when dedup is enabled. visit_component
+        # checks membership and emits a module call instead of inlining.
+        self._hoisted_components: dict[int, str] = {}
         # Hoisted resolution values: if every primitive/extrude sets the same
         # $fn (resp. $fa/$fs), we emit it once as a file-top global and
         # suppress it at call sites. Populated by a pre-pass in emit_root.
@@ -156,6 +166,64 @@ class SCADEmitter(
             parts.append(f"$fs={_fmt_num(fs)}")
         return ", ".join(parts)
 
+    def _prerender_dedup_modules(self, node: Node) -> None:
+        """Identify hoist-eligible Components and pre-render each as a module.
+
+        Populates ``self._hoisted_components`` (id → module name) and
+        ``self._module_defs`` / ``self._module_call_names`` (key → SCAD
+        source / name). Two Component instances that canonicalize to the
+        same tree_hash share one module def; both ids point at the same
+        module name.
+        """
+        from scadwright.emit.dedup import collect_component_dedup_plan, select_hoists
+        from scadwright.hashing import tree_hash
+
+        plan = collect_component_dedup_plan(node, prim_threshold=self.dedup_prim_threshold)
+        hoist_ids = select_hoists(plan, prim_threshold=self.dedup_prim_threshold)
+        if not hoist_ids:
+            return
+        nl = "\n" if self.pretty else " "
+        # Sort for deterministic module-emission order: by class name, then
+        # by tree_hash. id() is process-local and would jitter goldens.
+        ordered = sorted(
+            (plan[cid].component for cid in hoist_ids),
+            key=lambda c: (type(c).__name__, tree_hash(c)),
+        )
+        for component in ordered:
+            cls_name = type(component).__name__
+            h = tree_hash(component)[:8]
+            module_name = f"{cls_name}_{h}"
+            key = f"comp:{h}"
+            self._hoisted_components[id(component)] = module_name
+            if key in self._module_defs:
+                # Another instance with the same canonical form already
+                # registered this module; reuse the existing definition.
+                continue
+            module_buf = io.StringIO()
+            saved_out = self.out
+            saved_indent = self.indent
+            self.out = module_buf
+            self.indent = 1
+            try:
+                # Header + glossary go inside the module body so the human
+                # reader sees them once, attached to the geometry.
+                if self.pretty and self.section_labels:
+                    self._line(f"// {cls_name}")
+                    if self.glossary:
+                        from scadwright.component.glossary import format_glossary
+                        for line in format_glossary(component):
+                            self._line(f"//{line}")
+                self.visit(component._get_built_tree())
+            finally:
+                self.out = saved_out
+                self.indent = saved_indent
+            self._module_defs[key] = (
+                f"module {module_name}() {{{nl}"
+                f"{module_buf.getvalue()}"
+                f"}}{nl}"
+            )
+            self._module_call_names[key] = module_name
+
     # --- entry point ---
 
     def emit_root(self, node: Node) -> None:
@@ -167,6 +235,16 @@ class SCADEmitter(
         self._hoisted_fn = self._dominant_value_for(node, "fn")
         self._hoisted_fa = self._dominant_value_for(node, "fa")
         self._hoisted_fs = self._dominant_value_for(node, "fs")
+
+        # Component-dedup pre-pass: identify Component instances referenced
+        # multiple times and pre-render each one as a top-level module. The
+        # body walk below will see them via _hoisted_components and emit a
+        # module call instead of inlining the cached subtree. Dedup keys on
+        # `id(component)` and content-addresses module names by tree_hash,
+        # so two distinct instances that happen to canonicalize identically
+        # share one module def.
+        if self.dedup:
+            self._prerender_dedup_modules(node)
 
         # Render the body to a buffer so we can collect any hoisted modules first,
         # then prepend them to the actual output.
@@ -243,12 +321,15 @@ def emit(
     glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
+    dedup: bool = True,
+    dedup_prim_threshold: int = 5,
 ) -> None:
     t0 = time.perf_counter()
     SCADEmitter(
         out, pretty=pretty, debug=debug, banner=banner,
         section_labels=section_labels, glossary=glossary,
         scad_use=scad_use, scad_include=scad_include,
+        dedup=dedup, dedup_prim_threshold=dedup_prim_threshold,
     ).emit_root(node)
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
     # Attempt to measure output size if the stream supports tell(); otherwise skip.
@@ -275,9 +356,12 @@ def emit_str(
     glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
+    dedup: bool = True,
+    dedup_prim_threshold: int = 5,
 ) -> str:
     buf = io.StringIO()
     emit(node, buf, pretty=pretty, debug=debug, banner=banner,
          section_labels=section_labels, glossary=glossary,
-         scad_use=scad_use, scad_include=scad_include)
+         scad_use=scad_use, scad_include=scad_include,
+         dedup=dedup, dedup_prim_threshold=dedup_prim_threshold)
     return buf.getvalue()

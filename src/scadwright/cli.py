@@ -63,6 +63,21 @@ def _add_build_options(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Show INFO-level scadwright log output",
     )
+    p.add_argument(
+        "--no-dedup",
+        action="store_true",
+        help="Disable Component module hoisting; inline every reference",
+    )
+    p.add_argument(
+        "--dedup-threshold",
+        type=int,
+        default=5,
+        metavar="N",
+        help=(
+            "Minimum primitive count for a repeated Component to be hoisted "
+            "into a top-level SCAD module (default 5)"
+        ),
+    )
     # Viewpoint overrides (OpenSCAD camera).
     p.add_argument("--vpr", type=_parse_vec3, default=None, metavar="X,Y,Z",
                     help="Camera rotation ($vpr), e.g. --vpr=60,0,30")
@@ -189,16 +204,21 @@ def _build_to(out_path: Path, script_path: Path, args: argparse.Namespace) -> No
 
     cli_vp = _cli_viewpoint(args)
 
+    dedup = not args.no_dedup
+    dedup_threshold = args.dedup_threshold
+
     def _do_build():
         if args.variant is not None:
             with _variant_ctx(args.variant):
                 module = _import_script(script_path)
                 model = _extract_model(module, script_path)
-                render(model, out_path, pretty=not args.compact, debug=args.debug)
+                render(model, out_path, pretty=not args.compact, debug=args.debug,
+                       dedup=dedup, dedup_prim_threshold=dedup_threshold)
         else:
             module = _import_script(script_path)
             model = _extract_model(module, script_path)
-            render(model, out_path, pretty=not args.compact, debug=args.debug)
+            render(model, out_path, pretty=not args.compact, debug=args.debug,
+                   dedup=dedup, dedup_prim_threshold=dedup_threshold)
 
     if cli_vp:
         with _viewpoint(**cli_vp):
@@ -254,12 +274,16 @@ def _render_design_variants(
     written: list[Path] = []
     base_dir = script_path.parent
     cli_vp = _cli_viewpoint(args)
+    dedup = not args.no_dedup
+    dedup_threshold = args.dedup_threshold
     for design_cls, vname, meta in selected:
         out = _render_one(
             design_cls, vname, meta,
             base_dir=base_dir,
             out_override=out_override,
             cli_viewpoint=cli_vp,
+            dedup=dedup,
+            dedup_prim_threshold=dedup_threshold,
         )
         written.append(out)
     return written
