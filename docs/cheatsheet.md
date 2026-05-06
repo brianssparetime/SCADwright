@@ -29,7 +29,7 @@ from scadwright.transforms import (
 from scadwright.extrusions import linear_extrude, rotate_extrude
 from scadwright.composition_helpers import (
     linear_copy, rotate_copy, mirror_copy, halve,
-    multi_hull, sequential_hull,
+    multi_hull, sequential_hull, pack_on_bed,
 )
 from scadwright.shapes import (
     Tube, Funnel, RoundedBox, UShapeChannel, FilletRing,
@@ -142,6 +142,9 @@ part.halve([0, 1, 0])                               # keep +y, cut -y
 part.halve([1, 1, 0])                               # keep +x,+y quadrant
 part.halve(y=1)                                     # kwarg form (auto-sized cutter)
 part.halve(y=1, size=200)                           # explicit cutter size override
+
+pack_on_bed(part_a, part_b, plate=(220, 220), gap=8)   # lay out + lift to z=0 + fit-check
+pack_on_bed(*parts, plate=(256, 256), assert_fit=False)  # overflow OK
 ```
 
 ## Extrusions &nbsp; &nbsp;[→ full](extrusions.md)

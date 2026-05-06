@@ -25,7 +25,7 @@ _SUBMODULE_CASES = [
      True),
     ("composition_helpers",
      {"multi_hull", "sequential_hull",
-      "linear_copy", "rotate_copy", "mirror_copy", "halve"},
+      "linear_copy", "rotate_copy", "mirror_copy", "halve", "pack_on_bed"},
      True),
     ("transforms",
      {"translate", "rotate", "scale", "mirror", "color", "resize",

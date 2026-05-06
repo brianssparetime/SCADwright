@@ -147,6 +147,30 @@ By default the kept-region box is sized to just enclose the shape's world-space 
 
 `bbox()` of a halved shape returns the AABB of the *kept* region, not the original shape — `halve()` emits as `intersection(part, kept_box)` and the BBoxVisitor for Intersection folds children's bboxes via intersection, so the clipping is automatic. This matters for things like reading `bbox(part).min[2]` to compute how far below the bed a printed half extends.
 
+## `pack_on_bed`
+
+Lays parts left-to-right on the print bed, lifts each onto z=0, fit-checks against the plate, and returns the union. Replaces the bbox-→-translate-→-assert boilerplate that print variants accumulate.
+
+```python
+return pack_on_bed(housing_left, housing_right, mating_disc,
+                   plate=(256, 256), gap=8)
+```
+
+```python
+def pack_on_bed(*parts, gap=5.0, plate=(256, 256),
+                lift_to_bed=True, assert_fit=True) -> Union: ...
+```
+
+Conventions:
+
+- **Origin at bed front-left corner** (0, 0). Matches typical slicer defaults (PrusaSlicer, Cura). For center-of-bed coordinate systems, translate the result by `[-plate[0]/2, -plate[1]/2, 0]`.
+- **Layout along +X**, in argument order. Pre-rotate parts to control orientation before passing them in.
+- **Single row only.** Multi-row packing is out of scope; use multiple `pack_on_bed` calls and translate them apart if you need it.
+- **`lift_to_bed=True`** (the default) translates each part so its `bbox.min[2] = 0` — printing requires non-negative Z. Pass `lift_to_bed=False` for layouts where the parts already sit on the bed.
+- **`assert_fit=True`** (the default) raises `ValidationError` at construction time when the laid-out footprint exceeds `plate`, with the overflow magnitude in the message. Pass `assert_fit=False` to lay parts out anyway (useful when you want to inspect a too-large variant).
+
+Iterables in the args flatten one level, matching the CSG-arg convention: `pack_on_bed([a, b], c)` works the same as `pack_on_bed(a, b, c)`.
+
 ---
 
 ### Advanced notes
