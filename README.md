@@ -408,7 +408,7 @@ No declaration needed on the Component side — `fn` is accepted by every Compon
 
 
 
-### 15. Manufacturing-specific fudges are easy to add (and track!)
+### 15. Manufacturing-specific fudges are easy to add, track, and keep separate from design considerations
 
 The need to occasionally lie about a part's dimensions to manufacture what you really want is a sad fact of reality. 
 
@@ -433,6 +433,8 @@ class CamMount(Spec):
 CamMount.cam_barrel_od                       # 60.35
 ```
 
+The fudge-lies needed to make cam_barrel_od come out right don't interfere with design constraints.
+
 The chain is queryable to see what adjustments are applied and where they come from.
 
 ```python
@@ -440,7 +442,7 @@ CamMount.adjustments_for("cam_barrel_od")
 # [Adjustment(line=4, delta=0.3, comment='printer X-axis overshoot'),
 #  Adjustment(line=5, delta=0.05, comment='extra slop for the o-ring')]
 ```
-Specs can take optional `?` inputs (printer profile, material), and using them with [variants](docs/variants.md) lets one project produce calibrated builds for several printers from a single source.
+Specs can take optional `?` inputs (printer profile, material), and passing different ones in each [variant](docs/variants.md) lets one project produce calibrated builds for several printers from a single source.
 
 
 ### 16. You know if a part has changed
