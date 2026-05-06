@@ -24,9 +24,14 @@ from scadwright.emit.format import _fmt_num
 
 @dataclass(frozen=True)
 class _GlossaryState:
-    """The three name-set views the glossary needs from the resolver.
+    """The name-set views the glossary needs from the resolver.
 
-    ``knowns`` is the resolver's full ``{name: value}`` snapshot.
+    ``knowns`` is the resolver's full ``{name: value}`` post-adjust
+    snapshot. ``pre_adjust_knowns`` is the snapshot taken right before
+    adjustments were applied — used to display the starting value of
+    an input or default that was subsequently adjusted (so the chain
+    reads ``5 + 0.3 (overshoot) = 5.3`` rather than losing the 5).
+
     ``supplied`` and ``defaults`` are disjoint frozensets identifying
     which keys came from the caller and which fired a Param default;
     the third group (equation-derived) is implicit (knowns − supplied
@@ -39,6 +44,7 @@ class _GlossaryState:
     supplied: frozenset[str] = field(default_factory=frozenset)
     defaults: frozenset[str] = field(default_factory=frozenset)
     knowns: dict[str, Any] = field(default_factory=dict)
+    pre_adjust_knowns: dict[str, Any] = field(default_factory=dict)
 
 
 def _fmt_value(value: Any) -> str:
@@ -55,6 +61,57 @@ def _fmt_value(value: Any) -> str:
         if all(isinstance(x, (int, float, bool)) for x in value):
             return "[" + ", ".join(_fmt_num(x) for x in value) + "]"
     return repr(value)
+
+
+def _build_adjustment_chain(
+    name: str,
+    applied_adjustments: list,
+    parsed_adjustments: list,
+) -> str:
+    """Render the adjustment chain for ``name`` as inline glossary text.
+
+    Returns a string like ``"+ 0.3 (printer overshoot) - 0.1 (cal)"``
+    for additive chains or ``"* 1.05 (slop) / 2.0 (halve)"`` for
+    multiplicative ones. The operators match what the user wrote so
+    ``/= 2.0`` displays as ``/ 2.0``, not ``* 0.5``.
+
+    ``applied_adjustments`` is the per-name list from the instance's
+    ``_provenance`` dict; each entry is an :class:`Adjustment`
+    namedtuple. ``parsed_adjustments`` is the class-level
+    ``_unified_adjustments`` list. The two are paired by source line
+    so the original op and RHS text can be recovered (``Adjustment``
+    deliberately stores a normalized delta, which loses the original
+    operator).
+
+    Returns an empty string when ``applied_adjustments`` is empty.
+    """
+    if not applied_adjustments:
+        return ""
+    parsed_by_line = {
+        pa.source_line_index + 1: pa
+        for pa in parsed_adjustments
+        if pa.name == name
+    }
+    parts: list[str] = []
+    for adj in applied_adjustments:
+        pa = parsed_by_line.get(adj.line)
+        if pa is None:
+            # Defensive — provenance and parsed lists should always pair
+            # on (name, line). Fall back to delta-based rendering.
+            sign = "+" if adj.delta >= 0 else "-"
+            term = f"{sign} {abs(adj.delta)}"
+        else:
+            op_to_sym = {"+=": "+", "-=": "-", "*=": "*", "/=": "/"}
+            sym = op_to_sym.get(pa.op, "+")
+            try:
+                rhs_text = ast.unparse(pa.rhs)
+            except Exception:
+                rhs_text = repr(adj.delta)
+            term = f"{sym} {rhs_text}"
+        if adj.comment:
+            term += f" ({adj.comment})"
+        parts.append(term)
+    return " ".join(parts)
 
 
 def _equation_target(eq) -> str | None:
@@ -87,6 +144,7 @@ def format_glossary(component) -> list[str]:
     """
     cls = type(component)
     equations = getattr(cls, "_unified_equations", []) or []
+    parsed_adjustments = getattr(cls, "_unified_adjustments", []) or []
     state: _GlossaryState | None = getattr(component, "_glossary", None)
     if state is None:
         return []
@@ -99,6 +157,8 @@ def format_glossary(component) -> list[str]:
     supplied: frozenset[str] = state.supplied
     defaults: frozenset[str] = state.defaults
     overrides: frozenset[str] = getattr(cls, "_override_names", frozenset())
+    pre_adjust = state.pre_adjust_knowns
+    provenance = getattr(component, "_provenance", {}) or {}
     # Override-pattern fills (`?name = ?name or default`) act as defaults
     # from the caller's view — supplying the value or letting it default
     # produces the same resolved value. Classify them as (default) so
@@ -160,15 +220,45 @@ def format_glossary(component) -> list[str]:
         return []
 
     # Two-column layout: align the first ``=`` so values line up
-    # vertically. The supplied/default entries don't carry an
-    # expression, so for them the rhs is rendered as `value (tag)`
-    # rather than `expr = value`.
+    # vertically. Three rendering shapes:
+    #   - derived: ``name = expr = value``
+    #   - input/default: ``name = value  (tag)``
+    #   - either of the above with adjustments: insert the chain and
+    #     show the post-adjust value at the end:
+    #       ``name = expr <chain> = value``
+    #       ``name = pre_value <chain> = value  (tag)``
     name_width = max(len(name) for name, _ in entries)
     lines: list[str] = []
     for name, rhs in entries:
+        chain = _build_adjustment_chain(
+            name, provenance.get(name, []), parsed_adjustments,
+        )
         if rhs in ("(input)", "(default)"):
-            value = _fmt_value(knowns[name])
-            lines.append(f"  {name:<{name_width}} = {value}  {rhs}")
+            post_value = _fmt_value(knowns[name])
+            if chain:
+                pre_value = _fmt_value(
+                    pre_adjust.get(name, knowns[name])
+                )
+                lines.append(
+                    f"  {name:<{name_width}} = {pre_value} {chain} "
+                    f"= {post_value}  {rhs}"
+                )
+            else:
+                lines.append(
+                    f"  {name:<{name_width}} = {post_value}  {rhs}"
+                )
         else:
-            lines.append(f"  {name:<{name_width}} = {rhs}")
+            # Derived. ``rhs`` is already ``expr = value`` for the
+            # unadjusted case. With adjustments we re-render to
+            # ``expr <chain> = post_value``.
+            if chain:
+                target = name
+                expr = derivation_expr.get(target, "")
+                post_value = _fmt_value(knowns[target])
+                lines.append(
+                    f"  {name:<{name_width}} = {expr} {chain} "
+                    f"= {post_value}"
+                )
+            else:
+                lines.append(f"  {name:<{name_width}} = {rhs}")
     return lines

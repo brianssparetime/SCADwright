@@ -397,3 +397,128 @@ def test_full_mode_clean_on_repo():
         f"{len(violations)} violation(s):\n"
         + "\n".join(v.format() for v in violations)
     )
+
+
+# =============================================================================
+# adjustment-no-comment
+# =============================================================================
+
+
+def test_adjustment_with_trailing_comment_not_flagged():
+    src = """
+class C(Component):
+    equations = '''
+        x = 5
+        x += 0.3  # printer overshoot
+    '''
+"""
+    assert _violations(src, lint.check_adjustment_comment) == []
+
+
+def test_adjustment_with_preceding_comment_not_flagged():
+    src = """
+class C(Component):
+    equations = '''
+        x = 5
+        # printer overshoot
+        x += 0.3
+    '''
+"""
+    assert _violations(src, lint.check_adjustment_comment) == []
+
+
+def test_adjustment_without_comment_flagged():
+    src = """
+class C(Component):
+    equations = '''
+        x = 5
+        x += 0.3
+    '''
+"""
+    v = _violations(src, lint.check_adjustment_comment)
+    assert len(v) == 1
+    assert v[0].rule == "adjustment-no-comment"
+    assert "x" in v[0].message
+    assert "+=" in v[0].message
+
+
+def test_adjustment_in_non_component_class_not_flagged():
+    """Adjustments are only meaningful inside Component subclasses; an
+    ``equations`` attribute on an unrelated class isn't even valid
+    DSL, so the lint stays silent rather than firing on a string the
+    framework would never process."""
+    src = """
+class Plain:
+    equations = '''
+        x = 5
+        x += 0.3
+    '''
+"""
+    assert _violations(src, lint.check_adjustment_comment) == []
+
+
+def test_multiple_uncommented_adjustments_all_flagged():
+    src = """
+class C(Component):
+    equations = '''
+        x = 5
+        y = 7
+        x += 0.3
+        y *= 1.05
+    '''
+"""
+    v = _violations(src, lint.check_adjustment_comment)
+    assert len(v) == 2
+
+
+def test_blank_line_between_comment_and_adjustment_breaks_association():
+    src = """
+class C(Component):
+    equations = '''
+        x = 5
+        # this comment is dangling
+
+        x += 0.3
+    '''
+"""
+    # Blank line between the comment and the adjustment means the
+    # association is broken — adjustment counts as having no comment.
+    v = _violations(src, lint.check_adjustment_comment)
+    assert len(v) == 1
+    assert v[0].rule == "adjustment-no-comment"
+
+
+def test_attribute_base_component_subclass_flagged():
+    src = """
+class C(sc.Component):
+    equations = '''
+        x = 5
+        x += 0.3
+    '''
+"""
+    v = _violations(src, lint.check_adjustment_comment)
+    assert len(v) == 1
+
+
+def test_list_form_equations_handled():
+    src = """
+class C(Component):
+    equations = [
+        "x = 5",
+        "x += 0.3",
+    ]
+"""
+    v = _violations(src, lint.check_adjustment_comment)
+    assert len(v) == 1
+    assert "x" in v[0].message
+
+
+def test_list_form_with_trailing_comment_not_flagged():
+    src = """
+class C(Component):
+    equations = [
+        "x = 5",
+        "x += 0.3  # overshoot",
+    ]
+"""
+    assert _violations(src, lint.check_adjustment_comment) == []

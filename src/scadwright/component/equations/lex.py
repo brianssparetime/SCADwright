@@ -250,18 +250,50 @@ def _split_equations_text(text: str) -> list[str]:
     survive — the per-line scanners that consume each entry already
     handle them.
     """
-    lines: list[str] = []
+    return [line for line, _ in _split_equations_with_comments(text)]
+
+
+def _split_equations_with_comments(
+    text: str,
+) -> list[tuple[str, str | None]]:
+    """Like ``_split_equations_text`` but pairs each logical line with the
+    immediately-preceding whole-line comment, if any.
+
+    Returns ``[(line, preceding_comment_or_None), ...]``. The preceding-
+    comment text has its leading ``#`` stripped and is right-stripped of
+    whitespace. When multiple consecutive whole-line comments precede a
+    logical line, only the most recent one is attached (the closest one
+    semantically belongs to the line below). A blank line between a
+    whole-line comment and the next logical line breaks the association
+    — the comment is discarded.
+
+    Used by the adjustment-syntax path so an adjustment's preceding
+    comment is available for the introspection API and the
+    no-comment lint rule.
+    """
+    lines: list[tuple[str, str | None]] = []
     buf: list[str] = []
     i = 0
     n = len(text)
     in_comment = False
+    pending_preceding: str | None = None
 
     def _flush() -> None:
+        nonlocal pending_preceding
         s = "".join(buf).strip()
         buf.clear()
-        if not s or s.startswith("#"):
+        if not s:
+            # Blank logical line breaks any preceding-comment association.
+            pending_preceding = None
             return
-        lines.append(s)
+        if s.startswith("#"):
+            # Whole-line comment: capture as the preceding comment for
+            # the next logical line. Overwrites any earlier pending
+            # comment — the closest one wins.
+            pending_preceding = s.lstrip("#").rstrip().lstrip()
+            return
+        lines.append((s, pending_preceding))
+        pending_preceding = None
 
     while i < n:
         c = text[i]

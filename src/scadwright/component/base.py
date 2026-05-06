@@ -175,6 +175,43 @@ class Component(Node):
             surface_params=_normalize_surface_params(surface_params),
         )
 
+    def adjustments_for(self, name: str) -> list:
+        """Return the adjustments applied to ``name`` in source order.
+
+        Each entry is an :class:`scadwright.Adjustment` namedtuple
+        ``(line, delta, comment)``. Skipped adjustments (None
+        propagation through a missing optional) are NOT recorded —
+        the returned list reflects only adjustments that actually
+        fired. Empty list when the name exists but was never adjusted.
+
+        Raises :class:`ValidationError` when ``name`` is not part of
+        this Component (not a declared Param, not an equation-derived
+        name).
+        """
+        from scadwright.component.adjustments import adjustments_for_lookup
+
+        cls = type(self)
+        return adjustments_for_lookup(
+            name=name,
+            provenance=getattr(self, "_provenance", {}) or {},
+            valid_names=getattr(cls, "_spec_value_names", frozenset()),
+            owner_name=cls.__name__,
+        )
+
+    def all_adjustments(self) -> dict:
+        """Return ``{name: [Adjustment, ...]}`` for every adjusted name.
+
+        Names that were declared but never adjusted are not present in
+        the returned dict; iterate ``component.__params__`` and call
+        :meth:`adjustments_for` to enumerate every name including
+        unadjusted ones.
+        """
+        from scadwright.component.adjustments import all_adjustments_lookup
+
+        return all_adjustments_lookup(
+            getattr(self, "_provenance", {}) or {}
+        )
+
     def tight_bbox(self):
         """Return the tight AABB of this Component in its local frame.
 

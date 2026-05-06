@@ -1,5 +1,6 @@
 """Component framework — user-defined parametric parts."""
 
+from scadwright.component.adjustments import Adjustment
 from scadwright.component.anchors import anchor
 from scadwright.component.base import Component, materialize
 from scadwright.component.params import (
@@ -11,10 +12,13 @@ from scadwright.component.params import (
     one_of,
     positive,
 )
+from scadwright.component.spec import Spec
 
 __all__ = [
+    "Adjustment",
     "Component",
     "Param",
+    "Spec",
     "anchor",
     "in_range",
     "materialize",

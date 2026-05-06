@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 from typing import Any
 
+from scadwright.component.adjustments import Adjustment, _adjustment_delta
 from scadwright.component.params import Param
 from scadwright.component.resolver.coercion import _coerce_for_param
 from scadwright.component.resolver.enrichment import _enrich_constraint_failure
@@ -21,6 +22,7 @@ from scadwright.component.resolver.sympy_bridge import (
     ast_to_sympy,
 )
 from scadwright.component.resolver.types import (
+    ParsedAdjustment,
     ParsedConstraint,
     ParsedEquation,
     equation_bare_targets,
@@ -58,6 +60,7 @@ class IterativeResolver:
         supplied: dict[str, Any],
         component_name: str,
         override_names: frozenset[str] = frozenset(),
+        adjustments: list[ParsedAdjustment] | None = None,
     ):
         from scadwright.component.equations import (
             _CURATED_BUILTINS, _CURATED_MATH,
@@ -65,6 +68,7 @@ class IterativeResolver:
 
         self.equations = equations
         self.constraints = constraints
+        self.adjustments = list(adjustments) if adjustments else []
         self.params = params
         self.component_name = component_name
         self._override_names = override_names
@@ -121,7 +125,32 @@ class IterativeResolver:
         # failing equation/constraint, matching how the legacy pipeline
         # surfaced errors.
         self._pending_eqs: list[int] = list(range(len(equations)))
-        self._pending_constraints: list[int] = list(range(len(constraints)))
+        # Constraints split into two queues. Pre-adjust constraints
+        # (the default) evaluate eagerly inside the iterative loop —
+        # they read the design-intent namespace before adjustments
+        # are layered on. Constraints that wrap any name in
+        # ``adjusted(...)`` are deferred until after the adjustment
+        # phase, when the post-adjust namespace is available.
+        self._pending_constraints: list[int] = [
+            i for i, c in enumerate(constraints) if not c.uses_adjusted
+        ]
+        self._deferred_constraints: list[int] = [
+            i for i, c in enumerate(constraints) if c.uses_adjusted
+        ]
+        # Snapshot of the equation-resolved namespace, taken right
+        # before adjustments are applied. Bound to the eval namespace
+        # for deferred-constraint evaluation so bare names resolve
+        # against pre-adjust values; ``adjusted(name)``-wrapped names
+        # read from ``self.knowns`` (post-adjust) via the synthetic
+        # ``__adjusted__`` binding.
+        self._pre_adjust_knowns: dict[str, Any] = {}
+
+        # Provenance dict: name → ordered list of applied Adjustments.
+        # Only populated for adjustments that actually fired (skipped
+        # adjustments are NOT recorded, matching the spec). Read by
+        # the public ``adjustments_for`` and ``all_adjustments``
+        # methods on the Component instance after resolve() returns.
+        self._provenance: dict[str, list[Adjustment]] = {}
 
         # Pre-resolve optional-name overrides before the iterative loop
         # runs. For each equation whose bare-Name target is an override
@@ -277,6 +306,16 @@ class IterativeResolver:
 
         # Final check on anything that's still pending (None-skipped or otherwise).
         self._check_pending_constraints()
+
+        # Apply adjustments on top of the equation-resolved namespace.
+        # Pre-adjust constraints have already fired against the design-
+        # intent namespace; the adjusted values are what gets emitted.
+        # Constraints that wrap names in ``adjusted(...)`` are deferred
+        # until after the apply step so they can read the post-adjust
+        # values.
+        self._apply_adjustments()
+        self._check_deferred_constraints()
+
         return self.knowns
 
     # --- per-equation resolve ---
@@ -735,6 +774,11 @@ class IterativeResolver:
         """
         full_known = set(tentative) | set(self._curated_ns)
         for c in self.constraints:
+            # Adjusted-using constraints reference post-adjust values
+            # that don't exist yet at sympy-disambiguation time.
+            # Skip them; they fire after the adjustment apply step.
+            if c.uses_adjusted:
+                continue
             if find_unknowns(c.expr, full_known):
                 continue
             try:
@@ -848,6 +892,176 @@ class IterativeResolver:
                     msg += f": {detail}"
                 raise ValidationError(msg)
         return progress
+
+    # --- deferred constraint evaluation ---
+
+    def _check_deferred_constraints(self) -> None:
+        """Evaluate constraints that wrap names in ``adjusted(...)``.
+
+        These run after the adjustment apply step. The eval namespace
+        is layered: curated builtins/math at the bottom, the pre-
+        adjust snapshot above (so bare-name references in mixed rules
+        read design-intent values), and ``__adjusted__`` bound to the
+        post-adjust ``self.knowns`` so the rewritten subscript form
+        ``__adjusted__["X"]`` (i.e., the original ``adjusted(X)``)
+        reads the commanded value.
+
+        Skip silently when an adjusted-wrapped name's post-adjust
+        value or any pre-adjust referenced name is None — same
+        convention as the pre-adjust constraint path's None
+        propagation.
+        """
+        if not self._deferred_constraints:
+            return
+        # Bare-name lookups go to pre_adjust_knowns; ``adjusted(X)``
+        # was rewritten to ``__adjusted__["X"]`` and reads the post-
+        # adjust ``self.knowns`` via the dict bound here.
+        ns_base = {
+            **self._curated_ns,
+            **self._pre_adjust_knowns,
+            "__adjusted__": self.knowns,
+            "__builtins__": {},
+        }
+        for i in list(self._deferred_constraints):
+            c = self.constraints[i]
+            # Skip when any referenced name (pre-adjust) or wrapped
+            # name (post-adjust) is None.
+            if any(
+                self._pre_adjust_knowns.get(n) is None
+                for n in c.referenced_names
+                if n in self._pre_adjust_knowns
+            ):
+                self._deferred_constraints.remove(i)
+                continue
+            try:
+                expr_node = ast.Expression(body=c.expr)
+                ast.fix_missing_locations(expr_node)
+                code = compile(expr_node, "<deferred-constraint>", "eval")
+                result = eval(code, ns_base)
+            except (TypeError, ValueError, KeyError):
+                # KeyError covers __adjusted__["X"] when X never
+                # made it into self.knowns (None-skipped name etc.).
+                self._deferred_constraints.remove(i)
+                continue
+            except Exception as exc:
+                raise ValidationError(
+                    f"{self._loc(c)}: constraint `{c.raw}` "
+                    f"failed to evaluate: {exc}"
+                ) from exc
+            self._deferred_constraints.remove(i)
+            if not result:
+                detail = _enrich_constraint_failure(c.expr, ns_base)
+                msg = f"{self._loc(c)}: constraint violated: `{c.raw}`"
+                if detail:
+                    msg += f": {detail}"
+                raise ValidationError(msg)
+
+    # --- adjustment application ---
+
+    def _apply_adjustments(self) -> None:
+        """Apply each adjustment in source order.
+
+        Per the spec:
+
+        - The RHS reads from the equation-resolved namespace
+          (``self.knowns`` immediately after the iterative loop finished).
+          Per-name uniformity and the RHS-no-reference-to-adjusted-
+          names check (both run at class-def time) ensure no ordering
+          or cycle concern.
+        - If the LHS or any RHS-referenced name resolves to ``None``
+          (an unsupplied ``?param`` propagation), the adjustment skips
+          silently and is NOT recorded in introspection. Same convention
+          as rules referencing ``?name`` skipping today.
+        - The result is coerced via the LHS Param's type so an int
+          adjustment widening to float still flows through cleanly,
+          and a non-numeric Param type gets a clear error rather than
+          a downstream surprise.
+        """
+        # Drain any pending Param defaults so adjusted names that
+        # only have a Param-default value source (no equation) become
+        # visible. The iterative loop only fires defaults when it
+        # stalls with pending equations; a Component with adjustments
+        # but no equations would otherwise reach this point with an
+        # empty knowns dict and skip every adjustment. Also runs when
+        # there are no adjustments but deferred constraints exist —
+        # the deferred constraints still want a complete pre-adjust
+        # snapshot.
+        if self._pending_defaults:
+            for name, value in self._pending_defaults.items():
+                if name not in self.knowns:
+                    self.knowns[name] = value
+                    self._applied_defaults.add(name)
+            self._pending_defaults = {}
+
+        # Snapshot the pre-adjust namespace for deferred-constraint
+        # evaluation. Done unconditionally — the cost is one dict
+        # copy and the snapshot is read whether or not adjustments
+        # actually apply (a deferred constraint can fire even when
+        # every adjustment skips, in which case pre-adjust and post-
+        # adjust are identical).
+        self._pre_adjust_knowns = dict(self.knowns)
+
+        if not self.adjustments:
+            return
+
+        for adj in self.adjustments:
+            current = self.knowns.get(adj.name)
+            if current is None:
+                # LHS itself is None (unsupplied optional or never bound).
+                # Per spec: skip silently.
+                continue
+            if any(
+                self.knowns.get(n) is None
+                for n in adj.referenced_names
+                if n in self.knowns
+            ):
+                # An RHS-referenced name is None — skip.
+                continue
+            try:
+                rhs_value = self._eval_node(adj.rhs)
+            except (TypeError, ValueError):
+                # None propagation through arithmetic — skip silently,
+                # matching the constraint path's behavior.
+                continue
+            except Exception as exc:
+                rhs_text = ast.unparse(adj.rhs)
+                raise ValidationError(
+                    f"{self._loc(adj)}: adjustment `{adj.raw}` "
+                    f"failed to evaluate right-hand side `{rhs_text}`: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            if rhs_value is None:
+                continue
+            if adj.op == "+=":
+                new_value = current + rhs_value
+            elif adj.op == "-=":
+                new_value = current - rhs_value
+            elif adj.op == "*=":
+                new_value = current * rhs_value
+            elif adj.op == "/=":
+                if rhs_value == 0:
+                    rhs_text = ast.unparse(adj.rhs)
+                    raise ValidationError(
+                        f"{self._loc(adj)}: adjustment `{adj.raw}`: "
+                        f"division by zero — the divisor `{rhs_text}` "
+                        f"evaluated to {rhs_value!r}."
+                    )
+                new_value = current / rhs_value
+            else:  # pragma: no cover — parser limits ops
+                continue
+            param = self.params.get(adj.name)
+            new_value = _coerce_for_param(
+                new_value, param,
+                name=adj.name, component_name=self.component_name,
+            )
+            self.knowns[adj.name] = new_value
+            self._provenance.setdefault(adj.name, []).append(
+                Adjustment(
+                    line=adj.source_line_index + 1,  # 1-indexed per spec
+                    delta=_adjustment_delta(adj.op, rhs_value),
+                    comment=adj.comment,
+                )
+            )
 
     # --- error messages ---
 

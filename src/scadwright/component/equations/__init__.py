@@ -34,6 +34,7 @@ from scadwright.component.equations.lex import (
     _extract_optional_markers,
     _require_sympy,
     _split_equations_text,
+    _split_equations_with_comments,
 )
 from scadwright.component.equations.names import (
     _ALGEBRAIC_FUNCTION_NAMES,
@@ -55,4 +56,5 @@ __all__ = [
     "_extract_optional_markers",
     "_require_sympy",
     "_split_equations_text",
+    "_split_equations_with_comments",
 ]

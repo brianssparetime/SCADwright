@@ -246,12 +246,12 @@ def test_top_level_eq_outside_if_rejected():
 
 
 def test_eq_inside_ifexp_test_allowed():
-    eqs, _, _, _ = parse_equations_unified(["x = a if count == 1 else b"])
+    eqs, _, _, _, _ = parse_equations_unified(["x = a if count == 1 else b"])
     assert len(eqs) == 1
 
 
 def test_eq_with_boolop_in_ifexp_test_allowed():
-    eqs, _, _, _ = parse_equations_unified([
+    eqs, _, _, _, _ = parse_equations_unified([
         "x = a if axis == 'xy' and count > 0 else b",
     ])
     assert len(eqs) == 1
@@ -259,7 +259,7 @@ def test_eq_with_boolop_in_ifexp_test_allowed():
 
 def test_assign_eq_still_works():
     # `=` is the equation operator; `==` is no longer accepted.
-    eqs, _, _, _ = parse_equations_unified(["od = id + 2*thk"])
+    eqs, _, _, _, _ = parse_equations_unified(["od = id + 2*thk"])
     assert len(eqs) == 1
 
 
@@ -567,14 +567,14 @@ def test_int_override_with_arithmetic_rejected():
 
 
 def test_eq_with_or_inside_if_allowed():
-    eqs, _, _, _ = parse_equations_unified([
+    eqs, _, _, _, _ = parse_equations_unified([
         "x = a if axis == 'xy' or axis == 'xz' else b",
     ])
     assert len(eqs) == 1
 
 
 def test_eq_with_not_inside_if_allowed():
-    eqs, _, _, _ = parse_equations_unified([
+    eqs, _, _, _, _ = parse_equations_unified([
         "x = a if not (axis == 'xy') else b",
     ])
     assert len(eqs) == 1
@@ -583,7 +583,7 @@ def test_eq_with_not_inside_if_allowed():
 def test_eq_inside_comprehension_if_clause_allowed():
     # `==` inside a comprehension's `if` filter is a Python-level
     # `if` condition — should be allowed by the placement rule.
-    eqs, _, _, _ = parse_equations_unified([
+    eqs, _, _, _, _ = parse_equations_unified([
         "result = tuple(x for x in items if x == target)",
     ])
     assert len(eqs) == 1

@@ -15,6 +15,7 @@ from scadwright.component.equations import _NUMERIC_FUNCTION_NAMES
 from scadwright.component.resolver.overrides import _classify_override_targets
 from scadwright.component.resolver.sympy_bridge import ast_to_sympy
 from scadwright.component.resolver.types import (
+    ParsedAdjustment,
     ParsedConstraint,
     ParsedEquation,
     _classdef_loc,
@@ -316,6 +317,135 @@ def _check_self_reference(
                 f"equation {eq.raw!r}: self-referential and inconsistent "
                 f"(reduces to {sp.sstr(sp.Eq(lhs_expr, rhs_expr))})"
             )
+
+
+_ADDITIVE_OPS = frozenset({"+=", "-="})
+_MULTIPLICATIVE_OPS = frozenset({"*=", "/="})
+
+
+def _check_adjusted_only_in_rules(
+    equations: list[ParsedEquation],
+    adjustments: list[ParsedAdjustment],
+    class_name: str = "",
+) -> None:
+    """Reject ``adjusted(...)`` calls outside rule expressions.
+
+    The marker is meaningful only in rules: it reads the post-adjust
+    value of a name. Inside an equation (where the name is being
+    derived) or inside an adjustment's RHS (where the name's adjusted
+    value is what we'd be computing) the marker would either be
+    circular or simply confused. Surface those cases at class-def
+    time with a clear message naming the offending line.
+
+    Constraints are NOT walked here because constraint parsing has
+    already rewritten any valid ``adjusted(...)`` call into a
+    ``Subscript`` node — by the time this check runs, no constraint
+    AST contains a residual ``Call(Name("adjusted"), ...)`` shape.
+    """
+    from scadwright.component.resolver.parsing import _ADJUSTED_FN_NAME
+
+    def _walk(node: ast.AST, raw: str, loc: str, context: str) -> None:
+        for sub in ast.walk(node):
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Name)
+                and sub.func.id == _ADJUSTED_FN_NAME
+            ):
+                raise ValidationError(
+                    f"{loc}: `{_ADJUSTED_FN_NAME}(...)` is only valid "
+                    f"inside a rule (a boolean expression line); got "
+                    f"it in {context} {raw!r}. Adjustments are layered "
+                    f"after equations resolve, so reading the adjusted "
+                    f"value from inside the equation that defines it "
+                    f"would be circular."
+                )
+
+    for eq in equations:
+        loc = _classdef_loc(class_name, eq.source_line_index)
+        _walk(eq.lhs, eq.raw, loc, "an equation")
+        _walk(eq.rhs, eq.raw, loc, "an equation")
+    for adj in adjustments:
+        loc = _classdef_loc(class_name, adj.source_line_index)
+        _walk(adj.rhs, adj.raw, loc, "an adjustment's right-hand side")
+
+
+def _check_adjustment_uniformity(
+    adjustments: list[ParsedAdjustment], class_name: str = "",
+) -> None:
+    """Reject mixing additive and multiplicative adjustments on a single
+    name.
+
+    Per the spec: each adjusted name must use ``+=``/``-=`` exclusively
+    or ``*=``/``/=`` exclusively. Mixing classes is a category error
+    (`x += a; x *= b` has different meanings depending on order — and
+    order is what we're trying to take off the user's plate). Surface
+    both lines in the error so the user can see what to change.
+    """
+    if not adjustments:
+        return
+    first_kind: dict[str, tuple[str, int]] = {}  # name → (kind, source_idx)
+    for adj in adjustments:
+        if adj.op in _ADDITIVE_OPS:
+            kind = "additive"
+        elif adj.op in _MULTIPLICATIVE_OPS:
+            kind = "multiplicative"
+        else:  # pragma: no cover — _split_top_level_adjustment limits ops
+            continue
+        if adj.name not in first_kind:
+            first_kind[adj.name] = (kind, adj.source_line_index)
+            continue
+        prev_kind, prev_idx = first_kind[adj.name]
+        if prev_kind == kind:
+            continue
+        raise ValidationError(
+            f"{_classdef_loc(class_name, adj.source_line_index)}: "
+            f"adjustment {adj.raw!r} is {kind} but `{adj.name}` was "
+            f"first adjusted {prev_kind}ly at "
+            f"{_classdef_loc(class_name, prev_idx)}. Per-name, all "
+            f"adjustments must be the same class (all additive `+=`/"
+            f"`-=` or all multiplicative `*=`/`/=`). If you need both, "
+            f"introduce a derived name with one class and apply the "
+            f"other to the derivation."
+        )
+
+
+def _check_adjustment_rhs_no_adjusted_refs(
+    adjustments: list[ParsedAdjustment], class_name: str = "",
+) -> None:
+    """Reject adjustments whose RHS references another adjusted name.
+
+    Per the spec: an adjustment's RHS may reference any name that is
+    NOT itself adjusted in the same block. Eliminates ordering and
+    cycle issues by construction — every adjustment's RHS reads from
+    the equation-resolved (pre-adjust) namespace.
+    """
+    if not adjustments:
+        return
+    # Map each adjusted name to the source-line index of the FIRST
+    # adjustment that targets it. The "where the offender is adjusted"
+    # diagnostic shows that line so the user can compare both sites.
+    first_adjustment_of: dict[str, int] = {}
+    for adj in adjustments:
+        if adj.name not in first_adjustment_of:
+            first_adjustment_of[adj.name] = adj.source_line_index
+    adjusted_names = set(first_adjustment_of)
+    for adj in adjustments:
+        bad = adj.referenced_names & adjusted_names
+        if not bad:
+            continue
+        offender = sorted(bad)[0]
+        offender_loc = _classdef_loc(
+            class_name, first_adjustment_of[offender]
+        )
+        raise ValidationError(
+            f"{_classdef_loc(class_name, adj.source_line_index)}: "
+            f"adjustment `{adj.raw}` references `{offender}` on its "
+            f"right-hand side, but `{offender}` is itself adjusted at "
+            f"{offender_loc}. An adjustment's RHS may only reference "
+            f"unadjusted (equation-resolved) names. If you genuinely "
+            f"need `{offender}`'s adjusted value, derive it as an "
+            f"equation first and adjust the derivation."
+        )
 
 
 def _check_mutual_inconsistency(

@@ -23,8 +23,10 @@ from scadwright.bbox import BBox, bbox, resolved_transform, tight_bbox
 from scadwright.hashing import tree_hash
 from scadwright.matrix import Matrix
 from scadwright.component import (
+    Adjustment,
     Component,
     Param,
+    Spec,
     anchor,
     in_range,
     materialize,
@@ -53,8 +55,10 @@ __all__ = [
     # Anchors
     "Anchor",
     # Component authoring
+    "Adjustment",
     "Component",
     "Param",
+    "Spec",
     "anchor",
     "materialize",
     # Validators

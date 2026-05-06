@@ -26,14 +26,14 @@ def test_subscript_in_equation_accepted():
     # subscript as a read of ``arr[0]`` and consistency-checks that it
     # equals 5 once ``arr`` is supplied. Subscripts never act as outputs;
     # a tuple Param is supplied as a whole, not via element assignment.
-    eqs, _, _, _ = parse_equations_unified(["arr[0] = 5"])
+    eqs, _, _, _, _ = parse_equations_unified(["arr[0] = 5"])
     assert len(eqs) == 1
 
 
 def test_attribute_in_equation_accepted():
     # ``spec.foo = 5`` is a valid equation: the resolver reads
     # ``spec.foo`` and consistency-checks once ``spec`` is supplied.
-    eqs, _, _, _ = parse_equations_unified(["spec.foo = 5"])
+    eqs, _, _, _, _ = parse_equations_unified(["spec.foo = 5"])
     assert len(eqs) == 1
 
 
@@ -74,7 +74,7 @@ def test_self_reference_via_equality():
 
 def test_self_reference_consistent_is_ok():
     # x == x reduces to 0 == 0, true. Should not raise.
-    eqs, _, _, _ = parse_equations_unified(["x = x"])
+    eqs, _, _, _, _ = parse_equations_unified(["x = x"])
     assert len(eqs) == 1
 
 
@@ -107,7 +107,7 @@ def test_mutual_inconsistency_three_equations():
 
 def test_mutual_consistent_solvable_system_ok():
     # a + b == 5, a - b == 1 → a=3, b=2. Has a solution; should NOT raise.
-    eqs, _, _, _ = parse_equations_unified([
+    eqs, _, _, _, _ = parse_equations_unified([
         "a + b = 5",
         "a - b = 1",
     ])
@@ -117,7 +117,7 @@ def test_mutual_consistent_solvable_system_ok():
 def test_mutual_underdetermined_ok():
     # Just a = b + 1 with no other constraint — underdetermined, not
     # inconsistent. Should NOT raise.
-    eqs, _, _, _ = parse_equations_unified(["a = b + 1"])
+    eqs, _, _, _, _ = parse_equations_unified(["a = b + 1"])
     assert len(eqs) == 1
 
 
@@ -150,19 +150,19 @@ def test_comma_lhs_with_literal_list_rhs_rejected():
 def test_comma_lhs_with_scalar_rhs_ok():
     # `x, y = 5` is the broadcast form: each name gets 5. Two equations
     # are produced.
-    eqs, _, _, _ = parse_equations_unified(["x, y = 5"])
+    eqs, _, _, _, _ = parse_equations_unified(["x, y = 5"])
     assert len(eqs) == 2
 
 
 def test_comma_lhs_with_arithmetic_rhs_ok():
-    eqs, _, _, _ = parse_equations_unified(["x, y = a + b"])
+    eqs, _, _, _, _ = parse_equations_unified(["x, y = a + b"])
     assert len(eqs) == 2
 
 
 def test_comma_lhs_with_mismatched_length_tuple_ok():
     # `x, y = (a, b, c)` — element count differs from target count, so
     # not the Python-unpack confusion case. Each target gets the tuple.
-    eqs, _, _, _ = parse_equations_unified(["x, y = (a, b, c)"])
+    eqs, _, _, _, _ = parse_equations_unified(["x, y = (a, b, c)"])
     assert len(eqs) == 2
 
 
@@ -286,13 +286,13 @@ def test_eq_inside_constraint_rejected():
 
 def test_eq_inside_ifexp_test_allowed():
     # `==` inside the condition of an `if` expression is fine.
-    eqs, _, _, _ = parse_equations_unified(["x = a if count == 1 else b"])
+    eqs, _, _, _, _ = parse_equations_unified(["x = a if count == 1 else b"])
     assert len(eqs) == 1
 
 
 def test_eq_inside_ifexp_with_boolop_allowed():
     # `==` composes with `and`, `or`, `not` inside an `if` condition.
-    eqs, _, _, _ = parse_equations_unified([
+    eqs, _, _, _, _ = parse_equations_unified([
         "x = a if axis == 'xy' and count > 0 else b",
     ])
     assert len(eqs) == 1

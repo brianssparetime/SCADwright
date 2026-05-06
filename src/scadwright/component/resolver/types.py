@@ -48,11 +48,51 @@ class ParsedConstraint:
     ``source_line_index`` is the 0-based position of the originating line
     in the user's ``equations`` list. Comma-broadcast siblings share the
     same index.
+
+    ``uses_adjusted`` is True when the constraint references one or more
+    ``adjusted(name)`` markers — wrapping a name to read its post-
+    adjustment value instead of the default pre-adjust value. Such
+    constraints are deferred to a separate evaluation pass after
+    adjustments have been applied. The AST stored in ``expr`` has
+    already been rewritten so each ``adjusted(X)`` call is a synthetic
+    ``Subscript(Name("__adjusted__"), Constant("X"))`` lookup, evaluated
+    against a namespace that binds ``__adjusted__`` to the post-adjust
+    knowns dict.
     """
     raw: str
     expr: ast.AST
     referenced_names: frozenset[str]
     line_optionals: frozenset[str]
+    source_line_index: int
+    uses_adjusted: bool = False
+
+
+@dataclass(frozen=True)
+class ParsedAdjustment:
+    """A single adjustment: ``name <op> rhs`` where ``op`` is one of
+    ``+=``, ``-=``, ``*=``, ``/=``.
+
+    Adjustments layer on top of equation-resolved values during a
+    dedicated post-resolve phase. Per-name op-class uniformity (all
+    additive or all multiplicative) and RHS-no-reference-to-adjusted-
+    names are validated at class-def time so the apply phase has no
+    cycle/ordering concerns.
+
+    ``comment`` carries the user's rationale (trailing on the same line
+    or on the immediately-preceding whole-line comment, leading ``#``
+    stripped); the linter requires non-empty.
+
+    ``source_line_index`` is the 0-based position of the originating
+    line in the user's ``equations`` list. Comma-broadcast siblings
+    share the same index.
+    """
+    raw: str
+    name: str
+    op: str
+    rhs: ast.AST
+    referenced_names: frozenset[str]
+    line_optionals: frozenset[str]
+    comment: str
     source_line_index: int
 
 

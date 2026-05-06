@@ -71,6 +71,7 @@ def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict):
         supplied=dict(kwargs),
         component_name=cls.__name__,
         override_names=getattr(cls, "_override_names", frozenset()),
+        adjustments=getattr(cls, "_unified_adjustments", []),
     )
     try:
         resolved = resolver.resolve()
@@ -80,6 +81,9 @@ def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict):
     # picks it up. Skip None-valued keys for params that weren't supplied
     # to avoid over-supplying optionals back into the kwargs.
     override_names = getattr(cls, "_override_names", frozenset())
+    adjusted_names = {
+        adj.name for adj in getattr(cls, "_unified_adjustments", [])
+    }
     for name, value in resolved.items():
         # Override semantic: if the caller passed name=None for an
         # override target, the resolver's pre-resolve filled the
@@ -90,6 +94,12 @@ def _run_iterative_resolver(cls, params: dict[str, Param], kwargs: dict):
             and kwargs.get(name) is None
             and value is not None
         ):
+            kwargs[name] = value
+            continue
+        # Adjusted names: the resolver's value is the post-adjust
+        # value, which differs from the caller's input by design.
+        # Always use the resolver's value rather than the raw kwarg.
+        if name in adjusted_names:
             kwargs[name] = value
             continue
         if name in kwargs:
@@ -147,7 +157,9 @@ def _make_param_init(cls, params: dict[str, Param]):
         _resolve_clearance_kwarg(cls, kwargs)
 
         has_eqs_or_constraints = bool(
-            cls._unified_equations or cls._unified_constraints
+            cls._unified_equations
+            or cls._unified_constraints
+            or getattr(cls, "_unified_adjustments", None)
         )
         resolver = None
         if has_eqs_or_constraints:
@@ -176,7 +188,20 @@ def _make_param_init(cls, params: dict[str, Param]):
                     supplied=frozenset(resolver._supplied_names),
                     defaults=frozenset(resolver._applied_defaults),
                     knowns=dict(resolver.knowns),
+                    pre_adjust_knowns=dict(resolver._pre_adjust_knowns),
                 ),
+            )
+            # Adjustment provenance for the public introspection API.
+            # Stored as a plain dict mapping name → tuple of Adjustment
+            # entries; the methods on Component re-tuple before
+            # returning so the caller can't mutate the stored copy.
+            object.__setattr__(
+                self,
+                "_provenance",
+                {
+                    name: tuple(adjs)
+                    for name, adjs in resolver._provenance.items()
+                },
             )
 
         # Apply each Param via Param.__set__ (coerces and validates).

@@ -113,41 +113,46 @@ def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
 
 def _register_equations(cls, params: dict[str, Param]) -> None:
     """Parse ``equations = [...]`` into the unified representation and
-    auto-declare any Params introduced by names appearing in equations
-    or constraints.
+    auto-declare any Params introduced by names appearing in equations,
+    constraints, or adjustments.
 
     Orchestrates a sequence of named passes — keep them in this order:
 
     1. Lift the raw ``equations`` attribute into a flat list of
-       per-line strings (string vs list form, multi-line entries).
+       per-line strings paired with preceding-comment context.
     2. Parse via the resolver into a unified
-       ``(equations, constraints, optionals, typed_names)`` shape.
+       ``(equations, constraints, optionals, typed_names, adjustments)``
+       shape.
     3. Reject reserved-name collisions (curated-namespace clashes).
     4. Reject inline-tag-vs-explicit-Param collisions.
     5. Infer which bare-Name equation targets are numeric-only
        (controls auto-declared Param type: ``float`` vs ``None``).
-    6. Auto-declare every Param referenced in equations/constraints
-       that isn't already declared.
+    6. Auto-declare every Param referenced in equations, constraints,
+       or adjustments that isn't already declared.
     7. Attach per-Param validators extracted from numeric-RHS
        constraints.
-    8. Compute ``cls._override_names`` (optionals that are also
+    8. Verify every adjustment targets a name with a value source.
+    9. Compute ``cls._override_names`` (optionals that are also
        bare-Name equation targets — the resolver pre-resolves these).
-    9. Stash the parsed representation on the class for the auto-init
-       to hand to the resolver.
+    10. Stash the parsed representation on the class for the auto-init
+        to hand to the resolver.
 
     Per the spec, ``=`` and ``==`` are identical: every bare-Name
     target of any equation is just a Param the user may supply
     (consistency-checked) or omit (filled in by the resolver). Every
-    free name in any equation or constraint becomes a ``Param(float)``
-    if it isn't already declared, except where the numeric-only
-    heuristic (pass 5) downgrades it to ``Param(None)``.
+    free name in any equation, constraint, or adjustment becomes a
+    ``Param(float)`` if it isn't already declared, except where the
+    numeric-only heuristic (pass 5) downgrades it to ``Param(None)``.
     """
-    all_eq_strs = _parse_or_get_equation_strings(cls)
-    if not all_eq_strs:
+    eq_lines, preceding = _parse_or_get_equation_strings(cls)
+    if not eq_lines:
         if not hasattr(cls, "_unified_equations"):
             cls._unified_equations = []
             cls._unified_constraints = []
+            cls._unified_adjustments = []
             cls._override_names = frozenset()
+            cls._optional_names = frozenset()
+            cls._spec_value_names = frozenset(params)
         return
 
     from scadwright.component.equations import (
@@ -155,8 +160,16 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
     )
     from scadwright.component.resolver import parse_equations_unified
 
-    unified_eqs, unified_constraints, optional_names, typed_names = (
-        parse_equations_unified(all_eq_strs, class_name=cls.__name__)
+    (
+        unified_eqs,
+        unified_constraints,
+        optional_names,
+        typed_names,
+        unified_adjustments,
+    ) = parse_equations_unified(
+        eq_lines,
+        class_name=cls.__name__,
+        preceding_comments=preceding,
     )
     curated = set(_CURATED_BUILTINS) | set(_CURATED_MATH)
 
@@ -171,47 +184,75 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         cls, params,
         equations=unified_eqs,
         constraints=unified_constraints,
+        adjustments=unified_adjustments,
         optional_names=optional_names,
         typed_names=typed_names,
         curated=curated,
         target_is_numeric_only=target_is_numeric_only,
     )
 
-    _attach_per_param_validators(params, unified_constraints)
+    _attach_per_param_validators(
+        params, unified_constraints, unified_adjustments,
+    )
 
     cls._override_names = _compute_override_names(unified_eqs, optional_names)
     cls._unified_equations = unified_eqs
     cls._unified_constraints = unified_constraints
+    cls._unified_adjustments = unified_adjustments
+    cls._optional_names = frozenset(optional_names)
+    cls._spec_value_names = _compute_spec_value_names(
+        params, unified_eqs, unified_adjustments,
+    )
 
 
 # --- _register_equations passes (in orchestration order) ---
 
 
-def _parse_or_get_equation_strings(cls) -> list:
-    """Lift ``cls.equations`` into a flat list of logical equation lines.
+def _parse_or_get_equation_strings(
+    cls,
+) -> tuple[list[str], list[str | None]]:
+    """Lift ``cls.equations`` into a flat list of logical equation lines
+    paired with their preceding-comment context.
 
-    Accepts a triple-quoted string (run through ``_split_equations_text``),
-    a list of strings (each entry may itself be multi-line and gets
-    expanded through the same splitter), or nothing. Returns ``[]`` when
-    no equations attribute is present or it's empty.
+    Returns ``(lines, preceding_comments)`` — two parallel lists.
+    ``preceding_comments[i]`` is the immediately-preceding whole-line
+    comment for ``lines[i]`` (with leading ``#`` stripped) or ``None``.
+
+    Accepts a triple-quoted string (run through
+    ``_split_equations_with_comments``), a list of strings (each entry
+    may itself be multi-line and gets expanded through the same
+    splitter), or nothing. Returns ``([], [])`` when no equations
+    attribute is present or it's empty.
     """
     raw_eqs = cls.__dict__.get("equations", None)
     if isinstance(raw_eqs, str):
-        from scadwright.component.equations import _split_equations_text
-        return _split_equations_text(raw_eqs)
+        from scadwright.component.equations import (
+            _split_equations_with_comments,
+        )
+        pairs = _split_equations_with_comments(raw_eqs)
+        return [p[0] for p in pairs], [p[1] for p in pairs]
     if raw_eqs:
-        from scadwright.component.equations import _split_equations_text
+        from scadwright.component.equations import (
+            _split_equations_with_comments,
+        )
         # List entries may themselves be multi-line strings — expand each
-        # through the splitter. Single-line entries return ``[entry]`` so
-        # pure list-form input is byte-identical to before.
-        out: list = []
+        # through the splitter. Single-line entries arrive without
+        # preceding-comment context (the splitter only resolves preceding
+        # comments inside one block of text, and a list entry is one
+        # block).
+        lines: list[str] = []
+        preceding: list[str | None] = []
         for entry in raw_eqs:
             if isinstance(entry, str) and "\n" in entry:
-                out.extend(_split_equations_text(entry))
+                pairs = _split_equations_with_comments(entry)
+                for line, pre in pairs:
+                    lines.append(line)
+                    preceding.append(pre)
             else:
-                out.append(entry)
-        return out
-    return []
+                lines.append(entry)
+                preceding.append(None)
+        return lines, preceding
+    return [], []
 
 
 def _check_reserved_collisions(
@@ -294,13 +335,15 @@ def _auto_declare_params(
     *,
     equations,
     constraints,
+    adjustments,
     optional_names: frozenset[str],
     typed_names: dict[str, str],
     curated: set[str],
     target_is_numeric_only: dict[str, bool],
 ) -> None:
-    """Auto-declare every name referenced in equations/constraints that
-    isn't already a Param and isn't in the curated namespace.
+    """Auto-declare every name referenced in equations, constraints, or
+    adjustments that isn't already a Param and isn't in the curated
+    namespace.
 
     Optionals are declared first so the free-name loop finds the
     existing ``default=None`` Param rather than creating a required
@@ -328,12 +371,19 @@ def _auto_declare_params(
         type_ = _INLINE_TYPE_ALLOWLIST.get(typed_names.get(name, ""), float)
         _declare(name, type_=type_, default=None)
 
-    # Free names: every bare-Name target plus every constraint reference.
+    # Free names: every bare-Name target plus every constraint reference
+    # plus every adjustment LHS and RHS reference. Adjusted names are
+    # always numeric (the only meaningful types under +=/-=/*=//=), so
+    # they default to float when the numeric heuristic doesn't have an
+    # opinion.
     free_names: set[str] = set()
     for eq in equations:
         free_names |= eq.referenced_names
     for c in constraints:
         free_names |= c.referenced_names
+    for adj in adjustments:
+        free_names.add(adj.name)
+        free_names |= adj.referenced_names
 
     for name in free_names:
         if name in params:
@@ -350,7 +400,7 @@ def _auto_declare_params(
 
 
 def _attach_per_param_validators(
-    params: dict[str, Param], constraints,
+    params: dict[str, Param], constraints, adjustments,
 ) -> None:
     """Attach per-Param validators extracted from ``name OP num`` constraints.
 
@@ -358,9 +408,18 @@ def _attach_per_param_validators(
     time; the per-Param validator additionally fires on any direct
     ``Param.__set__`` call (e.g., a bad value reassigned post-construction
     when freeze isn't engaged).
+
+    Adjusted names are skipped: a constraint ``x > 5`` reads the
+    pre-adjust value of ``x`` (the design-intent invariant), but
+    ``Param.__set__`` on the auto-init's final write sees the post-
+    adjust value. Attaching the validator would re-check the post-
+    adjust value against a pre-adjust rule and surface a spurious
+    failure. The resolver still evaluates the constraint at the
+    correct moment (pre-adjust, before the apply step).
     """
     from scadwright.component.resolver import extract_per_param_validator
 
+    adjusted_names = {adj.name for adj in adjustments}
     for c in constraints:
         result = extract_per_param_validator(c)
         if result is None:
@@ -368,7 +427,33 @@ def _attach_per_param_validators(
         name, validator = result
         if name not in params:
             continue
+        if name in adjusted_names:
+            continue
         params[name].validators = tuple(params[name].validators) + (validator,)
+
+
+def _compute_spec_value_names(
+    params: dict[str, Param],
+    equations,
+    adjustments,
+) -> frozenset[str]:
+    """Closure of names the resolver writes into the post-resolve
+    namespace.
+
+    Equals every declared Param plus every bare-Name target of any
+    equation plus every adjustment LHS — i.e., every name that could
+    appear as a key in the instance/class ``_provenance`` dict, and
+    therefore every name that ``adjustments_for`` should accept.
+    Computed once at class-define time and cached on the class so
+    introspection lookups don't recompute on each call.
+    """
+    names: set[str] = set(params)
+    for eq in equations:
+        for tgt, _ in equation_bare_targets(eq):
+            names.add(tgt)
+    for adj in adjustments:
+        names.add(adj.name)
+    return frozenset(names)
 
 
 def _compute_override_names(

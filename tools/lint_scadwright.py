@@ -40,6 +40,13 @@ Rules currently enforced (see docs/style-guide.md for rationale):
   framework-level hook still exists as an internal escape, but example
   and shape-library code must stay declarative.
 
+- ``adjustment-no-comment``: an adjustment line (``+=``, ``-=``,
+  ``*=``, or ``/=`` inside an ``equations`` block of a Component
+  subclass) without a trailing or immediately-preceding whole-line
+  comment. Adjustments encode printer-error fudges and other ad-hoc
+  corrections that are nearly impossible to debug later without a
+  rationale; the lint enforces that every one carries one.
+
 - ``component-classdef-error`` (``--full`` only): a ``ValidationError``
   raised when the file is imported. Surfaces equations-DSL errors
   (type tags, ``==`` placement, override patterns, etc.) at lint time
@@ -273,11 +280,108 @@ def check_component_setup(path: Path, tree: ast.Module) -> list[Violation]:
     return violations
 
 
+def _inherits_from_component_def(cls: ast.ClassDef) -> bool:
+    """True when any base of ``cls`` resolves textually to ``Component``
+    (bare or attribute access; subclass-name endings tolerated)."""
+    for base in cls.bases:
+        if isinstance(base, ast.Name) and (
+            base.id == "Component" or base.id.endswith("Component")
+        ):
+            return True
+        if isinstance(base, ast.Attribute) and (
+            base.attr == "Component" or base.attr.endswith("Component")
+        ):
+            return True
+    return False
+
+
+def _equations_text_blocks(class_def: ast.ClassDef) -> list[tuple[str, int]]:
+    """Yield ``(text, anchor_line)`` for every ``equations = ...``
+    assignment inside ``class_def``.
+
+    ``anchor_line`` is the source line of the assignment; the linter
+    uses it to anchor violations because the splitter doesn't track
+    file-line numbers within the embedded text. List-of-strings form
+    expands to one block per literal entry, each anchored at the
+    enclosing assignment's line.
+    """
+    blocks: list[tuple[str, int]] = []
+    for item in class_def.body:
+        if not isinstance(item, ast.Assign):
+            continue
+        if not (
+            len(item.targets) == 1
+            and isinstance(item.targets[0], ast.Name)
+            and item.targets[0].id == "equations"
+        ):
+            continue
+        value = item.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            blocks.append((value.value, item.lineno))
+            continue
+        if isinstance(value, ast.List):
+            for elt in value.elts:
+                if (
+                    isinstance(elt, ast.Constant)
+                    and isinstance(elt.value, str)
+                ):
+                    blocks.append((elt.value, item.lineno))
+    return blocks
+
+
+def check_adjustment_comment(path: Path, tree: ast.Module) -> list[Violation]:
+    """Flag adjustment lines lacking a trailing or preceding comment.
+
+    Reuses the framework's lex/adjustment-detection helpers so the
+    lint never disagrees with the parser about what counts as an
+    adjustment (operator set, comma-broadcast LHS, comment placement).
+    Only fires inside Component subclasses — adjustments only matter
+    in that context.
+    """
+    from scadwright.component.equations import _split_equations_with_comments
+    from scadwright.component.resolver.parsing import (
+        _peel_trailing_comment, _split_top_level_adjustment,
+    )
+
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not _inherits_from_component_def(node):
+            continue
+        for text, anchor_line in _equations_text_blocks(node):
+            for line_text, preceding in _split_equations_with_comments(text):
+                body_text, trailing = _peel_trailing_comment(line_text)
+                adj = _split_top_level_adjustment(body_text)
+                if adj is None:
+                    continue
+                if trailing or preceding:
+                    continue
+                lhs_text, op, _rhs = adj
+                violations.append(
+                    Violation(
+                        path=path,
+                        line=anchor_line,
+                        col=0,
+                        rule="adjustment-no-comment",
+                        message=(
+                            f"adjustment to `{lhs_text}` ({op}) lacks a "
+                            f"comment. Add a trailing or preceding "
+                            f"comment explaining why — adjustments "
+                            f"without rationale are nearly impossible "
+                            f"to debug later."
+                        ),
+                    )
+                )
+    return violations
+
+
 RULES: list[Callable[[Path, ast.Module], list[Violation]]] = [
     check_module_level_eps,
     check_param_basic_type,
     check_translate_single_axis,
     check_component_setup,
+    check_adjustment_comment,
 ]
 
 

@@ -11,6 +11,7 @@ import ast
 from typing import Sequence
 
 from scadwright.component.resolver.types import (
+    ParsedAdjustment,
     ParsedConstraint,
     ParsedEquation,
     _PREDICATE_CALL_NAMES,
@@ -18,6 +19,155 @@ from scadwright.component.resolver.types import (
 )
 from scadwright.component.resolver_ast import _free_names as _free_names_in
 from scadwright.errors import ValidationError
+
+
+# Adjustment operators recognized inside ``equations`` blocks. Each
+# pairs a 2-character source token with a one-line summary of what the
+# resolver does at apply time. The set is closed: ``^=``, ``%=``, etc.
+# are NOT supported in this feature (per spec).
+_ADJUSTMENT_OPS: frozenset[str] = frozenset({"+=", "-=", "*=", "/="})
+
+
+# Synthetic Name bound by the resolver during deferred-constraint
+# evaluation. ``adjusted(x)`` calls are AST-rewritten to
+# ``Subscript(Name("__adjusted__"), Constant("x"))``; the resolver
+# binds ``__adjusted__`` to the post-adjust ``knowns`` dict so the
+# subscript evaluates to the post-adjust value of ``x`` while bare
+# names continue to resolve from the pre-adjust namespace.
+_ADJUSTED_NS = "__adjusted__"
+
+# User-facing name for the rule-context marker that wraps a name to
+# read its post-adjust value. Centralized so renames stay consistent
+# and the validator/rewriter/checker all reference the same string.
+_ADJUSTED_FN_NAME = "adjusted"
+
+
+def _peel_trailing_comment(line: str) -> tuple[str, str | None]:
+    """Strip a trailing ``# ...`` comment and return ``(line, comment)``.
+
+    The comment text returned has its leading ``#`` and surrounding
+    whitespace stripped; ``None`` is returned when there is no trailing
+    comment. Quote-aware so a ``#`` inside ``"..."``/``'...'`` doesn't
+    end the line.
+
+    Used by the adjustment path: a logical line like
+    ``cam_barrel_od += 0.3   # printer overshoot`` arrives here and is
+    split into the parseable left-hand side and the captured comment.
+    Equation/constraint paths still leave the comment alone — the
+    classification scanner already ignores comments correctly.
+    """
+    n = len(line)
+    i = 0
+    while i < n:
+        c = line[i]
+        if c in ("'", '"') and i + 2 < n and line[i + 1] == c and line[i + 2] == c:
+            end = line.find(c * 3, i + 3)
+            if end == -1:
+                return line, None
+            i = end + 3
+            continue
+        if c in ("'", '"'):
+            quote = c
+            j = i + 1
+            while j < n and line[j] != quote:
+                if line[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            i = min(j + 1, n)
+            continue
+        if c == "#":
+            head = line[:i].rstrip()
+            comment = line[i + 1:].strip()
+            return head, comment
+        i += 1
+    return line, None
+
+
+def _split_top_level_adjustment(
+    line: str,
+) -> tuple[str, str, str] | None:
+    """Detect a top-level adjustment operator (``+=``, ``-=``, ``*=``,
+    ``/=``) and split the line into ``(lhs_text, op, rhs_text)``.
+
+    Returns ``None`` for any other shape — callers fall through to the
+    equation/constraint classifier.
+
+    "Top-level" means: not inside ``(...)``, ``[...]``, ``{...}``, not
+    inside a string literal. Comments aren't possible here (the caller
+    has already peeled them).
+
+    Multi-character operator recognition is careful: ``==`` must not be
+    mistaken for ``=`` followed by another ``=``, ``<=``/``>=``/``!=``
+    are comparisons (not adjustments), and ``+=`` etc. take precedence
+    over ``=`` so ``x += 5`` doesn't mis-parse as ``"x +" = "5"``.
+    """
+    n = len(line)
+    i = 0
+    paren_depth = 0
+    bracket_depth = 0
+    brace_depth = 0
+    while i < n:
+        c = line[i]
+
+        if c in ("'", '"') and i + 2 < n and line[i + 1] == c and line[i + 2] == c:
+            end = line.find(c * 3, i + 3)
+            if end == -1:
+                return None
+            i = end + 3
+            continue
+        if c in ("'", '"'):
+            quote = c
+            j = i + 1
+            while j < n and line[j] != quote:
+                if line[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            i = min(j + 1, n)
+            continue
+        if c == "(":
+            paren_depth += 1
+            i += 1
+            continue
+        if c == ")":
+            paren_depth -= 1
+            i += 1
+            continue
+        if c == "[":
+            bracket_depth += 1
+            i += 1
+            continue
+        if c == "]":
+            bracket_depth -= 1
+            i += 1
+            continue
+        if c == "{":
+            brace_depth += 1
+            i += 1
+            continue
+        if c == "}":
+            brace_depth -= 1
+            i += 1
+            continue
+
+        # Top-level only.
+        if paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            # Two-char adjustment ops: +=, -=, *=, /=
+            if c in "+-*/" and i + 1 < n and line[i + 1] == "=":
+                op = line[i:i + 2]
+                # Reject **=, //= explicitly: they aren't in the closed
+                # adjustment-op set, and silently treating /= as // would
+                # surprise the user.
+                if c in "*/" and i > 0 and line[i - 1] == c:
+                    return None
+                if op in _ADJUSTMENT_OPS:
+                    lhs_text = line[:i].strip()
+                    rhs_text = line[i + 2:].strip()
+                    return lhs_text, op, rhs_text
+        i += 1
+
+    return None
 
 
 def _split_top_level_equals(
@@ -105,6 +255,15 @@ def _split_top_level_equals(
             i += 2
             continue
 
+        # `+=`, `-=`, `*=`, `/=` — adjustment operators, not equation.
+        # Take precedence over the lone `=` case so that a malformed call
+        # path which hands an adjustment line to this scanner doesn't
+        # mis-classify it as ``"x +" = "5"``. The normal classifier
+        # detects adjustments first; this is defense-in-depth.
+        if c in "+-*/" and i + 1 < n and line[i + 1] == "=":
+            i += 2
+            continue
+
         # `=` (equation operator) — only the lone form, only at depth 0.
         if c == "=" and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
             found.append((i, i + 1))
@@ -140,14 +299,17 @@ def parse_equations_unified(
     eq_strs: Sequence[str],
     *,
     class_name: str = "",
+    preceding_comments: Sequence[str | None] | None = None,
 ) -> tuple[
     list[ParsedEquation], list[ParsedConstraint],
     frozenset[str],
     dict[str, str],
+    list[ParsedAdjustment],
 ]:
     """Parse the equations list into the unified representation.
 
-    Returns ``(equations, constraints, all_optionals, typed_names)``.
+    Returns ``(equations, constraints, all_optionals, typed_names,
+    adjustments)``.
 
     Per-line classification, comma-expansion, malformed-shape rejection,
     self-reference detection, and mutual-inconsistency detection all
@@ -158,6 +320,13 @@ def parse_equations_unified(
     ``class_name`` (optional) is the owning Component's class name. When
     set, error messages prefix with ``ClassName.equations[N]:``; when
     empty, the prefix is just ``equations[N]:``.
+
+    ``preceding_comments`` (optional) is a parallel sequence aligned
+    with ``eq_strs``: each entry is the immediately-preceding whole-line
+    comment text (leading ``#`` stripped) for that line, or ``None``
+    when there was no preceding comment. Used by the adjustment path to
+    capture rationale for the introspection API. When omitted, every
+    line is treated as having no preceding comment.
 
     ``typed_names`` maps each name carrying an inline ``:type`` tag to
     its type-name string. The type names are validated against the
@@ -170,6 +339,9 @@ def parse_equations_unified(
         _require_sympy,
     )
     from scadwright.component.resolver.checks import (
+        _check_adjusted_only_in_rules,
+        _check_adjustment_rhs_no_adjusted_refs,
+        _check_adjustment_uniformity,
         _check_bool_in_arithmetic,
         _check_eq_placement,
         _check_mutual_inconsistency,
@@ -183,11 +355,21 @@ def parse_equations_unified(
 
     equations: list[ParsedEquation] = []
     constraints: list[ParsedConstraint] = []
+    adjustments: list[ParsedAdjustment] = []
     all_optionals: set[str] = set()
     typed_names: dict[str, str] = {}
     # Track which source line each type assertion came from so
     # disagreement errors can point at both sites.
     typed_first_seen: dict[str, int] = {}
+
+    if preceding_comments is None:
+        preceding_comments = [None] * len(eq_strs)
+    elif len(preceding_comments) != len(eq_strs):
+        # Caller bug, not user-facing. Surface immediately.
+        raise ValueError(
+            f"preceding_comments has {len(preceding_comments)} entries "
+            f"but eq_strs has {len(eq_strs)}; they must align."
+        )
 
     for source_index, raw in enumerate(eq_strs):
         cleaned, line_opts, line_typed = _extract_name_annotations(raw)
@@ -214,7 +396,25 @@ def parse_equations_unified(
                 typed_names[name] = type_name
                 typed_first_seen[name] = source_index
 
-        # Step 1: split on a top-level equation operator. If the line
+        # Step 1: try adjustment classification. Adjustments are the
+        # only line shape that uses the ``+=`` / ``-=`` / ``*=`` / ``/=``
+        # tokens, so detection is unambiguous. Trailing comment is peeled
+        # so the adjustment parser sees a clean LHS-op-RHS.
+        body_text, trailing_comment = _peel_trailing_comment(cleaned)
+        adj = _split_top_level_adjustment(body_text)
+        if adj is not None:
+            lhs_text, op, rhs_text = adj
+            comment = trailing_comment
+            if not comment:
+                pre = preceding_comments[source_index]
+                comment = pre or ""
+            _emit_adjustment(
+                lhs_text, op, rhs_text, cleaned, line_opts_frozen,
+                source_index, class_name, comment, adjustments,
+            )
+            continue
+
+        # Step 2: split on a top-level equation operator. If the line
         # has one, it's an equation; otherwise it's a constraint.
         split = _split_top_level_equals(cleaned, class_name, source_index)
 
@@ -232,6 +432,10 @@ def parse_equations_unified(
 
     # Class-def-time validation passes.
     _check_eq_placement(equations, constraints, class_name)
+    # Run the adjusted()-context check before the unknown-function
+    # check — a misplaced ``adjusted(x)`` would otherwise surface as
+    # "unknown function 'adjusted'", which buries the actual rule.
+    _check_adjusted_only_in_rules(equations, adjustments, class_name)
     _check_unknown_function_calls(equations, constraints, class_name)
     _check_bool_in_arithmetic(typed_names, equations, constraints, class_name)
     _check_non_float_solver_target(
@@ -242,12 +446,15 @@ def parse_equations_unified(
     )
     _check_self_reference(equations, class_name)
     _check_mutual_inconsistency(equations, class_name)
+    _check_adjustment_uniformity(adjustments, class_name)
+    _check_adjustment_rhs_no_adjusted_refs(adjustments, class_name)
 
     return (
         equations,
         constraints,
         frozenset(all_optionals),
         typed_names,
+        adjustments,
     )
 
 
@@ -349,6 +556,139 @@ def _emit_equation(
     ))
 
 
+def _emit_adjustment(
+    lhs_text: str,
+    op: str,
+    rhs_text: str,
+    raw: str,
+    line_opts: frozenset[str],
+    source_index: int,
+    class_name: str,
+    comment: str,
+    out: list[ParsedAdjustment],
+) -> None:
+    """Build one or more ``ParsedAdjustment`` entries from a parsed
+    ``lhs OP rhs`` triple.
+
+    LHS must parse as either a bare ``Name`` (``cam_barrel_od += 0.3``)
+    or a comma-separated list of bare ``Name``s (``a, b += slop`` —
+    broadcasts to one adjustment per name, sharing the RHS, comment,
+    and source-line index). Anything else (subscripts, attributes,
+    expressions) is a class-def-time error.
+
+    The RHS is parsed as a Python expression and stored as an AST node.
+    Free names in the RHS get ``referenced_names``, used by the
+    no-reference-to-adjusted-names check and by the resolver's
+    None-skip path.
+    """
+    if not lhs_text:
+        raise ValidationError(
+            f"{_classdef_loc(class_name, source_index)}: cannot parse "
+            f"adjustment {raw!r}: empty left-hand side. Write the "
+            f"name being adjusted before the operator, e.g. "
+            f"`x {op} 0.3` to add 0.3 to `x`."
+        )
+    if not rhs_text:
+        raise ValidationError(
+            f"{_classdef_loc(class_name, source_index)}: cannot parse "
+            f"adjustment {raw!r}: empty right-hand side. Write a "
+            f"value or expression after the operator, e.g. "
+            f"`{lhs_text} {op} 0.3`."
+        )
+
+    # Parse the LHS as a Python expression so we can structurally check
+    # it. We accept either ``Name`` or ``Tuple[Name, Name, ...]``.
+    lhs_node = _parse_expr(lhs_text, raw, class_name, source_index)
+    rhs_node = _parse_expr(rhs_text, raw, class_name, source_index)
+
+    if isinstance(lhs_node, ast.Name):
+        names = [lhs_node.id]
+    elif (
+        isinstance(lhs_node, ast.Tuple)
+        and lhs_node.elts
+        and all(isinstance(e, ast.Name) for e in lhs_node.elts)
+    ):
+        names = [e.id for e in lhs_node.elts]
+    else:
+        raise ValidationError(
+            f"{_classdef_loc(class_name, source_index)}: adjustment "
+            f"{raw!r}: left-hand side must be a name "
+            f"(or a comma-separated list of names for broadcast); "
+            f"got {ast.unparse(lhs_node)!r}."
+        )
+
+    refs = frozenset(_free_names_in(rhs_node))
+    for name in names:
+        out.append(ParsedAdjustment(
+            raw=raw, name=name, op=op, rhs=rhs_node,
+            referenced_names=refs, line_optionals=line_opts,
+            comment=comment, source_line_index=source_index,
+        ))
+
+
+def _validate_and_rewrite_adjusted_calls(
+    expr: ast.expr, raw: str, source_index: int, class_name: str,
+) -> tuple[ast.expr, frozenset[str]]:
+    """Detect, validate, and rewrite ``adjusted(name)`` calls in a
+    constraint expression.
+
+    Returns ``(rewritten_expr, wrapped_names)``. Each call of the form
+    ``adjusted(X)`` is replaced with a synthetic
+    ``Subscript(Name("__adjusted__"), Constant("X"))`` so the resolver
+    can evaluate it against a namespace where ``__adjusted__`` maps to
+    the post-adjust ``knowns`` dict. Bare-name references in the same
+    expression are left untouched and resolve from the pre-adjust
+    namespace by default.
+
+    Validates each call has exactly one positional argument that is a
+    bare ``Name``. Anything else (no args, multiple args, attribute
+    access, expression) is a class-def-time error with a message
+    naming the offending shape.
+    """
+    wrapped: set[str] = set()
+
+    class _Rewriter(ast.NodeTransformer):
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if not (
+                isinstance(node.func, ast.Name)
+                and node.func.id == _ADJUSTED_FN_NAME
+            ):
+                self.generic_visit(node)
+                return node
+            if node.keywords:
+                raise ValidationError(
+                    f"{_classdef_loc(class_name, source_index)}: "
+                    f"`{_ADJUSTED_FN_NAME}(...)` does not accept "
+                    f"keyword arguments in {raw!r}."
+                )
+            if len(node.args) != 1:
+                raise ValidationError(
+                    f"{_classdef_loc(class_name, source_index)}: "
+                    f"`{_ADJUSTED_FN_NAME}(...)` takes exactly one "
+                    f"argument; got {len(node.args)} in {raw!r}."
+                )
+            arg = node.args[0]
+            if not isinstance(arg, ast.Name):
+                shape = type(arg).__name__
+                raise ValidationError(
+                    f"{_classdef_loc(class_name, source_index)}: "
+                    f"`{_ADJUSTED_FN_NAME}(...)` argument must be a "
+                    f"bare name; got {shape} in {raw!r}."
+                )
+            wrapped.add(arg.id)
+            new_node = ast.Subscript(
+                value=ast.Name(id=_ADJUSTED_NS, ctx=ast.Load()),
+                slice=ast.Constant(value=arg.id),
+                ctx=ast.Load(),
+            )
+            ast.copy_location(new_node, node)
+            return new_node
+
+    rewritten = _Rewriter().visit(expr)
+    ast.fix_missing_locations(rewritten)
+    return rewritten, frozenset(wrapped)
+
+
 def _emit_constraint(
     raw: str,
     line_opts: frozenset[str],
@@ -361,6 +701,12 @@ def _emit_constraint(
     The line has no top-level ``=``/``==``, so it must be a comparison,
     a boolean expression, or a call returning bool. Comma-broadcast
     constraints (``x, y > 0``) expand into per-name constraints.
+
+    ``adjusted(name)`` calls inside the rule body are validated and
+    rewritten into a synthetic subscript form so the resolver can
+    evaluate them against the post-adjust namespace. The wrapped names
+    are folded into ``referenced_names`` so auto-declare still finds
+    them.
     """
     expr = _parse_expr(raw, raw, class_name, source_index)
 
@@ -372,7 +718,12 @@ def _emit_constraint(
                 left=name_node, ops=[op], comparators=[rhs_node]
             )
             ast.copy_location(new_compare, expr)
-            refs = frozenset(_free_names_in(new_compare))
+            # Compute referenced_names from the original (pre-rewrite)
+            # AST so wrapped names are captured naturally.
+            refs = frozenset(_free_names_in(new_compare)) - {_ADJUSTED_FN_NAME}
+            rewritten, wrapped = _validate_and_rewrite_adjusted_calls(
+                new_compare, raw, source_index, class_name,
+            )
             # Use the expanded form as the raw text so error messages
             # name the specific failing component (e.g., "b < c") rather
             # than the original comma-expanded line ("a, b < c").
@@ -381,9 +732,10 @@ def _emit_constraint(
             except Exception:
                 expanded_raw = raw
             out.append(ParsedConstraint(
-                raw=expanded_raw, expr=new_compare,
+                raw=expanded_raw, expr=rewritten,
                 referenced_names=refs, line_optionals=line_opts,
                 source_line_index=source_index,
+                uses_adjusted=bool(wrapped),
             ))
         return
 
@@ -396,11 +748,15 @@ def _emit_constraint(
             f"(`all(...)`, `any(...)`, `not ...`, etc.)."
         )
 
-    refs = frozenset(_free_names_in(expr))
+    refs = frozenset(_free_names_in(expr)) - {_ADJUSTED_FN_NAME}
+    rewritten, wrapped = _validate_and_rewrite_adjusted_calls(
+        expr, raw, source_index, class_name,
+    )
     out.append(ParsedConstraint(
-        raw=raw, expr=expr,
+        raw=raw, expr=rewritten,
         referenced_names=refs, line_optionals=line_opts,
         source_line_index=source_index,
+        uses_adjusted=bool(wrapped),
     ))
 
 
