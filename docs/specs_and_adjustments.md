@@ -132,6 +132,22 @@ class Bracket(Component):
 
 The Spec is the single source of truth across every file that imports it. Edit the value in `dimensions.py`, and every part that reads it rebuilds against the new value the next time you render.
 
+## Where a value should live: Component or Spec?
+
+A Component or Spec should hold the values that are most naturally its own. Not values it depends on, and not values that exist mainly for another part's benefit. If two parts share a value equally, they should share a Spec.
+
+Some examples:
+
+- **Measured dimensions vs design choices.** External measurements (a battery's diameter, a bolt's head height, a panel stock's thickness, anything else you want to interface or connect with) belong in a Spec; they're true regardless of which part reads them. Design choices about your own geometry (a wall thickness you settled on, a chamfer radius you preferred) belong on the Component.
+
+- **An end-cap depends on a tube's OD.** The end-cap reads the OD but doesn't own it. The OD lives on the tube's Component (or in a shared Spec if multiple parts care). The end-cap holds the values specific to itself: lip height, attachment style.
+
+- **Two mating connectors.** The interface they share (bolt circle, mounting depth, alignment-pin position) goes in a Spec that both connectors import. Each connector then holds whatever else is specific to it: length on one side, bracket geometry on the other.
+
+- **Values only the Component cares about.** Wall thickness, alignment offset, a fillet radius you picked because it looked right. These belong on the Component.
+
+- **Manufacturing fudges** (printer overshoot, material shrinkage, slop on a tight fit). These go best in a Spec, recorded as [Adjustments](#adjustments) so the design-intent dimensions stay clean and the fudge is visible on its own line.  Adjustments do, however, work in a Component as well.
+
 ## Letting the Spec flow through equations
 
 The pattern above reads Spec values inside `build()`. If you want a derived value to be readable from outside the Component, the same way other equation-derived values are, declare the Spec as a parameter and use it in `equations`:
