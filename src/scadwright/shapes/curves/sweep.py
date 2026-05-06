@@ -99,6 +99,118 @@ def circle_profile(r: float, *, segments: int = 16) -> list[tuple[float, float]]
     ]
 
 
+def square_profile(size, *, center: bool = True) -> list[tuple[float, float]]:
+    """Square cross-section, four points counter-clockwise.
+
+    ``size`` accepts a scalar (uniform) or ``(w, h)`` tuple. ``center=True``
+    centers the square on the origin; ``center=False`` puts the lower-left
+    corner at the origin.
+    """
+    if isinstance(size, (int, float)):
+        w = h = float(size)
+    else:
+        try:
+            w, h = float(size[0]), float(size[1])
+        except (TypeError, IndexError, ValueError):
+            raise ValidationError(
+                f"square_profile: size must be a number or (w, h) tuple, got {size!r}"
+            ) from None
+    if w <= 0 or h <= 0:
+        raise ValidationError(
+            f"square_profile: dimensions must be positive, got w={w}, h={h}"
+        )
+    if center:
+        return [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)]
+    return [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)]
+
+
+def polygon_profile(
+    sides: int, r: float, *, rotate: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Regular n-gon cross-section inscribed in radius ``r``.
+
+    Returns ``sides`` points counter-clockwise. By default the first
+    vertex sits on the +X axis; ``rotate`` rotates that starting position
+    by the given degrees CCW. Matches ``regular_polygon`` in
+    ``scadwright.shapes.two_d``.
+    """
+    if sides < 3:
+        raise ValidationError(
+            f"polygon_profile: sides must be >= 3, got {sides}"
+        )
+    if r <= 0:
+        raise ValidationError(
+            f"polygon_profile: r must be positive, got {r}"
+        )
+    rotate_rad = math.radians(rotate)
+    return [
+        (r * math.cos(rotate_rad + 2 * math.pi * i / sides),
+         r * math.sin(rotate_rad + 2 * math.pi * i / sides))
+        for i in range(sides)
+    ]
+
+
+def rounded_rect_profile(
+    x: float, y: float, r: float, *, segments_per_corner: int = 8,
+) -> list[tuple[float, float]]:
+    """Rounded-rectangle cross-section, centered on the origin.
+
+    ``x`` and ``y`` are the overall width and height; ``r`` is the corner
+    radius. Each corner is approximated by ``segments_per_corner`` arc
+    segments. Points are returned counter-clockwise.
+
+    A zero ``r`` produces a sharp-cornered rectangle (4 points).
+    """
+    if x <= 0 or y <= 0:
+        raise ValidationError(
+            f"rounded_rect_profile: x and y must be positive, got x={x}, y={y}"
+        )
+    if r < 0:
+        raise ValidationError(
+            f"rounded_rect_profile: r must be non-negative, got {r}"
+        )
+    if r * 2 > x or r * 2 > y:
+        raise ValidationError(
+            f"rounded_rect_profile: corner radius {r} exceeds half the smallest "
+            f"side ({min(x, y)})"
+        )
+    if r == 0:
+        return [(-x / 2, -y / 2), (x / 2, -y / 2), (x / 2, y / 2), (-x / 2, y / 2)]
+    if segments_per_corner < 1:
+        raise ValidationError(
+            f"rounded_rect_profile: segments_per_corner must be >= 1, "
+            f"got {segments_per_corner}"
+        )
+
+    # Corner centers (the four points where an inset rectangle's corners are).
+    cx = x / 2 - r
+    cy = y / 2 - r
+    # Build CCW: start at (+X, -Y) corner's right-edge tangent, sweep up around.
+    points = []
+    # Each corner sweeps 90° CCW. Order: bottom-right, top-right, top-left, bottom-left.
+    corners = [
+        (cx, -cy, -math.pi / 2),  # bottom-right corner: arc from -90° to 0°
+        (cx, cy, 0.0),            # top-right corner: arc from 0° to 90°
+        (-cx, cy, math.pi / 2),   # top-left corner: arc from 90° to 180°
+        (-cx, -cy, math.pi),      # bottom-left corner: arc from 180° to 270°
+    ]
+    for corner_x, corner_y, start_angle in corners:
+        # Inclusive of start, exclusive of end: each corner contributes
+        # segments_per_corner+1 points, but the last point of corner N
+        # equals the first of corner N+1 only if r covers the full edge.
+        # We include all segments_per_corner+1 points per corner; adjacent
+        # corner endpoints land on the straight edge between them, which
+        # is fine — polygon() treats the points as vertices in order.
+        for i in range(segments_per_corner + 1):
+            t = i / segments_per_corner
+            angle = start_angle + t * math.pi / 2
+            points.append((
+                corner_x + r * math.cos(angle),
+                corner_y + r * math.sin(angle),
+            ))
+    return points
+
+
 def _compute_frames(path, closed):
     """Compute rotation-minimizing frames along the path.
 

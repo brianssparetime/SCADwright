@@ -64,6 +64,147 @@ def bezier_path(
     return points
 
 
+def composite_bezier_path(
+    segments: list[list[tuple[float, float, float]]],
+    *,
+    steps_per_segment: int = 32,
+) -> list[tuple[float, float, float]]:
+    """Generate a path along a chain of cubic Bezier segments.
+
+    Each segment is a list of 4 control points. Consecutive segments must
+    share their boundary anchor — segment N's first point must equal
+    segment N-1's last (within ``1e-6`` per coordinate). Continuity beyond
+    C0 (anchors meet) is the user's responsibility: place handles to
+    align tangents if you want C1.
+
+    For a single cubic Bezier with 4 control points, ``bezier_path``
+    is the simpler form. ``composite_bezier_path([segment])`` produces
+    the same output as ``bezier_path(segment)``.
+    """
+    if not segments:
+        raise ValidationError(
+            "composite_bezier_path: segments must be non-empty"
+        )
+    for i, seg in enumerate(segments):
+        if len(seg) != 4:
+            raise ValidationError(
+                f"composite_bezier_path: segments[{i}] must have exactly 4 "
+                f"control points, got {len(seg)}"
+            )
+        if i > 0:
+            prev_end = segments[i - 1][3]
+            this_start = seg[0]
+            if any(abs(prev_end[k] - this_start[k]) > 1e-6 for k in range(3)):
+                raise ValidationError(
+                    f"composite_bezier_path: segments[{i}][0] {this_start!r} "
+                    f"must equal segments[{i - 1}][3] {prev_end!r} "
+                    f"(C0 continuity)"
+                )
+
+    points: list[tuple[float, float, float]] = []
+    for i, seg in enumerate(segments):
+        p0, p1, p2, p3 = seg
+        # First segment writes its start point; later segments rely on the
+        # previous segment's end point already being in the list.
+        start = 0 if i == 0 else 1
+        for j in range(start, steps_per_segment + 1):
+            t = j / steps_per_segment
+            u = 1 - t
+            x = u**3 * p0[0] + 3 * u**2 * t * p1[0] + 3 * u * t**2 * p2[0] + t**3 * p3[0]
+            y = u**3 * p0[1] + 3 * u**2 * t * p1[1] + 3 * u * t**2 * p2[1] + t**3 * p3[1]
+            z = u**3 * p0[2] + 3 * u**2 * t * p1[2] + 3 * u * t**2 * p2[2] + t**3 * p3[2]
+            points.append((x, y, z))
+    return points
+
+
+def arc_path(
+    center: tuple[float, float, float],
+    radius: float,
+    start_angle: float,
+    end_angle: float,
+    *,
+    normal: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    steps: int = 32,
+) -> list[tuple[float, float, float]]:
+    """Circular arc lying in the plane through ``center`` perpendicular
+    to ``normal``.
+
+    Angles are in degrees, measured counter-clockwise about ``normal``
+    from a canonical reference direction in that plane: the projection
+    of +X onto the plane, normalized. If +X is parallel or antiparallel
+    to ``normal`` (within ``1e-6``), +Y is used as the reference instead.
+
+    ``end_angle - start_angle`` is the sweep; negative values sweep
+    clockwise. ``steps`` is the number of arc segments (so the result
+    has ``steps + 1`` points).
+    """
+    if radius <= 0:
+        raise ValidationError(
+            f"arc_path: radius must be positive, got {radius}"
+        )
+    if steps < 1:
+        raise ValidationError(
+            f"arc_path: steps must be >= 1, got {steps}"
+        )
+    if abs(start_angle - end_angle) < 1e-9:
+        raise ValidationError(
+            f"arc_path: start_angle and end_angle are equal ({start_angle}); "
+            f"the arc has zero length"
+        )
+
+    n = _normalize3(normal)
+    if n is None:
+        raise ValidationError(
+            f"arc_path: normal must be a non-zero 3D vector, got {normal!r}"
+        )
+
+    # Build orthonormal basis (u, v) in the plane perpendicular to n.
+    # u is the projection of +X onto the plane; if +X is (anti-)parallel
+    # to n, fall back to +Y. v = n × u.
+    if abs(n[0]) > 1.0 - 1e-6:
+        # +X is along ±n; use +Y as the reference.
+        ref = (0.0, 1.0, 0.0)
+    else:
+        ref = (1.0, 0.0, 0.0)
+    # u = ref - (ref · n) n  (component of ref perpendicular to n)
+    dot_rn = ref[0] * n[0] + ref[1] * n[1] + ref[2] * n[2]
+    u_raw = (
+        ref[0] - dot_rn * n[0],
+        ref[1] - dot_rn * n[1],
+        ref[2] - dot_rn * n[2],
+    )
+    u = _normalize3(u_raw)
+    # v = n × u
+    v = (
+        n[1] * u[2] - n[2] * u[1],
+        n[2] * u[0] - n[0] * u[2],
+        n[0] * u[1] - n[1] * u[0],
+    )
+
+    cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+    sweep = end_angle - start_angle
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        angle_deg = start_angle + t * sweep
+        a = math.radians(angle_deg)
+        c, s = math.cos(a), math.sin(a)
+        points.append((
+            cx + radius * (c * u[0] + s * v[0]),
+            cy + radius * (c * u[1] + s * v[1]),
+            cz + radius * (c * u[2] + s * v[2]),
+        ))
+    return points
+
+
+def _normalize3(v):
+    """Return ``v`` normalized, or ``None`` if it has zero length."""
+    L = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    if L < 1e-12:
+        return None
+    return (v[0] / L, v[1] / L, v[2] / L)
+
+
 def catmull_rom_path(
     points: list[tuple[float, float, float]],
     *,
