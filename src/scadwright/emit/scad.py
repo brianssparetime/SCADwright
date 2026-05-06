@@ -54,8 +54,6 @@ class SCADEmitter(
         glossary: bool = True,
         scad_use: list[str] | None = None,
         scad_include: list[str] | None = None,
-        dedup: bool = True,
-        dedup_prim_threshold: int = 5,
     ):
         self.out = out
         self.pretty = pretty
@@ -65,8 +63,6 @@ class SCADEmitter(
         self.glossary = glossary
         self.scad_use = list(scad_use) if scad_use else []
         self.scad_include = list(scad_include) if scad_include else []
-        self.dedup = dedup
-        self.dedup_prim_threshold = dedup_prim_threshold
         self.indent = 0
         # Module hoisting state for custom transforms and hoisted Components.
         # _module_defs: opaque key -> "module name(params) { body }\n" SCAD source.
@@ -178,8 +174,8 @@ class SCADEmitter(
         from scadwright.emit.dedup import collect_component_dedup_plan, select_hoists
         from scadwright.hashing import tree_hash
 
-        plan = collect_component_dedup_plan(node, prim_threshold=self.dedup_prim_threshold)
-        hoist_ids = select_hoists(plan, prim_threshold=self.dedup_prim_threshold)
+        plan = collect_component_dedup_plan(node)
+        hoist_ids = select_hoists(plan)
         if not hoist_ids:
             return
         nl = "\n" if self.pretty else " "
@@ -189,12 +185,23 @@ class SCADEmitter(
             (plan[cid].component for cid in hoist_ids),
             key=lambda c: (type(c).__name__, tree_hash(c)),
         )
+        # Pass 1: register every hoist target's id → module name BEFORE any
+        # body is rendered. A parent Component whose build tree references
+        # a sibling Component that sorts later in `ordered` would otherwise
+        # render its body with the inner reference still unregistered, and
+        # `visit_component` would inline the inner subtree — exactly the
+        # bloat this pre-pass is meant to remove.
+        for component in ordered:
+            h = tree_hash(component)[:8]
+            self._hoisted_components[id(component)] = f"{type(component).__name__}_{h}"
+        # Pass 2: render each module body. Nested hoisted Components that
+        # appear inside a body now resolve through `_hoisted_components` to
+        # a module call, regardless of iteration order.
         for component in ordered:
             cls_name = type(component).__name__
             h = tree_hash(component)[:8]
             module_name = f"{cls_name}_{h}"
             key = f"comp:{h}"
-            self._hoisted_components[id(component)] = module_name
             if key in self._module_defs:
                 # Another instance with the same canonical form already
                 # registered this module; reuse the existing definition.
@@ -243,8 +250,7 @@ class SCADEmitter(
         # `id(component)` and content-addresses module names by tree_hash,
         # so two distinct instances that happen to canonicalize identically
         # share one module def.
-        if self.dedup:
-            self._prerender_dedup_modules(node)
+        self._prerender_dedup_modules(node)
 
         # Render the body to a buffer so we can collect any hoisted modules first,
         # then prepend them to the actual output.
@@ -321,15 +327,12 @@ def emit(
     glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
-    dedup: bool = True,
-    dedup_prim_threshold: int = 5,
 ) -> None:
     t0 = time.perf_counter()
     SCADEmitter(
         out, pretty=pretty, debug=debug, banner=banner,
         section_labels=section_labels, glossary=glossary,
         scad_use=scad_use, scad_include=scad_include,
-        dedup=dedup, dedup_prim_threshold=dedup_prim_threshold,
     ).emit_root(node)
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
     # Attempt to measure output size if the stream supports tell(); otherwise skip.
@@ -356,12 +359,9 @@ def emit_str(
     glossary: bool = True,
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
-    dedup: bool = True,
-    dedup_prim_threshold: int = 5,
 ) -> str:
     buf = io.StringIO()
     emit(node, buf, pretty=pretty, debug=debug, banner=banner,
          section_labels=section_labels, glossary=glossary,
-         scad_use=scad_use, scad_include=scad_include,
-         dedup=dedup, dedup_prim_threshold=dedup_prim_threshold)
+         scad_use=scad_use, scad_include=scad_include)
     return buf.getvalue()

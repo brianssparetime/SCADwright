@@ -21,7 +21,6 @@ call without further work.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 
 from scadwright.ast.base import Node
 from scadwright.ast.primitives import (
@@ -43,6 +42,14 @@ _PRIMITIVE_TYPES: tuple[type, ...] = (
     ScadImport, Surface, Text,
 )
 
+# A repeated Component is only worth hoisting if its cached subtree is
+# substantial enough that the duplication would meaningfully bloat the
+# SCAD output and slow OpenSCAD's preview. Below this many primitive
+# leaves, hoisting trades inline brevity for module-call indirection
+# without payoff. Edit here to retune; the value isn't part of any
+# user-facing API.
+_PRIM_THRESHOLD: int = 5
+
 
 @dataclass
 class _DedupEntry:
@@ -51,11 +58,7 @@ class _DedupEntry:
     prim_count: int
 
 
-def collect_component_dedup_plan(
-    root: Node,
-    *,
-    prim_threshold: int = 5,
-) -> dict[int, _DedupEntry]:
+def collect_component_dedup_plan(root: Node) -> dict[int, _DedupEntry]:
     """Walk `root` and return per-Component reference + primitive counts.
 
     Returns a dict keyed on `id(component)`. `refcount` is the number of
@@ -64,10 +67,6 @@ def collect_component_dedup_plan(
     `prim_count` is the number of primitive leaves directly inside the
     Component's own `_get_built_tree()` — nested Components count as one
     op (they're separately considered for their own hoist decision).
-
-    `prim_threshold` is accepted but not applied here; the caller filters
-    via `select_hoists`. We still materialize every Component encountered
-    so prim_count is populated regardless of threshold.
     """
     from scadwright.component.base import Component
 
@@ -114,21 +113,15 @@ def collect_component_dedup_plan(
     return plan
 
 
-def select_hoists(
-    plan: dict[int, _DedupEntry],
-    *,
-    prim_threshold: int = 5,
-) -> set[int]:
+def select_hoists(plan: dict[int, _DedupEntry]) -> set[int]:
     """Return the set of `id(component)` values that should be hoisted.
 
     A Component qualifies when its instance is referenced at least twice
-    AND its cached subtree contains at least `prim_threshold` primitives.
-    Below the threshold, hoisting trades inline brevity for module-call
-    indirection without meaningful payoff.
+    AND its cached subtree contains at least `_PRIM_THRESHOLD` primitives.
     """
     return {
         cid for cid, entry in plan.items()
-        if entry.refcount >= 2 and entry.prim_count >= prim_threshold
+        if entry.refcount >= 2 and entry.prim_count >= _PRIM_THRESHOLD
     }
 
 

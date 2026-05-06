@@ -542,13 +542,6 @@ emit(shape, sys.stdout, pretty=True, debug=False)
 render(shape, "out.scad",
        scad_use=["libs/helpers.scad"],                   # escape hatch:
        scad_include=["base.scad"])                       # legacy SCAD integration
-
-# Component module hoisting (default on): a Component referenced more
-# than once with ≥ N primitives in its built tree is emitted as a
-# top-level SCAD module + one call per reference site. Shrinks output
-# and speeds OpenSCAD preview for repeated subassemblies.
-render(shape, "out.scad", dedup=False)                   # disable hoisting entirely
-render(shape, "out.scad", dedup_prim_threshold=10)       # raise size cutoff (default 5)
 ```
 
 ## Debug helpers &nbsp; &nbsp;[→ full](debug.md)
@@ -585,8 +578,6 @@ scadwright build widget.py --from-json design.json --from-json caps.json
 scadwright build widget.py --help
 scadwright preview widget.py                                # build + open in OpenSCAD GUI
 scadwright render widget.py -o widget.stl                   # build + headless STL render
-scadwright build widget.py --no-dedup                       # inline every Component reference
-scadwright build widget.py --dedup-threshold=10             # only hoist Components with ≥10 prims
 ```
 
 ## Errors &nbsp; &nbsp;[→ full](errors_and_logging.md)

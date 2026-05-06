@@ -84,22 +84,9 @@ def test_single_reference_does_not_hoist():
 def test_below_threshold_does_not_hoist():
     s = _SmallBox(size=2)
     out = emit_str(union(s, s, s.translate([5, 0, 0])))
-    # _SmallBox has 1 primitive; default threshold is 5.
+    # _SmallBox has 1 primitive; threshold prevents hoisting trivially-small
+    # subtrees where module-call indirection would cost more than it saves.
     assert "module _SmallBox_" not in out
-
-
-def test_threshold_kwarg_can_force_hoist_of_small_components():
-    s = _SmallBox(size=2)
-    out = emit_str(union(s, s.translate([5, 0, 0])), dedup_prim_threshold=0)
-    assert "module _SmallBox_" in out
-
-
-def test_dedup_disabled_inlines_every_reference():
-    b = _BigBox(size=10)
-    out = emit_str(union(b, b.translate([20, 0, 0])), dedup=False)
-    assert "module _BigBox_" not in out
-    # difference() body appears twice (once per inlined reference)
-    assert out.count("difference()") == 2
 
 
 def test_chained_transforms_compose_at_call_site():
@@ -225,6 +212,46 @@ def test_nested_components_each_dedup_independently():
                            out, flags=re.MULTILINE).group(1)
     assert bigbox_names[0] in outer_body
     assert "difference()" not in outer_body
+
+
+def test_nested_dedup_works_when_parent_class_sorts_before_inner():
+    """Module-emission order is alphabetical by class name. If the parent
+    Component's class name sorts before the inner's, naive per-iteration
+    registration would render the parent's body before the inner is
+    registered, leaving the inner inlined twice inside the parent module
+    body — defeating dedup. Two passes (register all, then render bodies)
+    keep the dedup correct regardless of class-name ordering."""
+
+    class _AOuter(Component):
+        def __init__(self):
+            super().__init__()
+            self.inner = _BigBox(size=8)
+
+        def build(self):
+            return union(
+                self.inner,
+                self.inner.translate([10, 0, 0]),
+                cylinder(h=1, r=15).down(2),
+                cylinder(h=1, r=15).up(10),
+                cube([30, 30, 0.5]).down(3),
+                sphere(r=2).up(20),
+            )
+
+    o = _AOuter()
+    out = emit_str(union(o, o.translate([30, 0, 0])))
+    outer_names = re.findall(r"module (_AOuter_\w+)\(\)", out)
+    bigbox_names = re.findall(r"module (_BigBox_\w+)\(\)", out)
+    assert len(outer_names) == 1
+    assert len(bigbox_names) == 1
+    outer_body = re.search(rf"module {outer_names[0]}\(\) \{{([\s\S]*?)^\}}",
+                           out, flags=re.MULTILINE).group(1)
+    # Parent body must contain calls to the inner module, NOT the inlined
+    # difference() geometry.
+    assert bigbox_names[0] in outer_body
+    assert "difference()" not in outer_body
+    # Inner module is actually called from outer's body, so the call count
+    # is non-zero (otherwise we'd have a module def that nothing uses).
+    assert _call_count(out, bigbox_names[0]) >= 2
 
 
 def test_lap_split_pattern_emits_one_module_six_calls():

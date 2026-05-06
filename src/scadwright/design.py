@@ -193,8 +193,6 @@ def _render_one(
     base_dir: Path | None,
     out_override: str | Path | None = None,
     cli_viewpoint: dict | None = None,
-    dedup: bool = True,
-    dedup_prim_threshold: int = 5,
 ) -> Path:
     from contextlib import ExitStack
 
@@ -236,7 +234,7 @@ def _render_one(
         if not out_path.is_absolute() and base_dir is not None:
             out_path = base_dir / out_path
 
-    render(node, out_path, dedup=dedup, dedup_prim_threshold=dedup_prim_threshold)
+    render(node, out_path)
     return out_path
 
 
