@@ -408,27 +408,39 @@ No declaration needed on the Component side — `fn` is accepted by every Compon
 
 
 
-### 15. Manufacturing fudges have their own syntax, separate from the design value
+### 15. Manufacturing-specific fudges are easy to add (and track!)
 
-In OpenSCAD, every project that targets a real printer ends up with values like `d = 14.5 + 0.3` — design intent and printer-overshoot folded together, indistinguishable a year later when something stops fitting.
+The need to occasionally lie about a part's dimensions to manufacture what you really want is a sad fact of reality. 
 
-SCADwright provides [Specs](docs/specs_and_adjustments.md): small frozen classes that hold shared dimensions and run the same `equations` block Components use. Inside that block, [adjustments](docs/specs_and_adjustments.md#adjustments) layer corrections with `+=`, `-=`, `*=`, `/=` on their own lines, separate from the design value:
+In OpenSCAD, you might write `d = 14.5 + 0.3` — but now other parts read your lie literally, and a year later you have no idea what that meant.
+
+SCADwright provides [Specs](docs/specs_and_adjustments.md): small frozen classes that hold shared dimensions and run the same `equations` block Components use. 
+
+Inside that block, [adjustments](docs/specs_and_adjustments.md#adjustments) layer corrections with `+=`, `-=`, `*=`, `/=` on their own lines with comments, separate from the design value:
 
 ```python
 from scadwright import Spec
 
 class CamMount(Spec):
     equations = """
-        cam_barrel_od = 60.5
+        cam_barrel_od = 60
+        surround = 10
+        cam_barrel_od + surround <= 70   # rule sees cam_barrel_od = 60, not the post-adjust 60.35
         cam_barrel_od += 0.3   # printer X-axis overshoot
         cam_barrel_od += 0.05  # extra slop for the o-ring
     """
 
-CamMount.cam_barrel_od                       # 60.85
-CamMount.adjustments_for("cam_barrel_od")    # [Adjustment(line=2, delta=0.3, ...), ...]
+CamMount.cam_barrel_od                       # 60.35
 ```
 
-The design intent (60.5) stays clean, each fudge sits on its own line with a comment, and the chain is queryable. Specs can also take optional `?` inputs (printer profile, material), so the same class produces correctly-calibrated values for whichever machine you're targeting.
+The chain is queryable to see what adjustments are applied and where they come from.
+
+```python
+CamMount.adjustments_for("cam_barrel_od")
+# [Adjustment(line=4, delta=0.3, comment='printer X-axis overshoot'),
+#  Adjustment(line=5, delta=0.05, comment='extra slop for the o-ring')]
+```
+Specs can take optional `?` inputs (printer profile, material), and using them with [variants](docs/variants.md) lets one project produce calibrated builds for several printers from a single source.
 
 
 ### 16. You know if a part has changed
