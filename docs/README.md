@@ -43,25 +43,25 @@ having to re-write anything.
 - [Components](components.md) — your own parametric parts as classes (replaces OpenSCAD modules)
 - [Specs](specs_and_adjustments.md#your-first-spec) — shared dimensions across parts in a single source of truth
 - [Variants](variants.md) — print vs. display, multi-part assemblies, section views, resolution tiers
+- [Shape library](shapes/README.md) — 50+ ready-made Components: tubes, gears, fasteners, bearings, infill panels, and more
+- [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
 - [Anchors and attachment](anchors.md) — named attachment points for positioning parts relative to each other
-- [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
-- [Shape library](shapes/README.md) — 50+ ready-made Components: tubes, gears, fasteners, bearings, infill panels, and more
 - [Composition helpers](composition_helpers.md) — `mirror_copy`, `rotate_copy`, `linear_copy`, `multi_hull`, `sequential_hull`
 
 **Workflow**
 
 - [Resolution](resolution.md) — controlling smoothness (`fn`/`fa`/`fs`), precedence rules
-- [Command line](cli_and_args.md) — `scadwright build`/`preview`/`render`, script parameters
 - [Errors and logging](errors_and_logging.md) — what SCADwright does when something's wrong
+- [Command line](cli_and_args.md) — `scadwright build`/`preview`/`render`, script parameters
 - [Debug helpers](debug.md) — `force_render`, `echo` for SCAD-side diagnostics (niche)
 - [Testing](testing.md) — `tree_hash` for regression pinning, geometry assertions, golden-file patterns
 
 **Advanced**
 
 - [Bounding boxes and tests](introspection.md) — measuring parts and writing tests
-- [Matrix](matrix.md) — 4×4 transform math for advanced placement calculations
 - [Adjustments](specs_and_adjustments.md#adjustments) — printer-error fudges recorded inline alongside the equations they correct
+- [Matrix](matrix.md) — 4×4 transform math for advanced placement calculations
 
 ### [Cheatsheet](cheatsheet.md)
 

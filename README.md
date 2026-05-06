@@ -21,17 +21,17 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
  - smart centering built into new components by default
  - separate print/display/integration/debug arrangements of your part
  - python-style chaining (e.g. `shape.linear_extrude(height=15).left(10)`, rather than OpenSCAD's transform-first and object-last notation)
- - scripts you can parametrize from the command line
+ - scripts you can parametrize from the command line (including via json)
  - real error messages with line numbers
- - and automated tests
+ - automated tests
+
+ and more.
 
 While simple projects very strongly resemble OpenSCAD code (easy to be productive immediately), as your projects grow in complexity, **SCADwright allows a graceful transition to more complex features**, without any hard syntactic or conceptual boundaries. **Styles can be mixed and matched in the same project.**
 
-I have put significant effort into refining the UX of SCADwright:  the more advanced constructs use a syntax 
-that's neither OpenSCAD nor quite standard object-oriented python. Instead, the goal is to **ruthlessly 
-eliminate boiler plate,** and make constructs simple to use in common cases for those with little background in
-object-oriented python or advanced OpenSCAD, while retaining full python capabilities and a low-level interface
-for exceptional cases.
+I have put significant effort into refining the UX of SCADwright:  the more advanced constructs use a syntax that's neither OpenSCAD nor quite standard object-oriented python. Instead, the goal is to **ruthlessly eliminate boiler plate,** and make constructs **simple, elegant, and highly expressive**. 
+
+SCADwright optimizes for common cases, for those with little background in object-oriented python or advanced OpenSCAD, but retains full python capabilities and a low-level interface for exceptional cases.
 
 SCADwright calls OpenSCAD only at render time. The Python side has no external dependencies, but sympy is highly recommended to enable full functionality.  I've taken some care to make emitted SCAD human-readable.
 
