@@ -36,7 +36,7 @@ def _python_blocks(path: Path) -> list[tuple[int, str]]:
 
 _PRELUDE = """\
 from scadwright import (
-    Component, Param, bbox, tree_hash, render, resolution,
+    Component, Param, Spec, Adjustment, bbox, tree_hash, render, resolution,
     current_variant, variant, register_variants, Matrix,
     positive, non_negative, minimum, maximum, in_range, one_of,
 )
