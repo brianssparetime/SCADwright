@@ -66,10 +66,18 @@ class _CompositionMixin:
         explicit `size` (cube edge length) to override — useful when the
         bbox can't be computed cheaply or when you want a fixed cutter for
         downstream tooling.
+
+        Implementation: emits `intersection(part, kept_box*)`, one kept_box
+        per nonzero axis covering the kept half-space. The intersection
+        form (vs `difference(part, removed_box*)`) lets ``bbox()`` return
+        the correctly-clipped AABB of the kept geometry — the BBoxVisitor
+        for Intersection folds children's bboxes via intersection, so the
+        clipping is automatic. Geometrically identical to the
+        difference-of-removed-region form.
         """
         from scadwright.api._vectors import _vec_from_args
         from scadwright.ast.base import SourceLocation
-        from scadwright.ast.csg import Difference
+        from scadwright.ast.csg import Intersection
         from scadwright.errors import ValidationError
         from scadwright.primitives import cube as _cube
 
@@ -90,10 +98,10 @@ class _CompositionMixin:
             from scadwright.bbox import bbox as _bbox
 
             bb = _bbox(self)
-            # Cube centered at origin must cover both half-spaces along the
-            # cut axis (one side gets removed; cutter extends from origin
-            # outward by S in that direction after translating by S/2) and
-            # the full bbox in the perpendicular axes (cutter extends ±S/2).
+            # Cube centered at origin must cover the kept half-space along
+            # the cut axis (kept_box extends from origin outward by S after
+            # translating by S/2 in the kept direction) and the full bbox
+            # in the perpendicular axes (kept_box extent is ±S/2).
             # Setting S = 2 * R * (1 + eps) with R = max signed extent over
             # all axes satisfies both conditions with a 2% margin.
             r = max(
@@ -102,19 +110,19 @@ class _CompositionMixin:
                 abs(bb.min[2]), abs(bb.max[2]),
             )
             # Floor protects degenerate cases (point at origin, single 2D
-            # primitive at origin) so the cutter still removes geometry on
-            # the chosen side instead of collapsing to a zero cube.
+            # primitive at origin) so the kept region still has positive
+            # extent on the chosen side instead of collapsing to a zero box.
             size = max(2.0 * r * 1.02, 1.0)
 
-        cutters = []
+        kept_boxes = []
         for i, comp in enumerate(v_vec):
             if comp == 0:
                 continue
             sign = 1.0 if comp > 0 else -1.0
             shift = [0.0, 0.0, 0.0]
-            shift[i] = -sign * size / 2.0
-            cutters.append(_cube([size, size, size], center=True).translate(shift))
-        return Difference(children=(self, *cutters), source_location=loc)
+            shift[i] = sign * size / 2.0
+            kept_boxes.append(_cube([size, size, size], center=True).translate(shift))
+        return Intersection(children=(self, *kept_boxes), source_location=loc)
 
     def rotate_copy(self, angle: float, n: int = 4, *, axis=(0.0, 0.0, 1.0)) -> "Node":
         """Rotate by `angle` degrees, n total copies (including original). Returns a union."""

@@ -127,7 +127,7 @@ sequential_hull(
 
 ## `halve`
 
-Differences out half (or a quadrant, or an octant) of a shape. Takes a signed 3-vector; each nonzero component picks an axis and the side to keep. Useful for section views and printing halves.
+Cuts a shape down to one half (or a quadrant, or an octant) by intersecting it with the kept half-space(s). Takes a signed 3-vector; each nonzero component picks an axis and the side to keep. Useful for section views and printing halves.
 
 ```python
 part.halve([0, 1, 0])           # keep +y, cut -y
@@ -143,7 +143,9 @@ Cut planes pass through the world origin on their axes, so translate first to cu
 part.translate([0, 10, 0]).halve([0, 1, 0])   # cuts at y=10 relative to part
 ```
 
-By default the cutter is sized to just enclose the shape's world-space bbox plus a 2% margin, so the emitted SCAD shows numbers proportional to the part. Pass `size=N` (cube edge length) to override — useful when the bbox can't be computed cheaply or when a fixed cutter size is needed for downstream tooling.
+By default the kept-region box is sized to just enclose the shape's world-space bbox plus a 2% margin, so the emitted SCAD shows numbers proportional to the part. Pass `size=N` (cube edge length) to override — useful when the bbox can't be computed cheaply or when a fixed size is needed for downstream tooling.
+
+`bbox()` of a halved shape returns the AABB of the *kept* region, not the original shape — `halve()` emits as `intersection(part, kept_box)` and the BBoxVisitor for Intersection folds children's bboxes via intersection, so the clipping is automatic. This matters for things like reading `bbox(part).min[2]` to compute how far below the bed a printed half extends.
 
 ---
 
