@@ -681,3 +681,51 @@ class TightBBoxVisitor(BBoxVisitor):
         except AttributeError:
             pass
         return local.transformed(self._ctx)
+
+    def visit_Custom(self, n):
+        from scadwright._custom_transforms.base import get_transform
+        from scadwright.errors import BuildError
+
+        t = get_transform(n.name)
+        if t is None:
+            raise BuildError(
+                f"tight_bbox: unregistered custom transform {n.name!r}"
+            )
+
+        # Consult the transform's tight_bbox hook. Default implementation
+        # on Transform returns None — registered transforms either
+        # supply a hook (via ``@transform(tight_bbox=...)`` or by
+        # overriding the method on a Transform subclass) or fall
+        # through to walking the expanded body.
+        try:
+            local = t.tight_bbox(n.child, **n.kwargs_dict())
+        except NotImplementedError as exc:
+            raise NotImplementedError(
+                f"@transform({n.name!r}).tight_bbox: {exc}"
+            ) from exc
+
+        if local is not None:
+            if not isinstance(local, BBox):
+                raise TypeError(
+                    f"@transform({n.name!r}).tight_bbox must return a "
+                    f"BBox, got {type(local).__name__}"
+                )
+            return local.transformed(self._ctx)
+
+        # No hook — walk the expanded body. If the walk raises (most
+        # often because the body contains Difference), wrap with a
+        # transform-specific message naming the offending transform
+        # and the two transform-relevant workarounds.
+        expanded = t.expand(n.child, **n.kwargs_dict())
+        try:
+            return self.visit(expanded)
+        except NotImplementedError as exc:
+            raise NotImplementedError(
+                f"@transform({n.name!r}): tight bbox of the result "
+                f"can't be computed because the expanded body "
+                f"contains an operator that cannot be tightened "
+                f"(usually Difference). Either pass `tight_bbox=` to "
+                f"@transform to declare the result's true extents, "
+                f"or refactor the transform body to use `halve()` "
+                f"instead of `difference()` for chopping."
+            ) from exc

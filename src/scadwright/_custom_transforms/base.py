@@ -33,12 +33,55 @@ class Transform:
             f"{type(self).__name__} must implement expand(child, **kwargs)"
         )
 
+    def tight_bbox(self, child, **kwargs):
+        """Optional hook: declare the tight AABB of the transform's result.
+
+        Default returns ``None``, signalling "no override — let the
+        framework walk the expanded body." Override (or pass
+        ``tight_bbox=`` to ``@transform``) when the expanded body
+        contains Difference whose result extents are known to the
+        transform author. The framework cannot tighten Difference by
+        AST analysis, so transforms that use ``difference()``
+        internally need this hook for ``tight_bbox()`` to succeed.
+
+        Receives the real child node (the framework calls this with
+        the actual wrapped node, never the CHILDREN placeholder) and
+        the transform's call kwargs. Return a :class:`BBox` in the
+        same coordinate frame the child lives in.
+
+        Example::
+
+            def _lap_split_tight_bbox(child, *, side, overlap, **_):
+                cb = tight_bbox(child)
+                if side == "minus":
+                    return BBox(min=cb.min,
+                                max=(overlap, cb.max[1], cb.max[2]))
+                return BBox(min=(-overlap, cb.min[1], cb.min[2]),
+                            max=cb.max)
+
+            @transform("lap_split_x", tight_bbox=_lap_split_tight_bbox)
+            def lap_split_x(node, *, side, overlap, ...):
+                ...
+
+        Note: ``bbox()`` (the conservative-fast API) does NOT consult
+        this hook — it walks the expanded body and uses first-child's-
+        bbox for any Difference inside. Only ``tight_bbox()`` calls
+        the hook.
+        """
+        return None
+
 
 # Module-level registry: name -> Transform instance.
 _registry: dict[str, Transform] = {}
 
 
-def transform(name: str, *, inline: bool = False, decoration: bool = False):
+def transform(
+    name: str,
+    *,
+    inline: bool = False,
+    decoration: bool = False,
+    tight_bbox: Callable | None = None,
+):
     """Decorator: register a function as a custom transform.
 
     The function must take a Node as its first positional argument and any
@@ -56,23 +99,33 @@ def transform(name: str, *, inline: bool = False, decoration: bool = False):
     preserve the host's anchors when ``get_node_anchors`` walks them, so
     chained decorations and post-decoration ``attach()`` calls keep
     working. See ``docs/add_text.md`` for the canonical example.
+
+    Pass ``tight_bbox=`` to declare the tight AABB of the transform's
+    result. The framework cannot tighten the bbox of a Difference by
+    AST analysis, so transforms that use ``difference()`` internally
+    need this hook for :func:`tight_bbox` (and downstream helpers like
+    :func:`pack_on_bed`) to succeed. The hook signature is
+    ``hook(child, **kwargs) -> BBox`` — same kwargs as the transform
+    function. See :meth:`Transform.tight_bbox` for the full contract.
     """
 
     def decorator(fn: Callable[..., Node]) -> Callable[..., Node]:
         _validate_signature(fn, name)
 
         # Auto-generate a Transform subclass that delegates to the function.
-        cls = type(
-            _camel_case(name),
-            (Transform,),
-            {
-                "name": name,
-                "inline": inline,
-                "decoration": decoration,
-                "expand": lambda self, child, **kw: fn(child, **kw),
-                "_fn": staticmethod(fn),
-            },
-        )
+        attrs = {
+            "name": name,
+            "inline": inline,
+            "decoration": decoration,
+            "expand": lambda self, child, **kw: fn(child, **kw),
+            "_fn": staticmethod(fn),
+        }
+        if tight_bbox is not None:
+            # Capture the user's function in a local so the lambda
+            # closes over the value, not the parameter slot.
+            user_tb = tight_bbox
+            attrs["tight_bbox"] = lambda self, child, **kw: user_tb(child, **kw)
+        cls = type(_camel_case(name), (Transform,), attrs)
         instance = cls()
         register(name, instance)
         return fn

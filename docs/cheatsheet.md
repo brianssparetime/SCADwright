@@ -545,6 +545,15 @@ class TruncCone(Component):                 # author declares the truth when
         return BBox(min=(-self.r, -self.r, 0),
                     max=(self.r, self.r, self.z_t))
 
+# Same hook on @transform — for transforms whose body uses difference():
+def _lap_split_tb(child, *, side, overlap, **_):
+    cb = tight_bbox(child)
+    return BBox(min=cb.min, max=(overlap, cb.max[1], cb.max[2]))
+
+@transform("lap_split_x", tight_bbox=_lap_split_tb)
+def lap_split_x(node, *, side, overlap):
+    ...                                      # body may use difference()
+
 h = tree_hash(shape)                        # 16-char hex, ignores source_location
 
 from scadwright.asserts import *
