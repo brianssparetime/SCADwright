@@ -143,7 +143,7 @@ Cut planes pass through the world origin on their axes, so translate first to cu
 part.translate([0, 10, 0]).halve([0, 1, 0])   # cuts at y=10 relative to part
 ```
 
-A `size=` kwarg overrides the default cutter-cube edge length (default `1e4`, much larger than any practical part). Set it smaller only if the huge cube literal in the output SCAD bothers you.
+By default the cutter is sized to just enclose the shape's world-space bbox plus a 2% margin, so the emitted SCAD shows numbers proportional to the part. Pass `size=N` (cube edge length) to override — useful when the bbox can't be computed cheaply or when a fixed cutter size is needed for downstream tooling.
 
 ---
 

@@ -117,7 +117,7 @@ def sequential_hull(*children) -> Union:
     return Union(children=pieces, source_location=loc)
 
 
-def halve(node: Node, v=None, *, x: float = 0, y: float = 0, z: float = 0, size: float = 1e4) -> Node:
+def halve(node: Node, v=None, *, x: float = 0, y: float = 0, z: float = 0, size: float | None = None) -> Node:
     """Standalone form of `node.halve(v, ...)`. See `Node.halve` for details."""
     return node.halve(v, x=x, y=y, z=z, size=size)
 

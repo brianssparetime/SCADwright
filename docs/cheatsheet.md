@@ -140,7 +140,8 @@ nodes_along_path.sequential_hull()                  # hull adjacent pairs
 
 part.halve([0, 1, 0])                               # keep +y, cut -y
 part.halve([1, 1, 0])                               # keep +x,+y quadrant
-part.halve(y=1, size=200)                           # kwarg form + size override
+part.halve(y=1)                                     # kwarg form (auto-sized cutter)
+part.halve(y=1, size=200)                           # explicit cutter size override
 ```
 
 ## Extrusions &nbsp; &nbsp;[→ full](extrusions.md)

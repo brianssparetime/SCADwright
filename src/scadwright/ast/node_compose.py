@@ -48,7 +48,7 @@ class _CompositionMixin:
         x: float = 0,
         y: float = 0,
         z: float = 0,
-        size: float = 1e4,
+        size: float | None = None,
     ) -> "Node":
         """Cut the shape down to one half (or quadrant/octant) along signed axes.
 
@@ -60,10 +60,12 @@ class _CompositionMixin:
             part.halve(y=1)              # kwarg form
 
         Cut planes pass through the world origin on their axes; translate the
-        part first to cut at a different plane. `size` is the edge length of
-        each cutter cube; the default (1e4) is far larger than any practical
-        part. Set `size` smaller only if the huge literal in the SCAD output
-        bothers you.
+        part first to cut at a different plane. By default the cutter is
+        sized to just enclose the part's world-space bbox plus a 2% margin,
+        so the emitted SCAD shows numbers proportional to the part. Pass an
+        explicit `size` (cube edge length) to override — useful when the
+        bbox can't be computed cheaply or when you want a fixed cutter for
+        downstream tooling.
         """
         from scadwright.api._vectors import _vec_from_args
         from scadwright.ast.base import SourceLocation
@@ -78,11 +80,31 @@ class _CompositionMixin:
                 "halve: at least one axis component must be nonzero",
                 source_location=loc,
             )
-        if size <= 0:
+        if size is not None and size <= 0:
             raise ValidationError(
                 f"halve size must be positive, got {size}",
                 source_location=loc,
             )
+
+        if size is None:
+            from scadwright.bbox import bbox as _bbox
+
+            bb = _bbox(self)
+            # Cube centered at origin must cover both half-spaces along the
+            # cut axis (one side gets removed; cutter extends from origin
+            # outward by S in that direction after translating by S/2) and
+            # the full bbox in the perpendicular axes (cutter extends ±S/2).
+            # Setting S = 2 * R * (1 + eps) with R = max signed extent over
+            # all axes satisfies both conditions with a 2% margin.
+            r = max(
+                abs(bb.min[0]), abs(bb.max[0]),
+                abs(bb.min[1]), abs(bb.max[1]),
+                abs(bb.min[2]), abs(bb.max[2]),
+            )
+            # Floor protects degenerate cases (point at origin, single 2D
+            # primitive at origin) so the cutter still removes geometry on
+            # the chosen side instead of collapsing to a zero cube.
+            size = max(2.0 * r * 1.02, 1.0)
 
         cutters = []
         for i, comp in enumerate(v_vec):
