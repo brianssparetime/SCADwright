@@ -33,3 +33,8 @@ class VentSlots(Component):
             slots.append(slot.translate([-self.slot_width / 2, y, 0]))
 
         return difference(panel, union(*slots).through(panel))
+
+    def tight_bbox(self):
+        # Slots are through-cuts; outer panel's bbox is tight.
+        from scadwright.bbox import bbox
+        return bbox(self)

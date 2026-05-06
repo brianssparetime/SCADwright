@@ -31,6 +31,12 @@ class Dome(Component):
         inner = intersection(sphere(r=inner_r), clip)
         return difference(outer, inner)
 
+    def tight_bbox(self):
+        # Both branches: outer extents = the clipped outer sphere's
+        # bbox. The thk-cavity is interior; doesn't change them.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class SphericalCap(Component):
     """A portion of a sphere sliced off by a plane.

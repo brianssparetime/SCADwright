@@ -39,6 +39,11 @@ class HexNut(Component):
         hole = cylinder(h=self.h, d=self.d).through(outer)
         return difference(outer, hole)
 
+    def tight_bbox(self):
+        # Bore is interior; outer extents = hex prism's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class SquareNut(Component):
     """Square nut (DIN 562 style).
@@ -67,3 +72,8 @@ class SquareNut(Component):
         outer = cube([self.af, self.af, self.h], center="xy")
         hole = cylinder(h=self.h, d=self.d).through(outer)
         return difference(outer, hole)
+
+    def tight_bbox(self):
+        # Bore is interior; outer extents = outer cube's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)

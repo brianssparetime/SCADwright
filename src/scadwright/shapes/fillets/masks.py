@@ -51,6 +51,12 @@ class FilletMask(Component):
 
         return difference(block, cutter.through(block))
 
+    def tight_bbox(self):
+        # The cutter carves out a quarter-cylinder from inside the
+        # block; outer extents = the block's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class ChamferMask(Component):
     """Subtractable chamfer mask along an axis-aligned edge.
@@ -88,3 +94,9 @@ class ChamferMask(Component):
             cutter = cube([diag, self.length, diag]).rotate([0, 45, 0])
 
         return difference(block, cutter.through(block))
+
+    def tight_bbox(self):
+        # The cutter chamfers one corner of the block; outer extents
+        # = the block's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)

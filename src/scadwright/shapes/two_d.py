@@ -101,6 +101,11 @@ class Arc(Component):
             return outer
         return difference(outer, circle(r=self.inner_r))
 
+    def tight_bbox(self):
+        # The inner-radius hole is interior; the outer Sector's bbox is tight.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class RoundedEndsArc(Component):
     """Arc with rounded (capsule) endpoints."""

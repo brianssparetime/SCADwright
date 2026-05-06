@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 
+from scadwright.bbox import BBox
 from scadwright.boolops import difference
 from scadwright.component.base import Component
 from scadwright.primitives import circle, square
@@ -30,6 +31,12 @@ class DShaft(Component):
         cutter = square([self.d, self.d], center=True).right(cut_x + self.d / 2)
         return difference(shaft, cutter)
 
+    def tight_bbox(self):
+        # The flat reduces the +x extent from r to r - flat_depth;
+        # other axes are unchanged. Conservative bbox lies on +x.
+        r = self.d / 2
+        return BBox(min=(-r, -r, 0), max=(r - self.flat_depth, r, 0))
+
 
 class KeyedShaft(Component):
     """Shaft cross-section with a keyway slot (2D).
@@ -52,3 +59,10 @@ class KeyedShaft(Component):
             [-self.key_w / 2, r - self.key_h, 0]
         )
         return difference(shaft, keyway)
+
+    def tight_bbox(self):
+        # The keyway is a local notch on +y; intact portions of the
+        # circle (everywhere outside the slot) keep the bbox at full
+        # diameter on every face.
+        from scadwright.bbox import bbox
+        return bbox(self)

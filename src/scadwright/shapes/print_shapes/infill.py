@@ -58,6 +58,11 @@ class HoneycombPanel(Component):
             return slab
         return difference(slab, union(*cutters).through(slab))
 
+    def tight_bbox(self):
+        # Cutters are through-holes; outer slab's bbox is tight.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class GridPanel(Component):
     """Rectangular grid infill panel: square holes in a slab.
@@ -93,6 +98,10 @@ class GridPanel(Component):
         if not cutters:
             return slab
         return difference(slab, union(*cutters).through(slab))
+
+    def tight_bbox(self):
+        from scadwright.bbox import bbox
+        return bbox(self)
 
 
 class TriGridPanel(Component):
@@ -139,3 +148,7 @@ class TriGridPanel(Component):
         if not cutters:
             return slab
         return difference(slab, union(*cutters).through(slab))
+
+    def tight_bbox(self):
+        from scadwright.bbox import bbox
+        return bbox(self)

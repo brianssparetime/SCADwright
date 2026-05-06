@@ -61,6 +61,11 @@ class Tube(Component):
         inner = cylinder(h=self.h, r=self.id / 2.0).through(outer)
         return difference(outer, inner)
 
+    def tight_bbox(self):
+        # The bore is an interior cut; outer extents = outer cylinder's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class Funnel(Component):
     """Tapered tube (truncated cone with wall thickness).
@@ -123,6 +128,11 @@ class Funnel(Component):
             r2=self.top_id / 2.0,
         ).through(outer)
         return difference(outer, inner)
+
+    def tight_bbox(self):
+        # Bore is interior; outer extents = outer tapered cylinder's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
 
 
 class RoundedBox(Component):
@@ -196,6 +206,12 @@ class FilletRing(Component):
         ).down(eps)
         return difference(outer, cutter)
 
+    def tight_bbox(self):
+        # Both branches: cutter creates an interior void; outer extents
+        # = outer cone (outwards) or cylinder (inwards) bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class Capsule(Component):
     """Pill / stadium solid: a cylinder with hemispherical caps on both ends.
@@ -246,6 +262,11 @@ class RectTube(Component):
         outer = cube([self.outer_w, self.outer_d, self.h], center="xy")
         inner = cube([self.inner_w, self.inner_d, self.h], center="xy").through(outer)
         return difference(outer, inner)
+
+    def tight_bbox(self):
+        # Bore is interior; outer extents = outer cube's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
 
 
 class Prismoid(Component):
@@ -400,3 +421,10 @@ class UShapeChannel(Component):
         if self.n_shape:
             shape = shape.flip("z").up(self.outer_height)
         return shape
+
+    def tight_bbox(self):
+        # Channel is an interior cut from the top (or bottom under
+        # n_shape, after the flip+up restores the same outer extents).
+        # Outer cube's bbox is tight.
+        from scadwright.bbox import bbox
+        return bbox(self)

@@ -89,6 +89,12 @@ class GridfinityBase(Component):
             return difference(plate, union(*cutters).through(plate))
         return plate
 
+    def tight_bbox(self):
+        # Magnet/screw cutters are interior holes; outer extents
+        # = the plate's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
 
 class GridfinityBin(Component):
     """Gridfinity storage bin.
@@ -135,3 +141,10 @@ class GridfinityBin(Component):
             return union(shell, *dividers)
 
         return shell
+
+    def tight_bbox(self):
+        # Inner cavity is interior; outer extents = outer cube's bbox.
+        # Dividers (when present) sit inside the cavity, so they don't
+        # extend past it either.
+        from scadwright.bbox import bbox
+        return bbox(self)

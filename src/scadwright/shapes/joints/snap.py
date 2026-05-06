@@ -144,3 +144,10 @@ class SnapPin(Component):
     def socket(self):
         """Through-hole cutter sized to pin d + 2*clearance."""
         return cylinder(h=self.h, r=self.socket_d / 2)
+
+    def tight_bbox(self):
+        # The slot is a local notch into the +y/+z corner; barbs
+        # protrude in ±x by barb_depth (already captured by the
+        # union path in the conservative bbox). Conservative IS tight.
+        from scadwright.bbox import bbox
+        return bbox(self)
