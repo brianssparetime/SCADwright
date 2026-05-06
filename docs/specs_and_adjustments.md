@@ -52,7 +52,9 @@ class Cradle(Component):
 
 You don't have to pass `AA` anywhere. It's a class, importable, with class attributes you read directly.
 
-This direct read works inside `build()` and at call sites. To use Spec values inside another Component's `equations` block, see [Letting the Spec flow through equations](#letting-the-spec-flow-through-equations) below.
+This direct read works inside `build()` and at call sites. 
+
+To use Spec values inside another Component's `equations` block, see [Letting the Spec flow through equations](#letting-the-spec-flow-through-equations) below.
 
 ## What goes in a Spec
 
@@ -134,7 +136,7 @@ The Spec is the single source of truth across every file that imports it. Edit t
 
 ## Where a value should live: Component or Spec?
 
-A Component or Spec should hold the values that are most naturally its own. Not values it depends on, and not values that exist mainly for another part's benefit. If two parts share a value equally, they should share a Spec.
+A Component or a Spec should hold the values that are most naturally its own. Not values it depends on, and not values that exist mainly for another part's benefit. If two parts share a value equally, they should share a Spec.
 
 Some examples:
 
@@ -213,7 +215,7 @@ PrinterProfile.x_axis_overshoot
 
 ## Adjustments
 
-Sometimes the dimensions you derive aren't quite the dimensions that print well. The hole is 0.1 mm too tight, the rim sticks out 0.3 mm farther than your printer is calibrated for, the part shrinks 0.2% on cooling. The fix is to nudge specific values up or down with a small fudge factor that has nothing to do with the design intent and everything to do with the printer.
+Sometimes the dimensions you derive aren't quite the dimensions that print well. The hole is 0.1 mm too tight, the rim sticks out 0.3 mm farther than your printer is calibrated for, the part shrinks 0.2% on cooling. The fix is to nudge specific values up or down with a small fudge factor that has nothing to do with the design intent and everything to do with the manufacturing.
 
 Adjustments are how you record those fudges in source. Inside an `equations` block, write `name += rhs`, `-=`, `*=`, or `/=` to layer a correction on top of the equation-resolved value:
 
@@ -237,7 +239,7 @@ Use `+=` to add, `-=` to subtract, `*=` to multiply, `/=` to divide. Reach for `
 A few rules apply to every adjustment:
 
 - **Comments are highly recommended.** Future-you (or your collaborator) needs to know why a `+= 0.3` was added when something doesn't fit a year later.
-- **One family per name.** For a given name, every adjustment must be the same family: all additive (`+=` and `-=`) or all multiplicative (`*=` and `/=`). Mixing is rejected at class-define time.
+- **One family per name.** For a given name, every adjustment must be the same family: all additive (`+=` and `-=`) or all multiplicative (`*=` and `/=`). Mixing is rejected at class-define time.  Let's be honest - I'm too lazy to implement order-of-operations, and you're too lazy to respect them.
 - **The right side can read any name except another adjusted name.** `x += slop` is fine when `slop` isn't itself adjusted. `y += x` is rejected when `x` is adjusted, because that would let the order of the adjustment lines change the result.
 - **An adjustment changes only the named value, not values derived from it.** In the example above, `lens_mount_od = cam_barrel_od + ...` sees the pre-adjust `cam_barrel_od` (60.5). Adjustments apply after the equations resolve, so other equations that reference `cam_barrel_od` keep using the design-intent number. To layer printer-error fudges into a derived value, adjust the derived value too.
 - **Rules read pre-adjust values.** A rule like `bore_id > cam_barrel_od + 0.1` checks the design intent, not the post-fudge value. (`adjusted(name)` is available inside a rule for the rare case where you need the post-adjust value, but most rules don't.)
