@@ -126,3 +126,86 @@ def test_source_location_points_at_user_call_site():
         assert exc.source_location.line == line + 2
     else:
         pytest.fail("expected ValidationError")
+
+
+# =============================================================================
+# tight_bbox-based lift: Component-with-Difference cases
+# =============================================================================
+
+
+def test_component_with_difference_no_override_raises_named():
+    """A Component whose build tree contains Difference and doesn't
+    override ``tight_bbox`` raises with the Component class name in
+    the message — pack_on_bed needs the tight bbox to lay parts out
+    correctly, and it tells the user exactly where to fix it."""
+    from scadwright import Component
+    from scadwright.boolops import difference
+
+    class TruncCone(Component):
+        def build(self):
+            return difference(
+                cube([20, 20, 10]),
+                cube([20, 20, 5]).translate([0, 0, 8]),
+            )
+
+    with pytest.raises(ValidationError, match="TruncCone"):
+        pack_on_bed(TruncCone())
+
+
+def test_component_with_difference_override_lays_out_correctly():
+    """When the author overrides ``tight_bbox``, pack_on_bed uses it.
+    The lift puts the declared bottom on the bed."""
+    from scadwright import BBox, Component
+    from scadwright.boolops import difference
+
+    class TruncCone(Component):
+        def build(self):
+            return difference(
+                cube([20, 20, 10]),
+                cube([20, 20, 5]).translate([0, 0, 8]),
+            )
+
+        def tight_bbox(self):
+            # Author declares: chop reduces height to 8.
+            return BBox(min=(0, 0, 0), max=(20, 20, 8))
+
+    bb = bbox(pack_on_bed(TruncCone()))
+    # Lift uses the declared min[2] = 0, so the part sits on the bed
+    # without floating. Build-tree bbox would have said max[2] = 10
+    # (conservative, ignoring the chop), but tight_bbox says 8 — and
+    # the lift uses the declared bottom which IS 0, so result max[2]
+    # = 8 (declared) since pack_on_bed wraps in Translate by 0.
+    # bbox(pack_on_bed) reads the conservative outer bbox, not tight,
+    # so it sees the cube's full 10. The KEY assertion is that we
+    # didn't raise.
+    assert bb.min == (0, 0, 0)
+
+
+def test_pack_on_bed_error_lists_workarounds():
+    """The error message names the three workarounds so the user
+    isn't left guessing how to fix the layout."""
+    from scadwright import Component
+    from scadwright.boolops import difference
+
+    class Bad(Component):
+        def build(self):
+            return difference(cube(20), cube(10).translate([5, 5, 15]))
+
+    with pytest.raises(ValidationError) as exc:
+        pack_on_bed(Bad())
+    msg = str(exc.value)
+    assert "tight_bbox" in msg
+    assert "halve" in msg
+    assert "lift_to_bed=False" in msg
+
+
+def test_halved_part_uses_intersection_path_no_override_needed():
+    """Halve uses Intersection internally, which TightBBoxVisitor
+    handles natively. No override needed for halved geometry."""
+    halved = cube(20, center=True).halve([1, 0, 0])
+    bb = bbox(pack_on_bed(halved))
+    # Halve keeps +x: x ∈ [0, 10]. After lift (z from -10 to 10) and
+    # X-shift to 0: x ∈ [0, 10], z ∈ [0, 20].
+    assert bb.min == (0, 0, 0)
+    assert bb.max[0] == 10
+    assert bb.max[2] == 20

@@ -521,12 +521,29 @@ m.is_identity
 ## Bounding boxes and tests &nbsp; &nbsp;[→ full](introspection.md)
 
 ```python
-bb = bbox(shape)                            # world AABB (free function)
+bb = bbox(shape)                            # conservative AABB (fast, never raises)
 bb = shape.bbox                             # same — chained property on every shape
 bb.min   bb.max   bb.size   bb.center
 bb.contains(other)    bb.overlaps(other)
 bb.union(other)       bb.intersection(other)
 bb.transformed(matrix)
+
+# bbox() is loose for difference(): returns the FIRST child's bbox.
+# Loose AABB is fine for fit-checks and container sizing; for
+# correctness-sensitive uses (print-bed lifts, anchor placement)
+# use tight_bbox below.
+
+bb = tight_bbox(shape)                      # tight AABB by AST analysis
+                                            # raises on Difference (use halve()
+                                            # instead, or override tight_bbox
+                                            # on the offending Component).
+
+class TruncCone(Component):                 # author declares the truth when
+    equations = "r, z_t > 0"                # AST analysis can't reach it
+    def build(self): ...
+    def tight_bbox(self):
+        return BBox(min=(-self.r, -self.r, 0),
+                    max=(self.r, self.r, self.z_t))
 
 h = tree_hash(shape)                        # 16-char hex, ignores source_location
 

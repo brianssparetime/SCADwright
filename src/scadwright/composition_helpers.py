@@ -173,13 +173,35 @@ def pack_on_bed(
             source_location=loc,
         )
 
-    from scadwright.bbox import bbox as _bbox
+    from scadwright.bbox import tight_bbox as _tight_bbox
 
     placed: list[Node] = []
     x_cursor = 0.0
     max_y_extent = 0.0
     for part in flat:
-        bb = _bbox(part)
+        # Use tight_bbox so the layout (and especially the lift to z=0)
+        # uses the part's actual extents rather than the conservative
+        # bbox. Conservative bbox lies for parts whose top-level
+        # operator is Difference: pack_on_bed would silently float the
+        # part above the bed by the difference between the conservative
+        # and tight z-min. Surfacing that as an explicit error here is
+        # what the user actually wants.
+        try:
+            bb = _tight_bbox(part)
+        except NotImplementedError as exc:
+            raise ValidationError(
+                f"pack_on_bed: cannot lay out `{type(part).__name__}` "
+                f"because its tight bbox can't be computed. "
+                f"Adjustments: (1) override `Component.tight_bbox` on "
+                f"the offending Component to declare its true extents "
+                f"(the equations block usually has them); "
+                f"(2) refactor the build to use `halve()` instead of "
+                f"`difference()` for chopping; "
+                f"(3) pass `lift_to_bed=False` if the part is already "
+                f"correctly placed and you only want the X/Y layout. "
+                f"Underlying: {exc}",
+                source_location=loc,
+            ) from exc
         ext_x = bb.max[0] - bb.min[0]
         ext_y = bb.max[1] - bb.min[1]
         dx = -bb.min[0] + x_cursor

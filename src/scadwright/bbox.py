@@ -303,67 +303,38 @@ def _local_bbox(node) -> BBox:
     raise TypeError(f"_local_bbox: unsupported node type {type(node).__name__}")
 
 
-# --- tight_bbox: primitives only. Composed nodes use sc.bbox(). ---
+# --- tight_bbox: AST-level honest bbox; raises on Difference. ---
 
 
 def tight_bbox(node) -> BBox:
-    """Tight bbox for a primitive node only.
+    """Tight AABB of ``node`` computed by AST analysis.
 
-    For composed nodes (transforms, CSG, Components), use `sc.bbox()` —
-    oriented bboxes through arbitrary transforms aren't supported.
-    `tight_bbox` is the primitive-only API surface.
+    Walks the tree honestly: transforms compose through their matrix,
+    Union/Hull unite their children's bboxes, Intersection clips,
+    Components delegate to their (overridable) :meth:`Component.tight_bbox`,
+    Custom transforms expand and recurse.
+
+    Raises ``NotImplementedError`` on **Difference** — that single
+    operator can't be tightened from the AST alone (the framework
+    doesn't evaluate CSG). Workarounds:
+
+    1. Use ``node.halve(...)`` instead of ``difference(...)`` for
+       chopping geometry. ``halve()`` emits Intersection, which the
+       visitor clips correctly.
+    2. Override :meth:`Component.tight_bbox` on the offending
+       Component to declare its true extents (the ``equations`` block
+       usually has them already).
+    3. If loose-and-fast is acceptable for your use case, switch to
+       :func:`bbox` — it returns the conservative AABB (= first
+       child's bbox for Difference) without raising.
+
+    Distinct from :func:`bbox`, which is always conservative and
+    never raises. Use :func:`tight_bbox` when correctness of the
+    bbox itself matters (print-bed lifts, anchor placement), use
+    :func:`bbox` when you need a conservative envelope (fit checks,
+    container sizing).
     """
-    from scadwright.ast.csg import (
-        Difference,
-        Hull,
-        Intersection,
-        Minkowski,
-        Union,
-    )
-    from scadwright.ast.custom import Custom
-    from scadwright.ast.transforms import (
-        Color,
-        Echo,
-        ForceRender,
-        Mirror,
-        MultMatrix,
-        Offset,
-        PreviewModifier,
-        Projection,
-        Resize,
-        Rotate,
-        Scale,
-        Translate,
-    )
-    from scadwright.component.base import Component
-
-    composed_types = (
-        Translate,
-        Rotate,
-        Scale,
-        Mirror,
-        Color,
-        Resize,
-        MultMatrix,
-        Projection,
-        Offset,
-        PreviewModifier,
-        ForceRender,
-        Echo,
-        Union,
-        Difference,
-        Intersection,
-        Hull,
-        Minkowski,
-        Custom,
-        Component,
-    )
-    if isinstance(node, composed_types):
-        raise NotImplementedError(
-            "tight_bbox: only primitives are supported; "
-            "use sc.bbox() for composed nodes (returns AABB)"
-        )
-    return _local_bbox(node)
+    return TightBBoxVisitor().visit(node)
 
 
 # --- bbox visitor ---
@@ -570,7 +541,19 @@ class BBoxVisitor(Visitor):
         return self.visit(expanded)
 
     def visit_ChildrenMarker(self, n):
-        return _DEGENERATE_BBOX.transformed(self._ctx)
+        from scadwright.errors import ValidationError
+
+        raise ValidationError(
+            "bbox(): cannot compute the bbox of the @transform CHILDREN "
+            "placeholder. The non-inline transform you're inside is "
+            "asking the framework to introspect a child that doesn't "
+            "exist yet at module-body rendering time — any value "
+            "returned would be a fiction (a 1mm cutter, a zero-volume "
+            "hint). Either switch to `@transform(name, inline=True)` to "
+            "expand at the use site (where the real child is visible), "
+            "or restructure the transform body so it doesn't depend on "
+            "the child's bbox."
+        )
 
     # --- CSG — fold children under same ctx. ---
 
@@ -638,3 +621,63 @@ class BBoxVisitor(Visitor):
 
     def generic_visit(self, n):
         return _local_bbox(n).transformed(self._ctx)
+
+
+# =============================================================================
+# TightBBoxVisitor
+# =============================================================================
+#
+# Inherits the bulk of the bbox walk and overrides only the operators
+# whose conservative-bbox semantics aren't tight: Difference (raises),
+# Component (consults the user-overridable ``Component.tight_bbox``),
+# and ChildrenMarker (also raises in BBoxVisitor; hoisted explicitly
+# here to keep the message consistent without depending on the parent
+# class's exact wording).
+
+
+class TightBBoxVisitor(BBoxVisitor):
+    """Compute a node's tight AABB by walking the AST.
+
+    Same traversal as :class:`BBoxVisitor` for everything that AST
+    analysis can tighten — transforms, Union, Hull, Intersection,
+    Custom, primitives. Diverges on:
+
+    - **Difference** — raises ``NotImplementedError`` with a message
+      naming the workarounds (halve(), Component.tight_bbox override,
+      or fall back to :func:`bbox`).
+    - **Component** — calls :meth:`Component.tight_bbox` so authors
+      can declare extents that AST analysis can't derive.
+    - **ChildrenMarker** — raises (same as BBoxVisitor; the @transform
+      placeholder has no geometry).
+    """
+
+    def visit_Difference(self, n):
+        raise NotImplementedError(
+            "tight_bbox: cannot tighten Difference without CSG "
+            "evaluation. Workarounds: (1) use `node.halve(...)` "
+            "instead of `difference(node, cutter)` for chopping — "
+            "halve emits Intersection, which the framework can "
+            "clip correctly; (2) override `Component.tight_bbox` "
+            "on the offending Component to declare its true "
+            "extents (usually known from the equations block); "
+            "(3) if loose-and-fast is acceptable, use `bbox()` "
+            "(returns the first child's AABB — conservative)."
+        )
+
+    def visit_component(self, n):
+        cached = getattr(n, "_tight_bbox_cache", None)
+        if cached is not None:
+            return cached.transformed(self._ctx)
+        try:
+            local = n.tight_bbox()
+        except NotImplementedError as exc:
+            # Wrap with the offending Component class name so the
+            # author knows where to override.
+            raise NotImplementedError(
+                f"{type(n).__name__}.tight_bbox: {exc}"
+            ) from exc
+        try:
+            object.__setattr__(n, "_tight_bbox_cache", local)
+        except AttributeError:
+            pass
+        return local.transformed(self._ctx)

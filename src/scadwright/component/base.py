@@ -175,6 +175,51 @@ class Component(Node):
             surface_params=_normalize_surface_params(surface_params),
         )
 
+    def tight_bbox(self):
+        """Return the tight AABB of this Component in its local frame.
+
+        The default implementation walks the built tree using the
+        framework's tight-bbox visitor: transforms compose, Union/Hull
+        unite, Intersection clips (so ``halve()`` produces a tight
+        bbox automatically), Component children recurse. Difference
+        is the only operator that can't be tightened by AST analysis;
+        when a Component's build tree contains a top-level Difference
+        whose result extents differ from the first child's bbox, the
+        default raises ``NotImplementedError`` naming this Component
+        class so the author knows where to override.
+
+        **Override this method** when:
+
+        - The Component uses Difference for chopping (its build tree
+          looks like ``difference(full_shape, chopper)`` and the
+          chopper extends beyond ``full_shape``). The author usually
+          knows the post-chop extents from the equations block —
+          declare them here.
+        - The Component uses Difference where the conservative bbox
+          IS tight (a drilled hole through a thicker box, where the
+          drill bit doesn't change the box's outer extents).
+          Override to return ``bbox(self)`` to assert that the
+          conservative answer is correct.
+
+        Example::
+
+            class TruncFilletRing(Component):
+                equations = "...; z_t = base_h + tan(angle) * w; ..."
+                def build(self): ...
+                def tight_bbox(self):
+                    r = self.od / 2
+                    return BBox(min=(-r, -r, 0),
+                                max=(r, r, self.z_t))
+
+        Distinct from :meth:`bbox` (always conservative, fast — used
+        by the SCAD emitter and the runtime layout helpers when
+        loose-and-fast suffices) and from the standalone
+        :func:`scadwright.tight_bbox` (visitor that walks any node).
+        """
+        from scadwright.bbox import TightBBoxVisitor
+
+        return TightBBoxVisitor().visit(self._get_built_tree())
+
     def get_anchors(self) -> dict:
         """Return this Component's anchors: bbox-derived defaults merged with custom.
 
