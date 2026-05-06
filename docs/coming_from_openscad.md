@@ -242,6 +242,40 @@ SCAD's `children()` passes the caller-provided subtree into a module. SCADwright
 
 SCAD's `$children` (number of children passed to a module) doesn't apply — in SCADwright, you receive the actual children as Python arguments and can `len()` them if needed.
 
+## Shared dimensions across parts
+
+For a one-off script, SCAD's module-level globals translate to plain Python module-level variables (see the side-by-side example at the top). When several parts share the same dimensions (a battery's measurements, a fastener's size, a panel stock's thickness), and especially when those parts live across multiple files, use a [Spec](specs_and_adjustments.md):
+
+```python
+from scadwright import Spec
+
+class AA(Spec):
+    equations = """
+        d = 14.5
+        length = 50.5
+        nominal_voltage = 1.5
+    """
+```
+
+A Spec is a group of related dimensions you collect in one place. You write them once, and you read them anywhere as plain attributes (`AA.d`, `AA.length`). Use one when you have a few values (a battery, a panel stock, measurements from something external you want to interface or connect with) that several parts share. The closest SCAD analog is "constants at the top of a file" or `include <dimensions.scad>` for sharing across files; a Spec replaces both with a frozen class that every importer reads directly.
+
+### Manufacturing fudges (printer overshoot, slop, shrinkage)
+
+SCAD has no special syntax for keeping manufacturing fudges separate from the design value; typical SCAD code folds the fudge into the value (`d = 14.5 + 0.3`), muddying the design dimensions.
+
+SCADwright provides [Adjustments](specs_and_adjustments.md#adjustments) for this. Inside an `equations` block, write `+=` (or `-=`, `*=`, `/=`) on a separate line to layer a small manufacturing-necessitated fudge on top of the resolved value:
+
+```python
+class CamMount(Spec):
+    equations = """
+        cam_barrel_od = 60.5
+        cam_barrel_od += 0.3   # printer X-axis overshoot
+        cam_barrel_od += 0.05  # extra slop for the o-ring
+    """
+```
+
+Each adjustment shows on its own line with a comment naming the rationale, and the design-intent value (60.5) stays separate from the corrections; they are the lies you must tell in order to get the truth you need.
+
 ## Type tests
 
 SCAD has `is_undef`, `is_bool`, `is_num`, `is_string`, `is_list`. In Python:

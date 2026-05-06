@@ -143,6 +143,8 @@ def debug_clearances(self):
     )
 ```
 
+Manufacturing-specific tweaks (printer overshoot, material shrinkage, slop on a tight fit) belong in [Adjustments](specs_and_adjustments.md#adjustments), not as separate variants.
+
 ## `@variant` options
 
 - `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values.

@@ -40,7 +40,7 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
 
-## SCADwright addresses 15 annoying limitations of OpenSCAD:
+## SCADwright addresses 16 annoying limitations of OpenSCAD:
 
 ### 1.  Components make what they know accessible externally; modules can't.
 
@@ -68,7 +68,9 @@ Consider a hollow tube has an outer diameter, an inner diameter, and a wall thic
 
 In OpenSCAD you either write three modules (`tube_by_id_thk`, `tube_by_od_thk`, `tube_by_id_od`) or one module with conditional logic. The relationship lives in a comment; the code just enumerates cases. And if a wall thickness must be positive, you write an `assert()` that fires at render time — after you've already waited.
 
-In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint).
+In SCADwright, you write a Component, declaring relationships and constraints together as [equations](docs/components.md). 
+
+When you want to use the Component, supply whatever combination of arguments you want. The framework automatically works out a solution, if it can.  Otherwise, you get a specific error:  malformed (not an equation), insufficient (provided arguments can't solve the equations), inconsistent (constraint failed, or provided arguments generate inconsistent solutions), and ambiguous (multiple discrete solutions, usually fixable with a >0 constraint).
 
 You don't even need to isolate a variable on the left of the equation like you do with programming languages.
 
@@ -144,7 +146,7 @@ FilletedBracket(w=40, l=20, thk=4, r=1, r_frac=0.25)  # ValidationError: both se
 
 In OpenSCAD, when two shapes share a face in a `difference()` or `union()`, the result has artifacts unless you manually extend the shapes by a tiny epsilon. Every project defines `eps = 0.01` and litters it through every cut and join.
 
-SCADwright handles this automatically.
+[SCADwright automatically eliminates the need for epsilon overlap](docs/auto-eps_fuse_and_through.md).
 
 ```python
 from scadwright.boolops import difference, union
@@ -154,7 +156,7 @@ box = cube([20, 20, 10])
 part = difference(box, cylinder(h=10, r=3).through(box))     # through-hole, no manual eps
 ```
 
-`through(parent)` detects which faces of the cutter are flush with the parent and extends them automatically. For joints, `attach(fuse=True)` overlaps parts at the contact face. See [Eliminating epsilon overlap](docs/auto-eps_fuse_and_through.md).
+`through(parent)` detects which faces of the cutter are flush with the parent and extends them automatically. For joints, `attach(fuse=True)` overlaps parts at the contact face. 
 
 ### 4. SCADwright's Component library lets you focus on your part, not the parts it's made of
 
@@ -406,7 +408,30 @@ No declaration needed on the Component side — `fn` is accepted by every Compon
 
 
 
-### 15. You know if a part has changed
+### 15. Manufacturing fudges have their own syntax, separate from the design value
+
+In OpenSCAD, every project that targets a real printer ends up with values like `d = 14.5 + 0.3` — design intent and printer-overshoot folded together, indistinguishable a year later when something stops fitting.
+
+SCADwright provides [Specs](docs/specs_and_adjustments.md): small frozen classes that hold shared dimensions and run the same `equations` block Components use. Inside that block, [adjustments](docs/specs_and_adjustments.md#adjustments) layer corrections with `+=`, `-=`, `*=`, `/=` on their own lines, separate from the design value:
+
+```python
+from scadwright import Spec
+
+class CamMount(Spec):
+    equations = """
+        cam_barrel_od = 60.5
+        cam_barrel_od += 0.3   # printer X-axis overshoot
+        cam_barrel_od += 0.05  # extra slop for the o-ring
+    """
+
+CamMount.cam_barrel_od                       # 60.85
+CamMount.adjustments_for("cam_barrel_od")    # [Adjustment(line=2, delta=0.3, ...), ...]
+```
+
+The design intent (60.5) stays clean, each fudge sits on its own line with a comment, and the chain is queryable. Specs can also take optional `?` inputs (printer profile, material), so the same class produces correctly-calibrated values for whichever machine you're targeting.
+
+
+### 16. You know if a part has changed
 
 OpenSCAD has no way to write a regression test that says "this part hasn't changed since I last reviewed it." You either re-render and visually compare, or trust that your edit didn't break anything.
 

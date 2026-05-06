@@ -114,6 +114,31 @@ class FilletRing(Component):
     """
 ```
 
+### Group shared dimensions in a Spec
+
+A Component or a Spec should hold the values that are most naturally its own. Not values it depends on, and not values that exist mainly for another part's benefit. If two parts share a value equally, they should share a [Spec](specs_and_adjustments.md).
+
+```python
+from scadwright import Component, Spec
+from scadwright.primitives import cylinder
+
+class AA(Spec):
+    equations = """
+        d = 14.5
+        length = 50.5
+    """
+
+class Cradle(Component):
+    equations = """
+        wall_thk, floor_thk > 0
+    """
+
+    def build(self):
+        return cylinder(d=AA.d + 2*self.wall_thk, h=AA.length + self.floor_thk)
+```
+
+A Spec is the right home for measured dimensions of something external (a battery, a panel stock, measurements from something you want to interface or connect with) and for any value two or more parts read identically. A Component holds the values specific to itself: a wall thickness, a fillet radius, an alignment offset. For the full discussion with examples (depending parts, mating connectors, manufacturing fudges), see [Where a value should live](specs_and_adjustments.md#where-a-value-should-live-component-or-spec).
+
 ### Declare anchors at class scope with `anchor()`
 
 ```python
@@ -363,6 +388,28 @@ equations = """
 ```
 
 Adding an extra line is cheap (one more string, no boilerplate), and the equation expressions live inside Python strings so nested expressions don't get IDE support. Split any line where a reader would need to parse a sub-expression before they can parse the whole.
+
+### Don't bake manufacturing fudges into the design-intent equation
+
+Manufacturing fudges (printer overshoot, material shrinkage, slop on a tight fit) belong on their own line with `+=`/`-=`/`*=`/`/=`, not folded into the design value. The design-intent dimension stays clean, and each fudge sits on its own line with a comment naming the rationale:
+
+```python
+# Wrong (fudge folded into the design value; intent and correction are indistinguishable):
+class CamMount(Spec):
+    equations = """
+        cam_barrel_od = 60.85   # 60.5 + 0.3 X-overshoot + 0.05 o-ring slop
+    """
+
+# Right (one line per idea; design intent and corrections are separable):
+class CamMount(Spec):
+    equations = """
+        cam_barrel_od = 60.5
+        cam_barrel_od += 0.3   # printer X-axis overshoot
+        cam_barrel_od += 0.05  # extra slop for the o-ring
+    """
+```
+
+See [Adjustments](specs_and_adjustments.md#adjustments) for the operators and the rules around chaining.
 
 ### Don't hand-code what a rule line does
 

@@ -255,6 +255,8 @@ AA = BatterySpec(d=14.5, length=50.5, label="AA")
 
 Pass these into a Component as `Param(BatterySpec)`. The Component reads fields like `self.spec.d` in equations or in `build()`.
 
+When the same dimensions are shared across multiple parts rather than passed into one Component, define them as a [Spec](specs_and_adjustments.md) so every part reads the values directly.
+
 ### Summary
 
 | Situation | How to declare |
@@ -268,6 +270,7 @@ Pass these into a Component as `Param(BatterySpec)`. The Component reads fields 
 | Custom type with a default | `Param(SpecClass, default=...)` |
 | Value worked out from other values | equation line in `equations` (`name = ...`) |
 | Check the bound form can't express | rule line in `equations` |
+| Manufacturing fudge on a value | `name += delta` in `equations` (see [Adjustments](specs_and_adjustments.md#adjustments)) |
 
 ## Building the shape
 
