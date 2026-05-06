@@ -204,6 +204,8 @@ part.disable()             # *part — treated as absent
 part.only()                # !part — render ONLY this subtree
 ```
 
+**OpenSCAD F5 preview is slow on a deep CSG tree?** Wrap the heaviest subtree in `force_render()` (see Debug helpers below) — OpenSCAD caches the CGAL mesh on first compile and re-uses it across frames, so subsequent camera moves don't re-run the CSG.
+
 ## Components &nbsp; &nbsp;[→ full](components.md)
 
 ```python
@@ -550,7 +552,7 @@ render(shape, "out.scad",
 ## Debug helpers &nbsp; &nbsp;[→ full](debug.md)
 
 ```python
-complex_part.force_render(convexity=5)                   # force CGAL in preview
+complex_part.force_render(convexity=5)                   # speed up slow F5 preview: cache CGAL once
 cube(10).echo("size=10")                                 # wrap with echo
 echo("starting")                                         # bare echo statement
 echo("count:", n=4, _node=cube(1))                       # mixed args + wrap
