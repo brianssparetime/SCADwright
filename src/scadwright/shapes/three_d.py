@@ -53,7 +53,7 @@ class Tube(Component):
         at="0, 0, 0",
         normal=(0.0, 0.0, -1.0),
         kind="planar",
-        surface_params={"axis": (0.0, 0.0, -1.0), "rim_radius": "od/2"},
+        surface_params={"axis": (0.0, 0.0, 1.0), "rim_radius": "od/2"},
     )
 
     def build(self):
@@ -113,7 +113,7 @@ class Funnel(Component):
         at="0, 0, 0",
         normal=(0.0, 0.0, -1.0),
         kind="planar",
-        surface_params={"axis": (0.0, 0.0, -1.0), "rim_radius": "bot_od/2"},
+        surface_params={"axis": (0.0, 0.0, 1.0), "rim_radius": "bot_od/2"},
     )
 
     def build(self):

@@ -19,14 +19,16 @@ def test_cylinder_top_has_rim_radius():
     a = get_node_anchors(cylinder(h=10, r=5))["top"]
     assert a.kind == "planar"
     assert a.surface_param("rim_radius") == 5.0
-    # axis matches face normal so rim_radius scales correctly.
+    # axis is the cylinder's central axis (consistent with wall + bottom rim)
+    # so attach(angle=) and add_text wrap behave the same on every rim.
     assert a.surface_param("axis") == (0.0, 0.0, 1.0)
 
 
 def test_cylinder_bottom_has_rim_radius():
     a = get_node_anchors(cylinder(h=10, r=5))["bottom"]
     assert a.surface_param("rim_radius") == 5.0
-    assert a.surface_param("axis") == (0.0, 0.0, -1.0)
+    # Same central-axis convention as the top rim.
+    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
 
 
 def test_cone_top_uses_r2_and_bottom_uses_r1():

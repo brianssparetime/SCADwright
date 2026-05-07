@@ -321,15 +321,12 @@ def test_centered_cylinder_angle_lands_at_correct_z():
 def test_top_and_bottom_rim_angle_land_at_same_xy():
     """``angle=N`` on top rim and bottom rim of the same cylinder must
     land at the same (x, y) position. The user's mental model is that
-    angle is measured CCW around the cylinder's central axis; placing
+    angle is measured CCW around the cylinder's central axis, so placing
     matching features (e.g. bolts on both faces) at the same angle
-    should produce features that line up vertically.
-
-    Regression for the previous behavior: bottom rim's
-    surface_params["axis"] is the cap's outward normal (-Z), so
-    rotating around it gave the opposite direction from top (+Z).
-    The fix normalizes the rotation axis to the canonical (positive
-    dominant component) sense before rotating."""
+    produces features that line up vertically. This works because rim
+    anchors carry the cylinder's central axis (not the cap's outward
+    normal) in ``surface_params["axis"]``, so the rotation axis is the
+    same for top and bottom."""
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
     top = peg.attach(hub, on="top", angle=90)

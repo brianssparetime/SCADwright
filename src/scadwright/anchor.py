@@ -382,8 +382,14 @@ def _cylinder_rim_anchors(cyl):
 
     Rim anchors are planar (the disk face is flat) but carry ``rim_radius``
     in ``surface_params`` so disk-rim arc text knows the circumradius.
-    The ``axis`` param matches the face normal so the radius scales
-    correctly under transforms (handled by ``_transform_surface_params``).
+    ``axis`` is the cylinder's central axis direction — the same value for
+    top and bottom rim, and identical to the wall anchor's ``axis``. This
+    keeps the angular convention (``angle=`` CCW from +X around the
+    cylinder's axis) consistent across both rims and the wall, so
+    ``attach(top, angle=N)`` and ``attach(bottom, angle=N)`` land at the
+    same xy position for matching through-features. Radius scaling under
+    transforms uses any direction perpendicular to ``axis``, so the choice
+    of ``axis`` sign doesn't affect ``rim_radius`` propagation.
     """
     h = cyl.h
     if cyl.center:
@@ -411,7 +417,7 @@ def _cylinder_rim_anchors(cyl):
             normal=(0.0, 0.0, -1.0),
             kind="planar",
             surface_params=(
-                ("axis", (0.0, 0.0, -1.0)),
+                ("axis", (0.0, 0.0, 1.0)),
                 ("rim_radius", float(cyl.r1)),
             ),
         )
