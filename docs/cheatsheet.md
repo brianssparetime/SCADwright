@@ -509,6 +509,8 @@ PieSlice(r=10, angles=(0, 90), h=5)               # cylindrical sector
 ChamferedBox(size=(30, 20, 10), fillet=2)         # rounded edges (or chamfer=)
 FilletMask(r=3, length=20)                        # subtractable edge fillet
 FilletRing(id=20, od=30, base_angle=30)           # flange fillet ring
+cube([10, 20, 30]).fillet("top", r=2)             # sugar (cube + cylinder only)
+cylinder(h=10, r=5).chamfer("top_rim", size=1)    # 12 cube edges or 2 cylinder rims
 
 # Fasteners (spec-driven; .of(size) for canned ISO sizes):
 Bolt(size="M3", length=10)                        # ISO metric, socket or button head

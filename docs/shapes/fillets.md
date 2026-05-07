@@ -22,6 +22,30 @@ ChamferedBox(size=(30, 20, 10), chamfer=2)    # 45-degree bevels
 
 *`ChamferedBox(size=(30, 20, 10), fillet=2)` — box with every edge rolled to a 2 mm radius.*
 
+## Shorthand: `.fillet()` and `.chamfer()` on `cube` and `cylinder`
+
+For axis-aligned cube edges and cylinder rims, `.fillet(edges, r=...)` and `.chamfer(edges, size=...)` are sugar over `FilletMask` / `ChamferMask` / a custom `rotate_extrude` profile. Replaces the manual three-line pattern of constructing a mask, translating it to the edge, and subtracting.
+
+```python
+# Cube — single edge, list of edges, or group selector:
+cube([10, 20, 30]).fillet("top_front", r=2)
+cube([10, 20, 30]).fillet(["top_front", "top_back"], r=2)
+cube([10, 20, 30]).fillet("top", r=2)              # all 4 top edges
+cube([10, 20, 30]).fillet("vertical", r=2)         # all 4 z-axis edges
+cube([10, 20, 30]).chamfer("top", size=1)          # 45° bevel instead
+
+# Cylinder rim (non-cone only):
+cylinder(h=10, r=5).fillet("top_rim", r=1)
+cylinder(h=10, r=5).chamfer("bottom_rim", size=1)
+
+# Chains naturally:
+cube([10, 20, 30]).fillet("top", r=2).up(5).red()
+```
+
+The 12 cube edges are named by face-pair (same vocabulary as the framework's anchor faces): `top_front`, `top_back`, `top_lside`, `top_rside`, `bottom_front`, `bottom_back`, `bottom_lside`, `bottom_rside`, `front_lside`, `front_rside`, `back_lside`, `back_rside`. Group selectors: `"top"` / `"bottom"` (4 edges of that face) and `"vertical"` (4 z-axis edges).
+
+This is sugar — scoped to the cases where edge identity is well-defined. Out of scope: edges of composed shapes (`union`/`difference` results), rotated primitives (`cube(...).rotate(...)` no longer has the method by design), cone cylinders (`r1 != r2`), and inside-corner concave fillets. For those, use `FilletMask` / `ChamferMask` directly.
+
 ## `FilletMask(r, length, axis="z")`
 
 Quarter-cylinder fillet piece along an axis-aligned edge. Same geometry, two uses:
