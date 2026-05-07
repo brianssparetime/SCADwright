@@ -299,3 +299,42 @@ def test_attach_with_at_kwarg_and_angle():
     # Peg's top-center anchor goes to (10, 0, 10); peg extends -z by full height.
     # Centroid at z=10 - 2.5 = 7.5.
     assert cz == pytest.approx(7.5)
+
+
+# --- Composition with the cylinder's center= and outer transforms ---
+
+
+def test_centered_cylinder_angle_lands_at_correct_z():
+    """A centered cylinder (``center=True``) has z_mid=0 and z extents
+    [-h/2, h/2]. ``outer_wall`` should anchor at mid-wall z=0 and
+    ``angle=`` should rotate around the axis as usual."""
+    hub = cylinder(h=20, r=10, center=True)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", angle=90)
+    cx, cy, cz = bbox(attached).center
+    # Anchor at world (0, 10, 0); peg centroid at (0, 10, 2.5).
+    assert cx == pytest.approx(0.0, abs=1e-6)
+    assert cy == pytest.approx(10.0)
+    assert cz == pytest.approx(2.5)
+
+
+def test_rotated_cylinder_angle_composes_correctly():
+    """Outer rotation transforms the cylindrical anchor's position,
+    normal, AND surface_params["axis"] (via _transform_surface_params).
+    ``_apply_attach_angle`` reads the transformed axis and rotates
+    around it, so angular placement composes correctly with outer
+    rotations of the parent cylinder."""
+    # Rotate the cylinder 90° around +X: cylinder's local +Z (axis)
+    # ends up along world -Y.
+    hub = cylinder(h=20, r=10).rotate([90, 0, 0])
+    peg = cube([2, 2, 5])
+    # Cylinder-local +Y meridian (angle=90) at mid-wall = local (0, R, h/2).
+    # After R_x(90): world (0, -h/2, R) = (0, -10, 10).
+    attached = peg.attach(hub, on="outer_wall", angle=90)
+    cx, cy, cz = bbox(attached).center
+    # Peg's bottom-center anchor lands at (0, -10, 10). Without orient,
+    # peg sits with its bottom face on that point, centroid at +Z half-peg
+    # away. Peg height 5 → centroid at z=12.5.
+    assert cx == pytest.approx(0.0, abs=1e-6)
+    assert cy == pytest.approx(-10.0)
+    assert cz == pytest.approx(12.5)

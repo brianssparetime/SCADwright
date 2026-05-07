@@ -92,6 +92,18 @@ peg.attach(hub, on="top", angle=0, radius=0)            # exact cap center
 
 For other anchor kinds (a cube's `top`, a custom Component anchor without surface metadata), `angle=` raises a clear error.
 
+### Limitations
+
+- **Only the `Cylinder` primitive publishes cylindrical / conical / rim anchors today.** Library Components like `Tube`, `Funnel`, `RectTube`, `RingGear`, and `Bearing` are cylindrical shapes, but they currently expose only the bbox-derived planar anchors (`top`, `bottom`, `front`, etc.). Calling `angle=` against `Tube.outer_wall` raises "no anchor 'outer_wall'" — not because of the angle path, but because the Component never declared the surface-aware anchor. Use a raw `cylinder(...)` for now, or attach to bbox-derived faces. Extending the cylindrical Components to publish surface-aware anchors is a separate piece of work.
+
+- **Angular placement only — no axial offset.** `attach(angle=N)` always uses the cylindrical anchor's reference z-position (mid-wall for `outer_wall`, the cap z for `top` / `bottom`). For "30° meridian, 5 mm above mid-wall," chain a directional helper after the attach:
+
+  ```python
+  peg.attach(hub, on="outer_wall", angle=30).up(5)    # 5 above mid-wall
+  ```
+
+  This works for axis-aligned cylinders. For a cylinder whose axis isn't world +Z, `.up()` translates in world space rather than along the cylinder's axis — fall back to an explicit `.translate()` along the cylinder's axis vector in that case.
+
 ## Custom anchors on Components
 
 Declare anchors at class scope with the `anchor()` descriptor, alongside equations:

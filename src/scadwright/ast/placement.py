@@ -244,7 +244,7 @@ def _apply_attach_angle(anchor, angle, radius, loc):
         raise ValidationError(
             f"attach: angle= is not supported for this anchor (kind="
             f"{anchor.kind!r}). Anchors that support angular placement: "
-            f"cylindrical (cone wall), conical (cone wall), and planar "
+            f"cylindrical (cylinder wall), conical (cone wall), and planar "
             f"caps with rim_radius (cylinder/cone top/bottom).",
             source_location=loc,
         )
@@ -329,7 +329,7 @@ def _apply_attach_angle(anchor, angle, radius, loc):
     raise ValidationError(
         f"attach: angle= is not supported for this anchor (kind="
         f"{anchor.kind!r}). Anchors that support angular placement: "
-        f"cylindrical (cone wall), conical (cone wall), and planar "
+        f"cylindrical (cylinder wall), conical (cone wall), and planar "
         f"caps with rim_radius (cylinder/cone top/bottom).",
         source_location=loc,
     )
