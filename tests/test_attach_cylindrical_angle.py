@@ -318,6 +318,28 @@ def test_centered_cylinder_angle_lands_at_correct_z():
     assert cz == pytest.approx(2.5)
 
 
+def test_top_and_bottom_rim_angle_land_at_same_xy():
+    """``angle=N`` on top rim and bottom rim of the same cylinder must
+    land at the same (x, y) position. The user's mental model is that
+    angle is measured CCW around the cylinder's central axis; placing
+    matching features (e.g. bolts on both faces) at the same angle
+    should produce features that line up vertically.
+
+    Regression for the previous behavior: bottom rim's
+    surface_params["axis"] is the cap's outward normal (-Z), so
+    rotating around it gave the opposite direction from top (+Z).
+    The fix normalizes the rotation axis to the canonical (positive
+    dominant component) sense before rotating."""
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    top = peg.attach(hub, on="top", angle=90)
+    bottom = peg.attach(hub, on="bottom", angle=90)
+    assert bbox(top).center[0] == pytest.approx(bbox(bottom).center[0], abs=1e-6)
+    assert bbox(top).center[1] == pytest.approx(bbox(bottom).center[1], abs=1e-6)
+    # And both should land at +Y, not -Y.
+    assert bbox(top).center[1] == pytest.approx(10.0)
+
+
 def test_rotated_cylinder_angle_composes_correctly():
     """Outer rotation transforms the cylindrical anchor's position,
     normal, AND surface_params["axis"] (via _transform_surface_params).

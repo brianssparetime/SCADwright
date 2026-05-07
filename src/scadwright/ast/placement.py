@@ -305,6 +305,21 @@ def _apply_attach_angle(anchor, angle, radius, loc):
                 f"attach: radius= must be non-negative, got {radius}",
                 source_location=loc,
             )
+        # Rim anchors today set surface_params["axis"] to the cap's
+        # outward normal — which is +Z for the top cap and -Z for the
+        # bottom. Rotating around -Z would invert angular direction
+        # relative to +Z, so angle=90 would land at -Y on the bottom
+        # and +Y on the top — inconsistent with the user's "angle is
+        # CCW around the cylinder's axis" mental model. Normalize to
+        # the canonical sense (positive dominant component) so top and
+        # bottom rim placements at the same angle land at the same xy
+        # position. The contained fix; the wider inconsistency in rim
+        # anchor surface_params is a separate work item.
+        abs_components = [abs(a) for a in axis]
+        dominant = abs_components.index(max(abs_components))
+        if axis[dominant] < 0:
+            canonical_axis = tuple(-a for a in axis)
+            rotation = Matrix.rotate_axis_angle(angle_deg, canonical_axis)
         # The cap anchor is at the center of the cap (axis-aligned). The
         # in-plane reference direction for angle=0 is +X, matching the
         # cylindrical-anchor convention.
