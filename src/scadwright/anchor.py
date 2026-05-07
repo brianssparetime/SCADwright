@@ -245,6 +245,15 @@ def _transform_surface_params(
     new_axis = tuple(c / axis_len for c in new_axis_raw)
     params["axis"] = new_axis
 
+    # ``meridian_zero`` (rim anchors) is a direction vector in the rim
+    # plane at angle=0; transforms exactly like ``axis``.
+    mz = params.get("meridian_zero")
+    if mz is not None:
+        new_mz_raw = matrix.apply_vector(mz)
+        mz_len = _math.sqrt(sum(c * c for c in new_mz_raw))
+        if mz_len > 1e-12:
+            params["meridian_zero"] = tuple(c / mz_len for c in new_mz_raw)
+
     # Pick a unit vector perpendicular to the original axis to measure
     # radial scaling. The choice doesn't matter for uniform scales; for
     # non-uniform scales we approximate with this single perpendicular.
@@ -385,11 +394,13 @@ def _cylinder_rim_anchors(cyl):
     ``axis`` is the cylinder's central axis direction — the same value for
     top and bottom rim, and identical to the wall anchor's ``axis``. This
     keeps the angular convention (``angle=`` CCW from +X around the
-    cylinder's axis) consistent across both rims and the wall, so
-    ``attach(top, angle=N)`` and ``attach(bottom, angle=N)`` land at the
-    same xy position for matching through-features. Radius scaling under
-    transforms uses any direction perpendicular to ``axis``, so the choice
-    of ``axis`` sign doesn't affect ``rim_radius`` propagation.
+    cylinder's axis) consistent across both rims and the wall.
+
+    ``meridian_zero`` is the +X-meridian direction in the local frame —
+    the reference direction for ``angle=0``. It transforms with the host
+    just like ``axis`` and the wall anchor's normal, so when the host is
+    rotated around its own axis the meridian-zero direction follows. For
+    an axis-aligned cylinder, this is just ``(1, 0, 0)``.
     """
     h = cyl.h
     if cyl.center:
@@ -407,6 +418,7 @@ def _cylinder_rim_anchors(cyl):
             kind="planar",
             surface_params=(
                 ("axis", (0.0, 0.0, 1.0)),
+                ("meridian_zero", (1.0, 0.0, 0.0)),
                 ("rim_radius", float(cyl.r2)),
             ),
         )
@@ -418,6 +430,7 @@ def _cylinder_rim_anchors(cyl):
             kind="planar",
             surface_params=(
                 ("axis", (0.0, 0.0, 1.0)),
+                ("meridian_zero", (1.0, 0.0, 0.0)),
                 ("rim_radius", float(cyl.r1)),
             ),
         )

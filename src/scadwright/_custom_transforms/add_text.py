@@ -744,7 +744,17 @@ def _place_on_rim(
                 path_radius, rim_radius, loc_str,
             )
 
-    u_axis, _v_axis = _face_tangent_frame(None, face_normal)
+    # Prefer meridian_zero / axis from surface_params so meridian=N
+    # follows the cylinder's local frame (transforms with the host),
+    # consistent with attach(rim, angle=N). Fall back to deriving from
+    # face_normal for ad-hoc rim Anchors that lack the surface params.
+    meridian_zero = anchor.surface_param("meridian_zero")
+    rotation_axis = anchor.surface_param("axis")
+    if meridian_zero is None or rotation_axis is None:
+        u_axis, _v_axis = _face_tangent_frame(None, face_normal)
+        rotation_axis = face_normal
+    else:
+        u_axis = meridian_zero
     base_meridian_rad = _resolve_meridian(meridian) if meridian is not None else 0.0
 
     raised = relief > 0
@@ -793,6 +803,7 @@ def _place_on_rim(
             face_normal=face_normal,
             rim_center=rim_center,
             u_axis=u_axis,
+            rotation_axis=rotation_axis,
             text_kwargs=text_kwargs,
             label_repr=label_repr,
             loc=loc,
@@ -808,10 +819,19 @@ def _emit_rim_line(
     line, line_path_radius,
     font_size, extrude_h, eps, raised,
     base_meridian_rad, halign, valign,
-    face_normal, rim_center, u_axis,
+    face_normal, rim_center, u_axis, rotation_axis,
     text_kwargs, label_repr, loc,
 ):
-    """Emit per-glyph nodes for one rim-arc line at a given path radius."""
+    """Emit per-glyph nodes for one rim-arc line at a given path radius.
+
+    ``rotation_axis`` is the cylinder's central axis (the rim
+    anchor's ``surface_params["axis"]``), used to spin glyphs around
+    the rim from ``u_axis`` (the +X-meridian reference). ``face_normal``
+    is the rim's outward normal (perpendicular to the rim plane); used
+    for the glyph "right" direction (tangent = face_normal × radial)
+    and for the small offset that lifts the glyph above or sinks it
+    below the rim surface.
+    """
     n_chars = len(line)
 
     advance_mm = 0.6 * font_size * text_kwargs.get("spacing", 1.0)
@@ -836,7 +856,7 @@ def _emit_rim_line(
     out = []
     for char, offset_from_meridian in zip(line, offsets):
         theta = base_meridian_rad + offset_from_meridian
-        radial = _rotate_around_axis(u_axis, theta, face_normal)
+        radial = _rotate_around_axis(u_axis, theta, rotation_axis)
         tangent = (
             face_normal[1] * radial[2] - face_normal[2] * radial[1],
             face_normal[2] * radial[0] - face_normal[0] * radial[2],

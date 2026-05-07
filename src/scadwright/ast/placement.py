@@ -179,41 +179,111 @@ def _shift_for_anchors(self_anchor, other_anchor, fuse: bool, eps: float):
     return (shift[0], shift[1], shift[2])
 
 
-def _cone_slanted_normal(r1: float, r2: float, length: float):
-    """Outward surface normal of a cone wall at the +X meridian, mid-wall.
+def _axis_origin_for(anchor):
+    """Return a point on the cylinder's central axis line for ``anchor``.
 
-    For a cylinder (``r1 == r2``), returns ``(1, 0, 0)``. For a cone,
-    returns a unit vector perpendicular to the slanted wall, pointing
-    outward and tilted axially based on the slant direction:
+    Used by ``_apply_attach_angle`` and ``_apply_attach_at_z`` to rotate
+    or translate around the cylinder's actual axis line — which may not
+    pass through the world origin if the host has been translated.
 
-    - Widening upward (``r2 > r1``): normal tilts down (-z component).
-    - Narrowing upward (``r2 < r1``): normal tilts up (+z component).
+    For wall anchors, the axis line passes through ``anchor.position``
+    minus the (signed) radius times the +X-meridian outward direction.
+    For rim anchors (planar with rim_radius), ``anchor.position`` is
+    already at the cap center and lies on the axis. Returns ``None`` if
+    the anchor doesn't carry the geometry needed (no surface params).
+    """
+    if anchor.kind == "cylindrical":
+        radius = anchor.surface_param("radius")
+        if radius is None:
+            return None
+        inner = bool(anchor.surface_param("inner", default=False))
+        s_outward = -1.0 if inner else 1.0
+        return (
+            anchor.position[0] - radius * s_outward * anchor.normal[0],
+            anchor.position[1] - radius * s_outward * anchor.normal[1],
+            anchor.position[2] - radius * s_outward * anchor.normal[2],
+        )
+    if anchor.kind == "conical":
+        r1 = anchor.surface_param("r1")
+        r2 = anchor.surface_param("r2")
+        if r1 is None or r2 is None:
+            return None
+        r_mid = (r1 + r2) / 2.0
+        inner = bool(anchor.surface_param("inner", default=False))
+        s_outward = -1.0 if inner else 1.0
+        return (
+            anchor.position[0] - r_mid * s_outward * anchor.normal[0],
+            anchor.position[1] - r_mid * s_outward * anchor.normal[1],
+            anchor.position[2] - r_mid * s_outward * anchor.normal[2],
+        )
+    if anchor.kind == "planar" and anchor.surface_param("rim_radius") is not None:
+        return anchor.position
+    return None
+
+
+def _rotate_about_line(point, rotation, origin):
+    """Apply ``rotation`` (a rotation Matrix) to ``point``, treating
+    ``origin`` as the center of rotation rather than the world origin.
+
+    Equivalent to: translate by ``-origin``, rotate, translate by
+    ``+origin``. Used for rotating around the cylinder's actual axis
+    line when the host has been translated.
+    """
+    rel = (point[0] - origin[0], point[1] - origin[1], point[2] - origin[2])
+    rotated = rotation.apply_vector(rel)
+    return (
+        origin[0] + rotated[0],
+        origin[1] + rotated[1],
+        origin[2] + rotated[2],
+    )
+
+
+def _cone_slanted_normal(r1: float, r2: float, length: float, *, inner: bool = False):
+    """Surface normal of a cone wall at the +X meridian, mid-wall, pointing
+    away from the wall material.
+
+    For a cylinder (``r1 == r2``), returns ``(±1, 0, 0)`` (positive for
+    outer walls, negative for inner). For a cone, returns a unit vector
+    perpendicular to the slanted wall:
+
+    - Outer wall, widening upward (``r2 > r1``): normal tilts down (-z).
+    - Outer wall, narrowing upward (``r2 < r1``): normal tilts up (+z).
+    - Inner wall: the negation of the outer-wall normal at the same
+      slope (the wall faces the bore, so "away from material" is the
+      opposite direction).
 
     Math: the wall in the (radial, axial) plane runs from ``(r1, z_min)``
-    to ``(r2, z_max)``. The slope vector is ``(r2 - r1, length)``; the
-    outward normal in that plane (rotated 90° clockwise) is
-    ``(length, -(r2 - r1))``, normalized.
+    to ``(r2, z_max)``. The outward normal in that plane (rotated 90°
+    from the slope) is ``(length, -(r2 - r1))``, normalized; flip sign
+    for inner walls.
     """
     import math as _math
 
     slope_x = r2 - r1
     slope_z = length
     L = _math.hypot(slope_x, slope_z)
+    sign = -1.0 if inner else 1.0
     if L < 1e-12:
-        return (1.0, 0.0, 0.0)
-    return (slope_z / L, 0.0, -slope_x / L)
+        return (sign * 1.0, 0.0, 0.0)
+    return (sign * slope_z / L, 0.0, sign * (-slope_x / L))
 
 
 def _apply_attach_angle(anchor, angle, radius, loc):
     """Return a new Anchor with position (and possibly normal) rotated
     around the surface axis to angular position ``angle``.
 
+    Rotation is around the cylinder's actual axis line (through the
+    point returned by ``_axis_origin_for``), not the axis direction
+    through the world origin. This matters when the host has been
+    translated: the axis line moves with it, and the rotation needs to
+    follow.
+
     Behavior dispatches on ``anchor.kind``:
 
     - **cylindrical** (``outer_wall`` of a cylinder): rotate position
-      and normal around ``surface_params["axis"]`` by ``angle``.
-      ``radius=`` is rejected (the anchor sits on the wall surface;
-      different radii would mean a different surface).
+      and normal around the axis line by ``angle``. ``radius=`` is
+      rejected (the anchor sits on the wall surface; different radii
+      would mean a different surface).
 
     - **conical** (``outer_wall`` of a cone): same rotation, but the
       "normal" used for the rotated anchor is the cone's *slanted*
@@ -259,7 +329,8 @@ def _apply_attach_angle(anchor, angle, radius, loc):
                 "cap anchors with rim_radius.",
                 source_location=loc,
             )
-        new_position = rotation.apply_point(anchor.position)
+        origin = _axis_origin_for(anchor)
+        new_position = _rotate_about_line(anchor.position, rotation, origin)
         new_normal = rotation.apply_vector(anchor.normal)
         return Anchor(
             position=new_position,
@@ -286,8 +357,10 @@ def _apply_attach_angle(anchor, angle, radius, loc):
                 "cannot compute the slanted normal.",
                 source_location=loc,
             )
-        slanted_ref = _cone_slanted_normal(r1, r2, length)
-        new_position = rotation.apply_point(anchor.position)
+        inner = bool(anchor.surface_param("inner", default=False))
+        slanted_ref = _cone_slanted_normal(r1, r2, length, inner=inner)
+        origin = _axis_origin_for(anchor)
+        new_position = _rotate_about_line(anchor.position, rotation, origin)
         new_normal = rotation.apply_vector(slanted_ref)
         return Anchor(
             position=new_position,
@@ -296,11 +369,12 @@ def _apply_attach_angle(anchor, angle, radius, loc):
             surface_params=anchor.surface_params,
         )
 
-    # Planar with rim_radius — cap of a cylinder/cone. Rim anchors
-    # carry ``surface_params["axis"]`` set to the cylinder's central
-    # axis (the same direction as the wall anchor's axis), so rotating
-    # ``(r, 0, 0)`` around it gives the same angular convention on the
-    # top and bottom rim and matches the wall.
+    # Planar with rim_radius — cap of a cylinder/cone. The rim's
+    # ``axis`` is the cylinder's central axis (same direction as the
+    # wall's), and ``meridian_zero`` is the +X-meridian direction in
+    # the rim plane in the host's local frame. Both transform with the
+    # host, so a host rotated around its own axis still gets the right
+    # +X-meridian reference direction.
     rim_radius = anchor.surface_param("rim_radius")
     if anchor.kind == "planar" and rim_radius is not None:
         r = rim_radius if radius is None else radius
@@ -309,7 +383,14 @@ def _apply_attach_angle(anchor, angle, radius, loc):
                 f"attach: radius= must be non-negative, got {radius}",
                 source_location=loc,
             )
-        offset_local = (r, 0.0, 0.0)
+        meridian_zero = anchor.surface_param(
+            "meridian_zero", default=(1.0, 0.0, 0.0),
+        )
+        offset_local = (
+            r * meridian_zero[0],
+            r * meridian_zero[1],
+            r * meridian_zero[2],
+        )
         offset_rotated = rotation.apply_vector(offset_local)
         new_position = (
             anchor.position[0] + offset_rotated[0],
@@ -329,6 +410,93 @@ def _apply_attach_angle(anchor, angle, radius, loc):
         f"cylindrical (cylinder wall), conical (cone wall), and planar "
         f"caps with rim_radius (cylinder/cone top/bottom).",
         source_location=loc,
+    )
+
+
+def _apply_attach_at_z(anchor, at_z, loc):
+    """Return a new Anchor shifted along the surface axis by ``at_z`` mm.
+
+    Valid only on cylindrical and conical wall anchors. For conical
+    anchors, the position is also adjusted radially to stay on the
+    slanted surface — without that, an axis-only shift would put the
+    new anchor inside the cone (for inward narrowing) or outside it
+    (for outward widening) rather than on the wall.
+
+    Rim anchors don't have a meaningful "axial" direction perpendicular
+    to their plane in the same sense — for those, ``radius=`` already
+    covers the in-plane radial offset.
+    """
+    from scadwright.anchor import Anchor
+    from scadwright.errors import ValidationError
+
+    if anchor.kind not in ("cylindrical", "conical"):
+        raise ValidationError(
+            f"attach: at_z= is for cylindrical and conical wall anchors "
+            f"(it shifts along the surface axis); this anchor is "
+            f"{anchor.kind!r}. For radial offset on a rim, use radius=.",
+            source_location=loc,
+        )
+
+    axis = anchor.surface_param("axis")
+    if axis is None:
+        raise ValidationError(
+            "attach: at_z= requires the anchor to carry a surface axis; "
+            "this anchor's surface_params lack 'axis'.",
+            source_location=loc,
+        )
+
+    new_position = (
+        anchor.position[0] + at_z * axis[0],
+        anchor.position[1] + at_z * axis[1],
+        anchor.position[2] + at_z * axis[2],
+    )
+
+    new_normal = anchor.normal
+    if anchor.kind == "conical":
+        r1 = anchor.surface_param("r1")
+        r2 = anchor.surface_param("r2")
+        length = anchor.surface_param("length")
+        if r1 is None or r2 is None or length is None or length == 0:
+            raise ValidationError(
+                "attach: conical anchor missing r1/r2/length surface_params; "
+                "cannot compute the radial adjustment for at_z=.",
+                source_location=loc,
+            )
+        slope = (r2 - r1) / length
+        # The +X-meridian outward direction is +anchor.normal for outer
+        # walls, -anchor.normal for inner walls (where normal points
+        # toward the axis).
+        inner = bool(anchor.surface_param("inner", default=False))
+        s_outward = -1.0 if inner else 1.0
+        radial_shift = slope * at_z
+        new_position = (
+            new_position[0] + radial_shift * s_outward * anchor.normal[0],
+            new_position[1] + radial_shift * s_outward * anchor.normal[1],
+            new_position[2] + radial_shift * s_outward * anchor.normal[2],
+        )
+        r_mid = (r1 + r2) / 2.0
+        local_radius = r_mid + slope * at_z
+        if local_radius <= 0:
+            raise ValidationError(
+                f"attach: at_z={at_z} on a conical anchor places the "
+                f"attachment at radius {local_radius:.3f} (cone tip or "
+                f"beyond). Pick an at_z where the cone radius is "
+                f"positive.",
+                source_location=loc,
+            )
+        # Match _apply_attach_angle: when placing on a cone wall, expose
+        # the slanted-surface normal so orient=True lays the part flush
+        # against the wall instead of perpendicular to the radial
+        # reference. (Composition with angle= still produces the right
+        # final normal — _apply_attach_angle recomputes from r1/r2/length
+        # and rotates.)
+        new_normal = _cone_slanted_normal(r1, r2, length, inner=inner)
+
+    return Anchor(
+        position=new_position,
+        normal=new_normal,
+        kind=anchor.kind,
+        surface_params=anchor.surface_params,
     )
 
 

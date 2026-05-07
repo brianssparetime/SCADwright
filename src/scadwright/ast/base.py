@@ -235,6 +235,7 @@ class Node(
         *,
         angle: float | str | None = None,
         radius: float | None = None,
+        at_z: float | None = None,
         orient: bool = False,
         fuse: bool = False,
         eps: float = 0.01,
@@ -277,6 +278,20 @@ class Node(
         on the cap; ``radius=`` overrides the default rim radius for
         placements interior to the rim. Other anchor kinds reject
         ``angle=`` with a clear error.
+
+        For axial placement along a cylindrical or conical wall, pass
+        ``at_z=`` (mm offset from the anchor's reference axial position
+        — mid-wall on ``outer_wall``)::
+
+            peg.attach(hub, on="outer_wall", at_z=5)               # 5 mm above mid-wall, +X meridian
+            peg.attach(hub, on="outer_wall", angle=30, at_z=5)     # 30° meridian, 5 mm above mid-wall
+
+        ``at_z=`` works along the cylinder's actual axis line, so it's
+        correct on translated and rotated hosts (``.up()`` after
+        ``attach`` would only translate in world space). On a conical
+        wall, the position is also adjusted radially so it stays on the
+        slanted surface. ``at_z=`` is rejected on rim and other anchor
+        kinds with a clear error.
         """
         from scadwright.anchor import anchors_from_bbox
         from scadwright.bbox import bbox as _bbox
@@ -293,6 +308,9 @@ class Node(
             )
 
         other_anchor = _resolve_attach_anchor(other, on, "other", loc)
+        if at_z is not None:
+            from scadwright.ast.placement import _apply_attach_at_z
+            other_anchor = _apply_attach_at_z(other_anchor, at_z, loc)
         if angle is not None:
             from scadwright.ast.placement import _apply_attach_angle
             other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)

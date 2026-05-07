@@ -13,6 +13,7 @@ import pytest
 from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
 from scadwright.primitives import cube, cylinder, sphere
+from scadwright.shapes import Funnel, Tube
 
 
 # --- Cylindrical anchor: angle rotates position and normal around the axis ---
@@ -357,3 +358,256 @@ def test_rotated_cylinder_angle_composes_correctly():
     assert cx == pytest.approx(0.0, abs=1e-6)
     assert cy == pytest.approx(-10.0)
     assert cz == pytest.approx(12.5)
+
+
+# --- Translation: angle= must rotate around the cylinder's actual axis line ---
+
+
+def test_translated_cylinder_angle_rotates_around_actual_axis():
+    """``angle=`` on a translated cylinder must rotate around the
+    cylinder's axis line (which has moved with the host), not around
+    the world-origin axis-direction. Regression for the prior bug
+    where ``rotation.apply_point(anchor.position)`` rotated relative
+    to the world origin and produced wrong xy positions when the host
+    wasn't centered."""
+    hub = cylinder(h=20, r=10).right(50)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", angle=90)
+    cx, cy, cz = bbox(attached).center
+    # +Y meridian on the translated hub is at world (50, 10, mid-wall).
+    assert cx == pytest.approx(50.0)
+    assert cy == pytest.approx(10.0)
+    assert cz == pytest.approx(12.5)
+
+
+# --- at_z= : axial offset along the cylinder's central axis ---
+
+
+def test_cylindrical_at_z_shifts_along_axis():
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # mid-wall = z=10; +5 axial = z=15; peg centroid at z=15+2.5=17.5.
+    assert cx == pytest.approx(10.0)
+    assert cy == pytest.approx(0.0, abs=1e-6)
+    assert cz == pytest.approx(17.5)
+
+
+def test_cylindrical_at_z_negative_shifts_below_midwall():
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", at_z=-3)
+    cx, cy, cz = bbox(attached).center
+    # mid-wall z=10; -3 axial → z=7; peg centroid at 7+2.5=9.5.
+    assert cz == pytest.approx(9.5)
+
+
+def test_cylindrical_at_z_zero_matches_default():
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    explicit = peg.attach(hub, on="outer_wall", at_z=0)
+    default = peg.attach(hub, on="outer_wall")
+    assert bbox(explicit).center == pytest.approx(bbox(default).center)
+
+
+def test_at_z_composes_with_angle():
+    """``angle=`` and ``at_z=`` together place at the requested meridian
+    AND axial offset on the same wall."""
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", angle=90, at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # +Y meridian (angle=90), z=mid+5=15, peg centroid z=17.5.
+    assert cx == pytest.approx(0.0, abs=1e-6)
+    assert cy == pytest.approx(10.0)
+    assert cz == pytest.approx(17.5)
+
+
+def test_at_z_on_translated_cylinder_follows_axis_line():
+    """``at_z=`` shifts along the cylinder's axis line, not world +Z, so
+    the translation correctly tracks the host's position."""
+    hub = cylinder(h=20, r=10).right(50)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # mid-wall is z=10, +5 axial → z=15, peg centroid z=17.5.
+    # +X meridian on translated hub is world x=60, y=0.
+    assert cx == pytest.approx(60.0)
+    assert cy == pytest.approx(0.0, abs=1e-6)
+    assert cz == pytest.approx(17.5)
+
+
+def test_at_z_on_rotated_cylinder_follows_rotated_axis():
+    """For a cylinder rotated 90° around +X, the central axis is now
+    world -Y. ``at_z=5`` should shift along that direction."""
+    hub = cylinder(h=20, r=10).rotate([90, 0, 0])
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="outer_wall", at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # Local: +X-meridian mid-wall = (10, 0, 10). After R_x(90): (10, -10, 0).
+    # Axis direction after rotation: (0, -1, 0). +5 along axis → (10, -15, 0).
+    # Peg centroid offsets in +z by half-peg (no orient), so z=2.5.
+    assert cx == pytest.approx(10.0)
+    assert cy == pytest.approx(-15.0)
+    assert cz == pytest.approx(2.5)
+
+
+def test_conical_at_z_adjusts_radius_to_stay_on_surface():
+    """For a cone, axial offset moves to a different radius. The new
+    anchor stays on the cone wall (not floating off-surface)."""
+    cone = cylinder(h=20, r1=10, r2=2)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(cone, on="outer_wall", at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # slope = (2 - 10) / 20 = -0.4. r_mid = 6. At at_z=5: r = 6 + (-0.4)*5 = 4.
+    # z = mid (10) + 5 = 15. Peg centroid z = 17.5.
+    assert cx == pytest.approx(4.0)
+    assert cy == pytest.approx(0.0, abs=1e-6)
+    assert cz == pytest.approx(17.5)
+
+
+def test_conical_inner_wall_at_z_uses_correct_outward_direction():
+    """Inner walls have anchor.normal pointing toward the axis. The
+    radial adjustment for at_z= must use the OUTWARD-from-axis direction
+    (-anchor.normal for inner walls), so an inner cone widening upward
+    correctly increases the inner radius at a higher at_z."""
+    f = Funnel(h=20, bot_id=20, top_id=10, thk=2)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(f, on="inner_wall", at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # Funnel inner: bot_id/2=10, top_id/2=5. Inner narrows upward.
+    # r_mid_inner = (10 + 5)/2 = 7.5. slope = (5 - 10)/20 = -0.25.
+    # At at_z=5: inner radius = 7.5 + (-0.25)*5 = 6.25.
+    assert cx == pytest.approx(6.25)
+    assert cy == pytest.approx(0.0, abs=1e-6)
+    assert cz == pytest.approx(17.5)
+
+
+def test_at_z_on_rim_anchor_raises():
+    """Rim anchors don't have a meaningful axial-offset direction; the
+    radial offset on a rim is ``radius=`` instead."""
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    with pytest.raises(ValidationError) as exc:
+        peg.attach(hub, on="top", at_z=5)
+    msg = str(exc.value)
+    assert "at_z" in msg
+    assert "rim" in msg.lower() or "radius" in msg
+
+
+def test_at_z_on_cube_face_raises():
+    """Plain bbox-derived planar anchor has no surface axis; reject
+    at_z= clearly."""
+    box = cube([10, 10, 10])
+    peg = cube([2, 2, 5])
+    with pytest.raises(ValidationError) as exc:
+        peg.attach(box, on="rside", at_z=5)
+    assert "at_z" in str(exc.value)
+
+
+def test_at_z_past_cone_tip_raises():
+    """For a steep cone, an at_z that drives the local radius non-positive
+    is a clear user error — raise rather than silently producing junk."""
+    cone = cylinder(h=20, r1=10, r2=2)
+    peg = cube([2, 2, 5])
+    # Slope = -0.4; r_mid = 6. To make local radius <= 0, at_z >= 15.
+    with pytest.raises(ValidationError) as exc:
+        peg.attach(cone, on="outer_wall", at_z=20)
+    msg = str(exc.value)
+    assert "cone tip" in msg.lower() or "radius" in msg
+
+
+def test_tube_at_z_works_on_outer_wall():
+    """``at_z=`` works on Tube and Funnel surface-aware anchors, not
+    just the raw cylinder() primitive."""
+    tube = Tube(h=20, od=20, thk=2)
+    peg = cube([2, 2, 5])
+    attached = peg.attach(tube, on="outer_wall", at_z=5)
+    cx, cy, cz = bbox(attached).center
+    # Tube outer wall: mid-wall z=10, radius=10. at_z=5 → z=15.
+    assert cx == pytest.approx(10.0)
+    assert cz == pytest.approx(17.5)
+
+
+# --- Cone slanted normal: orient=True with at_z= alone lays flush ---
+
+
+def test_cone_at_z_alone_uses_slanted_normal_for_orient():
+    """``orient=True`` with just ``at_z=`` (no ``angle=``) on a cone wall
+    should lay the part flush against the slanted surface — same as
+    ``angle=0, at_z=N``. Regression for the previous behavior where
+    ``_apply_attach_at_z`` left the radial-reference normal in place,
+    making the orient direction differ between the two equivalent
+    spellings."""
+    cone = cylinder(h=20, r1=10, r2=2)  # narrowing-up
+    peg = cube([2, 2, 5])
+    via_at_z_only = peg.attach(cone, on="outer_wall", at_z=5, orient=True)
+    via_angle_zero = peg.attach(cone, on="outer_wall", angle=0, at_z=5, orient=True)
+    # The two spellings must produce identical world positions.
+    assert bbox(via_at_z_only).center == pytest.approx(
+        bbox(via_angle_zero).center, abs=1e-6,
+    )
+
+
+def test_funnel_inner_wall_orient_uses_inner_slanted_normal():
+    """Inner cones lay parts flush AGAINST the inner surface (normal
+    pointing toward the axis), not against an out-of-bore plane. With
+    ``inner=`` flag plumbed through ``_cone_slanted_normal``, a Funnel
+    inner_wall + orient=True puts the peg with its bottom face on the
+    inner cone surface; without the flag, the peg ended up oriented
+    the other way (perpendicular to a normal pointing the wrong way)."""
+    f = Funnel(h=20, bot_id=20, top_id=10, thk=2)  # inner narrows upward
+    peg = cube([4, 4, 1])
+    p = peg.attach(f, on="inner_wall", angle=0, orient=True)
+    # The peg should land with its bottom-face center on the inner wall
+    # at the +X meridian, mid-wall: ( (bot_id/2 + top_id/2)/2, 0, h/2 ) =
+    # ( (10 + 5)/2, 0, 10 ) = (7.5, 0, 10). Centroid offsets along the
+    # (rotated) +Z direction by half-thickness (0.5). The exact
+    # centroid depends on the slanted-normal direction, but the bbox
+    # center's x must remain within (0, bot_id/2) — i.e. INSIDE the
+    # bore. If the flag had been wrong, x would be outside the bore.
+    cx, cy, cz = bbox(p).center
+    assert 0.0 < cx < 10.0
+
+
+# --- Rim meridian_zero: rotation around the cylinder's own axis follows host ---
+
+
+def test_rotated_host_rim_angle_follows_local_meridian():
+    """When the host is rotated around its own axis (R_z(45°) here), the
+    rim's +X-meridian direction rotates with it. ``attach(top, angle=0)``
+    must land at the rotated +X meridian, not at world +X.
+
+    This is the rim analog of the wall behavior, which has always
+    worked because the wall anchor's normal is the +X-meridian direction
+    that transforms naturally with the host. The rim now stores the
+    same intent in ``surface_params["meridian_zero"]``."""
+    hub = cylinder(h=20, r=10).rotate([0, 0, 45])
+    peg = cube([2, 2, 5])
+    attached = peg.attach(hub, on="top", angle=0)
+    cx, cy, cz = bbox(attached).center
+    # Rotated +X meridian on the top rim is at world (cos45*r, sin45*r, h).
+    assert cx == pytest.approx(10.0 * math.cos(math.radians(45)))
+    assert cy == pytest.approx(10.0 * math.sin(math.radians(45)))
+    assert cz == pytest.approx(22.5)  # cap z=20, peg centroid z=22.5
+
+
+def test_rotated_host_rim_angle_consistent_with_wall():
+    """For a host rotated around its own axis, ``attach(top, angle=N)``
+    and ``attach(outer_wall, angle=N)`` should agree on the angular
+    position (same xy direction, just different z). Regression for the
+    pre-fix asymmetry where wall used the transformed meridian-zero
+    direction (anchor.normal) and rim used hardcoded world +X."""
+    hub = cylinder(h=20, r=10).rotate([0, 0, 30])
+    peg = cube([2, 2, 5])
+    rim = peg.attach(hub, on="top", angle=45)
+    wall = peg.attach(hub, on="outer_wall", angle=45)
+    rim_xy_dir = (bbox(rim).center[0], bbox(rim).center[1])
+    wall_xy_dir = (bbox(wall).center[0], bbox(wall).center[1])
+    # Both should be at the same angular direction from the cylinder axis.
+    # Their (x, y) magnitudes are both 10 (the radius), and the angles
+    # should match.
+    rim_angle = math.atan2(rim_xy_dir[1], rim_xy_dir[0])
+    wall_angle = math.atan2(wall_xy_dir[1], wall_xy_dir[0])
+    assert rim_angle == pytest.approx(wall_angle, abs=1e-6)

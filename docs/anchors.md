@@ -92,17 +92,28 @@ peg.attach(hub, on="top", angle=0, radius=0)            # exact cap center
 
 For other anchor kinds (a cube's `top`, a custom Component anchor without surface metadata), `angle=` raises a clear error.
 
-### Limitations
+### Axial placement: `at_z=`
 
-- **Only the `Cylinder` primitive publishes cylindrical / conical / rim anchors today.** Library Components like `Tube`, `Funnel`, `RectTube`, `RingGear`, and `Bearing` are cylindrical shapes, but they currently expose only the bbox-derived planar anchors (`top`, `bottom`, `front`, etc.). Calling `angle=` against `Tube.outer_wall` raises "no anchor 'outer_wall'" — not because of the angle path, but because the Component never declared the surface-aware anchor. Use a raw `cylinder(...)` for now, or attach to bbox-derived faces. Extending the cylindrical Components to publish surface-aware anchors is a separate piece of work.
+For attachments along a cylindrical or conical wall — "30° meridian, 5 mm above mid-wall" — pass `at_z=` (mm offset from the anchor's reference axial position):
 
-- **Angular placement only — no axial offset.** `attach(angle=N)` always uses the cylindrical anchor's reference z-position (mid-wall for `outer_wall`, the cap z for `top` / `bottom`). For "30° meridian, 5 mm above mid-wall," chain a directional helper after the attach:
+```python
+peg.attach(hub, on="outer_wall", at_z=5)              # +X meridian, 5 mm above mid-wall
+peg.attach(hub, on="outer_wall", angle=30, at_z=5)    # 30° meridian, 5 mm above mid-wall
+```
 
-  ```python
-  peg.attach(hub, on="outer_wall", angle=30).up(5)    # 5 above mid-wall
-  ```
+`at_z=` shifts along the cylinder's actual axis line, so it tracks correctly when the host has been translated or rotated. Compare with chaining `.up(5)` after `attach`, which translates in world space and only matches the cylinder's axis when that axis happens to be world +Z.
 
-  This works for axis-aligned cylinders. For a cylinder whose axis isn't world +Z, `.up()` translates in world space rather than along the cylinder's axis — fall back to an explicit `.translate()` along the cylinder's axis vector in that case.
+On a conical wall, `at_z=` also adjusts the position radially so the new anchor stays on the slanted surface. An `at_z=` that drives the local cone radius non-positive (past the cone tip) raises a clear error rather than silently producing junk geometry.
+
+`at_z=` is only valid on cylindrical and conical wall anchors. On a rim, the in-plane radial offset is `radius=` instead. On a cube face or other anchor without a surface axis, `at_z=` raises.
+
+### Hosts that publish cylindrical / conical / rim anchors
+
+- `cylinder()` (the primitive) — `outer_wall`, plus rim metadata on `top` and `bottom`.
+- `Tube` — `outer_wall`, `inner_wall`, plus rim metadata on `top` and `bottom`.
+- `Funnel` — `outer_wall` and `inner_wall` (conical), plus rim metadata on `top` and `bottom`.
+
+Other shapes — `cube()`, `RectTube`, `RingGear`, `Bearing`, `RoundedBox`, etc. — only carry the six bbox-derived planar anchors. Their outer surfaces aren't simple cylinders (rectangular, toothed, balls-and-races), so a single `angle=` rotation around an axis doesn't have a meaningful target. Use bbox-derived faces, or attach to a raw `cylinder()` if you need angular placement.
 
 ## Custom anchors on Components
 
