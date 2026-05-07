@@ -9,6 +9,7 @@ from scadwright.component.base import Component
 from scadwright.component.params import Param
 from scadwright.extrusions import linear_extrude
 from scadwright.primitives import cube, polygon
+from scadwright.shapes.curves.sweep import polygon_profile
 
 
 class HoneycombPanel(Component):
@@ -34,13 +35,9 @@ class HoneycombPanel(Component):
         pitch = cs + wt
         hex_r = cs / (2 * math.cos(math.pi / 6))  # circumradius
 
-        # Hex profile.
-        hex_pts = [
-            (hex_r * math.cos(math.pi / 6 + i * math.pi / 3),
-             hex_r * math.sin(math.pi / 6 + i * math.pi / 3))
-            for i in range(6)
-        ]
-        hex_profile = polygon(points=hex_pts)
+        # Hex profile: rotate=30 puts flats on top/bottom (matching the
+        # row-spacing math below, which uses sin(60°) for row pitch).
+        hex_profile = polygon(points=polygon_profile(6, hex_r, rotate=30))
         hex_cutter = linear_extrude(hex_profile, height=z)
 
         cutters = []
