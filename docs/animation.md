@@ -29,6 +29,18 @@ rotate([0, 0, $t * 360]) {
 
 To run the animation: open the `.scad` in OpenSCAD, then **View → Animate**, set FPS and Steps, and `$t` advances from 0 to 1 across the timeline.
 
+### Exporting frames headlessly
+
+To produce frame PNGs without opening the OpenSCAD GUI, build the `.scad` and pass it to OpenSCAD's `--animate` flag:
+
+```bash
+scadwright build widget.py -o widget.scad
+openscad --animate 100 --imgsize 800,600 -o frame.png widget.scad
+ffmpeg -i frame%05d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+```
+
+OpenSCAD names the frames `frame00000.png` through `frame00099.png` with a 5-digit zero pad, so they sort lexically and `ffmpeg`'s `frame%05d.png` pattern picks them up directly.
+
 ### Where SymbolicExprs are accepted
 
 - **Transform operands**: `translate`, `rotate`, `scale`, `mirror` (vector elements and the scalar angle of axis-angle `rotate`).
