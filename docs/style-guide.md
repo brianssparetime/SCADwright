@@ -452,6 +452,33 @@ part.translate([0, 0, 5])
 part.up(5)
 ```
 
+### Don't compose AST nodes at Design class scope
+
+Composition belongs in variant bodies, not as class-level attributes. A composed node declared at class scope (`box_minus_h = difference(cube(20), h)` next to the parts list) freezes its Components' resolution context at class-def time, when no `with resolution(...)` block is active. The variant's `@variant(fn=...)` and any user-managed `with resolution(...)` block can't reach Components inside an already-composed class-level node — they'd have to re-wrap to retrigger the snapshot capture.
+
+```python
+# Wrong (composition at class scope freezes context):
+class Project(Design):
+    h = Housing()
+    box = cube(20)
+    composed = difference(box, h)        # ← context frozen at class-def time
+
+    @variant(fn=48)
+    def go(self):
+        return self.composed             # h's snapshot is from class-def time
+
+# Right (composition in variant body picks up the variant's context):
+class Project(Design):
+    h = Housing()
+    box = cube(20)
+
+    @variant(fn=48)
+    def go(self):
+        return difference(self.box, self.h)
+```
+
+Class scope holds the *parts* — Components, simple primitives. Variant bodies hold the *composition*.
+
 ---
 
 ## Enforcement

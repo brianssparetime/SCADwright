@@ -133,10 +133,29 @@ class Component(Node):
 
         Stores ``(fn, fa, fs)`` as a tuple; ``None`` for any axis with
         no ambient value at capture time.
+
+        If a captured snapshot differs from the previous one and the
+        Component already has a cached ``_built_tree``, the cache is
+        invalidated. Otherwise an eager build inside one context
+        followed by a re-wrap in another context would silently keep
+        the first context's geometry. Same family of silent-drift bug
+        Position Y is meant to eliminate.
         """
         from scadwright.api.resolution import current as _current_resolution
 
-        self._ctx_resolution = _current_resolution()
+        new = _current_resolution()
+        if (
+            self._ctx_resolution is not None
+            and self._ctx_resolution != new
+            and self._built_tree is not None
+        ):
+            # Snapshot changed; cached build was for the old context.
+            # Don't call _invalidate() — that clears _ctx_resolution too,
+            # but we're about to overwrite it with `new` regardless.
+            self._built_tree = None
+            self._bbox_cache = None
+            self._tree_hash_cache = None
+        self._ctx_resolution = new
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

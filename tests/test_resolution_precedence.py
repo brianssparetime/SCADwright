@@ -268,3 +268,31 @@ def test_component_reuse_across_contexts_uses_latest_wrap():
     # second_wrap was created last; c's snapshot now reflects fn=128.
     # both wraps share the same Component instance c, so both render fn=128.
     assert "$fn = 128" in _render_to_string(second_wrap) or "$fn=128" in _render_to_string(second_wrap)
+
+
+def test_cache_invalidates_when_snapshot_changes_via_rewrap():
+    """An eager build inside one context, followed by a re-wrap in a
+    different context, must rebuild — not return the cached tree from
+    the first context.
+
+    Without cache invalidation on snapshot change, the user's `with
+    resolution()` block around the second wrap is silently ignored:
+    the cached _built_tree from the first build wins. This is the same
+    family of silent-drift bug Position Y is meant to eliminate.
+    """
+    c = _Plain()
+    with resolution(fn=64):
+        # Force an eager build inside the first context. .bbox materializes.
+        first_wrap = c.translate([1, 0, 0])
+        _ = first_wrap.bbox
+        assert c._built_tree is not None  # eager build happened
+    # Now re-wrap in a different context.
+    with resolution(fn=128):
+        second_wrap = c.translate([2, 0, 0])
+    # Render the second wrap. Without the fix, this emits fn=64 from the
+    # cached build. With the fix, the snapshot change invalidated the
+    # cache and the rebuild captured fn=128.
+    scad = _render_to_string(second_wrap)
+    assert "$fn = 128" in scad or "$fn=128" in scad, (
+        "cached tree from first context leaked into second context"
+    )

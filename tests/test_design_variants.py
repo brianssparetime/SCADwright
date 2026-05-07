@@ -376,6 +376,55 @@ def test_variant_eager_build_runs_inside_context():
     )
 
 
+def test_design_clearances_class_attr_does_not_reach_class_attr_components():
+    """KNOWN GAP: ``Design.clearances = Clearances(...)`` doesn't reach
+    Components instantiated as class-level attributes on the same Design.
+
+    Clearances resolve at ``Component.__init__`` (in
+    ``_init_factory._resolve_clearance_kwarg``), not lazily at build.
+    Class-attribute Components are constructed at class-def time —
+    before the variant's clearance context is active and before the
+    framework can read ``Design.clearances`` — so they freeze with
+    ``DEFAULT_CLEARANCES``.
+
+    This is the same family of silent-drift bug Position Y addressed
+    for resolution. The fix would require making clearance resolution
+    lazy (deferring ``_resolve_clearance_kwarg`` until build time).
+    That's a bigger change than the resolution fix because clearance
+    feeds the equation solver — so it's tracked as a separate concern.
+
+    This test is marked ``xfail(strict=True)``: if the fix lands and
+    Components correctly inherit ``Design.clearances``, this test will
+    pass and pytest will fail the run (signalling that the gap closed
+    and this test should be flipped from xfail to a regular assertion).
+    """
+    from scadwright import Clearances
+    from scadwright.shapes import AlignmentPin
+
+    class D(Design):
+        clearances = Clearances(sliding=0.05)
+        pin = AlignmentPin(d=4, h=8, lead_in=1)  # constructed at class-def time
+
+    # The pin's resolved clearance should match Design.clearances.sliding (0.05).
+    # Today it's DEFAULT_CLEARANCES.sliding (0.1) because the pin was
+    # constructed before any context was active.
+    assert D.pin.clearance == pytest.approx(0.05), (
+        f"expected pin to inherit Design.clearances.sliding=0.05, got "
+        f"{D.pin.clearance}; class-attribute Components freeze their "
+        f"clearance at class-def time"
+    )
+
+# Mark the above test as a known gap. When the lazy-clearance fix lands
+# and the assertion holds, pytest with strict xfail will fail this test
+# — flipping it from xfail to a regular passing test should be part of
+# the fix commit.
+test_design_clearances_class_attr_does_not_reach_class_attr_components = pytest.mark.xfail(
+    strict=True,
+    reason="known gap: clearances resolve at __init__, not build; "
+           "class-attr Components miss Design.clearances",
+)(test_design_clearances_class_attr_does_not_reach_class_attr_components)
+
+
 def test_variant_build_errors_fail_fast_no_output_file():
     """A Component that raises during build() should fail fast — no
     output file written, error surfaces from _render_one with the
