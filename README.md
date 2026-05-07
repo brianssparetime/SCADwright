@@ -79,10 +79,13 @@ from scadwright import Component
 
 class Tube(Component):
     equations = """
-        od - id = 2*thk                    # structural relationship: solve for the missing one
-        h, id, od, thk > 0                 # constraints
-    """
-
+```
+```python
+od - id = 2*thk                    # structural relationship: solve for the missing one
+h, id, od, thk > 0                 # constraints
+"""
+```
+```python
     def build(self): ...
 
 Tube(h=10, id=8, thk=1)      # od solved = 10
@@ -96,10 +99,13 @@ Trigonometry uses degrees, like OpenSCAD.
 ```python
 class RightTriangle(Component):
     equations = """
-        tan(alpha) = opp/adj
-        cos(alpha) = adj/hyp
-    """
-
+```
+```python
+tan(alpha) = opp/adj
+cos(alpha) = adj/hyp
+"""
+```
+```python
     def build(self): ...
 
 RightTriangle(opp=3, adj=4)         # solves for alpha = 36.87, hyp = 5
@@ -113,13 +119,15 @@ Equations aren't limited to scalar arithmetic. Either side can be any Python exp
 class BatteryHolder(Component):
     spec = Param(BatterySpec)
     equations = """
-        count:int > 0                                             # constraint 
-        wall_thk, clearance, end_clearance > 0                    # constraint 
-        pitch = spec.d + 2*clearance                              # field read on a namedtuple input
-        outer_w = count * pitch + 2*end_clearance                 # arithmetic
-        positions = tuple(i*pitch for i in range(count))          # tuple from a comprehension
-        len(positions:tuple) = count                              # redundant consistency
-    """
+```
+```python
+count:int > 0                                             # constraint
+wall_thk, clearance, end_clearance > 0                    # constraint
+pitch = spec.d + 2*clearance                              # field read on a namedtuple input
+outer_w = count * pitch + 2*end_clearance                 # arithmetic
+positions = tuple(i*pitch for i in range(count))          # tuple from a comprehension
+len(positions:tuple) = count                              # redundant consistency
+"""
 ```
 
 Equations also handle optional inputs. Prefix a name with `?` to declare it optional; rules and equations that reference it auto-skip when it's not set. The `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` helpers cover the common XOR/OR validation shapes in one line each.
@@ -127,12 +135,15 @@ Equations also handle optional inputs. Prefix a name with `?` to declare it opti
 ```python
 class FilletedBracket(Component):
     equations = """
-        w, l, thk > 0
-        exactly_one(?r, ?r_frac)                   # absolute radius or fraction-of-thk; one and only one
-        edge = ?r if ?r else ?r_frac * thk         # synthesize the active value
-        edge < thk / 2                             # downstream check uses the synthesized name
-    """
-
+```
+```python
+w, l, thk > 0
+exactly_one(?r, ?r_frac)                   # absolute radius or fraction-of-thk; one and only one
+edge = ?r if ?r else ?r_frac * thk         # synthesize the active value
+edge < thk / 2                             # downstream check uses the synthesized name
+"""
+```
+```python
     def build(self): ...
 
 FilletedBracket(w=40, l=20, thk=4, r=1)               # absolute
@@ -423,13 +434,16 @@ from scadwright import Spec
 
 class CamMount(Spec):
     equations = """
-        cam_barrel_od = 60
-        surround = 10
-        cam_barrel_od + surround <= 70   # rule sees cam_barrel_od = 60, not the post-adjust 60.35
-        cam_barrel_od += 0.3   # printer X-axis overshoot
-        cam_barrel_od += 0.05  # extra slop for the o-ring
-    """
-
+```
+```python
+cam_barrel_od = 60
+surround = 10
+cam_barrel_od + surround <= 70   # rule sees cam_barrel_od = 60, not the post-adjust 60.35
+cam_barrel_od += 0.3   # printer X-axis overshoot
+cam_barrel_od += 0.05  # extra slop for the o-ring
+"""
+```
+```python
 CamMount.cam_barrel_od                       # 60.35
 ```
 
@@ -493,10 +507,13 @@ from scadwright.primitives import cylinder
 
 class Tube(Component):
     equations = """
-        od = id + 2*thk
-        h, id, od, thk > 0
-    """
-
+```
+```python
+od = id + 2*thk
+h, id, od, thk > 0
+"""
+```
+```python
     def build(self):
         return difference(
             cylinder(h=self.h, r=self.od / 2),
@@ -520,10 +537,13 @@ from scadwright.primitives import cylinder
 
 class Tube(Component):
     equations = """
-        od = id + 2*thk
-        h, id, od, thk > 0
-    """
-
+```
+```python
+od = id + 2*thk
+h, id, od, thk > 0
+"""
+```
+```python
     def build(self):
         return difference(
             cylinder(h=self.h, r=self.od / 2),
