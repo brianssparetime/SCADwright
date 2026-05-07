@@ -32,6 +32,38 @@ from __future__ import annotations
 import math
 
 from scadwright.errors import ValidationError
+from scadwright.transforms import transform
+
+
+def _carved_tight_bbox(child, **_kw):
+    """tight_bbox hook for ``_carved``: a fillet/chamfer only carves
+    inward, so the cutter-target's bbox is the correct tight bbox.
+
+    The ``child`` here is a ``Difference`` node whose first child is
+    the cube/cylinder. ``bbox()`` on a Difference returns the first
+    child's bbox by convention, so deferring to ``bbox(child)`` gives
+    the right answer without a custom walk.
+
+    Without this hook, ``tight_bbox()`` on the inner Difference would
+    raise (the framework can't tighten a Difference by AST analysis),
+    breaking ``pack_on_bed`` and other tight-bbox-consuming helpers.
+    """
+    from scadwright.bbox import bbox as _bbox
+    return _bbox(child)
+
+
+@transform("_carved", tight_bbox=_carved_tight_bbox)
+def _carved(node):
+    """Internal identity wrapper that publishes a ``tight_bbox`` hook
+    for fillet/chamfer Difference results.
+
+    Body is identity (returns ``node`` unchanged), so the SCAD output
+    is the wrapped Difference inside a tiny module — no geometric
+    effect, just an AST handle for the tight_bbox callback. Underscore
+    prefix signals internal use; users go through ``Cube.fillet`` /
+    ``Cylinder.fillet``.
+    """
+    return node
 
 
 # Edge metadata: name -> (direction_axis, into_cube_signs).
@@ -184,11 +216,11 @@ def cube_fillet(cube_node, edges, *, r: float):
     """Implementation of ``Cube.fillet(edges, r=...)``.
 
     Resolves the edge selector, builds a FilletMask for each edge,
-    positions it via mirror+translate, and subtracts the union of all
-    masks from the cube. ``through()`` is applied to each mask so the
-    cuts clear the cube faces.
+    positions it via mirror+translate, and dispatches to the registered
+    ``_fillet_carve`` transform — which does ``difference(cube, *masks)``
+    AND publishes a ``tight_bbox`` hook returning the cube's own bbox
+    (a fillet only carves inward, so extents are unchanged).
     """
-    from scadwright.boolops import difference
     from scadwright.shapes.fillets.masks import FilletMask
 
     if r <= 0:
@@ -204,16 +236,16 @@ def cube_fillet(cube_node, edges, *, r: float):
         m = _build_cube_edge_mask(cube_node, name, FilletMask, "r", r)
         masks.append(m.through(cube_node))
 
-    return difference(cube_node, *masks)
+    from scadwright.boolops import difference
+    return difference(cube_node, *masks)._carved()
 
 
 def cube_chamfer(cube_node, edges, *, size: float):
     """Implementation of ``Cube.chamfer(edges, size=...)``.
 
-    Same as ``cube_fillet`` but uses ``ChamferMask`` (45° bevel)
-    instead of ``FilletMask`` (rounded).
+    Same as ``cube_fillet`` but uses ``ChamferMask`` (45° bevel) and
+    dispatches through ``_chamfer_carve``.
     """
-    from scadwright.boolops import difference
     from scadwright.shapes.fillets.masks import ChamferMask
 
     if size <= 0:
@@ -229,7 +261,8 @@ def cube_chamfer(cube_node, edges, *, size: float):
         m = _build_cube_edge_mask(cube_node, name, ChamferMask, "size", size)
         masks.append(m.through(cube_node))
 
-    return difference(cube_node, *masks)
+    from scadwright.boolops import difference
+    return difference(cube_node, *masks)._carved()
 
 
 # --- cylinder rim fillet/chamfer ---
@@ -304,8 +337,9 @@ def _cylinder_chamfer_profile(R: float, z_corner: float, z_bite: float, size: fl
 
 
 def cylinder_fillet(cyl_node, rim: str, *, r: float):
-    """Implementation of ``Cylinder.fillet(rim, r=...)``."""
-    from scadwright.boolops import difference
+    """Implementation of ``Cylinder.fillet(rim, r=...)``. Routes through
+    ``_fillet_carve`` so the result has a working ``tight_bbox``.
+    """
     from scadwright.extrusions import rotate_extrude
 
     if r <= 0:
@@ -323,12 +357,14 @@ def cylinder_fillet(cyl_node, rim: str, *, r: float):
         profile = _cylinder_fillet_profile(R, z_min, z_min + r, r)
 
     cutter = rotate_extrude(profile)
-    return difference(cyl_node, cutter)
+    from scadwright.boolops import difference
+    return difference(cyl_node, cutter)._carved()
 
 
 def cylinder_chamfer(cyl_node, rim: str, *, size: float):
-    """Implementation of ``Cylinder.chamfer(rim, size=...)``."""
-    from scadwright.boolops import difference
+    """Implementation of ``Cylinder.chamfer(rim, size=...)``. Routes through
+    ``_chamfer_carve`` so the result has a working ``tight_bbox``.
+    """
     from scadwright.extrusions import rotate_extrude
 
     if size <= 0:
@@ -346,4 +382,5 @@ def cylinder_chamfer(cyl_node, rim: str, *, size: float):
         profile = _cylinder_chamfer_profile(R, z_min, z_min + size, size)
 
     cutter = rotate_extrude(profile)
-    return difference(cyl_node, cutter)
+    from scadwright.boolops import difference
+    return difference(cyl_node, cutter)._carved()

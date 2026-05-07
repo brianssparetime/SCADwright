@@ -164,6 +164,47 @@ def test_cube_fillet_chains_with_other_transforms():
     assert bb.max[2] == pytest.approx(15.0)
 
 
+# --- tight_bbox honors the design-doc contract ---
+
+
+def test_cube_fillet_tight_bbox_matches_cube_bbox():
+    """A fillet only carves inward, so tight_bbox of the result equals
+    the cube's bbox. Without the _carved transform's tight_bbox hook,
+    the inner Difference would raise."""
+    from scadwright import tight_bbox
+    c = cube([10, 20, 30]).fillet("top", r=2)
+    tb = tight_bbox(c)
+    assert tb.size == pytest.approx((10.0, 20.0, 30.0))
+
+
+def test_cube_chamfer_tight_bbox_matches_cube_bbox():
+    from scadwright import tight_bbox
+    c = cube([10, 20, 30]).chamfer("vertical", size=2)
+    tb = tight_bbox(c)
+    assert tb.size == pytest.approx((10.0, 20.0, 30.0))
+
+
+def test_cylinder_fillet_tight_bbox_matches_cylinder_bbox():
+    from scadwright import tight_bbox
+    cy = cylinder(h=10, r=5).fillet("top_rim", r=1)
+    tb = tight_bbox(cy)
+    assert tb.size == pytest.approx((10.0, 10.0, 10.0))
+
+
+def test_filleted_shapes_compose_with_pack_on_bed():
+    """pack_on_bed uses tight_bbox; filleted shapes must support it."""
+    from scadwright.composition_helpers import pack_on_bed
+    packed = pack_on_bed(
+        cube([10, 20, 5]).fillet("top", r=1),
+        cube([15, 10, 5]).chamfer("vertical", size=1),
+        cylinder(h=5, r=4).fillet("top_rim", r=1),
+        plate=(200, 200),
+    )
+    bb = bbox(packed)
+    # Smoke check: pack_on_bed produced a reasonable composite without raising.
+    assert bb.size[2] == pytest.approx(5.0)
+
+
 # --- Cylinder rim ---
 
 
