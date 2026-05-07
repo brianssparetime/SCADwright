@@ -205,6 +205,42 @@ def _invalidate_design_components(design_cls: type) -> None:
                 val._invalidate()
 
 
+def _force_eager_build(node) -> None:
+    """Walk ``node`` recursively, forcing eager build on every Component.
+
+    Each Component's ``_get_built_tree()`` runs inside whatever ambient
+    context (resolution / clearances / viewpoint) is active at this call
+    site. Subsequent reads return the cached tree.
+
+    Called after ``method()`` returns and before ``render()``, both
+    inside the variant's context stack. This gives two guarantees:
+
+    1. **Fail fast on build errors.** A Component that raises during
+       ``build()`` surfaces the error in the variant body's wake — no
+       output file is written, the traceback points at the Component,
+       and the user sees the problem before any partial SCAD lands.
+    2. **Cache reflects the variant's context.** Even if some future
+       code path moved emit outside the context, the cache from this
+       eager pass already captured the right values.
+
+    Idempotent: a Component whose tree is already built is a cache
+    read with no rebuild.
+    """
+    from scadwright.component.base import Component
+
+    if isinstance(node, Component):
+        built = node._get_built_tree()
+        _force_eager_build(built)
+        return
+    children = getattr(node, "children", None)
+    if children is not None:
+        for c in children:
+            _force_eager_build(c)
+    child = getattr(node, "child", None)
+    if child is not None:
+        _force_eager_build(child)
+
+
 def _render_one(
     design_cls: type,
     vname: str,
@@ -259,10 +295,13 @@ def _render_one(
         if has_cli_vp:
             stack.enter_context(_viewpoint(**cli_viewpoint))
         node = method()
-        # Render inside the context stack so lazy Component builds and
-        # emit-time viewpoint reads see the variant's contexts. If render
-        # ran outside the with-block, the resolution / clearances /
-        # viewpoint ContextVars would have already exited.
+        # Force every Component in the tree to build now, while the
+        # variant's contexts are still active. This catches build
+        # errors fail-fast (no half-written output file) and pins each
+        # Component's cached tree to the variant's context.
+        _force_eager_build(node)
+        # Render inside the context stack as well, so any emit-time
+        # context reads (e.g. viewpoint) see the variant's contexts.
         render(node, out_path)
 
     return out_path

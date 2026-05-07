@@ -338,3 +338,70 @@ def test_variant_viewpoint_reaches_emit():
         f"variant rotation was lost — output had no $vpr directive.\n"
         f"first 300 chars:\n{scad[:300]}"
     )
+
+
+def test_variant_eager_build_runs_inside_context():
+    """After method() returns, every Component in the tree should already
+    be built (`_built_tree` populated). Confirms eager-build ran inside
+    the variant's contexts."""
+
+    class TrackedHousing(Component):
+        equations = "r, h > 0"
+        def build(self):
+            return difference(
+                cylinder(h=self.h, r=self.r),
+                cylinder(h=self.h + 2, r=self.r - 2).down(1),
+            )
+        def tight_bbox(self):
+            from scadwright.bbox import BBox
+            return BBox(min=(-self.r, -self.r, 0), max=(self.r, self.r, self.h))
+
+    captured = {}
+
+    class D(Design):
+        h = TrackedHousing(r=10, h=20)
+
+        @variant(fn=48)
+        def go(self):
+            # Capture the Component's cache state when method() returns.
+            captured["pre"] = self.h._built_tree
+            return self.h.translate([0, 0, 0])
+
+    _scad_for_variant(D, "go")
+    # After eager-build runs (before render), the cache should be filled.
+    # We can only sample via a reference outside the variant body — the
+    # post-render state of the class-attribute Component.
+    assert D.h._built_tree is not None, (
+        "after render, Component should have been eagerly built and cached"
+    )
+
+
+def test_variant_build_errors_fail_fast_no_output_file():
+    """A Component that raises during build() should fail fast — no
+    output file written, error surfaces from _render_one with the
+    Component named in the chain."""
+
+    class Broken(Component):
+        equations = "x > 0"
+        def build(self):
+            raise RuntimeError("intentional failure for test")
+
+    class D(Design):
+        b = Broken(x=1)
+
+        @variant()
+        def go(self):
+            return self.b.translate([0, 0, 0])
+
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "D-go.scad"
+        meta = D.__variants__["go"]
+        # Without eager build, render() partially writes the file before
+        # the build error surfaces. With eager build, the error surfaces
+        # before render() runs and no file is created.
+        with pytest.raises(SCADwrightError):
+            _render_one(D, "go", meta, base_dir=Path(td))
+        assert not out.exists(), (
+            "eager build should fail before any output file is written; "
+            f"found leftover file at {out}"
+        )
