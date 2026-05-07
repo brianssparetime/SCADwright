@@ -202,7 +202,7 @@ def _invalidate_design_components(design_cls: type) -> None:
     for klass in design_cls.__mro__:
         for val in vars(klass).values():
             if isinstance(val, Component):
-                val._invalidate_full()
+                val._invalidate()
 
 
 def _force_eager_build(node) -> None:

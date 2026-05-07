@@ -101,7 +101,6 @@ peg.attach(plate, on="rside", at="lside")  # side-by-side
 peg.attach(plate, orient=True)            # rotate to align normals
 pylon.attach(floor, fuse=True)            # overlap EPS into contact face
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
-cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter
 cube(5).array(count=3, spacing=10, axis="x")   # alias over linear_copy
 ```
 

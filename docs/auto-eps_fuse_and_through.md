@@ -55,32 +55,6 @@ Call `through()` after positioning the cutter. It needs to see the final positio
 cylinder(h=10, r=3).up(5).right(8).through(box)   # position first, then through
 ```
 
-### Rotated cutters
-
-For angled drill holes, chamfered countersinks on non-vertical faces, draft-angled inserts, and other rotated-cutter patterns, the world-axis path can't detect coincidence (the cutter's world AABB is inflated by the rotation). Pass `axis="local"` (or `"local_x"` / `"local_y"` / `"local_z"`) to evaluate coincidence in the cutter's local frame:
-
-```python
-import math
-
-# 30°-tilted cylindrical drill, sized to span a 2 mm plate exactly:
-plate = cube([20, 20, 2])
-h = 2 / math.cos(math.radians(30))
-drill = (
-    cylinder(h=h, r=2)
-    .rotate([0, 30, 0])
-    .translate([10, 5, 0])
-)
-part = difference(plate, drill.through(plate, axis="local_z"))
-```
-
-`axis="local"` is a synonym for `axis="local_z"` (the cylinder convention). For non-cylindrical cutters, specify the local axis explicitly: `local_x`, `local_y`, or `local_z`.
-
-How it works: `through()` walks the cutter's outer rotations and translations to find the cumulative local-to-world transform, projects the cutter's end-face centers (at the cutter's local origin on the cut axis) into world space, and checks them against the parent's AABB face planes. The extension applies as a `Translate(Scale(...))` inserted at the leaf level, so the SCAD output keeps the original `rotate(...)` calls plus a leaf-level `translate + scale` rather than collapsing into an opaque `multmatrix`.
-
-With `axis=None` and a rotated cutter that has no world-axis coincidence, `through()` raises pointing at the local-axis form rather than silently no-opping. Cutters whose rotation happens to be axis-permuting (90° around a single axis — `rotate([0, 90, 0])`) keep an axis-aligned world bbox, so the world-axis path handles them and no error is raised.
-
-Anisotropic Scale, Mirror, or other non-rotation transforms in the cutter's stack raise — the local-axis path requires a pure rotation. Apply scale to the underlying primitive's parameters instead.
-
 ## `attach(fuse=True)` -- for joints in `union()`
 
 When two parts sit flush against each other (e.g. a pylon on a floor), `fuse=True` on `attach()` pushes self slightly into the contact face, eliminating the coincident-surface seam:

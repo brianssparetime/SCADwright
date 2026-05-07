@@ -267,7 +267,7 @@ Rotates the attached part so anchor normals oppose. Use when mounting to a side 
 
 ### Manual EPS constants
 
-Use `EPS = 0.01` and manual extension only for edge cases where `through()` can't detect the coincident face — typically when the parent itself is rotated (the parent contract is an axis-aligned AABB), or when the cutter's coincidence is on a non-rectangular boundary `through()` doesn't model. For rotated cutters with axis-aligned parents (angled drill holes, chamfered countersinks on tilted faces), use `cutter.through(parent, axis="local_z")` instead of falling back to manual EPS. Prefer `through(parent)` for cutters and `attach(fuse=True)` for joints.
+Use `EPS = 0.01` and manual extension only for non-axis-aligned cutters or edge cases where `through()` can't detect the coincident face. Prefer `through(parent)` for cutters and `attach(fuse=True)` for joints.
 
 ---
 
@@ -492,7 +492,7 @@ python tools/lint_scadwright.py path/to.py   # lint a specific file or directory
 
 Rules currently enforced:
 
-- `no-module-eps` — module-level `EPS = ...` assignments. Prefer `.through(parent)` for cutters (including rotated cutters via `axis="local_z"`) or `.attach(fuse=True)` for joints; when a manual epsilon is genuinely unavoidable (rotated parents, hull-slab layer thickness, non-rectangular coincidence), scope it locally inside the function that needs it.
+- `no-module-eps` — module-level `EPS = ...` assignments. Prefer `.through(parent)` for cutters or `.attach(fuse=True)` for joints; when a manual epsilon is genuinely unavoidable (non-axis-aligned cutters, hull-slab layer thickness), scope it locally inside the function that needs it.
 - `no-param-float` — `Param(float)` with no `default=` argument. Floats belong in `equations` or `params=`. `Param(float, default=None)` is the deliberate opt-out pattern and is allowed.
 - `translate-single-axis` — `.translate([x, 0, 0])` (or any permutation with two literal zeros). Use the `.right/.left/.up/.down/.forward/.back` directional helper.
 - `no-component-setup` — `def setup(self):` on a `Component` subclass. Move computed values to equations in `equations` (`x = expr`) and checks to rule lines (comparisons or boolean expressions). The framework hook still exists as an internal escape; user-facing Components must declare their inputs and rules in `equations`.

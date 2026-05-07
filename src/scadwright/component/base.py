@@ -150,9 +150,11 @@ class Component(Node):
             and self._built_tree is not None
         ):
             # Snapshot changed; cached build was for the old context.
-            # _invalidate() clears cache but preserves snapshot, which is
-            # what we want here — we're about to overwrite snapshot below.
-            self._invalidate()
+            # Don't call _invalidate() — that clears _ctx_resolution too,
+            # but we're about to overwrite it with `new` regardless.
+            self._built_tree = None
+            self._bbox_cache = None
+            self._tree_hash_cache = None
         self._ctx_resolution = new
 
     def __init_subclass__(cls, **kwargs):
@@ -448,24 +450,10 @@ class Component(Node):
     def _invalidate(self) -> None:
         """Force rebuild + bbox + tree_hash recompute on next access.
 
-        Does NOT clear the resolution snapshot. Param.__set__ calls this
-        when a Param value changes; that's a Param-value change, not a
-        resolution-context change. For the @variant case where shared
-        class-attribute Components need to re-capture context per variant,
-        use ``_invalidate_full()``.
-        """
-        self._built_tree = None
-        self._bbox_cache = None
-        self._tree_hash_cache = None
-
-    def _invalidate_full(self) -> None:
-        """Clear cache AND resolution snapshot.
-
-        Called by ``_invalidate_design_components`` between @variant
-        renders so a Component reused across variants re-captures
-        resolution context from the new variant's ambient. Without this,
-        the cache from variant 1 would carry forward into variant 2 with
-        variant 1's resolution snapshot.
+        Also clears the resolution snapshot so the next AST-insertion
+        (or render-time fallback) re-captures from the current context.
+        Without this, a Component reused across two ``@variant`` calls
+        would carry the snapshot from whichever variant filled it first.
         """
         self._built_tree = None
         self._bbox_cache = None

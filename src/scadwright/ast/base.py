@@ -299,62 +299,18 @@ class Node(
         that aren't coincident are left alone.
 
         ``axis`` is auto-detected (the axis where the cutter most closely
-        spans the parent). Pass ``axis="x"``/``"y"``/``"z"`` to override
-        with a world axis.
-
-        For rotated cutters (angled drill holes, chamfered countersinks
-        on non-vertical faces, draft-angled inserts), pass
-        ``axis="local"`` (or ``"local_x"``/``"local_y"``/``"local_z"``)
-        to interpret the cut axis in cutter-local space. ``through()``
-        walks the cutter's outer rotations, projects the parent's bbox
-        into cutter-local frame, and extends the leaf in local space —
-        the rotates carry the extension correctly into world coordinates.
-        ``axis="local"`` is a synonym for ``"local_z"`` (the cylinder
-        convention).
-
-        With ``axis=None`` and a rotated cutter, ``through()`` raises
-        rather than guessing a local axis (cylinders use local_z, but
-        cubes and Components don't have a canonical cut direction).
+        spans the parent). Pass ``axis="x"``/``"y"``/``"z"`` to override.
 
         Call ``through()`` after positioning the cutter (after any
         ``.up()``, ``.translate()``, ``.attach()`` calls).
         """
-        from scadwright.ast._through_local import (
-            extend_through_faces_local,
-            has_rotation,
-            is_local_axis,
-        )
         from scadwright.bbox import bbox as _bbox
 
         loc = SourceLocation.from_caller()
-
-        if is_local_axis(axis):
-            return extend_through_faces_local(self, parent, axis, eps, loc)
-
-        # World-axis path. Existing behavior preserved exactly for axis-aligned
-        # cutters and for rotations that happen to preserve world-axis alignment
-        # (90° permutations like FilletMask's `Rotate(0, 90, 0)`).
         self_bb = _bbox(self)
         parent_bb = _bbox(parent)
         ax = _detect_through_axis(self_bb, parent_bb, axis, loc)
-        result = _extend_through_faces(self, self_bb, parent_bb, ax, eps, loc)
-
-        # If the world-axis path found no coincident face AND the cutter has
-        # a non-axis-permuting rotation in its transform stack, the user
-        # almost certainly meant the local-axis path. Raise pointing them at
-        # it. Cutters with axis-aligned bboxes (no rotation, or rotation that
-        # permutes axes) preserve today's silent-no-op behavior.
-        if axis is None and result is self and has_rotation(self):
-            from scadwright.errors import ValidationError
-            raise ValidationError(
-                "through() found no coincident face on this cutter via the "
-                "world-axis path, and the cutter has a non-axis-permuting "
-                "rotation in its transform stack. Specify axis='local' (or "
-                "'local_x' / 'local_y' / 'local_z') to indicate the cut "
-                "direction in cutter-local space.",
-                source_location=loc,
-            )
-        return result
+        return _extend_through_faces(self, self_bb, parent_bb, ax, eps, loc)
 
     @property
     def bbox(self):
