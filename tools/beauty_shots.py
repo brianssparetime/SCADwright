@@ -118,6 +118,19 @@ def _transform_along_curve():
     return Bolt(size="M3", length=8).along_curve(path=path, count=6)
 
 
+def _swept_hose():
+    from scadwright.shapes import (
+        circle_profile, composite_bezier_path, path_extrude,
+    )
+    return path_extrude(
+        circle_profile(2, segments=16),
+        composite_bezier_path([
+            [(0, 0, 0), (15, 0, 0), (15, 0, 10), (15, 10, 10)],
+            [(15, 10, 10), (15, 20, 10), (5, 20, 20), (0, 20, 20)],
+        ]),
+    )
+
+
 COMPONENTS = [
     # tubes_and_shells.md
     {"out": "docs/shapes/images/tube.png",        "component": Tube,       "kwargs": {"od": 20, "id": 16, "h": 30}},
@@ -128,6 +141,7 @@ COMPONENTS = [
     # curves.md
     {"out": "docs/shapes/images/helix.png",  "component": Helix,  "kwargs": {"r": 10, "wire_r": 1.5, "pitch": 5, "turns": 4}},
     {"out": "docs/shapes/images/spring.png", "component": Spring, "kwargs": {"r": 8, "wire_r": 1, "pitch": 4, "turns": 5}},
+    {"out": "docs/shapes/images/swept-hose.png", "build": _swept_hose, "name": "swept-hose"},
 
     # gears.md
     {"out": "docs/shapes/images/spur-gear.png",  "component": SpurGear,  "kwargs": {"module": 1.5, "teeth": 24, "h": 6}},

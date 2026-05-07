@@ -1,11 +1,13 @@
 # Curves and sweep
 
-Path generators and sweep operations for creating shapes along 3D curves.
+Path generators, cross-section profiles, sweep operations, and Bezier/Catmull-Rom 2D shapes.
 
 ```python
 from scadwright.shapes import (
-    path_extrude, circle_profile,
-    helix_path, bezier_path, catmull_rom_path,
+    path_extrude,
+    circle_profile, square_profile, polygon_profile, rounded_rect_profile,
+    helix_path, bezier_path, composite_bezier_path, catmull_rom_path, arc_path,
+    bezier_2d, catmull_rom_2d,
     Helix, Spring,
 )
 ```
@@ -27,16 +29,48 @@ shape = path_extrude(profile, path)
 
 When `closed=False`, flat end-caps are generated. The profile is oriented perpendicular to the path using rotation-minimizing frames to avoid twisting.
 
-## `circle_profile(r, segments=16)`
+## Cross-section profiles
 
-Generates a circular cross-section for use with `path_extrude`:
+Profile helpers return CCW-ordered `(x, y)` point lists ready to pass to `path_extrude` as the cross-section.
+
+### `circle_profile(r, segments=16)`
 
 ```python
 wire = circle_profile(1.5, segments=12)
 tube_shape = path_extrude(wire, my_path)
 ```
 
+### `square_profile(size, center=True)`
+
+Four-point square cross-section. `size` accepts a scalar or `(w, h)`. `center=True` (default) centers the square on the origin; `center=False` puts the lower-left corner at the origin.
+
+```python
+square_profile(4)                    # 4×4 centered
+square_profile((6, 2))               # 6 wide × 2 tall, centered
+square_profile(4, center=False)      # corner at origin
+```
+
+### `polygon_profile(sides, r, rotate=0.0)`
+
+Regular n-gon cross-section inscribed in radius `r`. First vertex on +X by default; `rotate` (in degrees) rotates the starting position CCW.
+
+```python
+polygon_profile(6, 3)                # hex profile
+polygon_profile(8, 2, rotate=22.5)   # octagon, flat-side up
+```
+
+### `rounded_rect_profile(x, y, r, segments_per_corner=8)`
+
+Rounded-rectangle cross-section, centered on the origin. `r` is the corner radius. `r=0` produces a sharp-cornered rectangle (4 points).
+
+```python
+rounded_rect_profile(20, 10, 2)      # 20 × 10, 2 mm corners
+rounded_rect_profile(20, 10, 0)      # plain rectangle
+```
+
 ## Path generators
+
+Each path generator returns a list of `(x, y, z)` points.
 
 ### `helix_path(r, pitch, turns)`
 
@@ -54,6 +88,19 @@ Cubic Bezier curve through 4 control points:
 path = bezier_path([(0,0,0), (10,0,5), (10,10,5), (0,10,0)], steps=24)
 ```
 
+### `composite_bezier_path(segments, steps_per_segment=32)`
+
+Chain of cubic Bezier segments. Each segment is 4 control points; consecutive segments must share their boundary anchor (segment N's first point equals segment N-1's last). Continuity beyond C0 is the user's responsibility — place handles to align tangents for C1.
+
+```python
+path = composite_bezier_path([
+    [(0,0,0),  (5,0,0),   (5,5,0),   (10,5,0)],
+    [(10,5,0), (15,5,0),  (15,10,0), (20,10,0)],
+])
+```
+
+`composite_bezier_path([segment])` produces the same output as `bezier_path(segment)`.
+
 ### `catmull_rom_path(points, steps_per_segment=16)`
 
 Smooth curve passing through every point:
@@ -61,6 +108,55 @@ Smooth curve passing through every point:
 ```python
 path = catmull_rom_path([(0,0,0), (10,5,0), (20,0,0), (30,5,0)])
 ```
+
+### `arc_path(center, radius, start_angle, end_angle, normal=(0,0,1), steps=32)`
+
+Circular arc lying in the plane through `center` perpendicular to `normal`. Angles in degrees, measured CCW about `normal` from a reference direction in the plane (the projection of +X, falling back to +Y if +X is parallel to `normal`).
+
+```python
+# Quarter-circle in XY plane:
+arc_path(center=(0,0,0), radius=10, start_angle=0, end_angle=90)
+
+# Quarter-circle in YZ plane:
+arc_path(center=(0,0,0), radius=10, start_angle=0, end_angle=90, normal=(1,0,0))
+```
+
+`end_angle - start_angle` is the sweep; negative values sweep clockwise.
+
+## 2D Bezier and Catmull-Rom shapes
+
+### `bezier_2d(segments, closed=False, steps_per_segment=32)`
+
+Polygon traced by a chain of cubic Bezier segments in the XY plane. Same segment-list shape as `composite_bezier_path`.
+
+When `closed=True`, the curve must form a loop: the first segment's first anchor must equal the last segment's last anchor. The duplicated point is dropped so the polygon boundary is traced entirely by the curve.
+
+```python
+# Open shape (polygon implicitly closes with a straight edge):
+bezier_2d([[(0,0), (5,0), (5,5), (0,5)]])
+
+# Closed loop (entirely curve-traced):
+bezier_2d([
+    [(0,0), (5,0), (5,5), (0,5)],
+    [(0,5), (-5,5), (-5,0), (0,0)],
+], closed=True)
+```
+
+Useful for airfoil cross-sections, organic 2D profiles, custom seal cross-sections — anything where the boundary is curved rather than polygonal.
+
+### `catmull_rom_2d(points, closed=False, steps_per_segment=16)`
+
+Polygon traced by a Catmull-Rom spline through `points` in the XY plane. The spline passes through every input point.
+
+```python
+# Open spline (polygon implicitly closes with a straight edge):
+catmull_rom_2d([(0,0), (10,5), (20,0), (30,5)])
+
+# Closed loop (spline wraps from last point back to first):
+catmull_rom_2d([(0,0), (10,5), (20,0), (10,-5)], closed=True)
+```
+
+`closed=True` requires at least 3 points.
 
 ## Components
 
@@ -96,3 +192,30 @@ s = Spring(r=8, wire_r=0.5, pitch=3, turns=5, flat_ends=False)
 ![Spring](images/spring.png)
 
 *`Spring(r=8, wire_r=1, pitch=4, turns=5)` — a compression spring with flat end turns for stable resting.*
+
+## Worked example: swept hose
+
+A piece of curved tubing that bends in two directions, built from a circular cross-section swept along a two-segment composite Bezier path:
+
+```python
+from scadwright.shapes import (
+    path_extrude, circle_profile, composite_bezier_path,
+)
+
+hose = path_extrude(
+    circle_profile(2, segments=16),
+    composite_bezier_path([
+        [(0, 0, 0),   (15, 0, 0),   (15, 0, 10),  (15, 10, 10)],
+        [(15, 10, 10), (15, 20, 10), (5, 20, 20),  (0, 20, 20)],
+    ]),
+)
+```
+
+![Swept hose](images/swept-hose.png)
+
+*A two-segment Bezier path, swept with a circular profile.*
+
+## See also
+
+- [Curve transforms](transforms.md) — `.along_curve()`, `.bend()`, `.twist_copy()` chained methods that distribute, wrap, or stack copies along path-like rules.
+- [Extrusions](../extrusions.md) — `linear_extrude` and `rotate_extrude` for the simpler axis-aligned and revolution cases.
