@@ -123,9 +123,16 @@ Involute tooth profiles; you can read pitch radii off each gear.
 
 - [`path_extrude`](curves.md#path_extrudeprofile-path) — sweep a 2D profile along a 3D path
 - [`circle_profile`](curves.md#circle_profiler-segments16) — circular cross-section generator for `path_extrude`
+- [`square_profile`](curves.md#square_profilesize-centertrue) — square cross-section generator
+- [`polygon_profile`](curves.md#polygon_profilesides-r-rotate00) — regular n-gon cross-section generator
+- [`rounded_rect_profile`](curves.md#rounded_rect_profilex-y-r-segments_per_corner8) — rounded-rectangle cross-section generator
 - [`helix_path`](curves.md#helix_pathr-pitch-turns) — helical path generator
-- [`bezier_path`](curves.md#bezier_pathcontrol_points-steps32) — cubic-Bezier path through control points
+- [`bezier_path`](curves.md#bezier_pathcontrol_points-steps32) — cubic-Bezier path through 4 control points
+- [`composite_bezier_path`](curves.md#composite_bezier_pathsegments-steps_per_segment32) — chained cubic-Bezier path through multiple segments
 - [`catmull_rom_path`](curves.md#catmull_rom_pathpoints-steps_per_segment16) — smooth path through a sequence of points (Catmull-Rom spline)
+- [`arc_path`](curves.md#arc_pathcenter-radius-start_angle-end_angle-normal001-steps32) — circular-arc path generator (any plane)
+- [`bezier_2d`](curves.md#bezier_2dsegments-closedfalse-steps_per_segment32) — 2D polygon traced by a chain of cubic Bezier segments
+- [`catmull_rom_2d`](curves.md#catmull_rom_2dpoints-closedfalse-steps_per_segment16) — 2D polygon traced by a Catmull-Rom spline
 - [`Helix`](curves.md#helix) — solid helix: circular cross-section swept along a helical path
 - [`Spring`](curves.md#spring) — compression spring: helix with flat ends for stable resting
 

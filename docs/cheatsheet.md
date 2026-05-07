@@ -35,6 +35,11 @@ from scadwright.shapes import (
     Tube, Funnel, RoundedBox, UShapeChannel, FilletRing,
     Arc, Sector, RoundedSlot, RoundedEndsArc,
     regular_polygon, rounded_rect, rounded_square,
+    Helix, Spring,
+    path_extrude,
+    circle_profile, square_profile, polygon_profile, rounded_rect_profile,
+    helix_path, bezier_path, composite_bezier_path, catmull_rom_path, arc_path,
+    bezier_2d, catmull_rom_2d,
 )
 from scadwright import math as scmath             # trig in degrees, SCAD-like
 from scadwright.errors import ValidationError, BuildError, EmitError, SCADwrightError
@@ -153,6 +158,50 @@ pack_on_bed(*parts, plate=(256, 256), assert_fit=False)  # overflow OK
 circle(r=5).linear_extrude(height=10, twist=90, scale=2)
 profile.rotate_extrude(angle=360)                   # default full sweep
 linear_extrude(circle(r=5), height=10)              # standalone form
+```
+
+## Curves and sweep &nbsp; &nbsp;[→ full](shapes/curves.md)
+
+Sweep a 2D profile along a 3D path; build paths from primitives or curves.
+
+```python
+# Sweep: 2D profile + 3D path -> polyhedron.
+path_extrude(circle_profile(2), helix_path(r=10, pitch=5, turns=3))
+path_extrude(profile, path, closed=True)            # torus-like loop
+
+# Cross-section profiles (return CCW (x, y) point lists):
+circle_profile(r=5, segments=16)
+square_profile(10)                                  # or (w, h); center=False available
+polygon_profile(sides=6, r=5, rotate=0.0)           # n-gon, first vertex on +X
+rounded_rect_profile(x=20, y=10, r=2)               # centered, sharp at r=0
+
+# Path generators (return (x, y, z) point lists):
+helix_path(r=10, pitch=5, turns=3)
+bezier_path([(0,0,0), (10,0,5), (10,10,5), (0,10,0)])    # 4 control points
+composite_bezier_path([                                   # chained cubic Beziers
+    [(0,0,0), (5,0,0), (5,5,0), (10,5,0)],
+    [(10,5,0), (15,5,0), (15,10,0), (20,10,0)],          # segs share boundary anchor
+])
+catmull_rom_path([(0,0,0), (10,5,0), (20,0,0), (30,5,0)])  # passes through points
+arc_path(center=(0,0,0), radius=10, start_angle=0, end_angle=90)            # XY plane
+arc_path(center=(0,0,0), radius=10, start_angle=0, end_angle=90,
+         normal=(1,0,0))                                                     # YZ plane
+
+# 2D shapes from Bezier or spline curves (return polygon Nodes):
+bezier_2d([                                               # closed loop, no straight edge
+    [(0,0), (5,0), (5,5), (0,5)],
+    [(0,5), (-5,5), (-5,0), (0,0)],
+], closed=True)
+catmull_rom_2d([(0,0), (10,5), (20,0), (10,-5)], closed=True)
+
+# Components: helix and spring built on path_extrude.
+Helix(r=10, wire_r=1, pitch=5, turns=3)
+Spring(r=8, wire_r=0.5, pitch=3, turns=5)           # flat_ends=True by default
+
+# Custom transforms (registered as chained methods on every shape):
+shape.along_curve(path=my_path, count=6)            # distribute copies along path
+shape.bend(radius=20)                               # wrap around a cylinder (axis="z")
+shape.twist_copy(angle=45, count=8)                 # stacked rotated copies
 ```
 
 ## Text on a surface &nbsp; &nbsp;[→ full](add_text.md)
@@ -478,10 +527,8 @@ Bearing.of("608")                                 # fit-check dummy; publishes .
 Bearing(spec=BearingSpec(id=10, od=30, width=9))  # custom
 GT2Pulley(teeth=20, bore_d=5, belt_width=6)
 
-# Curves:
-path_extrude(circle_profile(2), helix_path(10, 5, 3))  # sweep along path
-Helix(r=10, wire_r=1, pitch=5, turns=3)           # solid helix
-Spring(r=8, wire_r=0.5, pitch=3, turns=5)         # with flat ends
+# Curves: see the "Curves and sweep" section above for path_extrude,
+# Helix, Spring, profile + path generators, and bezier_2d / catmull_rom_2d.
 
 # Print:
 HoneycombPanel(size=(80, 60, 3), cell_size=8, wall_thk=1)
