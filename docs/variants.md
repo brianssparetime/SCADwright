@@ -147,7 +147,7 @@ Manufacturing-specific tweaks (printer overshoot, material shrinkage, slop on a 
 
 ## `@variant` options
 
-- `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values, including primitives inside Components built lazily during emit.
+- `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values. Components in the returned AST capture the variant's resolution context at the moment they're constructed or wrapped, so primitives inside their `build()` see the right values regardless of when the build actually runs (see [Resolution](resolution.md#components-capture-context-at-ast-insertion-not-at-build)).
 - `rotation=`, `target=`, `distance=`, `fov=` -- camera viewpoint (`$vpr`, `$vpt`, `$vpd`, `$vpf`) emitted at the top of the `.scad` file. Sets the default camera angle when opening the file in OpenSCAD.
 - `out=` -- output `.scad` path. Default: `f"{DesignClass}-{variant_name}.scad"` next to the script.
 - `default=True` -- the variant to run when no `--variant` is given. At most one per `Design`.

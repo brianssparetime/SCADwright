@@ -142,6 +142,39 @@ class Node(
 
     source_location: SourceLocation | None = field(default=None, kw_only=True)
 
+    def __post_init__(self):
+        """Recapture the resolution context onto direct-child Components.
+
+        When a parent Node wraps a Component (the Component appears as a
+        direct child via ``self.child`` or as an entry of ``self.children``),
+        the wrap-time ambient ``(fn, fa, fs)`` context overwrites the
+        Component's prior resolution snapshot. Wrap-time wins.
+
+        Why this matters: a Component constructed at class-def time (no
+        active context) and later wrapped inside a ``@variant(fn=...)``
+        body or a user-managed ``with resolution(fn=...):`` block needs
+        the wrap-time context to reach its ``build()`` — even if the
+        build runs lazily, outside that block, during emit. The wrap's
+        ``__post_init__`` is the moment that captures the user's intent.
+
+        Concrete dataclass subclasses (Translate, Difference, etc.)
+        inherit this hook automatically via the auto-generated
+        ``__init__`` calling ``__post_init__`` after assigning fields.
+        Components, which override ``__init__``, do their own initial
+        capture in ``Component.__init__`` instead.
+        """
+        # Late import: ast.base is imported during component bootstrap.
+        from scadwright.component.base import Component
+
+        children = getattr(self, "children", None)
+        if children:
+            for c in children:
+                if isinstance(c, Component):
+                    c._capture_resolution_context()
+        child = getattr(self, "child", None)
+        if isinstance(child, Component):
+            child._capture_resolution_context()
+
     # --- debug / diagnostic wrappers ---
 
     def force_render(self, *, convexity: int | None = None) -> "Node":

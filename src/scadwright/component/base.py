@@ -111,6 +111,32 @@ class Component(Node):
         self._anchors: dict = {}
         # Freeze flag: set to True after __init__ for equation-using Components.
         self._frozen = False
+        # Resolution snapshot: captures the ambient `(fn, fa, fs)` context at
+        # the moment this Component enters the AST. Re-captured every time
+        # the Component is wrapped as a direct child of a parent Node (via
+        # Node.__post_init__) so wrap-time context overrides construction-
+        # time. Read by `_get_built_tree()` to open a `resolution(...)` scope
+        # around `build()`, so primitives capture the right values regardless
+        # of when the build actually runs (eager or lazy, in-context or out).
+        self._ctx_resolution: tuple | None = None
+        self._capture_resolution_context()
+
+    def _capture_resolution_context(self) -> None:
+        """Snapshot the current ambient ``(fn, fa, fs)`` context onto self.
+
+        Called from ``__init__`` (initial capture) and from
+        ``Node.__post_init__`` whenever this Component is wrapped as a
+        direct child of a parent Node (re-capture; wrap-time wins).
+        Also called by ``render()`` as a forgiving fallback when the
+        existing snapshot is "no preference" — every axis ``None`` —
+        and the user's render-time context has values to contribute.
+
+        Stores ``(fn, fa, fs)`` as a tuple; ``None`` for any axis with
+        no ambient value at capture time.
+        """
+        from scadwright.api.resolution import current as _current_resolution
+
+        self._ctx_resolution = _current_resolution()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -335,11 +361,22 @@ class Component(Node):
     def _get_built_tree(self) -> Node:
         """Return the materialized subtree, building and caching on first call.
 
-        If any of fn/fa/fs are set (instance attrs win over class attrs),
-        build() runs inside an implicit resolution() context so primitives
-        created inside inherit those values. Same treatment for a
-        ``clearances`` class attribute — inner scope wins over any outer
-        ``with clearances(...)`` block, matching ``fn`` semantics.
+        Resolution context is opened in three layers, outer to inner:
+
+        1. The Component's captured snapshot (``self._ctx_resolution``).
+           Set at construction and re-captured on every direct-parent
+           wrap, so the build sees the context active when the Component
+           entered the AST — even if the build itself runs lazily,
+           outside that context.
+        2. The Component's class-level ``fn``/``fa``/``fs`` attribute.
+           Inherits from the snapshot via ``resolution()``'s normal
+           merge rules (``None`` axes fall through to outer).
+        3. The Component's instance-level ``fn``/``fa``/``fs`` attribute.
+           Overrides class-level values per the documented precedence.
+
+        Same treatment for a ``clearances`` class attribute — inner
+        scope wins over any outer ``with clearances(...)`` block,
+        matching ``fn`` semantics.
         """
         from contextlib import ExitStack
 
@@ -354,6 +391,10 @@ class Component(Node):
             t0 = time.perf_counter()
             try:
                 with ExitStack() as stack:
+                    snapshot = self._ctx_resolution
+                    if snapshot is not None and any(v is not None for v in snapshot):
+                        snap_fn, snap_fa, snap_fs = snapshot
+                        stack.enter_context(_resolution(fn=snap_fn, fa=snap_fa, fs=snap_fs))
                     if fn is not None or fa is not None or fs is not None:
                         stack.enter_context(_resolution(fn=fn, fa=fa, fs=fs))
                     if isinstance(cls_clearances, Clearances):
@@ -388,10 +429,17 @@ class Component(Node):
         return self._built_tree
 
     def _invalidate(self) -> None:
-        """Force rebuild + bbox + tree_hash recompute on next access."""
+        """Force rebuild + bbox + tree_hash recompute on next access.
+
+        Also clears the resolution snapshot so the next AST-insertion
+        (or render-time fallback) re-captures from the current context.
+        Without this, a Component reused across two ``@variant`` calls
+        would carry the snapshot from whichever variant filled it first.
+        """
         self._built_tree = None
         self._bbox_cache = None
         self._tree_hash_cache = None
+        self._ctx_resolution = None
 
 
 def materialize(component: Component) -> Node:

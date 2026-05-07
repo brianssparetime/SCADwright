@@ -68,17 +68,34 @@ For primitives constructed **inside `Component.build()`**, the Component's own s
 
 So inside a Component's build method, the effective order is: per-call > instance attr > class attr > outer context > unset.
 
-## Watch out: builds are lazy
+## Components capture context at AST insertion, not at build
 
-Component `build()` runs the first time the geometry is needed (bbox, emit, render), not at construction. If you construct a Component inside a `with resolution(...)` block but the build triggers outside it, the context is already gone:
+Component `build()` runs lazily — the first time the geometry is needed (bbox, emit, render), not at construction. But the `resolution()` context that primitives inside `build()` see is captured eagerly: at the moment the Component enters the AST. Three capture points, latest wins:
+
+1. **Construction.** `Component()` snapshots the active `(fn, fa, fs)` context.
+2. **Wrap.** Every time the Component is wrapped as a direct child of a parent Node — `Translate(child=c)`, `difference(c, ...)`, `union(c, ...)`, etc. — the parent's `__post_init__` overwrites the snapshot with the wrap-time context.
+3. **Render fallback.** If a Component reaches `render()` with a snapshot of all-`None` values, `render()` captures the render-time context.
+
+The result: the user's mental model of "this `with resolution()` block applies to what's inside" works regardless of when the Component's build actually fires.
 
 ```python
 with resolution(fn=32):
-    w = Widget()                # no build yet -- just a Component instance
-render(w, "out.scad")           # build runs here, context is gone
+    w = Widget()            # snapshot=(32, None, None) captured here
+render(w, "out.scad")        # build runs here; snapshot replays inside, primitives see fn=32
+
+# Or:
+w = Widget()                 # snapshot=(None, None, None) at construction
+with resolution(fn=64):
+    n = w.translate([1,0,0]) # wrap re-captures: w's snapshot now (64, None, None)
+render(n, "out.scad")        # primitives inside w.build() see fn=64
+
+# Or:
+w = Widget()                 # construction outside any context
+with resolution(fn=24):
+    render(w, "out.scad")    # render-time fallback fires; primitives see fn=24
 ```
 
-If the Component has its own `fn` (class attribute or passed as a kwarg), this doesn't matter -- that value is captured at build time. But if the Component has no settings of its own, it'll fall through to whatever context is active at build, which may be nothing. Either pass `fn=` when constructing the Component or use a `@variant(fn=...)` decorator.
+Class- and instance-level Component settings still override the snapshot, in the documented precedence order.
 
 ---
 
@@ -86,4 +103,5 @@ If the Component has its own `fn` (class attribute or passed as a kwarg), this d
 
 - `resolution` uses a `contextvars.ContextVar` under the hood, so it's thread-safe.
 - A primitive captures `fn`/`fa`/`fs` at construction time, not at render time. Constructing a primitive inside one `resolution` block and rendering it inside another preserves the construction-time values.
-- For Components, resolution is captured when `build()` runs (which happens lazily on first access), not when the Component is constructed. The class-level `fn`/`fa`/`fs` wrap the call to `build()` in an implicit resolution context. Instance-level `self.fn = ...` overrides the class default.
+- A Component's resolution snapshot is overwritten on every direct-parent wrap. Reusing the same Component instance across wraps in different contexts means the *latest* wrap's context wins. If you want context independence, construct fresh Component instances per use site.
+- A Component nested two-or-more levels deep in the AST receives the immediate-parent's wrap context, not the outer wrap's. Each compound node's `__post_init__` walks only its direct children. This is the intended behavior — it matches the dataclass `__post_init__` semantic and avoids the surprise of an outer wrap mutating snapshots deep in the tree.
