@@ -1,13 +1,18 @@
 """Design + @variant: multi-variant scripts via the Design base class."""
 
+import tempfile
+from pathlib import Path
+
 import pytest
 
 from scadwright import Component
+from scadwright.boolops import difference
 from scadwright.design import (
     Design, variant, resolve_variants, registered_designs, _reset_for_testing,
+    _render_one,
 )
 from scadwright.errors import SCADwrightError, ValidationError
-from scadwright.primitives import cube
+from scadwright.primitives import cube, cylinder
 
 
 @pytest.fixture(autouse=True)
@@ -215,3 +220,121 @@ def test_shared_parts_are_single_instance_across_variants():
     # points back to the same class-level instance.
     d = D()
     assert d.part is D.part
+
+
+# --- Variant ambient-context capture (regression for the resolution leak) ---
+
+
+class _CtxLeakHousing(Component):
+    """A Component whose build() uses a difference, so its tight_bbox
+    is overridden (preventing accidental eager build via .bbox traversal).
+    Used to test that the variant's resolution context reaches build()."""
+
+    equations = "r, h > 0"
+
+    def build(self):
+        return difference(
+            cylinder(h=self.h, r=self.r),
+            cylinder(h=self.h + 2, r=self.r - 2).down(1),
+        )
+
+    def tight_bbox(self):
+        from scadwright.bbox import BBox
+        return BBox(min=(-self.r, -self.r, 0), max=(self.r, self.r, self.h))
+
+
+def _scad_for_variant(design_cls, vname) -> str:
+    """Render a variant to a temp file and return the SCAD as a string."""
+    meta = design_cls.__variants__[vname]
+    with tempfile.TemporaryDirectory() as td:
+        out = _render_one(design_cls, vname, meta, base_dir=Path(td))
+        return out.read_text()
+
+
+def test_variant_fn_reaches_lazily_built_components():
+    """@variant(fn=N) must apply to Components built lazily during emit.
+
+    Without the fix, Housing.build() runs after the variant's resolution
+    context has exited; primitives capture None and the file ships with
+    no $fn directive. Reading .bbox inside the variant body works around
+    the bug — this test deliberately avoids any such workaround.
+    """
+
+    class D(Design):
+        h = _CtxLeakHousing(r=10, h=20)
+
+        @variant(fn=48)
+        def lazy(self):
+            return self.h.translate([0, 0, 0])
+
+    scad = _scad_for_variant(D, "lazy")
+    assert "$fn = 48" in scad or "$fn=48" in scad, (
+        f"variant fn=48 was lost — output had no $fn directive.\n"
+        f"first 500 chars:\n{scad[:500]}"
+    )
+
+
+def test_variant_fn_does_not_leak_across_variants():
+    """Two variants with different fn values, sharing a class-attribute
+    Component. Each variant's output must reflect its own declared fn,
+    independent of variant execution order."""
+
+    class D(Design):
+        h = _CtxLeakHousing(r=10, h=20)
+
+        @variant(fn=48)
+        def big(self):
+            return self.h.translate([0, 0, 0])
+
+        @variant(fn=24)
+        def small(self):
+            return self.h.translate([0, 0, 0])
+
+    # Render in this order; the cache from `big` must not leak into `small`.
+    big_scad = _scad_for_variant(D, "big")
+    small_scad = _scad_for_variant(D, "small")
+
+    assert "$fn = 48" in big_scad or "$fn=48" in big_scad
+    assert "$fn = 24" in small_scad or "$fn=24" in small_scad
+    assert "$fn = 48" not in small_scad and "$fn=48" not in small_scad, (
+        "fn=48 leaked from `big` variant into `small` variant via the "
+        "Component cache."
+    )
+
+
+def test_variant_fn_reverse_order_also_clean():
+    """Same as above but render `small` first, then `big`. Confirms
+    invalidation works regardless of declaration / call order."""
+
+    class D(Design):
+        h = _CtxLeakHousing(r=10, h=20)
+
+        @variant(fn=48)
+        def big(self):
+            return self.h.translate([0, 0, 0])
+
+        @variant(fn=24)
+        def small(self):
+            return self.h.translate([0, 0, 0])
+
+    small_scad = _scad_for_variant(D, "small")
+    big_scad = _scad_for_variant(D, "big")
+
+    assert "$fn = 24" in small_scad or "$fn=24" in small_scad
+    assert "$fn = 48" in big_scad or "$fn=48" in big_scad
+
+
+def test_variant_viewpoint_reaches_emit():
+    """@variant(rotation=...) is read by the emitter at emit time. The
+    emit must happen inside the variant's viewpoint context."""
+
+    class D(Design):
+        @variant(rotation=(60, 0, 30), distance=200)
+        def view(self):
+            return cube(10)
+
+    scad = _scad_for_variant(D, "view")
+    assert "$vpr" in scad, (
+        f"variant rotation was lost — output had no $vpr directive.\n"
+        f"first 300 chars:\n{scad[:300]}"
+    )

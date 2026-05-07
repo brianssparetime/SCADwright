@@ -147,7 +147,7 @@ Manufacturing-specific tweaks (printer overshoot, material shrinkage, slop on a 
 
 ## `@variant` options
 
-- `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values.
+- `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values, including primitives inside Components built lazily during emit.
 - `rotation=`, `target=`, `distance=`, `fov=` -- camera viewpoint (`$vpr`, `$vpt`, `$vpd`, `$vpf`) emitted at the top of the `.scad` file. Sets the default camera angle when opening the file in OpenSCAD.
 - `out=` -- output `.scad` path. Default: `f"{DesignClass}-{variant_name}.scad"` next to the script.
 - `default=True` -- the variant to run when no `--variant` is given. At most one per `Design`.
@@ -187,3 +187,5 @@ In order:
 ### Advanced notes
 
 - The `current_variant()` function and `with variant("name"):` context manager are available for edge cases where a Component's `build()` method needs to branch on the active variant. `Design` + `@variant` is the preferred approach for most projects; reach for `current_variant()` only when a single Component genuinely needs variant-aware geometry.
+
+- **Components shared across variants rebuild fresh per variant.** A Component instantiated as a Design class attribute (the typical pattern) caches its built tree, but the cache is invalidated before each variant render. So a Component referenced by both `print(self)` and `display(self)` builds once per variant, picking up that variant's `fn=`, `clearances`, and viewpoint contexts each time.

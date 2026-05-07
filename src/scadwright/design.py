@@ -185,6 +185,26 @@ def resolve_variants(
     )
 
 
+def _invalidate_design_components(design_cls: type) -> None:
+    """Reset cached ``_built_tree`` / bbox / tree_hash on every Component
+    stored as a class-level attribute on ``design_cls`` or any of its
+    base classes.
+
+    Called before each variant render so the next render builds fresh
+    under the variant's resolution / clearance / viewpoint contexts.
+    Without this, two variants in the same Design class that share a
+    Component (the documented class-attribute pattern) would emit the
+    same baked-in resolution — whichever one happened to fill the cache
+    first.
+    """
+    from scadwright.component.base import Component
+
+    for klass in design_cls.__mro__:
+        for val in vars(klass).values():
+            if isinstance(val, Component):
+                val._invalidate()
+
+
 def _render_one(
     design_cls: type,
     vname: str,
@@ -212,6 +232,20 @@ def _render_one(
     has_cli_vp = bool(cli_viewpoint)
     design_clearances = getattr(design_cls, "clearances", None)
 
+    if out_override is not None:
+        out_path = Path(out_override)
+    else:
+        out_name = meta.out or f"{design_cls.__name__}-{vname}.scad"
+        out_path = Path(out_name)
+        if not out_path.is_absolute() and base_dir is not None:
+            out_path = base_dir / out_path
+
+    # Class-attribute Components (the documented Design pattern) cache
+    # `_built_tree` across renders. If a prior variant render filled the
+    # cache, this variant's contexts won't reach the build. Invalidate
+    # before entering contexts so the next access rebuilds fresh.
+    _invalidate_design_components(design_cls)
+
     with ExitStack() as stack:
         if has_res:
             stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
@@ -225,16 +259,12 @@ def _render_one(
         if has_cli_vp:
             stack.enter_context(_viewpoint(**cli_viewpoint))
         node = method()
+        # Render inside the context stack so lazy Component builds and
+        # emit-time viewpoint reads see the variant's contexts. If render
+        # ran outside the with-block, the resolution / clearances /
+        # viewpoint ContextVars would have already exited.
+        render(node, out_path)
 
-    if out_override is not None:
-        out_path = Path(out_override)
-    else:
-        out_name = meta.out or f"{design_cls.__name__}-{vname}.scad"
-        out_path = Path(out_name)
-        if not out_path.is_absolute() and base_dir is not None:
-            out_path = base_dir / out_path
-
-    render(node, out_path)
     return out_path
 
 
