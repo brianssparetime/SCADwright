@@ -75,13 +75,15 @@ When you want to use the Component, supply whatever combination of arguments you
 You don't even need to isolate a variable on the left of the equation like you do with programming languages.
 
 ```python
+od - id = 2*thk                    # structural relationship: solve for the missing one
+h, id, od, thk > 0                 # constraints
+```
+
+```python
 from scadwright import Component
 
 class Tube(Component):
-    equations = """
-        od - id = 2*thk                    # structural relationship: solve for the missing one
-        h, id, od, thk > 0                 # constraints
-    """
+    equations = """ ↑ above """
 
     def build(self): ...
 
@@ -94,11 +96,13 @@ Tube(h=10, id=8, thk=-1)     # ValidationError: thk must be positive
 Trigonometry uses degrees, like OpenSCAD.
 
 ```python
+tan(alpha) = opp/adj
+cos(alpha) = adj/hyp
+```
+
+```python
 class RightTriangle(Component):
-    equations = """
-        tan(alpha) = opp/adj
-        cos(alpha) = adj/hyp
-    """
+    equations = """ ↑ above """
 
     def build(self): ...
 
@@ -110,28 +114,32 @@ RightTriangle(hyp=5, alpha=36.87)   # solves for opp = 3, adj = 4
 Equations aren't limited to scalar arithmetic. Either side can be any Python expression: build a tuple with a comprehension, pick between values with a conditional, read fields and items off the inputs.
 
 ```python
+count:int > 0                                             # constraint
+wall_thk, clearance, end_clearance > 0                    # constraint
+pitch = spec.d + 2*clearance                              # field read on a namedtuple input
+outer_w = count * pitch + 2*end_clearance                 # arithmetic
+positions = tuple(i*pitch for i in range(count))          # tuple from a comprehension
+len(positions:tuple) = count                              # redundant consistency
+```
+
+```python
 class BatteryHolder(Component):
     spec = Param(BatterySpec)
-    equations = """
-        count:int > 0                                             # constraint 
-        wall_thk, clearance, end_clearance > 0                    # constraint 
-        pitch = spec.d + 2*clearance                              # field read on a namedtuple input
-        outer_w = count * pitch + 2*end_clearance                 # arithmetic
-        positions = tuple(i*pitch for i in range(count))          # tuple from a comprehension
-        len(positions:tuple) = count                              # redundant consistency
-    """
+    equations = """ ↑ above """
 ```
 
 Equations also handle optional inputs. Prefix a name with `?` to declare it optional; rules and equations that reference it auto-skip when it's not set. The `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` helpers cover the common XOR/OR validation shapes in one line each.
 
 ```python
+w, l, thk > 0
+exactly_one(?r, ?r_frac)                   # absolute radius or fraction-of-thk; one and only one
+edge = ?r if ?r else ?r_frac * thk         # synthesize the active value
+edge < thk / 2                             # downstream check uses the synthesized name
+```
+
+```python
 class FilletedBracket(Component):
-    equations = """
-        w, l, thk > 0
-        exactly_one(?r, ?r_frac)                   # absolute radius or fraction-of-thk; one and only one
-        edge = ?r if ?r else ?r_frac * thk         # synthesize the active value
-        edge < thk / 2                             # downstream check uses the synthesized name
-    """
+    equations = """ ↑ above """
 
     def build(self): ...
 
@@ -419,16 +427,18 @@ SCADwright provides [Specs](docs/specs_and_adjustments.md): small frozen classes
 Inside that block, [adjustments](docs/specs_and_adjustments.md#adjustments) layer corrections with `+=`, `-=`, `*=`, `/=` on their own lines with comments, separate from the design value:
 
 ```python
+cam_barrel_od = 60
+surround = 10
+cam_barrel_od + surround <= 70   # rule sees cam_barrel_od = 60, not the post-adjust 60.35
+cam_barrel_od += 0.3   # printer X-axis overshoot
+cam_barrel_od += 0.05  # extra slop for the o-ring
+```
+
+```python
 from scadwright import Spec
 
 class CamMount(Spec):
-    equations = """
-        cam_barrel_od = 60
-        surround = 10
-        cam_barrel_od + surround <= 70   # rule sees cam_barrel_od = 60, not the post-adjust 60.35
-        cam_barrel_od += 0.3   # printer X-axis overshoot
-        cam_barrel_od += 0.05  # extra slop for the o-ring
-    """
+    equations = """ ↑ above """
 
 CamMount.cam_barrel_od                       # 60.35
 ```
@@ -487,15 +497,17 @@ Run with `python widget.py` (writes `widget.scad`) or use the CLI: `scadwright b
 When a part has named dimensions and relationships between them, wrap it in a Component:
 
 ```python
+od = id + 2*thk
+h, id, od, thk > 0
+```
+
+```python
 from scadwright import Component, render
 from scadwright.boolops import difference
 from scadwright.primitives import cylinder
 
 class Tube(Component):
-    equations = """
-        od = id + 2*thk
-        h, id, od, thk > 0
-    """
+    equations = """ ↑ above """
 
     def build(self):
         return difference(
@@ -513,16 +525,18 @@ render(t, "tube.scad")
 Building on the Tube above, add a Design with variants — a display view showing the tube upright, and a print view that halves it into two concave-down pieces spaced apart for the print bed:
 
 ```python
+od = id + 2*thk
+h, id, od, thk > 0
+```
+
+```python
 from scadwright import Component, bbox
 from scadwright.boolops import difference, union
 from scadwright.design import Design, run, variant
 from scadwright.primitives import cylinder
 
 class Tube(Component):
-    equations = """
-        od = id + 2*thk
-        h, id, od, thk > 0
-    """
+    equations = """ ↑ above """
 
     def build(self):
         return difference(
