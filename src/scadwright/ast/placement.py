@@ -179,6 +179,165 @@ def _shift_for_anchors(self_anchor, other_anchor, fuse: bool, eps: float):
     return (shift[0], shift[1], shift[2])
 
 
+def _cone_slanted_normal(r1: float, r2: float, length: float):
+    """Outward surface normal of a cone wall at the +X meridian, mid-wall.
+
+    For a cylinder (``r1 == r2``), returns ``(1, 0, 0)``. For a cone,
+    returns a unit vector perpendicular to the slanted wall, pointing
+    outward and tilted axially based on the slant direction:
+
+    - Widening upward (``r2 > r1``): normal tilts down (-z component).
+    - Narrowing upward (``r2 < r1``): normal tilts up (+z component).
+
+    Math: the wall in the (radial, axial) plane runs from ``(r1, z_min)``
+    to ``(r2, z_max)``. The slope vector is ``(r2 - r1, length)``; the
+    outward normal in that plane (rotated 90° clockwise) is
+    ``(length, -(r2 - r1))``, normalized.
+    """
+    import math as _math
+
+    slope_x = r2 - r1
+    slope_z = length
+    L = _math.hypot(slope_x, slope_z)
+    if L < 1e-12:
+        return (1.0, 0.0, 0.0)
+    return (slope_z / L, 0.0, -slope_x / L)
+
+
+def _apply_attach_angle(anchor, angle, radius, loc):
+    """Return a new Anchor with position (and possibly normal) rotated
+    around the surface axis to angular position ``angle``.
+
+    Behavior dispatches on ``anchor.kind``:
+
+    - **cylindrical** (``outer_wall`` of a cylinder): rotate position
+      and normal around ``surface_params["axis"]`` by ``angle``.
+      ``radius=`` is rejected (the anchor sits on the wall surface;
+      different radii would mean a different surface).
+
+    - **conical** (``outer_wall`` of a cone): same rotation, but the
+      "normal" used for the rotated anchor is the cone's *slanted*
+      surface normal (not the radial reference normal that
+      ``add_text`` consumes). This ensures ``attach()`` aligns parts
+      perpendicular to the slanted wall, which is what the user
+      expects for surface-mounted attachments.
+
+    - **planar with rim_radius** (``top``/``bottom`` of a cylinder/cone):
+      position becomes a point on the cap at radial distance ``radius``
+      (defaulting to ``rim_radius``) at angular position ``angle``,
+      rotated around the axis. Normal stays as-is (axial — perpendicular
+      to the cap face). ``radius=0`` is the legitimate "center of cap"
+      case.
+
+    - **Anything else**: raise — the anchor doesn't expose surface
+      geometry that an angular position can refer to.
+    """
+    from scadwright.anchor import Anchor, resolve_angle_to_radians
+    from scadwright.errors import ValidationError
+    from scadwright.matrix import Matrix
+
+    angle_rad = resolve_angle_to_radians(angle, context_name="attach")
+    angle_deg = angle_rad * (180.0 / _PI)
+
+    axis = anchor.surface_param("axis")
+    if axis is None:
+        raise ValidationError(
+            f"attach: angle= is not supported for this anchor (kind="
+            f"{anchor.kind!r}). Anchors that support angular placement: "
+            f"cylindrical (cone wall), conical (cone wall), and planar "
+            f"caps with rim_radius (cylinder/cone top/bottom).",
+            source_location=loc,
+        )
+
+    rotation = Matrix.rotate_axis_angle(angle_deg, axis)
+
+    if anchor.kind == "cylindrical":
+        if radius is not None:
+            raise ValidationError(
+                "attach: radius= is not valid on a cylindrical anchor "
+                "(the wall sits at a fixed radius). Use radius= only on "
+                "cap anchors with rim_radius.",
+                source_location=loc,
+            )
+        new_position = rotation.apply_point(anchor.position)
+        new_normal = rotation.apply_vector(anchor.normal)
+        return Anchor(
+            position=new_position,
+            normal=new_normal,
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+
+    if anchor.kind == "conical":
+        if radius is not None:
+            raise ValidationError(
+                "attach: radius= is not valid on a conical anchor "
+                "(the wall radius is fixed by the cone geometry). Use "
+                "radius= only on cap anchors with rim_radius.",
+                source_location=loc,
+            )
+        # Slanted surface normal at the +X meridian, then rotate.
+        r1 = anchor.surface_param("r1")
+        r2 = anchor.surface_param("r2")
+        length = anchor.surface_param("length")
+        if r1 is None or r2 is None or length is None:
+            raise ValidationError(
+                "attach: conical anchor missing r1/r2/length surface_params; "
+                "cannot compute the slanted normal.",
+                source_location=loc,
+            )
+        slanted_ref = _cone_slanted_normal(r1, r2, length)
+        new_position = rotation.apply_point(anchor.position)
+        new_normal = rotation.apply_vector(slanted_ref)
+        return Anchor(
+            position=new_position,
+            normal=new_normal,
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+
+    # Planar with rim_radius — cap of a cylinder/cone.
+    rim_radius = anchor.surface_param("rim_radius")
+    if anchor.kind == "planar" and rim_radius is not None:
+        r = rim_radius if radius is None else radius
+        if r < 0:
+            raise ValidationError(
+                f"attach: radius= must be non-negative, got {radius}",
+                source_location=loc,
+            )
+        # The cap anchor is at the center of the cap (axis-aligned). The
+        # in-plane reference direction for angle=0 is +X, matching the
+        # cylindrical-anchor convention.
+        # Build the new local-frame offset, then rotate around the axis
+        # to angular position. The axis is (typically) ±Z; rotation
+        # around +Z takes (+r, 0, 0) → (r·cos θ, r·sin θ, 0). Adding
+        # the anchor's existing center position keeps the cap z-offset.
+        offset_local = (r, 0.0, 0.0)
+        offset_rotated = rotation.apply_vector(offset_local)
+        new_position = (
+            anchor.position[0] + offset_rotated[0],
+            anchor.position[1] + offset_rotated[1],
+            anchor.position[2] + offset_rotated[2],
+        )
+        return Anchor(
+            position=new_position,
+            normal=anchor.normal,
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+
+    raise ValidationError(
+        f"attach: angle= is not supported for this anchor (kind="
+        f"{anchor.kind!r}). Anchors that support angular placement: "
+        f"cylindrical (cone wall), conical (cone wall), and planar "
+        f"caps with rim_radius (cylinder/cone top/bottom).",
+        source_location=loc,
+    )
+
+
+_PI = 3.141592653589793
+
+
 def _orient_child_to_normal(child, self_normal, target_normal, loc):
     """Return ``child`` wrapped in the Rotate that takes ``self_normal`` to
     ``target_normal``. Picks the right branch (general, already-aligned,

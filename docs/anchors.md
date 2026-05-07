@@ -63,6 +63,35 @@ This rotates the peg so its bottom normal faces in the -X direction (opposing th
 
 When the normals already oppose (e.g. attaching bottom-to-top), `orient=True` produces the same result as `orient=False`.
 
+## Angular placement on cylindrical surfaces
+
+For attachments at a specific angle around a cylinder, cone, or rim, pass `angle=` (degrees CCW from +X, or one of the friendly aliases `"rside"`, `"back"`, `"lside"`, `"front"`, `"+x"`, `"+y"`, `"-x"`, `"-y"`):
+
+```python
+hub = cylinder(h=20, r=10)
+peg = cube([2, 2, 5])
+
+# Around the cylinder's wall:
+peg.attach(hub, on="outer_wall", angle=30)              # peg at 30° meridian on the wall
+peg.attach(hub, on="outer_wall", angle="back")          # = angle=90
+
+# On the top cap, at the rim:
+peg.attach(hub, on="top", angle=0)                      # rim at +X
+peg.attach(hub, on="top", angle=120)                    # rim at 120°
+
+# On the cap interior to the rim — pass radius=:
+peg.attach(hub, on="top", angle=0, radius=5)            # 5 mm from cap center
+peg.attach(hub, on="top", angle=0, radius=0)            # exact cap center
+```
+
+`angle=` works on three anchor surface kinds:
+
+- **Cylindrical wall** (`outer_wall` of a cylinder): `angle=` rotates the anchor's position and normal around the surface axis. The result puts self at that angular position on the wall, normal pointing radially outward.
+- **Conical wall** (`outer_wall` of a cone, where `r1 != r2`): same rotation, but the normal used for `orient=True` is the cone's *slanted* surface normal — so `peg.attach(cone, on="outer_wall", angle=0, orient=True)` aligns the peg perpendicular to the slanted wall, not the cone's central axis.
+- **Cap with rim radius** (`top` / `bottom` of a cylinder or cone): `angle=` places at angular position on the cap. Default radial position is the cap's rim radius; `radius=` overrides for placements interior to the rim.
+
+For other anchor kinds (a cube's `top`, a custom Component anchor without surface metadata), `angle=` raises a clear error.
+
 ## Custom anchors on Components
 
 Declare anchors at class scope with the `anchor()` descriptor, alongside equations:

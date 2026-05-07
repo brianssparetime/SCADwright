@@ -400,36 +400,15 @@ def _rotate_z_to(child, target_normal, loc):
 
 
 def _resolve_meridian(meridian) -> float:
-    """Convert a string face name or numeric degrees CCW to radians."""
-    if isinstance(meridian, str):
-        # Friendly aliases mapping to angle CCW from +X (the cylinder's
-        # reference meridian).
-        aliases = {
-            "+x": 0.0,
-            "rside": 0.0,
-            "+y": 90.0,
-            "back": 90.0,
-            "-x": 180.0,
-            "lside": 180.0,
-            "-y": 270.0,
-            "front": 270.0,
-        }
-        key = meridian.lower()
-        if key not in aliases:
-            raise ValidationError(
-                f"add_text: meridian must be one of {sorted(aliases)} or a "
-                f"numeric angle in degrees CCW from +X; got {meridian!r}."
-            )
-        return math.radians(aliases[key])
-    if isinstance(meridian, bool):
-        raise ValidationError(
-            f"add_text: meridian must be a string or numeric, got bool."
-        )
-    if isinstance(meridian, (int, float)):
-        return math.radians(float(meridian))
-    raise ValidationError(
-        f"add_text: meridian must be a string or numeric, got "
-        f"{type(meridian).__name__}."
+    """Convert a string face name or numeric degrees CCW to radians.
+
+    Thin alias for ``resolve_angle_to_radians`` with the historical
+    ``param_name="meridian"`` so error messages stay backward-compatible
+    for ``add_text`` users.
+    """
+    from scadwright.anchor import resolve_angle_to_radians
+    return resolve_angle_to_radians(
+        meridian, context_name="add_text", param_name="meridian",
     )
 
 

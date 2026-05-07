@@ -233,6 +233,8 @@ class Node(
         on: str = "top",
         at: str = "bottom",
         *,
+        angle: float | str | None = None,
+        radius: float | None = None,
         orient: bool = False,
         fuse: bool = False,
         eps: float = 0.01,
@@ -255,13 +257,45 @@ class Node(
         Chain a directional helper for offset placement::
 
             peg.attach(plate).right(10)
+
+        For angular placement on a cylindrical or conical surface, or on
+        a cylinder cap at a rim position, pass ``angle=`` (degrees CCW
+        from +X, or one of the friendly aliases ``"rside"`` / ``"back"``
+        / ``"lside"`` / ``"front"`` / ``"+x"`` / ``"+y"`` / ``"-x"`` /
+        ``"-y"``)::
+
+            peg.attach(hub, on="outer_wall", angle=30)        # 30° meridian on the wall
+            peg.attach(hub, on="top", angle=30)               # 30° on the top rim
+            peg.attach(hub, on="top", angle=30, radius=12)    # 30°, 12 mm from cap center
+
+        On cylindrical/conical anchors, ``angle=`` rotates the anchor's
+        position and surface normal around the surface axis; on cones
+        the surface normal is the actual slanted-wall normal (not the
+        radial reference that ``add_text`` consumes). On planar cap
+        anchors that carry rim_radius (``top``/``bottom`` of a cylinder
+        or cone), ``angle=`` places the attachment at angular position
+        on the cap; ``radius=`` overrides the default rim radius for
+        placements interior to the rim. Other anchor kinds reject
+        ``angle=`` with a clear error.
         """
         from scadwright.anchor import anchors_from_bbox
         from scadwright.bbox import bbox as _bbox
         from scadwright.ast.transforms import Translate
 
         loc = SourceLocation.from_caller()
+
+        if angle is None and radius is not None:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                "attach: radius= requires angle=. Pass both for angular "
+                "placement on a cap anchor.",
+                source_location=loc,
+            )
+
         other_anchor = _resolve_attach_anchor(other, on, "other", loc)
+        if angle is not None:
+            from scadwright.ast.placement import _apply_attach_angle
+            other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)
         self_anchor = _resolve_attach_anchor(self, at, "self", loc)
 
         if not orient:

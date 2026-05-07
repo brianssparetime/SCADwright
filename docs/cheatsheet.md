@@ -99,6 +99,8 @@ part.center_bbox()                        # AABB centered at origin
 peg.attach(plate)                         # bottom of peg on top of plate
 peg.attach(plate, on="rside", at="lside")  # side-by-side
 peg.attach(plate, orient=True)            # rotate to align normals
+peg.attach(hub, on="outer_wall", angle=30) # 30° meridian on a cylinder wall
+peg.attach(hub, on="top", angle=30, radius=12)  # 30° on cap, 12mm from center
 pylon.attach(floor, fuse=True)            # overlap EPS into contact face
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
 cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter

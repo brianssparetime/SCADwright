@@ -99,6 +99,65 @@ def resolve_face_name(name: str) -> tuple[int, int]:
         )
 
 
+# Friendly-string angles around a cylinder, measured CCW from +X (the
+# canonical reference meridian). Used by ``add_text(meridian=...)`` and
+# ``Node.attach(angle=...)`` for parametric angular position on cylindrical
+# / conical / rim anchors.
+_ANGLE_ALIASES: dict[str, float] = {
+    "+x": 0.0,
+    "rside": 0.0,
+    "+y": 90.0,
+    "back": 90.0,
+    "-x": 180.0,
+    "lside": 180.0,
+    "-y": 270.0,
+    "front": 270.0,
+}
+
+
+def resolve_angle_to_radians(
+    value,
+    *,
+    context_name: str,
+    param_name: str = "angle",
+) -> float:
+    """Convert a numeric angle (degrees CCW) or a face-name string alias
+    to radians.
+
+    Used by every API that takes a parametric angle around a cylindrical
+    or rim surface — keeps the alias vocabulary identical across
+    ``attach(angle=...)``, ``add_text(meridian=...)``, and any future
+    callers.
+
+    ``context_name`` ("attach", "add_text", etc.) and ``param_name``
+    ("angle", "meridian", etc.) are interpolated into the error message
+    so the user knows which call rejected the input and which keyword
+    they used. ``param_name`` defaults to ``"angle"`` for newer callers;
+    pass it explicitly to preserve historical names like ``meridian``.
+    """
+    import math as _math
+
+    if isinstance(value, str):
+        key = value.lower()
+        if key not in _ANGLE_ALIASES:
+            raise ValidationError(
+                f"{context_name}: {param_name} must be one of "
+                f"{sorted(_ANGLE_ALIASES)} or a numeric angle in degrees "
+                f"CCW from +X; got {value!r}."
+            )
+        return _math.radians(_ANGLE_ALIASES[key])
+    if isinstance(value, bool):
+        raise ValidationError(
+            f"{context_name}: {param_name} must be a string or numeric, got bool."
+        )
+    if isinstance(value, (int, float)):
+        return _math.radians(float(value))
+    raise ValidationError(
+        f"{context_name}: {param_name} must be a string or numeric, got "
+        f"{type(value).__name__}."
+    )
+
+
 def anchors_from_bbox(bb: "BBox") -> dict[str, Anchor]:
     """Derive the six standard face anchors from an axis-aligned bounding box.
 
@@ -414,6 +473,7 @@ __all__ = [
     "_normalize_surface_params",
     "anchors_from_bbox",
     "get_node_anchors",
+    "resolve_angle_to_radians",
     "resolve_face_name",
     "transform_anchors",
 ]
