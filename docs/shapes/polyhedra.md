@@ -118,6 +118,68 @@ Parameters: `cap_height`, `cap_dia`, `cap_r`, `sphere_r`. You can read all four 
 
 See [examples/convex-caliper.py](../examples/convex-caliper.py) for a worked example that defines this Component inline to demonstrate the equation solver.
 
+## `Ogive(base_r, length, kind="tangent")`
+
+Pointed nose cone — a solid of revolution with a chosen meridian. Base on z=0 (radius `base_r`), tip on the axis at z=`length`. `base_d` is also accepted (`base_d = 2 · base_r`).
+
+`kind` selects the meridian shape:
+
+- `"tangent"` (default) — circular arc tangent to the body cylinder at the base. The classic rocketry tangent ogive; arc radius `ρ = (base_r² + length²) / (2·base_r)`. Requires `length ≥ base_r` (shorter tangent ogives degenerate into a bulged shape; for blunt noses use `parabolic` or `elliptical`).
+- `"parabolic"` — `r(z) = base_r · √(1 − z/length)`, the n=½ power-series ogive used by the rocket showcase.
+- `"elliptical"` — half-ellipse meridian: `r(z) = base_r · √(1 − (z/length)²)`. Allows blunt noses (`length < base_r`).
+
+```python
+Ogive(base_r=10, length=18)                       # tangent (default)
+Ogive(base_r=10, length=18, kind="parabolic")     # rocket-nose flavor
+Ogive(base_d=20, length=8, kind="elliptical")     # blunt half-ellipse
+```
+
+Anchors: `base` (planar at z=0 with `rim_radius=base_r`, so `add_text(on="base")` arc-on-rim works) and `tip` (point at z=`length`, `+z` normal). The tip is a vertex, not a face.
+
+## `Paraboloid(radius, depth, focal_length)`
+
+Solid bowl paraboloid — vertex at the origin, rim disk at z=`depth` with radius `radius`. Meridian: `r(z) = 2·√(f·z)` where `f` is the focal length, related by `4·f·depth = radius²`. Specify any consistent two of `radius`/`diameter`, `depth`, `focal_length`; the framework solves the rest.
+
+```python
+Paraboloid(radius=10, depth=8)              # rim r=10 at z=8, vertex at origin
+Paraboloid(diameter=20, depth=8)            # diameter alternative
+Paraboloid(radius=10, focal_length=3.125)   # depth solved (4·f·d = r²)
+```
+
+Anchors: bbox-derived `bottom` is the vertex point (z=0). Declared `top` is the rim disk at z=`depth` with `rim_radius=radius`, so `add_text(on="top")` arc-on-rim works for labels around the dish edge.
+
+Solid only for v1 — a constant-thickness shell isn't a parabolic offset of itself, so hollow dishes need an explicit subtract: `difference(Paraboloid(...), Paraboloid(...).up(thk))`.
+
+Distinct from [`Ogive(kind="parabolic")`](#ogivebase_r-length-kindtangent), which uses the same parabola but with the tip pointing up (a nose cone). Paraboloid has the vertex on the ground and opens upward (a bowl or dish).
+
+## `Ellipsoid(a, b, c)`
+
+Sphere with three independent semi-axes — centered on the origin (matches `sphere()` convention; chain `.up(c)` for a sitting-on-the-ground orientation). Each axis accepts a diameter alternative (`dx = 2a`, `dy = 2b`, `dz = 2c`); mix and match per axis.
+
+```python
+Ellipsoid(a=10, b=8, c=6)        # all radii
+Ellipsoid(dx=20, dy=16, dz=12)   # all diameters
+Ellipsoid(a=10, dy=16, c=6)      # mixed
+```
+
+The bbox-derived face anchors (`top`, `bottom`, `lside`, `rside`, `front`, `back`) sit exactly on the six axis-tip points — the ellipsoid is tangent to its bbox at those tips — so `.attach()` lines up cleanly without custom anchors.
+
+When all three semi-axes are equal, the build short-circuits to a plain `sphere(r=a)` (no redundant scale wrapper in the emitted SCAD).
+
+## `Elbow(id, od, thk, bend_radius, angle=90)`
+
+Hollow pipe bend — partial torus with wall thickness. The two end-faces are perpendicular to the tube axis at angle=0 and angle=`angle`, both planar with `rim_radius=od/2` so they mate cleanly with another pipe via `attach()`. `id`/`od`/`thk` follow the same pattern as `Tube` (`od = id + 2·thk`); specify any two. Default `angle=90` (the most common pipe bend); `angle ∈ (0, 360]`.
+
+```python
+Elbow(id=8, od=12, bend_radius=20)            # 90° elbow
+Elbow(id=8, thk=2, bend_radius=20, angle=180) # 180° U-bend, od solved
+Elbow(od=12, thk=2, bend_radius=20)           # id solved
+```
+
+The `od/2 < bend_radius` constraint prevents the tube from self-intersecting on the inner side — pick a `bend_radius` larger than the tube's outer radius.
+
+Anchors: `start` at the angle=0 face (position `(bend_r, 0, 0)`, normal -y), and `end` at the angle=`angle` face (position and normal computed from the swept angle). Both planar with `rim_radius=od/2`, so `add_text(on="start", relief=-0.3)` engraves a label on the rim.
+
 ## `Capsule(r, length)`
 
 Pill / stadium solid: a cylinder with hemispherical caps on both ends. `length` is the total end-to-end distance along +z (hemispheres included); `r` is the radius of both the cylinder and the caps. The straight-section height is readable on the instance as `straight_length`. `base` and `tip` anchors at z=0 and z=length point outward. For a horizontal capsule, rotate the result.

@@ -82,8 +82,12 @@ from scadwright.shapes.print_shapes import (
 from scadwright.shapes.polyhedra import (
     Dodecahedron,
     Dome,
+    Elbow,
+    Ellipsoid,
     Icosahedron,
     Octahedron,
+    Ogive,
+    Paraboloid,
     Prism,
     Pyramid,
     SphericalCap,
@@ -91,6 +95,8 @@ from scadwright.shapes.polyhedra import (
     Torus,
 )
 from scadwright.shapes.three_d import (
+    Barrel,
+    BarrelDegeneracyWarning,
     Capsule,
     FilletRing,
     Funnel,
@@ -103,12 +109,14 @@ from scadwright.shapes.three_d import (
     Wedge,
 )
 from scadwright.shapes.two_d import (
+    Annulus,
     Arc,
     CircularSegment,
     Keyhole,
     RoundedEndsArc,
     RoundedSlot,
     Sector,
+    Star,
     Teardrop,
     regular_polygon,
     rounded_rect,
@@ -118,7 +126,10 @@ from scadwright.shapes.two_d import (
 __all__ = [
     # Components (capitalized)
     "AlignmentPin",
+    "Annulus",
     "Arc",
+    "Barrel",
+    "BarrelDegeneracyWarning",
     "Bearing",
     "BearingSpec",
     "BevelGear",
@@ -133,6 +144,8 @@ __all__ = [
     "DShaft",
     "Dodecahedron",
     "Dome",
+    "Elbow",
+    "Ellipsoid",
     "FilletMask",
     "FilletRing",
     "Funnel",
@@ -154,6 +167,8 @@ __all__ = [
     "Keyhole",
     "NutSpec",
     "Octahedron",
+    "Ogive",
+    "Paraboloid",
     "PieSlice",
     "PolyHole",
     "PressFitPeg",
@@ -175,6 +190,7 @@ __all__ = [
     "Spring",
     "SquareNut",
     "Standoff",
+    "Star",
     "TabSlot",
     "Teardrop",
     "Tetrahedron",

@@ -483,6 +483,8 @@ def _place_wrapped(
     )
 
     is_conical = anchor.kind == "conical"
+    is_meridional = anchor.kind == "meridional"
+    is_curved_axially = is_conical or is_meridional
     if is_conical:
         r1 = anchor.surface_param("r1")
         r2 = anchor.surface_param("r2")
@@ -494,6 +496,21 @@ def _place_wrapped(
             )
         r_mid = (r1 + r2) / 2.0
         slope = (r2 - r1) / length if length > 0 else 0.0
+        meridian_r = mid_r_param = meridian_s_param = None
+        merid_length = None
+    elif is_meridional:
+        meridian_r = anchor.surface_param("meridian_r")
+        mid_r_param = anchor.surface_param("mid_r")
+        meridian_s_param = anchor.surface_param("meridian_s")
+        merid_length = anchor.surface_param("length")
+        if (meridian_r is None or mid_r_param is None
+                or meridian_s_param is None or merid_length is None):
+            raise ValidationError(
+                "add_text: meridional anchor missing 'meridian_r', 'mid_r', "
+                "'meridian_s', or 'length' surface_params."
+            )
+        r_mid = mid_r_param
+        slope = 0.0  # unused; per-line slant is computed from the arc
     else:
         radius = anchor.surface_param("radius")
         if radius is None:
@@ -502,6 +519,8 @@ def _place_wrapped(
             )
         r_mid = radius
         slope = 0.0
+        meridian_r = mid_r_param = meridian_s_param = None
+        merid_length = None
 
     base_meridian_rad = _resolve_meridian(meridian) if meridian is not None else 0.0
     base_axial_offset = float(at_z) if at_z is not None else 0.0
@@ -513,14 +532,26 @@ def _place_wrapped(
 
     # Axis origin uses the mid-wall radius of the host (constant across lines)
     # so the per-line glyph positions all reference the same centerline.
-    axis_origin = (
-        anchor.position[0] - r_mid * outward_from_axis_unit[0],
-        anchor.position[1] - r_mid * outward_from_axis_unit[1],
-        anchor.position[2] - r_mid * outward_from_axis_unit[2],
-    )
+    if is_meridional:
+        # The reference position at the equator IS at radius mid_r along
+        # the +X meridian, so position - mid_r * outward gives the equator
+        # axis point — same calculation as cylindrical/conical. (We could
+        # read axis_origin straight from surface_params; deriving keeps
+        # the code uniform and matches cylindrical's pattern.)
+        axis_origin = (
+            anchor.position[0] - r_mid * outward_from_axis_unit[0],
+            anchor.position[1] - r_mid * outward_from_axis_unit[1],
+            anchor.position[2] - r_mid * outward_from_axis_unit[2],
+        )
+    else:
+        axis_origin = (
+            anchor.position[0] - r_mid * outward_from_axis_unit[0],
+            anchor.position[1] - r_mid * outward_from_axis_unit[1],
+            anchor.position[2] - r_mid * outward_from_axis_unit[2],
+        )
 
-    # Slant components are line-independent (slope is a global property
-    # of the cone). For cylindrical, slope = 0 → trivial values.
+    # Conical slant components are global (cone slope is line-independent).
+    # Cylindrical: slope = 0 → trivial values. Meridional: recomputed per-line.
     slant_norm = math.sqrt(slope * slope + 1.0)
     slant_outward_component = slope / slant_norm
     slant_axial_component = 1.0 / slant_norm
@@ -539,9 +570,11 @@ def _place_wrapped(
             continue
         line_at_z = base_axial_offset + line_y
 
-        # Per-line local radius: constant for cylindrical, varies for conical.
+        # Per-line local radius and slant components.
         if is_conical:
             line_radius = r_mid + line_at_z * slope
+            line_slant_outward = slant_outward_component
+            line_slant_axial = slant_axial_component
             if line_radius <= 0:
                 raise ValidationError(
                     f"add_text: conical surface radius at at_z={line_at_z:.3f} "
@@ -549,16 +582,39 @@ def _place_wrapped(
                     f"beyond). Pick an at_z / line_spacing where the radius "
                     f"is positive for every line."
                 )
-            if line_radius < 0.5 * font_size:
-                loc_str = f" (at {loc})" if loc else ""
-                _log.warning(
-                    "add_text: conical local radius %.2f mm at at_z=%.2f "
-                    "(line %d) is small relative to font_size=%.1f — "
-                    "glyphs may overlap%s",
-                    line_radius, line_at_z, line_idx, font_size, loc_str,
+        elif is_meridional:
+            from scadwright.ast.placement import _meridian_arc_at
+            if abs(line_at_z) > merid_length / 2.0 + 1e-9:
+                raise ValidationError(
+                    f"add_text: meridional at_z={line_at_z:.3f} "
+                    f"(line {line_idx}) is outside the wall extent "
+                    f"[-{merid_length/2}, {merid_length/2}]."
+                )
+            try:
+                line_radius, line_slant_outward, line_slant_axial = (
+                    _meridian_arc_at(line_at_z, meridian_r, mid_r_param, meridian_s_param)
+                )
+            except ValueError as exc:
+                raise ValidationError(f"add_text: {exc}") from exc
+            if line_radius <= 0:
+                raise ValidationError(
+                    f"add_text: meridional surface radius at at_z="
+                    f"{line_at_z:.3f} (line {line_idx}) is "
+                    f"{line_radius:.3f} (wall pinches to the axis)."
                 )
         else:
             line_radius = r_mid
+            line_slant_outward = slant_outward_component
+            line_slant_axial = slant_axial_component
+
+        if is_curved_axially and line_radius < 0.5 * font_size:
+            loc_str = f" (at {loc})" if loc else ""
+            _log.warning(
+                "add_text: %s local radius %.2f mm at at_z=%.2f "
+                "(line %d) is small relative to font_size=%.1f — "
+                "glyphs may overlap%s",
+                anchor.kind, line_radius, line_at_z, line_idx, font_size, loc_str,
+            )
 
         glyph_nodes.extend(_emit_wrap_line(
             line=line,
@@ -575,10 +631,10 @@ def _place_wrapped(
             anchor_normal=anchor.normal,
             axis_origin=axis_origin,
             s_outward=s_outward,
-            is_conical=is_conical,
+            is_conical=is_curved_axially,  # "use slant orientation"
             text_orient=text_orient,
-            slant_outward_component=slant_outward_component,
-            slant_axial_component=slant_axial_component,
+            slant_outward_component=line_slant_outward,
+            slant_axial_component=line_slant_axial,
             text_kwargs=text_kwargs,
             label_repr=label_repr,
             loc=loc,
@@ -1067,7 +1123,7 @@ def add_text(
             fn, fa, fs, loc,
         )
 
-    if placement_anchor.kind in ("cylindrical", "conical"):
+    if placement_anchor.kind in ("cylindrical", "conical", "meridional"):
         if text_curvature is not None:
             raise ValidationError(
                 "add_text: text_curvature applies only to flat rim "
@@ -1077,7 +1133,8 @@ def add_text(
         if at_radial is not None:
             raise ValidationError(
                 "add_text: `at_radial` is for rim arc text; on a "
-                "cylindrical or conical wall use `at_z` (axial offset)."
+                "cylindrical, conical, or meridional wall use `at_z` "
+                "(axial offset)."
             )
         text_kwargs = {
             "font": font,
@@ -1098,7 +1155,7 @@ def add_text(
 
     raise ValidationError(
         f"add_text: surface kind {placement_anchor.kind!r} is not supported. "
-        f"Use a planar, cylindrical, or conical anchor."
+        f"Use a planar, cylindrical, conical, or meridional anchor."
     )
 
 

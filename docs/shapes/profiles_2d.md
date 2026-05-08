@@ -6,7 +6,7 @@ Factory functions and Components for common 2D shapes. Extrude them with `linear
 from scadwright.shapes import (
     rounded_rect, rounded_square, regular_polygon,
     Sector, Arc, RoundedEndsArc, RoundedSlot,
-    Teardrop, Keyhole,
+    Teardrop, Keyhole, Annulus, Star,
 )
 ```
 
@@ -108,3 +108,27 @@ Keyhole(r_big=5, r_slot=2, slot_length=10)
 ![Keyhole](images/keyhole.png)
 
 *`Keyhole(r_big=5, r_slot=2, slot_length=10)` — slot extends downward so the part slides onto a protruding screw.*
+
+## `Annulus(id, od, thk)`
+
+Flat 2D ring — the open-faced sibling of [`Tube`](tubes_and_shells.md#tubeh-idodthk). Centered on the origin. Specify any two of inner diameter, outer diameter, wall thickness; the framework solves the third (`od = id + 2·thk`).
+
+```python
+Annulus(id=8, od=12)      # thk solved = 2
+Annulus(id=8, thk=2)      # od solved = 12
+Annulus(od=12, thk=2)     # id solved = 8
+```
+
+Useful as a gasket cross-section, washer outline, or as the input to `linear_extrude` for a flat ring solid (`Annulus(...).linear_extrude(height=h)` is equivalent to the corresponding `Tube`).
+
+## `Star(points, r_outer, r_inner)`
+
+Regular n-pointed star with alternating outer (tip) and inner (valley) radii. The polygon has `2 * points` vertices; one tip points up (+y) by default. Both radii accept diameter alternatives (`d_outer = 2·r_outer`, `d_inner = 2·r_inner`).
+
+```python
+Star(points=5, r_outer=10, r_inner=4)        # five-point
+Star(points=6, d_outer=24, d_inner=12)       # six-point via diameters
+Star(points=5, r_outer=10, d_inner=8)        # mixed radius/diameter
+```
+
+`points` must be at least 3, and `r_inner` must be strictly less than `r_outer`. To rotate the orientation (e.g. to have a flat side up instead of a tip up), chain `.rotate([0, 0, deg])`.

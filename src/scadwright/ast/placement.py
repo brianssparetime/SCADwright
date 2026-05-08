@@ -216,9 +216,48 @@ def _axis_origin_for(anchor):
             anchor.position[1] - r_mid * s_outward * anchor.normal[1],
             anchor.position[2] - r_mid * s_outward * anchor.normal[2],
         )
+    if anchor.kind == "meridional":
+        # Meridional anchors carry a ready-made axis-origin point that
+        # survives at_z mutations — the cylindrical "position - radius *
+        # normal" formula doesn't work here because the post-at_z normal
+        # tilts off pure-radial along the curved meridian.
+        ao = anchor.surface_param("axis_origin")
+        if ao is None:
+            return None
+        return (float(ao[0]), float(ao[1]), float(ao[2]))
     if anchor.kind == "planar" and anchor.surface_param("rim_radius") is not None:
         return anchor.position
     return None
+
+
+def _meridian_arc_at(at_z: float, meridian_r: float, mid_r: float, s: int):
+    """Evaluate the circular-arc meridian at axial offset ``at_z`` from
+    the equator. Returns ``(local_radius, slant_outward, slant_axial)``
+    where ``local_radius`` is the radial distance from the central axis
+    at that point, and (``slant_outward``, ``slant_axial``) are the
+    components of the surface's outward unit normal in the (radial,
+    axial) frame.
+
+    The arc passes through (end_r, ±h/2) and (mid_r, 0) (after centering
+    on the equator) with center at ``(mid_r - s*meridian_r, 0)`` in the
+    (radial, axial) plane. ``s`` is +1 for convex (bulging outward) and
+    −1 for concave (waisted inward). Raises ``ValueError`` if ``at_z`` is
+    outside the arc's vertical extent.
+    """
+    import math as _math
+
+    sin_alpha = at_z / meridian_r
+    if abs(sin_alpha) > 1.0 + 1e-9:
+        raise ValueError(
+            f"at_z={at_z} is outside the meridian arc's axial range "
+            f"(|at_z| ≤ {meridian_r:.4g})."
+        )
+    sin_alpha = max(-1.0, min(1.0, sin_alpha))
+    cos_alpha = _math.sqrt(max(0.0, 1.0 - sin_alpha * sin_alpha))
+    local_r = mid_r + s * meridian_r * (cos_alpha - 1.0)
+    slant_outward = cos_alpha
+    slant_axial = s * sin_alpha
+    return local_r, slant_outward, slant_axial
 
 
 def _rotate_about_line(point, rotation, origin):
@@ -314,8 +353,9 @@ def _apply_attach_angle(anchor, angle, radius, loc):
         raise ValidationError(
             f"attach: angle= is not supported for this anchor (kind="
             f"{anchor.kind!r}). Anchors that support angular placement: "
-            f"cylindrical (cylinder wall), conical (cone wall), and planar "
-            f"caps with rim_radius (cylinder/cone top/bottom).",
+            f"cylindrical (cylinder wall), conical (cone wall), meridional "
+            f"(curved-meridian wall), and planar caps with rim_radius "
+            f"(cylinder/cone top/bottom).",
             source_location=loc,
         )
 
@@ -337,6 +377,37 @@ def _apply_attach_angle(anchor, angle, radius, loc):
             normal=new_normal,
             kind=anchor.kind,
             surface_params=anchor.surface_params,
+        )
+
+    if anchor.kind == "meridional":
+        if radius is not None:
+            raise ValidationError(
+                "attach: radius= is not valid on a meridional anchor "
+                "(the wall radius is fixed by the meridian geometry). "
+                "Use radius= only on cap anchors with rim_radius.",
+                source_location=loc,
+            )
+        origin = _axis_origin_for(anchor)
+        if origin is None:
+            raise ValidationError(
+                "attach: meridional anchor missing 'axis_origin' "
+                "surface_param; cannot rotate around the central axis.",
+                source_location=loc,
+            )
+        new_position = _rotate_about_line(anchor.position, rotation, origin)
+        new_normal = rotation.apply_vector(anchor.normal)
+        # Rotate meridian_zero so subsequent at_z calls walk along the
+        # meridian at the new angular position. axis stays — the central
+        # axis is invariant under its own rotation.
+        params = dict(anchor.surface_params)
+        mz = params.get("meridian_zero")
+        if mz is not None:
+            params["meridian_zero"] = rotation.apply_vector(mz)
+        return Anchor(
+            position=new_position,
+            normal=new_normal,
+            kind=anchor.kind,
+            surface_params=tuple(sorted(params.items())),
         )
 
     if anchor.kind == "conical":
@@ -429,11 +500,12 @@ def _apply_attach_at_z(anchor, at_z, loc):
     from scadwright.anchor import Anchor
     from scadwright.errors import ValidationError
 
-    if anchor.kind not in ("cylindrical", "conical"):
+    if anchor.kind not in ("cylindrical", "conical", "meridional"):
         raise ValidationError(
-            f"attach: at_z= is for cylindrical and conical wall anchors "
-            f"(it shifts along the surface axis); this anchor is "
-            f"{anchor.kind!r}. For radial offset on a rim, use radius=.",
+            f"attach: at_z= is for cylindrical, conical, and meridional "
+            f"wall anchors (it shifts along the surface axis); this "
+            f"anchor is {anchor.kind!r}. For radial offset on a rim, "
+            f"use radius=.",
             source_location=loc,
         )
 
@@ -443,6 +515,61 @@ def _apply_attach_at_z(anchor, at_z, loc):
             "attach: at_z= requires the anchor to carry a surface axis; "
             "this anchor's surface_params lack 'axis'.",
             source_location=loc,
+        )
+
+    if anchor.kind == "meridional":
+        # Curved-meridian wall: jump along the actual arc, not just the
+        # axis. Position lands on the surface at the new axial offset and
+        # normal tilts to the local tangent plane.
+        meridian_r = anchor.surface_param("meridian_r")
+        mid_r = anchor.surface_param("mid_r")
+        s = anchor.surface_param("meridian_s")
+        length = anchor.surface_param("length")
+        meridian_zero = anchor.surface_param("meridian_zero")
+        axis_origin = anchor.surface_param("axis_origin")
+        if (meridian_r is None or mid_r is None or s is None
+                or length is None or meridian_zero is None
+                or axis_origin is None):
+            raise ValidationError(
+                "attach: meridional anchor missing one of "
+                "'meridian_r', 'mid_r', 'meridian_s', 'length', "
+                "'meridian_zero', 'axis_origin' surface_params; cannot "
+                "evaluate the curved meridian.",
+                source_location=loc,
+            )
+        if abs(at_z) > length / 2.0 + 1e-9:
+            raise ValidationError(
+                f"attach: at_z={at_z} is outside the meridional wall's "
+                f"axial extent [-{length/2}, {length/2}].",
+                source_location=loc,
+            )
+        try:
+            local_r, slant_outward, slant_axial = _meridian_arc_at(
+                at_z, meridian_r, mid_r, s
+            )
+        except ValueError as exc:
+            raise ValidationError(
+                f"attach: {exc}", source_location=loc,
+            ) from exc
+
+        inner = bool(anchor.surface_param("inner", default=False))
+        s_outward = -1.0 if inner else 1.0
+
+        new_position = (
+            axis_origin[0] + local_r * meridian_zero[0] + at_z * axis[0],
+            axis_origin[1] + local_r * meridian_zero[1] + at_z * axis[1],
+            axis_origin[2] + local_r * meridian_zero[2] + at_z * axis[2],
+        )
+        new_normal = (
+            s_outward * (slant_outward * meridian_zero[0] + slant_axial * axis[0]),
+            s_outward * (slant_outward * meridian_zero[1] + slant_axial * axis[1]),
+            s_outward * (slant_outward * meridian_zero[2] + slant_axial * axis[2]),
+        )
+        return Anchor(
+            position=new_position,
+            normal=new_normal,
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
         )
 
     new_position = (

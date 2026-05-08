@@ -99,8 +99,8 @@ part.center_bbox()                        # AABB centered at origin
 peg.attach(plate)                         # bottom of peg on top of plate
 peg.attach(plate, on="rside", at="lside")  # side-by-side
 peg.attach(plate, orient=True)            # rotate to align normals
-peg.attach(hub, on="outer_wall", angle=30) # 30° meridian on a cylinder wall
-peg.attach(hub, on="outer_wall", angle=30, at_z=5)  # 30° meridian, 5mm above mid-wall
+peg.attach(hub, on="outer_wall", angle=30) # 30° meridian on a cylinder/cone/barrel wall
+peg.attach(hub, on="outer_wall", angle=30, at_z=5)  # 30° meridian, 5mm above mid-wall (curve-aware on Barrel)
 peg.attach(hub, on="top", angle=30, radius=12)  # 30° on cap, 12mm from center
 pylon.attach(floor, fuse=True)            # overlap EPS into contact face
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
@@ -227,7 +227,11 @@ funnel.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4)         
 funnel.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4,
                 text_orient="slant")                                                # glyphs tilt with the slope
 
-# Inner walls (Tube and Funnel are hollow):
+# Curved meridian (Barrel — bulged or waisted; same kwargs as cylindrical):
+barrel.add_text(label="SCAD-1", relief=-0.4, on="outer_wall", font_size=4)         # follows the meridian arc
+barrel.add_text(label="UPPER", relief=-0.3, on="outer_wall", font_size=4, at_z=15) # above the equator
+
+# Inner walls (Tube, Funnel, hollow Barrel):
 tube.add_text(label="LOT 7", relief=0.3, on="inner_wall", font_size=3)             # text on the inside surface
 
 # Multi-line: split on \n, stack vertically; line_spacing in font-size multiples.
@@ -497,14 +501,20 @@ Funnel(h=20, thk=2, bot_id=10, top_od=18)         # tapered tube
 RoundedBox(size=(20, 10, 5), r=1)                 # minkowski-rounded box
 UShapeChannel(wall_thk=2, channel_length=50, channel_width=10)
 RectTube(outer_w=30, outer_d=20, wall_thk=2, h=10)   # rect sibling of Tube
+Barrel(h=80, end_d=50, mid_d=64)                  # solid bowed barrel (mid_d<end_d for waist)
+Barrel(h=80, end_d=50, bulge=7, thk=3)            # hollow barrel (constant radial wall)
 
 # Polyhedra and basic 3D shapes:
 Prism(sides=6, r=10, h=20)                        # hex prism (or frustum with top_r=)
 Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15)    # rect frustum (+ shift=)
 Wedge(base_w=10, base_h=6, thk=20)                # triangular-prism ramp/rib (+ fillet=)
 Torus(major_r=20, minor_r=5)                      # donut (partial with angle=)
+Elbow(id=8, od=12, bend_radius=20)                # hollow pipe bend (default 90°)
 Dome(r=15, thk=2)                                 # hollow hemisphere
 SphericalCap(sphere_r=20, cap_height=8)           # equation-solved cap
+Ogive(base_r=10, length=18)                       # tangent ogive (kind="parabolic"/"elliptical" too)
+Paraboloid(radius=10, depth=8)                    # parabolic dish / bowl (rim faces +z)
+Ellipsoid(a=10, b=8, c=6)                         # ovoid / egg (centered on origin; dx/dy/dz too)
 Capsule(r=3, length=20)                           # cylinder + hemisphere caps (z-axis)
 PieSlice(r=10, angles=(0, 90), h=5)               # cylindrical sector
 
@@ -555,6 +565,8 @@ CircularSegment(circle_r=10, height=4)            # 2D segment (chord-cut disc; 
 RoundedSlot(length=20, width=4)                   # capsule/stadium
 Teardrop(r=3)                                     # FDM horizontal-hole profile
 Keyhole(r_big=5, r_slot=2, slot_length=10)        # wall-mount keyhole
+Annulus(id=8, od=12)                              # flat 2D ring (2D sibling of Tube)
+Star(points=5, r_outer=10, r_inner=4)             # n-pointed star (one tip up by default)
 ```
 
 ## Resolution (smoothness) &nbsp; &nbsp;[→ full](resolution.md)

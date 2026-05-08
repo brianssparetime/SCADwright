@@ -3,7 +3,7 @@
 Parametric hollow shapes with equation-driven dimensions.
 
 ```python
-from scadwright.shapes import Tube, Funnel, RoundedBox, UShapeChannel, RectTube
+from scadwright.shapes import Tube, Funnel, RoundedBox, UShapeChannel, RectTube, Barrel
 ```
 
 ## `Tube(h, id|od|thk)`
@@ -69,3 +69,23 @@ RectTube(inner_w=20, inner_d=12, wall_thk=3, h=10)      # outer solved
 ![Rect tube](images/rect-tube.png)
 
 *`RectTube(outer_w=30, outer_d=20, wall_thk=2, h=10)` — rectangular sibling of `Tube`.*
+
+## `Barrel(h, end_d|end_r, mid_d|mid_r|bulge, thk?)`
+
+Solid (or hollow) of revolution with a circular-arc meridian. End faces have diameter `end_d` at z=0 and z=h; the wall passes through diameter `mid_d` at the equator. `bulge = mid_r - end_r` is the signed radial sagitta — positive for the classic convex wine-barrel, negative for a waisted (concave) profile. Specify any consistent pair of (`end_d`/`end_r`) and (`mid_d`/`mid_r`/`bulge`); the framework solves the rest.
+
+```python
+Barrel(h=80, end_d=50, mid_d=64)             # convex (wine barrel)
+Barrel(h=80, end_d=50, bulge=7)              # equivalent
+Barrel(h=80, end_d=50, mid_d=42)             # concave (waist / hourglass)
+Barrel(h=80, end_d=50, mid_d=64, thk=3)      # hollow shell, constant radial wall
+```
+
+Anchors:
+- `top`, `bottom` — planar end faces with `rim_radius=end_r`. Same shape as `Tube`'s rims, so `add_text(on="top")` arcs work directly.
+- `outer_wall` — `kind="meridional"`. The reference position is at the equator on the +X meridian; `attach(barrel, on="outer_wall", at_z=z, angle=θ)` lands a child *on the actual curved surface* at that axial offset (not on a cylinder approximation), with the surface normal locally tilted to the meridian's tangent plane. `at_z=0` is the equator, `at_z=±h/2` is a rim.
+- `inner_wall` — same kind, on the bore meridian (`mid_r-thk` at the equator). Only meaningful when the barrel is hollow.
+
+`add_text(on="outer_wall", meridian=θ, at_z=z)` and `add_text(on="inner_wall", ...)` wrap the label along the curved wall: per-glyph radius and tilt follow the meridian, so text sits flush whether the barrel is convex or concave.
+
+A `bulge` of exactly zero degrades silently to the equivalent `cylinder` or `Tube`, so parametric sweeps that cross zero curvature don't need a special-case branch. Pinched waists where `mid_r` collapses toward zero emit a `BarrelDegeneracyWarning` (filterable via the standard `warnings` module) but still build the geometry.

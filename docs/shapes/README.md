@@ -59,6 +59,8 @@ One line per shape; click the name to jump to the full entry.
 - [`RoundedSlot`](profiles_2d.md#roundedslotlength-width-fnnone) — stadium / capsule: rectangle with semicircular caps
 - [`Teardrop`](profiles_2d.md#teardropr-tip_angle45-cap_hnone) — FDM-friendly profile for horizontal holes
 - [`Keyhole`](profiles_2d.md#keyholer_big-r_slot-slot_length) — circular head with a narrower slot extending out
+- [`Annulus`](profiles_2d.md#annulusid-od-thk) — flat 2D ring (the 2D sibling of `Tube`)
+- [`Star`](profiles_2d.md#starpoints-r_outer-r_inner) — regular n-pointed star (alternating outer / inner radii)
 
 ### [Tubes and shells](tubes_and_shells.md)
 
@@ -67,6 +69,7 @@ One line per shape; click the name to jump to the full entry.
 - [`RoundedBox`](tubes_and_shells.md#roundedboxsize-r) — box with every edge rounded by a sphere of radius `r`
 - [`UShapeChannel`](tubes_and_shells.md#ushapechannelchannel_width-channel_height-outer_width-outer_height-wall_thk-channel_length) — three-sided rectangular tube open on one side
 - [`RectTube`](tubes_and_shells.md#recttubeouter_w-outer_d-inner_w-inner_d-wall_thk-h) — rectangular hollow tube
+- [`Barrel`](tubes_and_shells.md#barrelh-end_dend_r-mid_dmid_rbulge-thk) — solid or hollow barrel of revolution; convex bulge or concave waist via signed `bulge`
 
 ### [Polyhedra](polyhedra.md)
 
@@ -78,6 +81,10 @@ One line per shape; click the name to jump to the full entry.
 - [`Torus`](polyhedra.md#torusmajor_r-minor_r) — full or partial torus (quarter-toroid elbow via `angle=90`)
 - [`Dome`](polyhedra.md#domer) — hemisphere with optional wall thickness
 - [`SphericalCap`](polyhedra.md#sphericalcapany-two-of-six-params) — portion of a sphere sliced off by a plane
+- [`Ogive`](polyhedra.md#ogivebase_r-length-kindtangent) — pointed nose cone (tangent / parabolic / elliptical meridian)
+- [`Paraboloid`](polyhedra.md#paraboloidradius-depth-focal_length) — solid bowl / parabolic dish (vertex on the ground, rim opening upward)
+- [`Ellipsoid`](polyhedra.md#ellipsoida-b-c) — sphere with three independent semi-axes (centered on origin)
+- [`Elbow`](polyhedra.md#elbowid-od-thk-bend_radius-angle90) — hollow pipe bend (partial torus with wall thickness)
 - [`Capsule`](polyhedra.md#capsuler-length) — pill / stadium solid: cylinder with hemispherical caps
 - [`PieSlice`](polyhedra.md#pieslicer-angles-h) — `Sector` profile extruded along +z
 

@@ -269,3 +269,69 @@ class Keyhole(Component):
             circle(r=self.r_slot).back(self.slot_length),
         )
         return union(head, slot)
+
+
+class Annulus(Component):
+    """Flat 2D ring — the open-faced sibling of ``Tube``.
+
+    Outer diameter ``od``, inner diameter ``id``, wall thickness ``thk``
+    coupled by ``od = id + 2·thk``. Specify any two and the framework
+    solves the third::
+
+        Annulus(id=8, od=12)      # thk solved = 2
+        Annulus(id=8, thk=2)      # od solved = 12
+        Annulus(od=12, thk=2)     # id solved = 8
+
+    Centered on the origin (matches ``circle()`` and the existing 2D
+    profiles). Useful as a gasket cross-section, washer outline, or as
+    the input to ``linear_extrude`` for a flat ring solid (which is the
+    same as ``Tube`` with the equivalent dimensions).
+    """
+
+    equations = """
+        od = id + 2*thk
+        id, od, thk > 0
+    """
+
+    def build(self):
+        outer = circle(r=self.od / 2.0)
+        inner = circle(r=self.id / 2.0)
+        return difference(outer, inner)
+
+
+class Star(Component):
+    """Regular n-pointed star — alternating outer (tip) and inner
+    (valley) radii.
+
+    ``points`` outer tips; the polygon has ``2 * points`` vertices,
+    alternating between ``r_outer`` and ``r_inner``. One tip points up
+    (+y) by default; chain ``.rotate([0, 0, deg])`` to spin.
+
+    Both radii accept diameter alternatives::
+
+        Star(points=5, r_outer=10, r_inner=4)        # five-point star
+        Star(points=6, d_outer=24, d_inner=12)       # six-point via diameters
+        Star(points=5, r_outer=10, d_inner=8)        # mix
+    """
+
+    equations = """
+        r_outer = d_outer / 2
+        r_inner = d_inner / 2
+        r_outer, r_inner, d_outer, d_inner > 0
+        r_inner < r_outer
+        points:int >= 3
+    """
+
+    def build(self):
+        n = self.points
+        ro = self.r_outer
+        ri = self.r_inner
+        # 2n vertices, angle step 180°/n. Start at +y (one tip up).
+        step = math.pi / n
+        start = math.pi / 2.0  # +y direction
+        pts: list[tuple[float, float]] = []
+        for i in range(2 * n):
+            angle = start + i * step
+            r = ro if i % 2 == 0 else ri
+            pts.append((r * math.cos(angle), r * math.sin(angle)))
+        return polygon(points=pts)

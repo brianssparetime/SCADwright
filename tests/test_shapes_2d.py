@@ -5,12 +5,14 @@ import pytest
 from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
 from scadwright.shapes import (
+    Annulus,
     Arc,
     CircularSegment,
     Keyhole,
     RoundedEndsArc,
     RoundedSlot,
     Sector,
+    Star,
     Teardrop,
     regular_polygon,
     rounded_rect,
@@ -212,3 +214,119 @@ def test_circular_segment_emits():
 def test_circular_segment_height_exceeds_diameter_raises():
     with pytest.raises(ValidationError):
         CircularSegment(circle_r=5, height=12)
+
+
+# --- Annulus ---
+
+
+def test_annulus_id_od_solves_thk():
+    a = Annulus(id=8, od=12)
+    assert a.thk == pytest.approx(2.0)
+
+
+def test_annulus_id_thk_solves_od():
+    a = Annulus(id=8, thk=2)
+    assert a.od == pytest.approx(12.0)
+
+
+def test_annulus_od_thk_solves_id():
+    a = Annulus(od=12, thk=2)
+    assert a.id == pytest.approx(8.0)
+
+
+def test_annulus_bbox_matches_od():
+    a = Annulus(id=8, od=12, fn=64)
+    bb = bbox(a)
+    assert bb.min[0] == pytest.approx(-6.0, abs=0.5)
+    assert bb.max[0] == pytest.approx(6.0, abs=0.5)
+    assert bb.min[1] == pytest.approx(-6.0, abs=0.5)
+    assert bb.max[1] == pytest.approx(6.0, abs=0.5)
+
+
+def test_annulus_emits_difference_of_circles():
+    scad = emit_str(Annulus(id=8, od=12))
+    assert "difference" in scad
+    assert "circle" in scad
+
+
+def test_annulus_inconsistent_overspec_raises():
+    with pytest.raises(ValidationError):
+        Annulus(id=8, od=12, thk=3)  # 12 != 8 + 6
+
+
+def test_annulus_underspec_raises():
+    with pytest.raises(ValidationError):
+        Annulus(id=8)  # need at least one of (od, thk)
+
+
+def test_annulus_negative_thk_raises():
+    with pytest.raises(ValidationError):
+        Annulus(id=8, thk=-1)
+
+
+def test_annulus_id_at_or_above_od_raises():
+    # id must be < od (positive thk requires id < od).
+    with pytest.raises(ValidationError):
+        Annulus(id=12, od=12)
+    with pytest.raises(ValidationError):
+        Annulus(id=14, od=12)
+
+
+# --- Star ---
+
+
+def test_star_5_point_bbox_top_tip_up():
+    # A five-point star with one tip pointing up has max y = r_outer.
+    s = Star(points=5, r_outer=10, r_inner=4)
+    bb = bbox(s)
+    assert bb.max[1] == pytest.approx(10.0, abs=1e-6)
+    # Lower tips at angle 234° from +x give y = 10·sin(234°) ≈ −8.09.
+    assert bb.min[1] == pytest.approx(10.0 * math.sin(math.radians(234)), abs=1e-6)
+
+
+def test_star_6_point_bbox_symmetric():
+    # An even-pointed star has tips at +y AND −y; bbox y-extent = ±r_outer.
+    s = Star(points=6, r_outer=12, r_inner=6)
+    bb = bbox(s)
+    assert bb.max[1] == pytest.approx(12.0, abs=1e-6)
+    assert bb.min[1] == pytest.approx(-12.0, abs=1e-6)
+
+
+def test_star_d_outer_solves_r_outer():
+    s = Star(points=5, d_outer=20, d_inner=8)
+    assert s.r_outer == pytest.approx(10.0)
+    assert s.r_inner == pytest.approx(4.0)
+
+
+def test_star_mixed_radius_diameter():
+    s = Star(points=5, r_outer=10, d_inner=8)
+    assert s.r_inner == pytest.approx(4.0)
+    assert s.d_outer == pytest.approx(20.0)
+
+
+def test_star_emits_polygon():
+    scad = emit_str(Star(points=5, r_outer=10, r_inner=4))
+    assert "polygon" in scad
+
+
+def test_star_too_few_points_raises():
+    with pytest.raises(ValidationError):
+        Star(points=2, r_outer=10, r_inner=4)
+
+
+def test_star_inner_at_or_above_outer_raises():
+    with pytest.raises(ValidationError):
+        Star(points=5, r_outer=10, r_inner=10)
+    with pytest.raises(ValidationError):
+        Star(points=5, r_outer=10, r_inner=12)
+
+
+def test_star_underspecified_raises():
+    with pytest.raises(ValidationError):
+        Star(points=5, r_outer=10)  # r_inner / d_inner missing
+
+
+def test_star_non_integer_points_rejected():
+    # `points` is declared int — passing 5.5 should fail.
+    with pytest.raises(ValidationError):
+        Star(points=5.5, r_outer=10, r_inner=4)

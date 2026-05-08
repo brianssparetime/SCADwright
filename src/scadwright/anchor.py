@@ -218,13 +218,17 @@ def _transform_surface_params(
     surface_params: tuple[tuple[str, Any], ...],
     matrix: "Matrix",
 ) -> tuple[tuple[str, Any], ...]:
-    """Transform curved-surface parameters: rotate ``axis``, scale ``radius``.
+    """Transform curved-surface parameters: rotate direction vectors, scale
+    radii, translate axis_origin.
 
-    ``axis`` is a direction vector — apply the matrix's rotational part
-    (no translation) and re-normalize. ``radius`` (and conical ``r1``,
-    ``r2``) scale by the matrix's effect on a unit vector perpendicular
-    to the axis. ``length`` (axial extent) scales by the matrix's effect
-    along the axis direction. Other params pass through unchanged.
+    Direction-vector params (``axis``, ``meridian_zero``) get the
+    matrix's rotational part applied and are re-normalized. Radial
+    scalars (``radius``, ``r1``, ``r2``, ``rim_radius``, ``mid_r``,
+    ``end_r``, ``meridian_r``) scale by the matrix's effect on a unit
+    vector perpendicular to the axis. ``length`` scales by the matrix's
+    effect along the axis direction. ``axis_origin`` is a point on the
+    axis line — gets the full affine transform (rotation + translation).
+    Other params pass through unchanged.
     """
     import math as _math
 
@@ -245,14 +249,20 @@ def _transform_surface_params(
     new_axis = tuple(c / axis_len for c in new_axis_raw)
     params["axis"] = new_axis
 
-    # ``meridian_zero`` (rim anchors) is a direction vector in the rim
-    # plane at angle=0; transforms exactly like ``axis``.
+    # ``meridian_zero`` (rim and meridional anchors) is a direction vector;
+    # transforms exactly like ``axis``.
     mz = params.get("meridian_zero")
     if mz is not None:
         new_mz_raw = matrix.apply_vector(mz)
         mz_len = _math.sqrt(sum(c * c for c in new_mz_raw))
         if mz_len > 1e-12:
             params["meridian_zero"] = tuple(c / mz_len for c in new_mz_raw)
+
+    # ``axis_origin`` (meridional anchors) is a point on the central axis
+    # line; transforms with the full affine matrix.
+    ao = params.get("axis_origin")
+    if ao is not None:
+        params["axis_origin"] = matrix.apply_point(ao)
 
     # Pick a unit vector perpendicular to the original axis to measure
     # radial scaling. The choice doesn't matter for uniform scales; for
@@ -275,7 +285,7 @@ def _transform_surface_params(
     else:
         radial_scale = 1.0
 
-    for key in ("radius", "r1", "r2", "rim_radius"):
+    for key in ("radius", "r1", "r2", "rim_radius", "mid_r", "end_r", "meridian_r"):
         if key in params and isinstance(params[key], (int, float)):
             params[key] = params[key] * radial_scale
 

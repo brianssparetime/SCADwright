@@ -1,18 +1,24 @@
 """3D shape library: Tube, Funnel, RoundedBox, FilletRing, UShapeChannel,
-Capsule, RectTube, Prismoid, Wedge, PieSlice.
+Capsule, RectTube, Prismoid, Wedge, PieSlice, Barrel.
 """
 
 from __future__ import annotations
 
 import math
+import warnings
 
 from scadwright.boolops import difference, hull, minkowski, union
 from scadwright.component.anchors import anchor
 from scadwright.component.base import Component
 from scadwright.component.params import Param
-from scadwright.extrusions import linear_extrude
+from scadwright.extrusions import linear_extrude, rotate_extrude
 from scadwright.primitives import circle, cube, cylinder, polygon, polyhedron, sphere
 from scadwright.shapes.two_d import Sector
+
+
+class BarrelDegeneracyWarning(UserWarning):
+    """Emitted when a ``Barrel``'s parameters approach a geometric degeneracy
+    (e.g. ``mid_r`` near zero, where the wall pinches to a point)."""
 
 
 class Tube(Component):
@@ -442,5 +448,163 @@ class UShapeChannel(Component):
         # Channel is an interior cut from the top (or bottom under
         # n_shape, after the flip+up restores the same outer extents).
         # Outer cube's bbox is tight.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
+
+class Barrel(Component):
+    """Solid (or hollow) of revolution with a circular-arc meridian.
+
+    The barrel sits on z=0 with its axis along +z. End faces have diameter
+    ``end_d`` at z=0 and z=h; the wall passes through diameter ``mid_d``
+    at z=h/2. ``bulge = mid_r - end_r`` is the signed radial sagitta:
+    positive for the classic convex wine-barrel shape, negative for a
+    waisted (concave) profile. Provide ``h`` plus any consistent pair of
+    (end_d / end_r), (mid_d / mid_r / bulge); the framework solves the
+    rest.
+
+    With ``thk`` set, the barrel is a hollow shell of constant *radial*
+    thickness ``thk``: the inner meridian is the outer meridian shifted
+    inward by ``thk`` (same arc curvature, concentric center). End rings
+    are open, like ``Tube``.
+
+    A ``bulge`` of exactly zero is handled silently as the equivalent
+    cylinder (or tube) — useful for parametric sweeps that legitimately
+    cross zero curvature without rewriting around the edge case.
+    Geometrically degenerate configurations where ``mid_r`` collapses
+    toward zero (the wall pinches to a point) emit a
+    ``BarrelDegeneracyWarning``::
+
+        Barrel(h=80, end_d=50, mid_d=64)         # convex bulge of 7 mm/side
+        Barrel(h=80, end_d=50, bulge=7)          # equivalent
+        Barrel(h=80, end_d=50, mid_d=42)         # waisted (concave)
+        Barrel(h=80, end_d=50, mid_d=64, thk=3)  # hollow shell
+    """
+
+    equations = """
+        end_r = end_d / 2
+        mid_r = mid_d / 2
+        bulge = mid_r - end_r
+        meridian_r = (h*h / 4 + bulge*bulge) / max(2 * abs(bulge), 1e-12)
+        meridian_s = 1 if bulge > 0 else -1
+        h, end_d, end_r, mid_d, mid_r > 0
+        ?thk > 0
+        ?thk < end_r
+        ?thk < mid_r
+    """
+
+    top = anchor(
+        at="0, 0, h",
+        normal=(0.0, 0.0, 1.0),
+        kind="planar",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "rim_radius": "end_r",
+        },
+    )
+    bottom = anchor(
+        at=(0.0, 0.0, 0.0),
+        normal=(0.0, 0.0, -1.0),
+        kind="planar",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "rim_radius": "end_r",
+        },
+    )
+    # Curved-meridian wall: at_z= walks the actual arc, and the surface
+    # normal tilts to the local tangent. Reference position is at the
+    # equator on the +X meridian. surface_params carry the arc geometry
+    # so attach() and add_text() can evaluate position and normal at any
+    # axial offset along the wall.
+    outer_wall = anchor(
+        at="mid_r, 0, h/2",
+        normal=(1.0, 0.0, 0.0),
+        kind="meridional",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "axis_origin": "(0.0, 0.0, h/2)",
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "length": "h",
+            "end_r": "end_r",
+            "mid_r": "mid_r",
+            "meridian_r": "meridian_r",
+            "meridian_s": "meridian_s",
+        },
+    )
+    # Inner wall is the outer meridian shifted radially inward by thk —
+    # same arc curvature, same axial extent. Only declared (and only
+    # meaningful) when the barrel is hollow.
+    inner_wall = anchor(
+        at="(mid_r - thk) if thk is not None else 0.0, 0, h/2",
+        normal=(-1.0, 0.0, 0.0),
+        kind="meridional",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "axis_origin": "(0.0, 0.0, h/2)",
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "length": "h",
+            "end_r": "(end_r - thk) if thk is not None else end_r",
+            "mid_r": "(mid_r - thk) if thk is not None else mid_r",
+            "meridian_r": "meridian_r",
+            "meridian_s": "meridian_s",
+            "inner": True,
+        },
+    )
+
+    def build(self):
+        # Vanishing curvature → silently emit the degenerate cylinder/tube.
+        # Tolerance is relative so parametric sweeps near zero land cleanly.
+        if abs(self.bulge) < 1e-9 * max(self.end_r, 1.0):
+            outer = cylinder(h=self.h, r=self.end_r)
+            if self.thk is None:
+                return outer
+            inner = cylinder(h=self.h, r=self.end_r - self.thk).through(outer)
+            return difference(outer, inner)
+
+        # Pinched waist: build the geometry but flag it. Threshold is small
+        # enough that normal concave barrels don't trip it.
+        if self.mid_r < 1e-6 * self.end_r:
+            warnings.warn(
+                f"Barrel mid_r={self.mid_r:.3g} is near zero relative to "
+                f"end_r={self.end_r:.3g}; meridian wall pinches to a point.",
+                BarrelDegeneracyWarning,
+                stacklevel=2,
+            )
+
+        outer_solid = self._revolve_meridian(self.end_r, self.mid_r)
+        if self.thk is None:
+            return outer_solid
+        inner_solid = self._revolve_meridian(
+            self.end_r - self.thk, self.mid_r - self.thk
+        )
+        return difference(outer_solid, inner_solid.through(outer_solid))
+
+    _MERIDIAN_SEGMENTS = 64
+
+    def _revolve_meridian(self, e_r: float, m_r: float):
+        # Meridian arc through (e_r, 0), (m_r, h/2), (e_r, h). Sagitta-form
+        # radius: r = (a^2 + s^2) / (2|s|), where a = h/2 and s = m_r - e_r.
+        # Center sits at (cx, h/2) with cx = m_r - sign(s)*r — inboard of
+        # m_r when convex, outboard when concave.
+        b = m_r - e_r
+        meridian_r = (self.h * self.h / 4.0 + b * b) / (2.0 * abs(b))
+        s = 1 if b > 0 else -1
+        cx = m_r - s * meridian_r
+        theta = math.asin(self.h / (2.0 * meridian_r))
+        n = self._MERIDIAN_SEGMENTS
+        pts: list[tuple[float, float]] = [(0.0, 0.0)]
+        for i in range(n + 1):
+            alpha = -theta + 2.0 * theta * i / n
+            x = cx + s * meridian_r * math.cos(alpha)
+            z = self.h / 2.0 + meridian_r * math.sin(alpha)
+            pts.append((x, z))
+        pts.append((0.0, self.h))
+        return rotate_extrude(polygon(points=pts))
+
+    def tight_bbox(self):
+        # Outer extents in xy reach max(end_r, mid_r); z extents are [0, h].
+        # The bore (when thk is set) is interior; doesn't change extents.
         from scadwright.bbox import bbox
         return bbox(self)
