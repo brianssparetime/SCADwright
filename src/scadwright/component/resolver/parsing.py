@@ -86,12 +86,18 @@ def _peel_trailing_comment(line: str) -> tuple[str, str | None]:
 
 def _split_top_level_adjustment(
     line: str,
-) -> tuple[str, str, str] | None:
+) -> tuple[str, str, str, int, int] | None:
     """Detect a top-level adjustment operator (``+=``, ``-=``, ``*=``,
-    ``/=``) and split the line into ``(lhs_text, op, rhs_text)``.
+    ``/=``) and split the line into
+    ``(lhs_text, op, rhs_text, lhs_start, rhs_start)``.
 
     Returns ``None`` for any other shape — callers fall through to the
-    equation/constraint classifier.
+    equation/constraint classifier. The ``*_start`` values are the
+    column in ``line`` where each text fragment begins (after any
+    leading whitespace stripping); callers feed them to
+    :func:`_parse_expr` so the resulting AST nodes carry
+    ``col_offset`` values relative to ``line`` rather than to the
+    extracted substrings.
 
     "Top-level" means: not inside ``(...)``, ``[...]``, ``{...}``, not
     inside a string literal. Comments aren't possible here (the caller
@@ -162,9 +168,15 @@ def _split_top_level_adjustment(
                 if c in "*/" and i > 0 and line[i - 1] == c:
                     return None
                 if op in _ADJUSTMENT_OPS:
-                    lhs_text = line[:i].strip()
-                    rhs_text = line[i + 2:].strip()
-                    return lhs_text, op, rhs_text
+                    raw_lhs = line[:i]
+                    raw_rhs = line[i + 2:]
+                    lhs_text = raw_lhs.strip()
+                    rhs_text = raw_rhs.strip()
+                    lhs_start = len(raw_lhs) - len(raw_lhs.lstrip())
+                    rhs_start = (i + 2) + (
+                        len(raw_rhs) - len(raw_rhs.lstrip())
+                    )
+                    return lhs_text, op, rhs_text, lhs_start, rhs_start
         i += 1
 
     return None
@@ -172,11 +184,17 @@ def _split_top_level_adjustment(
 
 def _split_top_level_equals(
     line: str, class_name: str = "", source_index: int = 0,
-) -> tuple[str, str] | None:
+) -> tuple[str, str, int, int] | None:
     """Find the single top-level ``=`` and split the line.
 
-    Returns ``(lhs_text, rhs_text)`` if exactly one top-level ``=`` is
-    found, else ``None`` (the line is a constraint, not an equation).
+    Returns ``(lhs_text, rhs_text, lhs_start, rhs_start)`` if exactly
+    one top-level ``=`` is found, else ``None`` (the line is a
+    constraint, not an equation). The ``*_start`` values are the
+    column in ``line`` where each text fragment begins (after any
+    leading whitespace stripping); callers feed them to
+    :func:`_parse_expr` so the resulting AST nodes carry
+    ``col_offset`` values relative to ``line`` rather than to the
+    extracted substrings.
 
     Only a lone ``=`` is the equation operator. ``==`` is a Python
     comparison and is recognized but skipped (placement validation
@@ -282,17 +300,23 @@ def _split_top_level_equals(
         raise ValidationError(
             f"{_classdef_loc(class_name, source_index)}: cannot parse equation "
             f"{line!r}: chained assignment not allowed "
-            f"(more than one top-level `=`); write each equation on its own line."
+            f"(more than one top-level `=`); write each equation on its own line.",
+            equations_source_index=source_index,
         )
     start, end = found[0]
-    lhs_text = line[:start].strip()
-    rhs_text = line[end:].strip()
+    raw_lhs = line[:start]
+    raw_rhs = line[end:]
+    lhs_text = raw_lhs.strip()
+    rhs_text = raw_rhs.strip()
     if not lhs_text or not rhs_text:
         raise ValidationError(
             f"{_classdef_loc(class_name, source_index)}: cannot parse equation "
-            f"{line!r}: empty expression on one side of the equation operator."
+            f"{line!r}: empty expression on one side of the equation operator.",
+            equations_source_index=source_index,
         )
-    return lhs_text, rhs_text
+    lhs_start = len(raw_lhs) - len(raw_lhs.lstrip())
+    rhs_start = end + (len(raw_rhs) - len(raw_rhs.lstrip()))
+    return lhs_text, rhs_text, lhs_start, rhs_start
 
 
 def parse_equations_unified(
@@ -335,7 +359,7 @@ def parse_equations_unified(
     """
     from scadwright.component.equations import (
         _INLINE_TYPE_ALLOWLIST,
-        _extract_name_annotations,
+        _extract_name_annotations_with_colmap,
         _require_sympy,
     )
     from scadwright.component.resolver.checks import (
@@ -371,83 +395,118 @@ def parse_equations_unified(
             f"but eq_strs has {len(eq_strs)}; they must align."
         )
 
-    for source_index, raw in enumerate(eq_strs):
-        cleaned, line_opts, line_typed = _extract_name_annotations(raw)
-        all_optionals |= line_opts
-        line_opts_frozen = frozenset(line_opts)
+    # Track each line's annotation colmap so a raised ValidationError
+    # can carry it for downstream consumers (the LSP diagnostic
+    # builder uses it to map AST cleaned-col → file col without
+    # recomputing).
+    colmaps: list[tuple[int, ...]] = []
 
-        # Validate type-tag allowlist + cross-site agreement.
-        for name, type_name in line_typed.items():
-            if type_name not in _INLINE_TYPE_ALLOWLIST:
-                raise ValidationError(
-                    f"{_classdef_loc(class_name, source_index)}: unknown "
-                    f"type tag `:{type_name}` on `{name}` in {raw!r}; "
-                    f"allowed types are "
-                    f"{sorted(_INLINE_TYPE_ALLOWLIST)}."
+    try:
+        for source_index, raw in enumerate(eq_strs):
+            cleaned, line_opts, line_typed, colmap = (
+                _extract_name_annotations_with_colmap(raw)
+            )
+            colmaps.append(colmap)
+            all_optionals |= line_opts
+            line_opts_frozen = frozenset(line_opts)
+
+            # Validate type-tag allowlist + cross-site agreement.
+            for name, type_name in line_typed.items():
+                if type_name not in _INLINE_TYPE_ALLOWLIST:
+                    raise ValidationError(
+                        f"{_classdef_loc(class_name, source_index)}: unknown "
+                        f"type tag `:{type_name}` on `{name}` in {raw!r}; "
+                        f"allowed types are "
+                        f"{sorted(_INLINE_TYPE_ALLOWLIST)}.",
+                        equations_source_index=source_index,
+                    )
+                if name in typed_names and typed_names[name] != type_name:
+                    raise ValidationError(
+                        f"{_classdef_loc(class_name, source_index)}: type "
+                        f"disagreement on `{name}`: tagged `:{type_name}` "
+                        f"here but `:{typed_names[name]}` at "
+                        f"{_classdef_loc(class_name, typed_first_seen[name])}.",
+                        equations_source_index=source_index,
+                    )
+                if name not in typed_names:
+                    typed_names[name] = type_name
+                    typed_first_seen[name] = source_index
+
+            # Step 1: try adjustment classification. Adjustments are the
+            # only line shape that uses the ``+=`` / ``-=`` / ``*=`` / ``/=``
+            # tokens, so detection is unambiguous. Trailing comment is peeled
+            # so the adjustment parser sees a clean LHS-op-RHS.
+            body_text, trailing_comment = _peel_trailing_comment(cleaned)
+            adj = _split_top_level_adjustment(body_text)
+            if adj is not None:
+                lhs_text, op, rhs_text, lhs_start, rhs_start = adj
+                # ``body_text`` is ``cleaned[:hash].rstrip()`` so the
+                # offsets returned against it are also offsets within
+                # ``cleaned``.
+                comment = trailing_comment
+                if not comment:
+                    pre = preceding_comments[source_index]
+                    comment = pre or ""
+                _emit_adjustment(
+                    lhs_text, op, rhs_text, cleaned, line_opts_frozen,
+                    source_index, class_name, comment, adjustments,
+                    lhs_start=lhs_start, rhs_start=rhs_start,
                 )
-            if name in typed_names and typed_names[name] != type_name:
-                raise ValidationError(
-                    f"{_classdef_loc(class_name, source_index)}: type "
-                    f"disagreement on `{name}`: tagged `:{type_name}` "
-                    f"here but `:{typed_names[name]}` at "
-                    f"{_classdef_loc(class_name, typed_first_seen[name])}."
+                continue
+
+            # Step 2: split on a top-level equation operator. If the
+            # line has one, it's an equation; otherwise it's a
+            # constraint.
+            split = _split_top_level_equals(
+                cleaned, class_name, source_index,
+            )
+
+            if split is not None:
+                lhs_text, rhs_text, lhs_start, rhs_start = split
+                _emit_equation(
+                    lhs_text, rhs_text, cleaned, line_opts_frozen,
+                    source_index, class_name, equations,
+                    lhs_start=lhs_start, rhs_start=rhs_start,
                 )
-            if name not in typed_names:
-                typed_names[name] = type_name
-                typed_first_seen[name] = source_index
+            else:
+                _emit_constraint(
+                    cleaned, line_opts_frozen, source_index, class_name,
+                    constraints,
+                )
 
-        # Step 1: try adjustment classification. Adjustments are the
-        # only line shape that uses the ``+=`` / ``-=`` / ``*=`` / ``/=``
-        # tokens, so detection is unambiguous. Trailing comment is peeled
-        # so the adjustment parser sees a clean LHS-op-RHS.
-        body_text, trailing_comment = _peel_trailing_comment(cleaned)
-        adj = _split_top_level_adjustment(body_text)
-        if adj is not None:
-            lhs_text, op, rhs_text = adj
-            comment = trailing_comment
-            if not comment:
-                pre = preceding_comments[source_index]
-                comment = pre or ""
-            _emit_adjustment(
-                lhs_text, op, rhs_text, cleaned, line_opts_frozen,
-                source_index, class_name, comment, adjustments,
-            )
-            continue
-
-        # Step 2: split on a top-level equation operator. If the line
-        # has one, it's an equation; otherwise it's a constraint.
-        split = _split_top_level_equals(cleaned, class_name, source_index)
-
-        if split is not None:
-            lhs_text, rhs_text = split
-            _emit_equation(
-                lhs_text, rhs_text, cleaned, line_opts_frozen,
-                source_index, class_name, equations,
-            )
-        else:
-            _emit_constraint(
-                cleaned, line_opts_frozen, source_index, class_name,
-                constraints,
-            )
-
-    # Class-def-time validation passes.
-    _check_eq_placement(equations, constraints, class_name)
-    # Run the adjusted()-context check before the unknown-function
-    # check — a misplaced ``adjusted(x)`` would otherwise surface as
-    # "unknown function 'adjusted'", which buries the actual rule.
-    _check_adjusted_only_in_rules(equations, adjustments, class_name)
-    _check_unknown_function_calls(equations, constraints, class_name)
-    _check_bool_in_arithmetic(typed_names, equations, constraints, class_name)
-    _check_non_float_solver_target(
-        typed_names, equations, frozenset(all_optionals), class_name,
-    )
-    _check_override_rhs_evaluable(
-        equations, frozenset(all_optionals), class_name,
-    )
-    _check_self_reference(equations, class_name)
-    _check_mutual_inconsistency(equations, class_name)
-    _check_adjustment_uniformity(adjustments, class_name)
-    _check_adjustment_rhs_no_adjusted_refs(adjustments, class_name)
+        # Class-def-time validation passes.
+        _check_eq_placement(equations, constraints, class_name)
+        # Run the adjusted()-context check before the unknown-function
+        # check — a misplaced ``adjusted(x)`` would otherwise surface
+        # as "unknown function 'adjusted'", which buries the actual
+        # rule.
+        _check_adjusted_only_in_rules(equations, adjustments, class_name)
+        _check_unknown_function_calls(
+            equations, constraints, class_name,
+        )
+        _check_bool_in_arithmetic(
+            typed_names, equations, constraints, class_name,
+        )
+        _check_non_float_solver_target(
+            typed_names, equations, frozenset(all_optionals), class_name,
+        )
+        _check_override_rhs_evaluable(
+            equations, frozenset(all_optionals), class_name,
+        )
+        _check_self_reference(equations, class_name)
+        _check_mutual_inconsistency(equations, class_name)
+        _check_adjustment_uniformity(adjustments, class_name)
+        _check_adjustment_rhs_no_adjusted_refs(adjustments, class_name)
+    except ValidationError as err:
+        # Enrich any equations-side error with the per-line colmap so
+        # downstream consumers can map AST cleaned-col → file col.
+        if (
+            err.equations_colmap is None
+            and err.equations_source_index is not None
+            and 0 <= err.equations_source_index < len(colmaps)
+        ):
+            err.equations_colmap = colmaps[err.equations_source_index]
+        raise
 
     return (
         equations,
@@ -460,6 +519,8 @@ def parse_equations_unified(
 
 def _parse_expr(
     text: str, raw: str, class_name: str = "", source_index: int = 0,
+    *,
+    text_start_in_cleaned: int = 0,
 ) -> ast.expr:
     """Parse ``text`` as a Python expression.
 
@@ -467,23 +528,57 @@ def _parse_expr(
     (the user's full equation line) on parse failure. The parsed tree
     is uniformly Load-context — both sides of an equation are
     expressions in scadwright's language, never assignment targets.
+
+    ``text_start_in_cleaned`` is the column in the surrounding cleaned
+    line where ``text`` begins. After parsing, every node's
+    ``col_offset`` and ``end_col_offset`` is shifted by this amount so
+    downstream consumers (the LSP diagnostic-range builder in
+    particular) can map AST positions back to the cleaned line in a
+    single coordinate system. Defaults to 0 — when ``text`` is the
+    whole cleaned line (e.g., a constraint), no shift is needed.
     """
     try:
         tree = ast.parse(text, mode="eval")
     except SyntaxError as exc:
         raise ValidationError(
             f"{_classdef_loc(class_name, source_index)}: cannot parse "
-            f"equation {raw!r}: {exc.msg}"
+            f"equation {raw!r}: {exc.msg}",
+            equations_source_index=source_index,
         ) from exc
     expr = tree.body
+    if text_start_in_cleaned:
+        _shift_col_offsets(expr, text_start_in_cleaned)
     # Reject the walrus operator anywhere in the parsed expression.
+    # Walked after the shift so the captured ``equations_node`` carries
+    # cleaned-line coordinates.
     for sub in ast.walk(expr):
         if isinstance(sub, ast.NamedExpr):
             raise ValidationError(
                 f"{_classdef_loc(class_name, source_index)}: equation "
-                f"{raw!r}: walrus operator `:=` not allowed."
+                f"{raw!r}: walrus operator `:=` not allowed.",
+                equations_source_index=source_index,
+                equations_node=sub,
             )
     return expr
+
+
+def _shift_col_offsets(node: ast.AST, shift: int) -> None:
+    """Add ``shift`` to ``col_offset`` and ``end_col_offset`` on every
+    descendant of ``node``.
+
+    Used to translate AST col_offsets parsed from a substring of the
+    cleaned equation line into col_offsets relative to the cleaned
+    line itself. Single-line input is assumed (the splitter has
+    already collapsed bracket and backslash continuations into one
+    logical line), so ``lineno`` is left alone — only column data
+    moves.
+    """
+    for n in ast.walk(node):
+        if hasattr(n, "col_offset") and n.col_offset is not None:
+            n.col_offset += shift
+        end = getattr(n, "end_col_offset", None)
+        if end is not None:
+            n.end_col_offset = end + shift
 
 
 def _emit_equation(
@@ -494,6 +589,9 @@ def _emit_equation(
     source_index: int,
     class_name: str,
     out: list[ParsedEquation],
+    *,
+    lhs_start: int = 0,
+    rhs_start: int = 0,
 ) -> None:
     """Build a ParsedEquation from the two halves of a ``=``/``==`` line.
 
@@ -502,9 +600,20 @@ def _emit_equation(
     Subscript and Attribute expressions are accepted on either side as
     reads — the resolver never drives them as outputs (it only assigns
     bare-Name unknowns).
+
+    ``lhs_start`` and ``rhs_start`` are the columns in ``raw`` where
+    each half begins. They flow into :func:`_parse_expr` so the
+    resulting AST nodes carry ``col_offset`` values relative to the
+    full cleaned line, not the substring.
     """
-    lhs = _parse_expr(lhs_text, raw, class_name, source_index)
-    rhs = _parse_expr(rhs_text, raw, class_name, source_index)
+    lhs = _parse_expr(
+        lhs_text, raw, class_name, source_index,
+        text_start_in_cleaned=lhs_start,
+    )
+    rhs = _parse_expr(
+        rhs_text, raw, class_name, source_index,
+        text_start_in_cleaned=rhs_start,
+    )
 
     # Comma broadcast on the left side: ``x, y = expr`` means each name
     # gets the same value. The right side is the broadcast value, never a
@@ -528,7 +637,9 @@ def _emit_equation(
                 f"{raw!r}: in equations, comma broadcasts (each name gets "
                 f"the same value), it does not unpack. If you want "
                 f"different values for each name, write them on separate "
-                f"lines."
+                f"lines.",
+                equations_source_index=source_index,
+                equations_node=rhs,
             )
         for name_node in lhs_names:
             refs = frozenset(_free_names_in(name_node) | _free_names_in(rhs))
@@ -566,6 +677,9 @@ def _emit_adjustment(
     class_name: str,
     comment: str,
     out: list[ParsedAdjustment],
+    *,
+    lhs_start: int = 0,
+    rhs_start: int = 0,
 ) -> None:
     """Build one or more ``ParsedAdjustment`` entries from a parsed
     ``lhs OP rhs`` triple.
@@ -580,26 +694,39 @@ def _emit_adjustment(
     Free names in the RHS get ``referenced_names``, used by the
     no-reference-to-adjusted-names check and by the resolver's
     None-skip path.
+
+    ``lhs_start`` and ``rhs_start`` are the columns in ``raw`` where
+    each half begins; they flow into :func:`_parse_expr` to produce
+    AST nodes whose ``col_offset`` values are relative to the full
+    cleaned line.
     """
     if not lhs_text:
         raise ValidationError(
             f"{_classdef_loc(class_name, source_index)}: cannot parse "
             f"adjustment {raw!r}: empty left-hand side. Write the "
             f"name being adjusted before the operator, e.g. "
-            f"`x {op} 0.3` to add 0.3 to `x`."
+            f"`x {op} 0.3` to add 0.3 to `x`.",
+            equations_source_index=source_index,
         )
     if not rhs_text:
         raise ValidationError(
             f"{_classdef_loc(class_name, source_index)}: cannot parse "
             f"adjustment {raw!r}: empty right-hand side. Write a "
             f"value or expression after the operator, e.g. "
-            f"`{lhs_text} {op} 0.3`."
+            f"`{lhs_text} {op} 0.3`.",
+            equations_source_index=source_index,
         )
 
     # Parse the LHS as a Python expression so we can structurally check
     # it. We accept either ``Name`` or ``Tuple[Name, Name, ...]``.
-    lhs_node = _parse_expr(lhs_text, raw, class_name, source_index)
-    rhs_node = _parse_expr(rhs_text, raw, class_name, source_index)
+    lhs_node = _parse_expr(
+        lhs_text, raw, class_name, source_index,
+        text_start_in_cleaned=lhs_start,
+    )
+    rhs_node = _parse_expr(
+        rhs_text, raw, class_name, source_index,
+        text_start_in_cleaned=rhs_start,
+    )
 
     if isinstance(lhs_node, ast.Name):
         names = [lhs_node.id]
@@ -614,7 +741,9 @@ def _emit_adjustment(
             f"{_classdef_loc(class_name, source_index)}: adjustment "
             f"{raw!r}: left-hand side must be a name "
             f"(or a comma-separated list of names for broadcast); "
-            f"got {ast.unparse(lhs_node)!r}."
+            f"got {ast.unparse(lhs_node)!r}.",
+            equations_source_index=source_index,
+            equations_node=lhs_node,
         )
 
     refs = frozenset(_free_names_in(rhs_node))
@@ -659,13 +788,17 @@ def _validate_and_rewrite_adjusted_calls(
                 raise ValidationError(
                     f"{_classdef_loc(class_name, source_index)}: "
                     f"`{_ADJUSTED_FN_NAME}(...)` does not accept "
-                    f"keyword arguments in {raw!r}."
+                    f"keyword arguments in {raw!r}.",
+                    equations_source_index=source_index,
+                    equations_node=node,
                 )
             if len(node.args) != 1:
                 raise ValidationError(
                     f"{_classdef_loc(class_name, source_index)}: "
                     f"`{_ADJUSTED_FN_NAME}(...)` takes exactly one "
-                    f"argument; got {len(node.args)} in {raw!r}."
+                    f"argument; got {len(node.args)} in {raw!r}.",
+                    equations_source_index=source_index,
+                    equations_node=node,
                 )
             arg = node.args[0]
             if not isinstance(arg, ast.Name):
@@ -673,7 +806,9 @@ def _validate_and_rewrite_adjusted_calls(
                 raise ValidationError(
                     f"{_classdef_loc(class_name, source_index)}: "
                     f"`{_ADJUSTED_FN_NAME}(...)` argument must be a "
-                    f"bare name; got {shape} in {raw!r}."
+                    f"bare name; got {shape} in {raw!r}.",
+                    equations_source_index=source_index,
+                    equations_node=arg,
                 )
             wrapped.add(arg.id)
             new_node = ast.Subscript(
@@ -745,7 +880,9 @@ def _emit_constraint(
             f"`{raw}`: not a boolean rule. "
             f"An equation uses `=` (or `==`); a rule uses a comparison "
             f"(`<`, `>`, `<=`, `>=`, `in`) or a boolean expression "
-            f"(`all(...)`, `any(...)`, `not ...`, etc.)."
+            f"(`all(...)`, `any(...)`, `not ...`, etc.).",
+            equations_source_index=source_index,
+            equations_node=expr,
         )
 
     refs = frozenset(_free_names_in(expr)) - {_ADJUSTED_FN_NAME}

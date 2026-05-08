@@ -22,6 +22,7 @@ classifiers = [
 
 [project.optional-dependencies]
 equations = ["sympy>=1.12"]
+lsp = ["pygls>=1.3", "sympy>=1.12"]
 dev = ["pytest>=7", "sympy>=1.12"]
 
 [project.scripts]

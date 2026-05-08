@@ -5,8 +5,10 @@ The actual equation-solving and constraint-checking machinery lives in
 pieces, organized by concern:
 
 - :mod:`.lex` — hand-rolled scanners (``_extract_name_annotations``,
+  ``_extract_name_annotations_with_colmap``,
   ``_extract_optional_markers``, ``_split_equations_text``,
-  ``_bracket_depth``, ``_INLINE_TYPE_ALLOWLIST``, ``_require_sympy``).
+  ``_split_logical_lines``, ``LogicalLine``, ``_bracket_depth``,
+  ``_INLINE_TYPE_ALLOWLIST``, ``_require_sympy``).
 - :mod:`.curated` — the curated namespace exposed inside derivation
   and predicate expressions (``_CURATED_BUILTINS``, ``_CURATED_MATH``)
   plus the cardinality helpers
@@ -29,12 +31,15 @@ from scadwright.component.equations.curated import (
 )
 from scadwright.component.equations.lex import (
     _INLINE_TYPE_ALLOWLIST,
+    LogicalLine,
     _bracket_depth,
     _extract_name_annotations,
+    _extract_name_annotations_with_colmap,
     _extract_optional_markers,
     _require_sympy,
     _split_equations_text,
     _split_equations_with_comments,
+    _split_logical_lines,
 )
 from scadwright.component.equations.names import (
     _ALGEBRAIC_FUNCTION_NAMES,
@@ -47,14 +52,17 @@ __all__ = [
     "_CURATED_MATH",
     "_INLINE_TYPE_ALLOWLIST",
     "_NUMERIC_FUNCTION_NAMES",
+    "LogicalLine",
     "_all_or_none",
     "_at_least_one",
     "_at_most_one",
     "_bracket_depth",
     "_exactly_one",
     "_extract_name_annotations",
+    "_extract_name_annotations_with_colmap",
     "_extract_optional_markers",
     "_require_sympy",
     "_split_equations_text",
     "_split_equations_with_comments",
+    "_split_logical_lines",
 ]

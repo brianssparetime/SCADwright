@@ -357,7 +357,7 @@ def check_adjustment_comment(path: Path, tree: ast.Module) -> list[Violation]:
                     continue
                 if trailing or preceding:
                     continue
-                lhs_text, op, _rhs = adj
+                lhs_text, op, _rhs, _lhs_start, _rhs_start = adj
                 violations.append(
                     Violation(
                         path=path,

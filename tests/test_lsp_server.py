@@ -1,0 +1,693 @@
+"""Tests for the pygls-backed LSP server.
+
+The test surface focuses on the pure conversion and dispatch
+helpers:
+
+- ``_to_lsp_diagnostic``: per-field correctness for the
+  internal-Diagnostic to lsprotocol-Diagnostic conversion.
+- ``_is_python_uri``: filetype gating.
+- ``_publish_for_text``: end-to-end via a recording stand-in for
+  ``LanguageServer`` — given a source string, the right
+  publish-diagnostics call is made.
+- ``_publish_clear``: clearing call shape.
+- ``build_server``: smoke test (the LanguageServer assembles and
+  the feature decorators run without error).
+
+The full async stdio loop is exercised only by editor
+integrations; those are out of scope for unit tests.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import pytest
+
+# Skip the entire module if pygls isn't installed (the LSP extra).
+pytest.importorskip("pygls")
+pytest.importorskip("lsprotocol")
+
+from lsprotocol import types as lsp  # noqa: E402
+
+from scadwright.lsp.diagnostics import (  # noqa: E402
+    Diagnostic as ScDiagnostic,
+    DiagnosticRange,
+)
+from scadwright.lsp.server import (  # noqa: E402
+    _completion_items_for,
+    _definition_for,
+    _document_symbols_for,
+    _hover_for,
+    _is_python_uri,
+    _publish_clear,
+    _publish_for_text,
+    _to_lsp_completion,
+    _to_lsp_diagnostic,
+    _to_lsp_document_symbol,
+    _to_lsp_hover,
+    _to_lsp_location,
+    build_server,
+)
+
+
+# =============================================================================
+# Diagnostic conversion
+# =============================================================================
+
+
+def test_to_lsp_diagnostic_maps_range_fields() -> None:
+    sc = ScDiagnostic(
+        range=DiagnosticRange(2, 4, 2, 14),
+        severity="error",
+        message="msg",
+    )
+    out = _to_lsp_diagnostic(sc)
+    assert out.range.start.line == 2
+    assert out.range.start.character == 4
+    assert out.range.end.line == 2
+    assert out.range.end.character == 14
+
+
+def test_to_lsp_diagnostic_default_severity_is_error() -> None:
+    sc = ScDiagnostic(
+        range=DiagnosticRange(0, 0, 0, 0),
+        severity="error",
+        message="msg",
+    )
+    out = _to_lsp_diagnostic(sc)
+    assert out.severity == lsp.DiagnosticSeverity.Error
+
+
+def test_to_lsp_diagnostic_severity_mapping_covers_all_levels() -> None:
+    cases = {
+        "error": lsp.DiagnosticSeverity.Error,
+        "warning": lsp.DiagnosticSeverity.Warning,
+        "info": lsp.DiagnosticSeverity.Information,
+        "hint": lsp.DiagnosticSeverity.Hint,
+    }
+    for level, expected in cases.items():
+        sc = ScDiagnostic(
+            range=DiagnosticRange(0, 0, 0, 0),
+            severity=level,
+            message="msg",
+        )
+        assert _to_lsp_diagnostic(sc).severity == expected
+
+
+def test_to_lsp_diagnostic_unknown_severity_falls_back_to_error() -> None:
+    sc = ScDiagnostic(
+        range=DiagnosticRange(0, 0, 0, 0),
+        severity="something-weird",
+        message="msg",
+    )
+    assert _to_lsp_diagnostic(sc).severity == lsp.DiagnosticSeverity.Error
+
+
+def test_to_lsp_diagnostic_carries_message_and_source() -> None:
+    sc = ScDiagnostic(
+        range=DiagnosticRange(0, 0, 0, 0),
+        severity="error",
+        message="something is wrong",
+        source="scadwright",
+    )
+    out = _to_lsp_diagnostic(sc)
+    assert out.message == "something is wrong"
+    assert out.source == "scadwright"
+
+
+# =============================================================================
+# URI gating
+# =============================================================================
+
+
+def test_is_python_uri_accepts_dot_py() -> None:
+    assert _is_python_uri("file:///some/path/widget.py")
+
+
+def test_is_python_uri_rejects_other_extensions() -> None:
+    assert not _is_python_uri("file:///some/path/widget.scad")
+    assert not _is_python_uri("file:///some/path/widget.txt")
+    assert not _is_python_uri("file:///some/path/Untitled-1")
+
+
+# =============================================================================
+# Publish helpers via a recording stand-in
+# =============================================================================
+
+
+@dataclass
+class _RecordingServer:
+    """Stand-in recording the LanguageServer methods our handlers use.
+
+    Captures both ``text_document_publish_diagnostics`` (the normal
+    path) and ``window_log_message`` (the exception-path log) so
+    tests can assert on either side of the publish helper's
+    behavior.
+    """
+    calls: list[lsp.PublishDiagnosticsParams]
+    log_calls: list[lsp.LogMessageParams]
+
+    def text_document_publish_diagnostics(
+        self, params: lsp.PublishDiagnosticsParams,
+    ) -> None:
+        self.calls.append(params)
+
+    def window_log_message(self, params: lsp.LogMessageParams) -> None:
+        self.log_calls.append(params)
+
+
+def _new_recording_server() -> _RecordingServer:
+    return _RecordingServer(calls=[], log_calls=[])
+
+
+def test_publish_for_text_emits_diagnostics_for_bad_equations() -> None:
+    src = (
+        'class A:\n'
+        '    equations = """\n'
+        '    y = snh(x)\n'
+        '    """\n'
+    )
+    server = _new_recording_server()
+    _publish_for_text(server, "file:///widget.py", src)
+    assert len(server.calls) == 1
+    call = server.calls[0]
+    assert call.uri == "file:///widget.py"
+    assert len(call.diagnostics) == 1
+    assert call.diagnostics[0].severity == lsp.DiagnosticSeverity.Error
+    assert "snh" in call.diagnostics[0].message
+
+
+def test_publish_for_text_emits_empty_list_for_clean_source() -> None:
+    src = 'class A:\n    equations = "x = 1"\n'
+    server = _new_recording_server()
+    _publish_for_text(server, "file:///widget.py", src)
+    assert len(server.calls) == 1
+    assert server.calls[0].diagnostics == []
+
+
+def test_publish_for_text_skips_non_python_uri() -> None:
+    src = 'class A:\n    equations = "y = snh(x)"\n'
+    server = _new_recording_server()
+    _publish_for_text(server, "file:///widget.scad", src)
+    # Skipped — no publish at all.
+    assert server.calls == []
+
+
+def test_publish_clear_emits_empty_diagnostic_list() -> None:
+    server = _new_recording_server()
+    _publish_clear(server, "file:///widget.py")
+    assert len(server.calls) == 1
+    assert server.calls[0].uri == "file:///widget.py"
+    assert server.calls[0].diagnostics == []
+
+
+def test_publish_for_text_logs_on_analyzer_exception(monkeypatch) -> None:
+    # Force the analyzer to raise and confirm the publish helper logs
+    # to the LSP window-log channel without raising or publishing.
+    import scadwright.lsp.server as server_mod
+
+    def _boom(_source: str) -> list:
+        raise RuntimeError("synthetic analyzer failure")
+
+    monkeypatch.setattr(server_mod, "analyze_file", _boom)
+    server = _new_recording_server()
+    _publish_for_text(server, "file:///widget.py", "irrelevant")
+    # No diagnostics published.
+    assert server.calls == []
+    # One window/logMessage call with an error-level message naming
+    # the exception type.
+    assert len(server.log_calls) == 1
+    log = server.log_calls[0]
+    assert log.type == lsp.MessageType.Error
+    assert "RuntimeError" in log.message
+    assert "synthetic analyzer failure" in log.message
+    assert "file:///widget.py" in log.message
+
+
+# =============================================================================
+# Server assembly smoke test
+# =============================================================================
+
+
+def test_build_server_assembles_without_error() -> None:
+    # Just constructing the server registers the feature decorators.
+    # If a registration shape is wrong, the @feature call raises.
+    server = build_server()
+    assert server is not None
+
+
+def test_build_server_uses_expected_name_and_version() -> None:
+    server = build_server()
+    assert server.name == "scadwright-ls"
+    assert server.version == "0.1.0"
+
+
+# =============================================================================
+# Completion / hover adapters
+# =============================================================================
+
+
+def test_to_lsp_completion_function_kind_with_snippet() -> None:
+    from scadwright.lsp.completion import CompletionItem as ScCompletionItem
+
+    sc = ScCompletionItem(
+        label="sin",
+        kind="function",
+        insert_text="sin($0)",
+        is_snippet=True,
+    )
+    out = _to_lsp_completion(sc)
+    assert out.label == "sin"
+    assert out.kind == lsp.CompletionItemKind.Function
+    assert out.insert_text == "sin($0)"
+    assert out.insert_text_format == lsp.InsertTextFormat.Snippet
+
+
+def test_to_lsp_completion_constant_kind_no_snippet() -> None:
+    from scadwright.lsp.completion import CompletionItem as ScCompletionItem
+
+    sc = ScCompletionItem(label="pi", kind="constant")
+    out = _to_lsp_completion(sc)
+    assert out.kind == lsp.CompletionItemKind.Constant
+    # No insert_text override — client uses the label.
+    assert out.insert_text is None
+
+
+def test_to_lsp_completion_unknown_kind_falls_back_to_variable() -> None:
+    from scadwright.lsp.completion import CompletionItem as ScCompletionItem
+
+    sc = ScCompletionItem(label="x", kind="something_unmapped")
+    out = _to_lsp_completion(sc)
+    assert out.kind == lsp.CompletionItemKind.Variable
+
+
+def test_to_lsp_completion_carries_detail_and_documentation() -> None:
+    from scadwright.lsp.completion import CompletionItem as ScCompletionItem
+
+    sc = ScCompletionItem(
+        label="width",
+        kind="variable",
+        detail="Param(float)",
+        documentation="The widget width",
+    )
+    out = _to_lsp_completion(sc)
+    assert out.detail == "Param(float)"
+    assert out.documentation == "The widget width"
+
+
+def test_to_lsp_hover_wraps_markdown() -> None:
+    from scadwright.lsp.hover import HoverContent as ScHoverContent
+
+    sc = ScHoverContent(markdown="**`sin(x)`** — sine.")
+    out = _to_lsp_hover(sc)
+    assert isinstance(out, lsp.Hover)
+    assert isinstance(out.contents, lsp.MarkupContent)
+    assert out.contents.kind == lsp.MarkupKind.Markdown
+    assert out.contents.value == "**`sin(x)`** — sine."
+
+
+# =============================================================================
+# _completion_items_for: cursor-position pipeline
+# =============================================================================
+
+
+def test_completion_items_for_expression_position() -> None:
+    src = (
+        'class A:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = wid"\n'
+    )
+    # Cursor at end of "wid" — file (2, 22). The host content begins
+    # at file (2, 17) (after the opening quote at col 16). Inside the
+    # cleaned line "x = wid", that's splitter col 7 — expression
+    # context.
+    items = _completion_items_for(src, 2, 22)
+    labels = {it.label for it in items}
+    assert "width" in labels  # class Param
+    assert "sin" in labels  # curated math
+
+
+def test_completion_items_for_type_tag_position() -> None:
+    # ``?count:`` cursor right after the colon.
+    src = (
+        'class A:\n'
+        '    equations = "?count:"\n'
+    )
+    # The opening ``"`` is at col 16; "?count:" content runs cols
+    # 17..23; cursor right after the ``:`` is col 24.
+    items = _completion_items_for(src, 1, 24)
+    labels = {it.label for it in items}
+    assert labels == {"bool", "int", "str", "tuple", "list", "dict"}
+
+
+def test_completion_items_for_in_string_returns_empty() -> None:
+    # Cursor inside a quoted literal within the equation.
+    src = (
+        'class A:\n'
+        '    equations = \'s = "in"\'\n'
+    )
+    # "    equations = '" = 18 chars; cleaned line is `s = "in"`; "in"
+    # body starts at col 18 + 5 = 23. Cursor inside "in".
+    items = _completion_items_for(src, 1, 24)
+    assert items == []
+
+
+def test_completion_items_for_no_block_returns_empty() -> None:
+    # Cursor not inside any equations block.
+    src = "x = 1\n"
+    items = _completion_items_for(src, 0, 3)
+    assert items == []
+
+
+def test_completion_items_for_invalid_python_returns_empty() -> None:
+    # Source doesn't parse as Python — the analyzer can't locate any
+    # blocks. The completion path falls back to no items rather than
+    # crashing.
+    src = "class A:\n    equations = \n"
+    items = _completion_items_for(src, 0, 0)
+    assert items == []
+
+
+# =============================================================================
+# _hover_for: cursor-position pipeline
+# =============================================================================
+
+
+def test_hover_for_curated_name() -> None:
+    src = (
+        'class A:\n'
+        '    equations = "y = sin(x)"\n'
+    )
+    # ``    equations = "`` = 18 chars; "y = sin(x)" starts at col 18.
+    # "sin" is at col 22-24 in the source (file col 22-24).
+    h = _hover_for(src, 1, 23)
+    assert h is not None
+    assert isinstance(h.contents, lsp.MarkupContent)
+    assert "sin(x)" in h.contents.value
+
+
+def test_hover_for_param_name() -> None:
+    src = (
+        'class A:\n'
+        '    width = Param(float, default=5)\n'
+        '    equations = "x = width"\n'
+    )
+    # ``    equations = "`` is 18 chars; "x = width" — "width" starts
+    # at file col 22.
+    h = _hover_for(src, 2, 24)
+    assert h is not None
+    assert "Param(float, default=5)" in h.contents.value
+
+
+def test_hover_for_unknown_name_returns_none() -> None:
+    src = (
+        'class A:\n'
+        '    equations = "x = blarp"\n'
+    )
+    # Cursor on "blarp".
+    h = _hover_for(src, 1, 24)
+    assert h is None
+
+
+def test_hover_for_outside_block_returns_none() -> None:
+    src = "x = 1\n"
+    assert _hover_for(src, 0, 0) is None
+
+
+def test_hover_for_cursor_on_whitespace_returns_none() -> None:
+    src = 'class A:\n    equations = "x  =  5"\n'
+    # Cursor on the gap between "x" and "=".
+    h = _hover_for(src, 1, 20)
+    assert h is None
+
+
+# =============================================================================
+# Server registration
+# =============================================================================
+
+
+def test_build_server_registers_completion_with_colon_trigger() -> None:
+    server = build_server()
+    # pygls 2.x exposes feature options on the protocol's feature
+    # manager. The completion options should declare ``:`` among the
+    # trigger characters (``.`` joined later for attribute access).
+    options = (
+        server.protocol.fm.feature_options.get(
+            lsp.TEXT_DOCUMENT_COMPLETION,
+        )
+    )
+    assert options is not None
+    assert ":" in options.trigger_characters
+
+
+def test_build_server_registers_hover_feature() -> None:
+    server = build_server()
+    features = server.protocol.fm.features
+    assert lsp.TEXT_DOCUMENT_HOVER in features
+
+
+def test_build_server_registers_completion_feature() -> None:
+    server = build_server()
+    features = server.protocol.fm.features
+    assert lsp.TEXT_DOCUMENT_COMPLETION in features
+
+
+def test_build_server_registers_definition_feature() -> None:
+    server = build_server()
+    features = server.protocol.fm.features
+    assert lsp.TEXT_DOCUMENT_DEFINITION in features
+
+
+# =============================================================================
+# _to_lsp_location adapter and _definition_for pipeline
+# =============================================================================
+
+
+def test_to_lsp_location_attaches_uri_and_range() -> None:
+    from scadwright.lsp.definition import DefinitionLocation
+
+    loc = DefinitionLocation(
+        start_line=2, start_col=4, end_line=2, end_col=24,
+    )
+    out = _to_lsp_location(loc, "file:///widget.py")
+    assert isinstance(out, lsp.Location)
+    assert out.uri == "file:///widget.py"
+    assert out.range.start.line == 2
+    assert out.range.start.character == 4
+    assert out.range.end.line == 2
+    assert out.range.end.character == 24
+
+
+def test_definition_for_param_jumps_to_assignment() -> None:
+    src = (
+        'class A:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+    )
+    # Cursor on "width" in the equations line.
+    loc = _definition_for(src, 2, 24, "file:///t.py")
+    assert loc is not None
+    assert loc.uri == "file:///t.py"
+    # The Param is on file line 1.
+    assert loc.range.start.line == 1
+    assert loc.range.start.character == 4
+
+
+def test_definition_for_auto_declared_jumps_to_first_line() -> None:
+    src = (
+        'class A:\n'
+        '    equations = """\n'
+        '    a = 1\n'
+        '    b = a + 2\n'
+        '    """\n'
+    )
+    # Cursor on "a" in the second equation line (file line 3).
+    loc = _definition_for(src, 3, 8, "file:///t.py")
+    assert loc is not None
+    # ``a = 1`` is on file line 2.
+    assert loc.range.start.line == 2
+
+
+def test_definition_for_curated_name_returns_none() -> None:
+    src = 'class A:\n    equations = "x = sin(0)"\n'
+    # Cursor on "sin".
+    loc = _definition_for(src, 1, 23, "file:///t.py")
+    assert loc is None
+
+
+def test_definition_for_outside_block_returns_none() -> None:
+    src = "x = 1\n"
+    assert _definition_for(src, 0, 0, "file:///t.py") is None
+
+
+def test_definition_for_non_python_uri_via_handler_returns_none() -> None:
+    # Sanity for the dispatch path: non-.py URIs short-circuit before
+    # any work. Test the handler indirectly via _definition_for being
+    # bypassed in build_server's on_definition. We can't easily call
+    # the handler directly without a real server context, so just
+    # confirm the helper returns None for clearly-irrelevant input.
+    src = "class A:\n    equations = ''\n"
+    assert _definition_for(src, 99, 0, "file:///t.py") is None
+
+
+# =============================================================================
+# Document symbol adapter and pipeline
+# =============================================================================
+
+
+def test_to_lsp_document_symbol_class_with_children() -> None:
+    from scadwright.lsp.symbols import DocumentSymbol as ScDocSym
+
+    sc = ScDocSym(
+        name="A",
+        kind="class",
+        detail=None,
+        start_line=0, start_col=0,
+        end_line=2, end_col=20,
+        selection_start_line=0, selection_start_col=6,
+        selection_end_line=0, selection_end_col=7,
+        children=(
+            ScDocSym(
+                name="width",
+                kind="variable",
+                detail="Param(float)",
+                start_line=1, start_col=4,
+                end_line=1, end_col=24,
+                selection_start_line=1, selection_start_col=4,
+                selection_end_line=1, selection_end_col=9,
+            ),
+        ),
+    )
+    out = _to_lsp_document_symbol(sc)
+    assert out.name == "A"
+    assert out.kind == lsp.SymbolKind.Class
+    assert out.range.start.line == 0
+    assert out.selection_range.start.character == 6
+    assert out.children is not None
+    assert len(out.children) == 1
+    assert out.children[0].kind == lsp.SymbolKind.Variable
+    assert out.children[0].detail == "Param(float)"
+
+
+def test_document_symbols_for_returns_outline() -> None:
+    src = (
+        'class A:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+    )
+    syms = _document_symbols_for(src)
+    assert len(syms) == 1
+    cls = syms[0]
+    assert cls.name == "A"
+    assert cls.kind == lsp.SymbolKind.Class
+    assert cls.children is not None
+    assert [c.name for c in cls.children] == ["width"]
+
+
+def test_document_symbols_for_invalid_python_returns_empty() -> None:
+    # Source that doesn't parse as Python — fall back to no symbols
+    # rather than raising.
+    src = "class A:\n    equations = \n"
+    assert _document_symbols_for(src) == []
+
+
+def test_document_symbols_for_no_classes_returns_empty() -> None:
+    assert _document_symbols_for("x = 1\n") == []
+
+
+def test_build_server_registers_document_symbol_feature() -> None:
+    server = build_server()
+    features = server.protocol.fm.features
+    assert lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL in features
+
+
+def test_completion_options_register_dot_trigger() -> None:
+    server = build_server()
+    options = server.protocol.fm.feature_options.get(
+        lsp.TEXT_DOCUMENT_COMPLETION,
+    )
+    assert options is not None
+    assert ":" in options.trigger_characters
+    assert "." in options.trigger_characters
+
+
+def test_completion_for_attribute_returns_target_class_params() -> None:
+    src = (
+        'class B:\n'
+        '    width = Param(float)\n'
+        '    height = Param(float)\n'
+        '    equations = "x = width"\n'
+        '\n'
+        'class A:\n'
+        '    b = Param(B)\n'
+        '    equations = "y = b.width"\n'
+    )
+    # Cursor right after the ``.`` on file line 7.
+    items = _completion_items_for(src, 7, 23)
+    labels = {it.label for it in items}
+    assert labels == {"width", "height"}
+
+
+def test_completion_for_attribute_no_class_match_returns_empty() -> None:
+    src = (
+        'class A:\n'
+        '    b = Param(Unrelated)\n'
+        '    equations = "y = b.attr"\n'
+    )
+    # Cursor right after the ``.`` — no class named ``Unrelated``
+    # in this file, so no items.
+    items = _completion_items_for(src, 2, 23)
+    assert items == []
+
+
+# =============================================================================
+# Rename
+# =============================================================================
+
+
+def test_build_server_registers_rename_feature() -> None:
+    server = build_server()
+    features = server.protocol.fm.features
+    assert lsp.TEXT_DOCUMENT_RENAME in features
+
+
+def test_rename_for_param_returns_workspace_edit() -> None:
+    from scadwright.lsp.server import _rename_for
+
+    src = (
+        'class A:\n'
+        '    width = Param(float)\n'
+        '    equations = """\n'
+        '    width > 0\n'
+        '    h = width + 2\n'
+        '    """\n'
+    )
+    # Cursor on ``width`` in ``width > 0`` — file line 3, col 5.
+    edit = _rename_for(src, 3, 5, "ww", "file:///t.py")
+    assert edit is not None
+    assert isinstance(edit, lsp.WorkspaceEdit)
+    edits = edit.changes["file:///t.py"]
+    # Param assignment + constraint + equation reference.
+    assert len(edits) == 3
+    for e in edits:
+        assert e.new_text == "ww"
+
+
+def test_rename_for_curated_returns_none() -> None:
+    from scadwright.lsp.server import _rename_for
+
+    src = (
+        'class A:\n'
+        '    equations = "x = sin(0)"\n'
+    )
+    # Cursor on ``sin``.
+    edit = _rename_for(src, 1, 23, "anything", "file:///t.py")
+    assert edit is None
+
+
+def test_rename_for_outside_block_returns_none() -> None:
+    from scadwright.lsp.server import _rename_for
+
+    src = "x = 1\n"
+    edit = _rename_for(src, 0, 0, "y", "file:///t.py")
+    assert edit is None

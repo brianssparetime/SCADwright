@@ -14,6 +14,23 @@ Subcommands:
     render SCRIPT [-o OUT.stl] [--variant NAME] [--openscad PATH]
         Build SCRIPT to a temp .scad, then invoke `openscad -o OUT.stl`
         to render it headless. Default OUT is SCRIPT.stl next to the script.
+
+    lsp
+        Run the SCADwright language server over stdio. Editors spawn
+        this subcommand with the project venv's `scadwright`. Requires
+        the `[lsp]` extra (`pip install 'scadwright[lsp]'`); without
+        it the subcommand exits non-zero with an install hint.
+
+    graph PATH [--format mermaid|json|dot] [--filter NAME] [--depth N]
+        Emit a dependency graph for a scadwright project. PATH may be
+        a directory (recursed) or a single Python file. Default
+        ``--format mermaid`` writes Mermaid ``graph TD`` source — pipe
+        into a renderer or embed in a README. ``--format json`` writes
+        a structured representation for downstream tooling.
+        ``--format dot`` writes Graphviz DOT source — pipe into ``dot
+        -Tsvg`` for projects too large for Mermaid layout. ``--filter
+        NAME`` focuses the graph on one class (with optional ``--depth
+        N`` to limit the radius).
 """
 
 from __future__ import annotations
@@ -120,6 +137,59 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_openscad_option(rend)
     _add_build_options(rend)
+
+    sub.add_parser(
+        "lsp",
+        help=(
+            "Run the SCADwright language server over stdio "
+            "(requires the [lsp] extra)"
+        ),
+    )
+
+    graph = sub.add_parser(
+        "graph",
+        help=(
+            "Emit a dependency graph for a scadwright project"
+        ),
+    )
+    graph.add_argument(
+        "path",
+        help=(
+            "Project directory (recursed) or single .py file"
+        ),
+    )
+    graph.add_argument(
+        "--format",
+        choices=["mermaid", "json", "dot"],
+        default="mermaid",
+        help=(
+            "Output format: 'mermaid' (default) for Markdown / "
+            "GitHub embedding, 'json' for downstream tooling, "
+            "'dot' for Graphviz layout on larger projects."
+        ),
+    )
+    graph.add_argument(
+        "--filter",
+        dest="focus",
+        default=None,
+        help=(
+            "Focus the graph on one Component / Spec / Design / "
+            "Variant. Match by class name, or by dotted id "
+            "(``module.ClassName``) when the bare name is "
+            "ambiguous."
+        ),
+    )
+    graph.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help=(
+            "Limit how far from the --filter focus the subgraph "
+            "extends (hop count in either direction). 0 shows "
+            "only the focus node; 1 shows direct neighbours; "
+            "default is unlimited. Requires --filter."
+        ),
+    )
 
     return parser
 
@@ -327,10 +397,78 @@ def _cmd_render(args: argparse.Namespace, unknown: list[str]) -> int:
     return 0
 
 
+def _cmd_lsp(args: argparse.Namespace, unknown: list[str]) -> int:
+    """Run the SCADwright language server over stdio.
+
+    Requires the ``[lsp]`` extra. When pygls is missing the
+    subcommand prints an install hint and exits non-zero so editor
+    configs that spawn ``scadwright lsp`` get an actionable error
+    rather than a Python traceback.
+    """
+    try:
+        import pygls  # noqa: F401
+    except ImportError:
+        print(
+            "error: scadwright lsp requires the 'lsp' extra. "
+            "Install with: pip install 'scadwright[lsp]'",
+            file=sys.stderr,
+        )
+        return 1
+    from scadwright.lsp.server import main as server_main
+    return server_main()
+
+
+def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
+    """Emit a dependency graph for the project rooted at
+    ``args.path``.
+
+    Single-file inputs are treated as one-module projects (the
+    file's parent acts as the implicit project root for module-path
+    computation).
+    """
+    from scadwright.graph.build import build_graph
+
+    target = Path(args.path)
+    if not target.exists():
+        print(f"error: path not found: {target}", file=sys.stderr)
+        return 2
+    if args.depth is not None and args.focus is None:
+        print(
+            "error: --depth requires --filter",
+            file=sys.stderr,
+        )
+        return 2
+    graph = build_graph(target)
+    for err_path, err_msg in graph.parse_errors:
+        print(
+            f"warning: skipped {err_path}: {err_msg}",
+            file=sys.stderr,
+        )
+    if args.focus is not None:
+        from scadwright.graph.filter import FocusNotFound, filter_graph
+        try:
+            graph = filter_graph(graph, args.focus, args.depth)
+        except FocusNotFound as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    if args.format == "json":
+        from scadwright.graph.render_json import render_json
+        sys.stdout.write(render_json(graph))
+    elif args.format == "dot":
+        from scadwright.graph.render_dot import render_dot
+        sys.stdout.write(render_dot(graph))
+    else:
+        from scadwright.graph.render_mermaid import render_mermaid
+        sys.stdout.write(render_mermaid(graph))
+    return 0
+
+
 _DISPATCH = {
     "build": _cmd_build,
     "preview": _cmd_preview,
     "render": _cmd_render,
+    "lsp": _cmd_lsp,
+    "graph": _cmd_graph,
 }
 
 

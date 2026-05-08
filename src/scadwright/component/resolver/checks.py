@@ -51,7 +51,7 @@ def _check_bool_in_arithmetic(
     if not bool_names:
         return
 
-    def _walk(node: ast.AST, raw: str, loc: str) -> None:
+    def _walk(node: ast.AST, raw: str, loc: str, source_index: int) -> None:
         # Arithmetic operand check: a Name in bool_names appearing as
         # the left or right of an arithmetic BinOp is a category error.
         if isinstance(node, ast.BinOp) and isinstance(node.op, _ARITHMETIC_BINOPS):
@@ -60,7 +60,9 @@ def _check_bool_in_arithmetic(
                     raise ValidationError(
                         f"{loc}: bool-tagged name `{side.id}` used as an "
                         f"arithmetic operand in `{raw}`; bools can be "
-                        f"tested in conditions but not used in arithmetic."
+                        f"tested in conditions but not used in arithmetic.",
+                        equations_source_index=source_index,
+                        equations_node=side,
                     )
         # Numeric-yielding call: a Name in bool_names passed to sin/sqrt
         # /min/etc. is similarly a category error.
@@ -75,18 +77,20 @@ def _check_bool_in_arithmetic(
                         f"{loc}: bool-tagged name `{arg.id}` passed to "
                         f"numeric-yielding call `{node.func.id}` in "
                         f"`{raw}`; bools can be tested in conditions but "
-                        f"not used as numeric arguments."
+                        f"not used as numeric arguments.",
+                        equations_source_index=source_index,
+                        equations_node=arg,
                     )
         for child in ast.iter_child_nodes(node):
-            _walk(child, raw, loc)
+            _walk(child, raw, loc, source_index)
 
     for eq in equations:
         loc = _classdef_loc(class_name, eq.source_line_index)
-        _walk(eq.lhs, eq.raw, loc)
-        _walk(eq.rhs, eq.raw, loc)
+        _walk(eq.lhs, eq.raw, loc, eq.source_line_index)
+        _walk(eq.rhs, eq.raw, loc, eq.source_line_index)
     for c in constraints:
         loc = _classdef_loc(class_name, c.source_line_index)
-        _walk(c.expr, c.raw, loc)
+        _walk(c.expr, c.raw, loc, c.source_line_index)
 
 
 def _check_override_rhs_evaluable(
@@ -116,7 +120,9 @@ def _check_override_rhs_evaluable(
             f"`default if {target_name} is None else {target_name}`, "
             f"`{target_name} if {target_name} is not None else default`, "
             f"or any other expression that yields a value when "
-            f"`{target_name}` is None."
+            f"`{target_name}` is None.",
+            equations_source_index=eq.source_line_index,
+            equations_node=eq.rhs,
         )
 
 
@@ -154,6 +160,11 @@ def _check_non_float_solver_target(
             # target=None. Allowed regardless of type.
             if classifications.get(i, ("", ""))[1] == "override":
                 continue
+            target_node = (
+                eq.lhs
+                if isinstance(eq.lhs, ast.Name) and eq.lhs.id == name
+                else eq.rhs
+            )
             raise ValidationError(
                 f"{_classdef_loc(class_name, eq.source_line_index)}: "
                 f"name `{name}` is tagged `:{typed_names[name]}` and "
@@ -162,7 +173,9 @@ def _check_non_float_solver_target(
                 f"optional-default pattern whose RHS yields a value "
                 f"when `{name}` is None (e.g., `?{name}:"
                 f"{typed_names[name]} = ?{name} or default`). "
-                f"Offending equation: `{eq.raw}`."
+                f"Offending equation: `{eq.raw}`.",
+                equations_source_index=eq.source_line_index,
+                equations_node=target_node,
             )
 
 
@@ -181,7 +194,9 @@ def _check_eq_placement(
     error rather than silently letting it be a constraint.
     """
 
-    def _walk(node: ast.AST, in_iftest: bool, raw: str, loc: str) -> None:
+    def _walk(
+        node: ast.AST, in_iftest: bool, raw: str, loc: str, source_index: int,
+    ) -> None:
         if isinstance(node, ast.Compare):
             for op in node.ops:
                 if isinstance(op, ast.Eq) and not in_iftest:
@@ -190,17 +205,19 @@ def _check_eq_placement(
                         f"comparison in `{raw}`; use `=` for an "
                         f"equation, `in (...)` for membership, or "
                         f"wrap in `if` to use as a comparison inside "
-                        f"a conditional expression."
+                        f"a conditional expression.",
+                        equations_source_index=source_index,
+                        equations_node=node,
                     )
             # Children of a Compare never become an IfExp.test on their
             # own, so propagate the flag unchanged.
             for child in ast.iter_child_nodes(node):
-                _walk(child, in_iftest, raw, loc)
+                _walk(child, in_iftest, raw, loc, source_index)
             return
         if isinstance(node, ast.IfExp):
-            _walk(node.test, True, raw, loc)
-            _walk(node.body, in_iftest, raw, loc)
-            _walk(node.orelse, in_iftest, raw, loc)
+            _walk(node.test, True, raw, loc, source_index)
+            _walk(node.body, in_iftest, raw, loc, source_index)
+            _walk(node.orelse, in_iftest, raw, loc, source_index)
             return
         # Comprehension generators carry `if` filter clauses that are
         # also Python-level `if` conditions — `==` inside them is fine.
@@ -209,27 +226,27 @@ def _check_eq_placement(
         )):
             # Element / key / value: not in an `if` test.
             if isinstance(node, ast.DictComp):
-                _walk(node.key, in_iftest, raw, loc)
-                _walk(node.value, in_iftest, raw, loc)
+                _walk(node.key, in_iftest, raw, loc, source_index)
+                _walk(node.value, in_iftest, raw, loc, source_index)
             else:
-                _walk(node.elt, in_iftest, raw, loc)
+                _walk(node.elt, in_iftest, raw, loc, source_index)
             for gen in node.generators:
-                _walk(gen.iter, in_iftest, raw, loc)
-                _walk(gen.target, in_iftest, raw, loc)
+                _walk(gen.iter, in_iftest, raw, loc, source_index)
+                _walk(gen.target, in_iftest, raw, loc, source_index)
                 # Each `if` clause is an `if`-condition.
                 for ifclause in gen.ifs:
-                    _walk(ifclause, True, raw, loc)
+                    _walk(ifclause, True, raw, loc, source_index)
             return
         for child in ast.iter_child_nodes(node):
-            _walk(child, in_iftest, raw, loc)
+            _walk(child, in_iftest, raw, loc, source_index)
 
     for eq in equations:
         loc = _classdef_loc(class_name, eq.source_line_index)
-        _walk(eq.lhs, False, eq.raw, loc)
-        _walk(eq.rhs, False, eq.raw, loc)
+        _walk(eq.lhs, False, eq.raw, loc, eq.source_line_index)
+        _walk(eq.rhs, False, eq.raw, loc, eq.source_line_index)
     for c in constraints:
         loc = _classdef_loc(class_name, c.source_line_index)
-        _walk(c.expr, False, c.raw, loc)
+        _walk(c.expr, False, c.raw, loc, c.source_line_index)
 
 
 def _check_unknown_function_calls(
@@ -275,7 +292,9 @@ def _check_unknown_function_calls(
                     raise ValidationError(
                         f"{loc}: cannot parse equation {record.raw!r}: "
                         f"unknown function {sub.func.id!r} (not a Param, "
-                        f"equation target, or curated math/builtin name)"
+                        f"equation target, or curated math/builtin name)",
+                        equations_source_index=record.source_line_index,
+                        equations_node=sub.func,
                     )
 
     for eq in equations:
@@ -315,7 +334,8 @@ def _check_self_reference(
             raise ValidationError(
                 f"{_classdef_loc(class_name, eq.source_line_index)}: "
                 f"equation {eq.raw!r}: self-referential and inconsistent "
-                f"(reduces to {sp.sstr(sp.Eq(lhs_expr, rhs_expr))})"
+                f"(reduces to {sp.sstr(sp.Eq(lhs_expr, rhs_expr))})",
+                equations_source_index=eq.source_line_index,
             )
 
 
@@ -344,7 +364,9 @@ def _check_adjusted_only_in_rules(
     """
     from scadwright.component.resolver.parsing import _ADJUSTED_FN_NAME
 
-    def _walk(node: ast.AST, raw: str, loc: str, context: str) -> None:
+    def _walk(
+        node: ast.AST, raw: str, loc: str, context: str, source_index: int,
+    ) -> None:
         for sub in ast.walk(node):
             if (
                 isinstance(sub, ast.Call)
@@ -357,16 +379,21 @@ def _check_adjusted_only_in_rules(
                     f"it in {context} {raw!r}. Adjustments are layered "
                     f"after equations resolve, so reading the adjusted "
                     f"value from inside the equation that defines it "
-                    f"would be circular."
+                    f"would be circular.",
+                    equations_source_index=source_index,
+                    equations_node=sub,
                 )
 
     for eq in equations:
         loc = _classdef_loc(class_name, eq.source_line_index)
-        _walk(eq.lhs, eq.raw, loc, "an equation")
-        _walk(eq.rhs, eq.raw, loc, "an equation")
+        _walk(eq.lhs, eq.raw, loc, "an equation", eq.source_line_index)
+        _walk(eq.rhs, eq.raw, loc, "an equation", eq.source_line_index)
     for adj in adjustments:
         loc = _classdef_loc(class_name, adj.source_line_index)
-        _walk(adj.rhs, adj.raw, loc, "an adjustment's right-hand side")
+        _walk(
+            adj.rhs, adj.raw, loc, "an adjustment's right-hand side",
+            adj.source_line_index,
+        )
 
 
 def _check_adjustment_uniformity(
@@ -405,7 +432,8 @@ def _check_adjustment_uniformity(
             f"adjustments must be the same class (all additive `+=`/"
             f"`-=` or all multiplicative `*=`/`/=`). If you need both, "
             f"introduce a derived name with one class and apply the "
-            f"other to the derivation."
+            f"other to the derivation.",
+            equations_source_index=adj.source_line_index,
         )
 
 
@@ -444,7 +472,9 @@ def _check_adjustment_rhs_no_adjusted_refs(
             f"{offender_loc}. An adjustment's RHS may only reference "
             f"unadjusted (equation-resolved) names. If you genuinely "
             f"need `{offender}`'s adjusted value, derive it as an "
-            f"equation first and adjust the derivation."
+            f"equation first and adjust the derivation.",
+            equations_source_index=adj.source_line_index,
+            equations_node=adj.rhs,
         )
 
 
@@ -491,7 +521,13 @@ def _check_mutual_inconsistency(
 
     if len(sympy_eqs) >= len(symbols):
         eqs_str = "; ".join(f"`{eq.raw}`" for eq in algebraic)
+        # Multi-line error: pick the lowest-indexed line as the primary
+        # carrier of the structured source-index so a single-line
+        # consumer has a definite anchor (the formatted message still
+        # names every line via ``_classdef_loc_multi``).
+        primary_index = min(eq.source_line_index for eq in algebraic)
         raise ValidationError(
             f"{_classdef_loc_multi(class_name, algebraic)}: equations are "
-            f"inconsistent: no solution to the system {eqs_str}"
+            f"inconsistent: no solution to the system {eqs_str}",
+            equations_source_index=primary_index,
         )

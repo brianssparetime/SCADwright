@@ -6,11 +6,15 @@ Three scanners share a common discipline (string-literal awareness,
 - ``_extract_name_annotations`` — strips the ``?`` sigil and ``:type``
   tags from a single equations line, returning the cleaned text plus
   the optional-name set and typed-name dict.
+  ``_extract_name_annotations_with_colmap`` adds a parallel
+  cleaned-col → input-col map.
 - ``_extract_optional_markers`` — backward-compat wrapper that returns
   just ``(cleaned, optional_names)``.
 - ``_split_equations_text`` — splits a multi-line ``equations``
   string into logical equation lines, honoring triple-quoted strings,
   bracket continuations, and ``\\``-newline continuations.
+  ``_split_logical_lines`` returns the same logical lines paired with
+  per-char raw-text offsets.
 - ``_bracket_depth`` — net bracket/paren/brace depth used by the
   splitter for line continuation.
 
@@ -24,6 +28,8 @@ they're about to use sympy.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 
 # =============================================================================
@@ -56,12 +62,12 @@ def _require_sympy():
 # =============================================================================
 
 
-def _extract_name_annotations(
+def _extract_name_annotations_with_colmap(
     eq_str: str,
-) -> tuple[str, set[str], dict[str, str]]:
-    """Strip ``?`` sigils and ``:type`` tags from an equations string.
+) -> tuple[str, set[str], dict[str, str], tuple[int, ...]]:
+    """Strip ``?`` sigils and ``:type`` tags and return a column map.
 
-    Returns ``(cleaned, optional_names, typed_names)``:
+    Returns ``(cleaned, optional_names, typed_names, colmap)``:
 
     - ``cleaned``: the input with every ``?`` and every ``:type``
       annotation stripped. The bare identifier remains in place.
@@ -71,6 +77,10 @@ def _extract_name_annotations(
     - ``typed_names``: identifier → type-name string for every
       identifier carrying a ``:type`` tag. Type-name validation
       against the allowlist happens downstream.
+    - ``colmap``: tuple of length ``len(cleaned)``; ``colmap[i]`` is
+      the column in ``eq_str`` from which ``cleaned[i]`` was taken.
+      Lets a caller map a position in the cleaned text back to the
+      column in the original input line.
 
     A hand-rolled scanner, not a regex, so string literals and ``#``
     comments are respected: a literal ``?`` or ``:`` inside ``"..."``
@@ -94,6 +104,7 @@ def _extract_name_annotations(
     bracket counting, so brackets inside them don't affect depth.
     """
     out: list[str] = []
+    colmap: list[int] = []  # parallel to out: input col for each output char
     optional: set[str] = set()
     typed: dict[str, str] = {}
     i = 0
@@ -104,6 +115,13 @@ def _extract_name_annotations(
     # slice colon; inside `{...}` `:` is a dict-key colon — both
     # suppress tag recognition.
     bracket_depth = 0
+
+    def _emit_span(start: int, end: int) -> None:
+        """Append ``eq_str[start:end]`` to ``out`` and record a colmap
+        entry for each char (input col = start + offset)."""
+        for k in range(end - start):
+            out.append(eq_str[start + k])
+            colmap.append(start + k)
 
     def _read_identifier(start: int) -> tuple[str, int]:
         """Read an identifier starting at ``start``; return (name, end)."""
@@ -142,9 +160,9 @@ def _extract_name_annotations(
         if c in ("'", '"') and eq_str[i:i + 3] == c * 3:
             end = eq_str.find(c * 3, i + 3)
             if end == -1:
-                out.append(eq_str[i:])
-                return "".join(out), optional, typed
-            out.append(eq_str[i:end + 3])
+                _emit_span(i, n)
+                return "".join(out), optional, typed, tuple(colmap)
+            _emit_span(i, end + 3)
             i = end + 3
             continue
 
@@ -158,17 +176,18 @@ def _extract_name_annotations(
                     j += 2
                 else:
                     j += 1
-            out.append(eq_str[i:min(j + 1, n)])
-            i = min(j + 1, n)
+            end_excl = min(j + 1, n)
+            _emit_span(i, end_excl)
+            i = end_excl
             continue
 
         # Comment — copy to end of line (rare in equations; handle anyway).
         if c == "#":
             eol = eq_str.find("\n", i)
             if eol == -1:
-                out.append(eq_str[i:])
-                return "".join(out), optional, typed
-            out.append(eq_str[i:eol])
+                _emit_span(i, n)
+                return "".join(out), optional, typed, tuple(colmap)
+            _emit_span(i, eol)
             i = eol
             continue
 
@@ -178,7 +197,8 @@ def _extract_name_annotations(
         if c == "?" and i + 1 < n and (eq_str[i + 1].isalpha() or eq_str[i + 1] == "_"):
             name, name_end = _read_identifier(i + 1)
             optional.add(name)
-            out.append(name)
+            # The bare identifier `name` came from eq_str[i+1 : name_end].
+            _emit_span(i + 1, name_end)
             i = _maybe_type_tag(name, name_end) if bracket_depth == 0 else name_end
             continue
 
@@ -191,7 +211,7 @@ def _extract_name_annotations(
         # aren't mis-read as tags.
         if c.isalpha() or c == "_":
             name, name_end = _read_identifier(i)
-            out.append(name)
+            _emit_span(i, name_end)
             i = _maybe_type_tag(name, name_end) if bracket_depth == 0 else name_end
             continue
 
@@ -206,9 +226,23 @@ def _extract_name_annotations(
 
         # Plain character.
         out.append(c)
+        colmap.append(i)
         i += 1
 
-    return "".join(out), optional, typed
+    return "".join(out), optional, typed, tuple(colmap)
+
+
+def _extract_name_annotations(
+    eq_str: str,
+) -> tuple[str, set[str], dict[str, str]]:
+    """Strip ``?`` sigils and ``:type`` tags from an equations string.
+
+    Wrapper around :func:`_extract_name_annotations_with_colmap` that
+    discards the column-mapping array. See that function for the full
+    semantics and edge cases.
+    """
+    cleaned, optional, typed, _colmap = _extract_name_annotations_with_colmap(eq_str)
+    return cleaned, optional, typed
 
 
 def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
@@ -225,6 +259,178 @@ def _extract_optional_markers(eq_str: str) -> tuple[str, set[str]]:
 # =============================================================================
 # Multi-line `equations = """..."""` splitter
 # =============================================================================
+
+
+@dataclass(frozen=True)
+class LogicalLine:
+    """A logical equation line plus its raw-text mapping.
+
+    ``cleaned`` is the stripped, joined text the per-line scanners
+    consume. ``cleaned_to_raw`` is a parallel array of length
+    ``len(cleaned)``: ``cleaned_to_raw[i]`` is the offset in the
+    original equations text where ``cleaned[i]`` came from.
+    ``raw_start`` and ``raw_end`` bracket the cleaned content
+    (``raw_start`` = first offset, ``raw_end`` = last offset + 1).
+
+    Bracket and ``\\`` continuations join multiple raw lines into
+    one logical line. In the bracket-continuation case the ``\\n``
+    becomes a ``" "`` in the cleaned text whose ``cleaned_to_raw``
+    entry is the position of the original ``\\n``. In the ``\\\\n``
+    case both characters are dropped from the cleaned text and have
+    no entry.
+
+    ``preceding_comment`` is the most recent immediately-preceding
+    whole-line ``#`` comment (leading ``#`` stripped) or ``None``.
+    """
+    cleaned: str
+    raw_start: int
+    raw_end: int
+    cleaned_to_raw: tuple[int, ...]
+    preceding_comment: str | None
+
+
+def _split_logical_lines(text: str) -> list[LogicalLine]:
+    """Split a multi-line ``equations`` string into logical lines plus
+    raw-offset metadata.
+
+    The string-and-comment splitters (``_split_equations_text``,
+    ``_split_equations_with_comments``) are thin wrappers around this
+    one. Callers that need to map a column in a cleaned line back to
+    the original equations text use the ``cleaned_to_raw`` array on
+    each ``LogicalLine``.
+
+    See ``_split_equations_with_comments`` for the boundary-and-
+    continuation rules; this function obeys the same ones.
+    """
+    lines: list[LogicalLine] = []
+    buf: list[str] = []
+    buf_offsets: list[int] = []  # parallel to buf: input-text offset per char
+    i = 0
+    n = len(text)
+    in_comment = False
+    pending_preceding: str | None = None
+
+    def _emit_span(start: int, end: int) -> None:
+        """Append ``text[start:end]`` to buf with parallel offsets."""
+        for k in range(end - start):
+            buf.append(text[start + k])
+            buf_offsets.append(start + k)
+
+    def _flush() -> None:
+        nonlocal pending_preceding
+        # Strip leading and trailing whitespace from buf, keeping
+        # buf_offsets aligned. Done by index slicing rather than
+        # ``"".join(buf).strip()`` so the offset array stays parallel.
+        left = 0
+        right = len(buf)
+        while left < right and buf[left].isspace():
+            left += 1
+        while right > left and buf[right - 1].isspace():
+            right -= 1
+        s = "".join(buf[left:right])
+        offsets = buf_offsets[left:right]
+        buf.clear()
+        buf_offsets.clear()
+        if not s:
+            # Blank logical line breaks any preceding-comment association.
+            pending_preceding = None
+            return
+        if s.startswith("#"):
+            # Whole-line comment: capture as the preceding comment for
+            # the next logical line. Overwrites any earlier pending
+            # comment — the closest one wins.
+            pending_preceding = s.lstrip("#").rstrip().lstrip()
+            return
+        lines.append(LogicalLine(
+            cleaned=s,
+            raw_start=offsets[0],
+            raw_end=offsets[-1] + 1,
+            cleaned_to_raw=tuple(offsets),
+            preceding_comment=pending_preceding,
+        ))
+        pending_preceding = None
+
+    while i < n:
+        c = text[i]
+
+        # Inside an end-of-line `#` comment: scan to newline, then end the
+        # logical line. A trailing backslash inside a comment does NOT
+        # continue the line (Python semantics).
+        if in_comment:
+            if c == "\n":
+                in_comment = False
+                _flush()
+                i += 1
+                continue
+            buf.append(c)
+            buf_offsets.append(i)
+            i += 1
+            continue
+
+        # Triple-quoted string — copy through the closing triple verbatim,
+        # newlines included.
+        if c in ("'", '"') and text[i:i + 3] == c * 3:
+            end = text.find(c * 3, i + 3)
+            if end == -1:
+                _emit_span(i, n)
+                i = n
+                break
+            _emit_span(i, end + 3)
+            i = end + 3
+            continue
+
+        # Single-line string literal — copy through the matching quote,
+        # honoring backslash escapes.
+        if c in ("'", '"'):
+            quote = c
+            j = i + 1
+            while j < n and text[j] != quote:
+                if text[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            end_excl = min(j + 1, n)
+            _emit_span(i, end_excl)
+            i = end_excl
+            continue
+
+        # Start of a comment: stay on this logical line until the next
+        # newline (handled above).
+        if c == "#":
+            in_comment = True
+            buf.append(c)
+            buf_offsets.append(i)
+            i += 1
+            continue
+
+        # Backslash continuation: `\` immediately before `\n` (outside
+        # strings and comments) swallows both, gluing this line to the
+        # next.
+        if c == "\\" and i + 1 < n and text[i + 1] == "\n":
+            i += 2
+            continue
+
+        # Newline outside strings/comments: continue the logical line if
+        # any bracket is open; otherwise flush.
+        if c == "\n":
+            depth = _bracket_depth("".join(buf))
+            if depth > 0:
+                buf.append(" ")
+                buf_offsets.append(i)
+                i += 1
+                continue
+            _flush()
+            i += 1
+            continue
+
+        buf.append(c)
+        buf_offsets.append(i)
+        i += 1
+
+    if in_comment:
+        in_comment = False
+    _flush()
+    return lines
 
 
 def _split_equations_text(text: str) -> list[str]:
@@ -250,7 +456,7 @@ def _split_equations_text(text: str) -> list[str]:
     survive — the per-line scanners that consume each entry already
     handle them.
     """
-    return [line for line, _ in _split_equations_with_comments(text)]
+    return [line.cleaned for line in _split_logical_lines(text)]
 
 
 def _split_equations_with_comments(
@@ -271,106 +477,7 @@ def _split_equations_with_comments(
     comment is available for the introspection API and the
     no-comment lint rule.
     """
-    lines: list[tuple[str, str | None]] = []
-    buf: list[str] = []
-    i = 0
-    n = len(text)
-    in_comment = False
-    pending_preceding: str | None = None
-
-    def _flush() -> None:
-        nonlocal pending_preceding
-        s = "".join(buf).strip()
-        buf.clear()
-        if not s:
-            # Blank logical line breaks any preceding-comment association.
-            pending_preceding = None
-            return
-        if s.startswith("#"):
-            # Whole-line comment: capture as the preceding comment for
-            # the next logical line. Overwrites any earlier pending
-            # comment — the closest one wins.
-            pending_preceding = s.lstrip("#").rstrip().lstrip()
-            return
-        lines.append((s, pending_preceding))
-        pending_preceding = None
-
-    while i < n:
-        c = text[i]
-
-        # Inside an end-of-line `#` comment: scan to newline, then end the
-        # logical line. A trailing backslash inside a comment does NOT
-        # continue the line (Python semantics).
-        if in_comment:
-            if c == "\n":
-                in_comment = False
-                _flush()
-                i += 1
-                continue
-            buf.append(c)
-            i += 1
-            continue
-
-        # Triple-quoted string — copy through the closing triple verbatim,
-        # newlines included.
-        if c in ("'", '"') and text[i:i + 3] == c * 3:
-            end = text.find(c * 3, i + 3)
-            if end == -1:
-                buf.append(text[i:])
-                i = n
-                break
-            buf.append(text[i:end + 3])
-            i = end + 3
-            continue
-
-        # Single-line string literal — copy through the matching quote,
-        # honoring backslash escapes.
-        if c in ("'", '"'):
-            quote = c
-            j = i + 1
-            while j < n and text[j] != quote:
-                if text[j] == "\\" and j + 1 < n:
-                    j += 2
-                else:
-                    j += 1
-            buf.append(text[i:min(j + 1, n)])
-            i = min(j + 1, n)
-            continue
-
-        # Start of a comment: stay on this logical line until the next
-        # newline (handled above).
-        if c == "#":
-            in_comment = True
-            buf.append(c)
-            i += 1
-            continue
-
-        # Backslash continuation: `\` immediately before `\n` (outside
-        # strings and comments) swallows both, gluing this line to the
-        # next.
-        if c == "\\" and i + 1 < n and text[i + 1] == "\n":
-            i += 2
-            continue
-
-        # Newline outside strings/comments: continue the logical line if
-        # any bracket is open; otherwise flush.
-        if c == "\n":
-            depth = _bracket_depth("".join(buf))
-            if depth > 0:
-                buf.append(" ")
-                i += 1
-                continue
-            _flush()
-            i += 1
-            continue
-
-        buf.append(c)
-        i += 1
-
-    if in_comment:
-        in_comment = False
-    _flush()
-    return lines
+    return [(line.cleaned, line.preceding_comment) for line in _split_logical_lines(text)]
 
 
 def _bracket_depth(s: str) -> int:
