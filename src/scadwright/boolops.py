@@ -117,13 +117,10 @@ def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
 
     # Local extension only when both anchors are planar.
     if a_anchor.kind == "planar" and b_anchor.kind == "planar":
+        # Tier 1: parametric extension wins on either side. Pick the
+        # side with the cleaner output (no Translate wrapper).
         extended_a = a.fuse_extend(a_anchor, eps)
         extended_b = b.fuse_extend(b_anchor, eps)
-        # Pick the side that produces the cleaner extension when both
-        # qualify: a face on the +axis side (top, rside, back) extends
-        # without a Translate wrapper; the −axis side (bottom, lside,
-        # front) needs one. Prefer the wrapper-free side. When both are
-        # equal-complexity, default to ``a``.
         chosen = _pick_simpler_extension(extended_a, extended_b)
         if chosen == "a":
             shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
@@ -133,10 +130,25 @@ def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
             shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
             placed_a = Translate(v=shift, child=a, source_location=loc)
             return union(placed_a, extended_b)
-        # chosen is None: neither side qualified, fall through to shift.
 
-    # Shift fallback: matches attach(fuse=True) behavior on shapes that
-    # don't qualify for local extension.
+        # Tier 2: neither side has parametric extension. Try the
+        # generic cross-section path on each side. cross_section_extend
+        # raises on degenerate contact, so a passing call is non-None.
+        extended_a = a.cross_section_extend(a_anchor, eps)
+        extended_b = b.cross_section_extend(b_anchor, eps)
+        chosen = _pick_simpler_extension(extended_a, extended_b)
+        if chosen == "a":
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=extended_a, source_location=loc)
+            return union(placed_a, b)
+        if chosen == "b":
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=a, source_location=loc)
+            return union(placed_a, extended_b)
+        # Both cross_section_extend calls returned None (defensive;
+        # should be unreachable for planar anchors). Fall through.
+
+    # Shift fallback: non-planar anchors land here.
     shift = _shift_for_anchors(a_anchor, b_anchor, True, eps)
     placed_a = Translate(v=shift, child=a, source_location=loc)
     return union(placed_a, b)

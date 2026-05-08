@@ -103,15 +103,15 @@ def test_attach_fuse_on_cylindrical_wall_falls_back_to_shift():
     assert bbox(with_fuse).center[1] < bbox(no_fuse).center[1]
 
 
-def test_attach_fuse_on_sphere_falls_back_to_shift():
-    """Sphere has bbox-derived planar anchors but no fuse_extend support
-    — falls back to shift. Bottom of sphere shifts down by eps."""
+def test_attach_fuse_on_sphere_raises_at_tangent_point():
+    """Spheres have no planar faces — every bbox-derived "face" is a
+    tangent point. The cross-section at any such plane is a single
+    point with no contact region. Phase 2 raises clearly rather than
+    silently producing an empty slab."""
+    from scadwright.errors import ValidationError
     floor = cube([40, 40, 2])
-    ball = sphere(r=5).attach(floor, fuse=True)
-    bb = bbox(ball)
-    # Sphere shifted entirely downward by eps: bottom at 1.99, top at 11.99.
-    assert bb.min[2] == pytest.approx(1.99)
-    assert bb.max[2] == pytest.approx(11.99)
+    with pytest.raises(ValidationError, match="tangent point"):
+        sphere(r=5).attach(floor, fuse=True)
 
 
 # --- Standalone fuse(...) function ---
@@ -182,12 +182,12 @@ def test_fuse_function_prefers_wrapper_free_side():
     assert isinstance(a_placed, _Translate)
 
 
-def test_fuse_function_falls_back_for_non_planar():
-    """Two non-planar / unsupported shapes: fuse falls back to shift,
-    matching the legacy attach(fuse=True) behavior."""
+def test_fuse_function_raises_at_sphere_tangent():
+    """Two spheres meeting at tangent points — every "face" anchor on
+    a sphere is a single tangent point, no planar contact. Cross-section
+    fuse raises clearly rather than producing an empty slab."""
+    from scadwright.errors import ValidationError
     s1 = sphere(r=5)
     s2 = sphere(r=5).up(10)
-    result = fuse(s1, s2, on="bottom", at="top")
-    # Sphere doesn't override fuse_extend. Shift fallback applied.
-    # Result is a union of two slightly-overlapped spheres.
-    assert isinstance(result, type(union(s1, s2)))  # smoke check: it's a Union
+    with pytest.raises(ValidationError, match="tangent point"):
+        fuse(s1, s2, on="bottom", at="top")

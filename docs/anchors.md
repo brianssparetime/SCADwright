@@ -88,12 +88,24 @@ When local extension applies:
 - `pylon.attach(floor, fuse=True)` — pylon's bottom extends into floor by eps; pylon's top stays exactly at the user-specified `z=10`.
 - `Counterbore(...).through(plate)` — the cutter's outer dimensions are preserved exactly, so `through()`'s coincidence detection on the plate's faces still works.
 
-### When local extension doesn't apply
+### Cross-section extension for non-parametric shapes
 
-`fuse=True` falls back to translating `self` by `eps` along the contact normal — the legacy bilateral shift. This affects:
+For planar anchors on shapes without a parametric extension lever — `rotate_extrude` end-caps, `Polyhedron` faces, results of `difference()` / `union()` / `intersection()`, custom Components without intrinsic extension — the framework falls back to a generic cross-section construction:
 
-- Non-planar interfaces. Either side has `kind="cylindrical"`, `"conical"`, or any non-`"planar"` anchor (e.g., a peg attached tangentially to a cylinder's `outer_wall`).
-- Shapes without intrinsic extension support — raw `Polyhedron`, custom Components without parametric extension lookups, results of `difference()` / `intersection()` / `hull()`.
+1. Aligns the anchor plane to z=0 with normal +Z.
+2. Takes `projection(cut=True)` to extract the 2D cross-section.
+3. `linear_extrude`s the cross-section by `eps`.
+4. Inverse-aligns and unions the slab into the shape.
+
+The result preserves the user-facing dimensions of the shape exactly — only the contact face moves by `eps`. The cost is one CGAL evaluation per fuse; for assemblies where this matters, use `disable_eps_fuse()` to opt out.
+
+The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases, and `Sphere.cross_section_extend` raises on every anchor (sphere has no planar surfaces, only tangent points).
+
+A documented limitation: a non-convex shape can have an anchor that passes the dot-product check but produces an empty cross-section in practice — a torus tangent point, two separated parts whose union bbox includes the gap. For these cases the fuse is silently a no-op (the same as `fuse=False`). Workarounds: restructure the geometry so the fuse anchor is on a convex face, wrap the assembly in `disable_eps_fuse()`, or hand-craft the eps overlap.
+
+### When neither extension path applies
+
+`fuse=True` falls back to translating `self` by `eps` along the contact normal — the legacy bilateral shift. This affects only **non-planar interfaces**: either side has `kind="cylindrical"`, `"conical"`, or any non-`"planar"` anchor (e.g., a peg attached tangentially to a cylinder's `outer_wall`).
 
 The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift-based fuse, not after.
 

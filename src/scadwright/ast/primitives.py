@@ -97,6 +97,25 @@ class Sphere(Node):
     fa: float | None = None
     fs: float | None = None
 
+    def cross_section_extend(self, anchor, eps: float):
+        """Spheres have no planar surfaces. Every bbox-derived "face"
+        anchor is a tangent point — the bbox check passes (anchor is on
+        the bbox boundary), but the actual surface at that plane is a
+        single point with zero area. Raise to surface this clearly
+        rather than emit a no-op slab.
+        """
+        if anchor.kind != "planar":
+            return None
+        from scadwright.errors import ValidationError
+        raise ValidationError(
+            f"cross-section fuse: anchor at {anchor.position} on Sphere "
+            f"is a tangent point, not a planar face. Spheres have no "
+            f"planar surfaces; the cross-section at any tangent plane "
+            f"is a single point with no contact region to fuse onto. "
+            f"For tangent attachment, place the sphere with .translate() "
+            f"and a small overlap of your own choosing."
+        )
+
 
 @dataclass(frozen=True)
 class Cylinder(Node):
@@ -128,6 +147,29 @@ class Cylinder(Node):
         """
         from scadwright.ast._edge_fillets import cylinder_chamfer
         return cylinder_chamfer(self, rim, size=size)
+
+    def cross_section_extend(self, anchor, eps: float):
+        """Cross-section extension on a cylinder, with an explicit
+        cone-apex check that the bbox-based detection can't catch.
+
+        For a cone with ``r2=0`` the top disc face has zero area but
+        the bbox at z=h is the full base disc — the dot-product check
+        passes spuriously. Detect r=0 at the requested side here and
+        raise with a cone-apex-specific message.
+        """
+        if anchor.kind != "planar":
+            return None
+        sign = 1 if anchor.normal[2] > 0 else -1
+        if (sign > 0 and self.r2 == 0) or (sign < 0 and self.r1 == 0):
+            from scadwright.errors import ValidationError
+            side = "top" if sign > 0 else "bottom"
+            raise ValidationError(
+                f"cross-section fuse: cone apex at {side} (radius=0); the "
+                f"bbox face at that plane is the full base disc, but the "
+                f"actual material is a single point with no planar contact "
+                f"region to fuse onto."
+            )
+        return super().cross_section_extend(anchor, eps)
 
     def fuse_extend(self, anchor, eps: float):
         """Locally extend this cylinder by ``eps`` along ``anchor``'s normal.

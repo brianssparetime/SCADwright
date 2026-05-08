@@ -211,11 +211,55 @@ class Node(
         anchors elsewhere on the shape unchanged.
 
         Default: ``None`` (this shape doesn't support local extension;
-        the caller falls back to the legacy bilateral shift). Subclasses
-        with a parametric extension lever (``Cube``, ``Cylinder`` planar
-        caps, ``LinearExtrude`` end-faces) override.
+        the caller falls back to ``cross_section_extend`` for planar
+        anchors, or the legacy shift for non-planar). Subclasses with a
+        parametric extension lever (``Cube``, ``Cylinder`` planar caps,
+        ``LinearExtrude`` end-faces) override.
         """
         return None
+
+    def cross_section_extend(self, anchor, eps: float):
+        """Generic local extension via projection + slab.
+
+        Aligns ``anchor.position`` to the origin and ``anchor.normal``
+        to +Z, takes ``projection(cut=True)`` to extract the 2D
+        cross-section, ``linear_extrude``s by ``eps``, applies the
+        inverse alignment, and unions the slab into self.
+
+        The result has the contact face moved out by ``eps`` along the
+        anchor normal while every other surface of the shape stays
+        exactly where the user put it.
+
+        Raises ``ValidationError`` if the anchor doesn't lie on the
+        shape's outermost face along its normal (per the bbox-based
+        check in ``_fuse_cross_section``). Returns ``None`` only if
+        ``anchor.kind`` isn't ``"planar"`` — defensive; the cascade
+        already gates on planarity.
+
+        Subclasses can override to raise on shape-specific degenerate
+        cases the bbox check misses (e.g., ``Cylinder`` with ``r=0``
+        on the apex side).
+        """
+        if anchor.kind != "planar":
+            return None
+        from scadwright.ast._fuse_cross_section import (
+            align_anchor_to_z_up,
+            validate_planar_anchor_for_cross_section,
+        )
+        from scadwright.boolops import union as _union
+        from scadwright.ast.transforms import MultMatrix
+
+        validate_planar_anchor_for_cross_section(self, anchor)
+        m = align_anchor_to_z_up(anchor)
+        m_inv = m.invert()
+        loc = self.source_location
+        slab = (
+            MultMatrix(matrix=m, child=self, source_location=loc)
+            .projection(cut=True)
+            .linear_extrude(height=eps)
+        )
+        slab = MultMatrix(matrix=m_inv, child=slab, source_location=loc)
+        return _union(self, slab)
 
     # --- placement helpers ---
 
@@ -375,6 +419,11 @@ class Node(
         if not orient:
             if planar_fuse:
                 extended = self.fuse_extend(self_anchor, eps)
+                if extended is None:
+                    # Parametric path didn't apply; fall through to the
+                    # generic cross-section path. Raises on degenerate
+                    # contact (anchor not on the shape's outer face).
+                    extended = self.cross_section_extend(self_anchor, eps)
                 if extended is not None:
                     shift = _shift_for_anchors(self_anchor, other_anchor, False, eps)
                     return Translate(v=shift, child=extended, source_location=loc)
@@ -392,6 +441,8 @@ class Node(
         )
         if planar_fuse:
             extended = child.fuse_extend(rotated_self_anchor, eps)
+            if extended is None:
+                extended = child.cross_section_extend(rotated_self_anchor, eps)
             if extended is not None:
                 shift = _shift_for_anchors(rotated_self_anchor, other_anchor, False, eps)
                 return Translate(v=shift, child=extended, source_location=loc)
