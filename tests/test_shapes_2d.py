@@ -6,6 +6,7 @@ from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
 from scadwright.shapes import (
     Arc,
+    CircularSegment,
     Keyhole,
     RoundedEndsArc,
     RoundedSlot,
@@ -162,3 +163,52 @@ def test_keyhole_slot_wider_than_head_raises():
 def test_keyhole_missing_param_raises():
     with pytest.raises(ValidationError):
         Keyhole(r_big=5, r_slot=2)
+
+
+# --- CircularSegment ---
+
+
+def test_circular_segment_radius_height():
+    s = CircularSegment(circle_r=10, height=4)
+    # chord_r² = h(2R - h) = 4 * 16 = 64 → chord_r = 8 → chord = 16.
+    assert s.chord == pytest.approx(16.0)
+    # angle: h = R(1 - cos(angle/2)) → cos(angle/2) = 1 - 4/10 = 0.6
+    # → angle/2 = acos(0.6) ≈ 53.13° → angle ≈ 106.26°.
+    assert s.angle == pytest.approx(2 * math.degrees(math.acos(0.6)))
+
+
+def test_circular_segment_radius_angle():
+    s = CircularSegment(circle_r=10, angle=60)
+    # h = 10 * (1 - cos(30°)) = 10(1 - √3/2) ≈ 1.34.
+    assert s.height == pytest.approx(10 * (1 - math.cos(math.radians(30))))
+    # chord = 2R sin(angle/2) = 20 sin(30°) = 10.
+    assert s.chord == pytest.approx(10.0)
+
+
+def test_circular_segment_chord_height():
+    s = CircularSegment(chord=12, height=4)
+    # chord_r² = h(2R - h) → 36 = 4(2R - 4) → 2R - 4 = 9 → R = 6.5.
+    assert s.circle_r == pytest.approx(6.5)
+
+
+def test_circular_segment_diameter_alias():
+    s = CircularSegment(circle_d=20, height=4)
+    assert s.circle_r == 10.0
+
+
+def test_circular_segment_semicircle():
+    s = CircularSegment(circle_r=10, angle=180)
+    assert s.height == pytest.approx(10.0)
+    assert s.chord == pytest.approx(20.0)
+
+
+def test_circular_segment_emits():
+    out = emit_str(CircularSegment(circle_r=10, height=4, fn=32))
+    assert "intersection" in out
+    assert "circle" in out
+    assert "square" in out
+
+
+def test_circular_segment_height_exceeds_diameter_raises():
+    with pytest.raises(ValidationError):
+        CircularSegment(circle_r=5, height=12)

@@ -33,7 +33,7 @@ from scadwright.composition_helpers import (
 )
 from scadwright.shapes import (
     Tube, Funnel, RoundedBox, UShapeChannel, FilletRing,
-    Arc, Sector, RoundedSlot, RoundedEndsArc,
+    Arc, Sector, CircularSegment, RoundedSlot, RoundedEndsArc,
     regular_polygon, rounded_rect, rounded_square,
     Helix, Spring,
     path_extrude,
@@ -551,6 +551,7 @@ PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)
 rounded_rect(20, 10, r=2)                         # rounded rectangle
 regular_polygon(sides=6, r=5)                     # n-gon
 Arc(r=10, angles=(0, 90), width=2)                # ring segment
+CircularSegment(circle_r=10, height=4)            # 2D segment (chord-cut disc; 2D analog of SphericalCap)
 RoundedSlot(length=20, width=4)                   # capsule/stadium
 Teardrop(r=3)                                     # FDM horizontal-hole profile
 Keyhole(r_big=5, r_slot=2, slot_length=10)        # wall-mount keyhole

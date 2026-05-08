@@ -104,6 +104,7 @@ from scadwright.shapes.three_d import (
 )
 from scadwright.shapes.two_d import (
     Arc,
+    CircularSegment,
     Keyhole,
     RoundedEndsArc,
     RoundedSlot,
@@ -126,6 +127,7 @@ __all__ = [
     "Capsule",
     "ChamferMask",
     "ChamferedBox",
+    "CircularSegment",
     "Counterbore",
     "Countersink",
     "DShaft",
