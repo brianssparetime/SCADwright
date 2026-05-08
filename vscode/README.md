@@ -1,22 +1,36 @@
 # SCADwright VSCode extension
 
-Two things this extension does:
+Three things this extension does:
 
-1. Adds **Kill / Preview / Render** icons to the editor title bar, so you can build and view a scadwright script without leaving VSCode.
-2. Colors the small equation language inside `equations = """..."""` blocks, so the `?` sigils, `:type` tags, math functions, and operators show up with their own colors instead of all looking like one string.
+1. **Language server**: spawns `scadwright lsp` to provide diagnostics, completion, hover, goto-definition, document symbols, and rename for `equations = """..."""` blocks. Errors appear as squiggles while you type, completion offers Param names and the curated math/builtins namespace, hover shows declared types and defaults.
+2. Adds **Kill / Preview / Render** icons to the editor title bar, so you can build and view a scadwright script without leaving VSCode.
+3. Colors the small equation language inside `equations = """..."""` blocks, so the `?` sigils, `:type` tags, math functions, and operators show up with their own colors instead of all looking like one string.
 
-The extension activates on any Python file. The icons only appear on files that have `import scadwright` or `from scadwright …`. The coloring only fires on assignments to the literal name `equations` at the start of a line.
+The extension activates on any Python file. The icons only appear on files that have `import scadwright` or `from scadwright …`. The coloring only fires on assignments to the literal name `equations` at the start of a line. The language server runs in the background on every Python file; it's harmless on non-scadwright files (no `equations` block → no diagnostics).
 
 ## Install
 
-Two options.
+The language server requires the `[lsp]` extra in your project's Python environment:
+
+```
+pip install 'scadwright[lsp]'
+```
+
+The extension uses `vscode-languageclient` from npm. Install it once before packaging or symlinking:
+
+```
+cd vscode
+npm install
+```
+
+Then choose one of:
 
 ### Option A: symlink (good for trying it out)
 
 Drops the live folder into VSCode's extensions directory. Edits to the extension take effect on the next "Reload Window," no build step needed.
 
 ```
-ln -s "$(pwd)/vscode" "$HOME/.vscode/extensions/scadwright-local.scadwright-vscode-0.1.0"
+ln -s "$(pwd)/vscode" "$HOME/.vscode/extensions/scadwright-local.scadwright-vscode-0.2.0"
 ```
 
 Then in VSCode: `Cmd+Shift+P` → `Developer: Reload Window`. To remove later, delete the symlink and reload the window.
@@ -34,21 +48,44 @@ Then:
 ```
 cd vscode
 vsce package
-code --install-extension scadwright-vscode-0.1.0.vsix
+code --install-extension scadwright-vscode-0.2.0.vsix
 ```
 
 Reload VSCode.
 
 If you'd rather not install `vsce` globally, `npx @vscode/vsce package` works too.
 
+### Skipping the language server
+
+If you only want the toolbar and coloring, set `scadwright.lsp.enable` to `false` in your VSCode settings. The extension then runs in TextMate-only mode and the `npm install` step isn't strictly required (the require for `vscode-languageclient` is wrapped — it'll log a warning and continue).
+
 ## Settings
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `scadwright.scadwrightCommand` | `scadwright` | Command to invoke for the SCADwright CLI. Use a full path if it isn't on `PATH`. |
+| `scadwright.scadwrightCommand` | `scadwright` | Command to invoke for the SCADwright CLI. Use a full path if it isn't on `PATH`. The LSP uses the same command unless `scadwright.lsp.enable` is `false`. |
 | `scadwright.openscadCommand` | `openscad` | Command to invoke OpenSCAD. |
 | `scadwright.variant` | `""` | Variant passed to `scadwright build --variant=…`. Empty means no flag. |
 | `scadwright.saveBeforeBuild` | `true` | Save the active file before running `scadwright build`. |
+| `scadwright.lsp.enable` | `true` | Run the SCADwright language server. Set to `false` for TextMate-only mode (toolbar and coloring only, no diagnostics or completion). |
+| `scadwright.lsp.trace.server` | `off` | Log JSON-RPC traffic between VSCode and the language server. Set to `messages` or `verbose` when reporting LSP issues. Output appears in the SCADwright output channel. |
+
+The language server's binary is auto-discovered. If you set `scadwright.scadwrightCommand` (in workspace, user, or folder settings), the LSP uses that path. Otherwise, it looks for `<workspaceRoot>/.venv/bin/scadwright` (or `.venv\Scripts\scadwright.exe` on Windows) before falling back to `scadwright` on `PATH`. The first-found binary wins across multi-root workspaces.
+
+## What the language server provides
+
+While editing an `equations = """..."""` block:
+
+- **Diagnostics**: every error the resolver raises at class-definition time (unknown function names, type-tag disagreements, mutual inconsistency, malformed adjustments, comma-broadcast mistakes, override-pattern unsafety) appears as a squiggle on the offending range, with the same message the runtime would print.
+- **Completion** at expression position (curated math/builtins, the surrounding class's `Param` declarations, bare-Name targets declared on earlier equation lines), after `:` (the inline type-tag allowlist), and after `.` (a Component-typed Param's own `Param` names — same-file only). Callables auto-insert parentheses.
+- **Hover** on any name: curated functions show signatures and brief descriptions; `Param`-declared names show their type, default, and `doc=` text; auto-declared targets show the equation line where they were first introduced.
+- **Goto-definition** on any name: jumps to the `name = Param(...)` assignment for declared Params, or to the equation line that first introduces an auto-declared bare-Name target.
+- **Document symbols** for outline view: each Component class with an equations block shows its declared Params nested underneath.
+- **Rename** on any renameable name: updates the `Param` assignment if applicable plus every reference inside the same class's equations strings, in one workspace edit.
+
+The language server runs on every Python file but only does work when it sees an `equations = ...` assignment. No user code is imported — the server parses the source via `ast.parse`, the same surface the runtime resolver uses.
+
+If pygls isn't installed (or `scadwright[lsp]` hasn't been pip-installed), the language server fails to start and a one-time install hint appears in the SCADwright output channel. The toolbar icons and coloring keep working regardless.
 
 ## What the icons do
 
@@ -112,4 +149,4 @@ To find the color name for any specific token, run `Developer: Inspect Editor To
 
 The coloring can't always tell when a `:` inside an equation belongs to a slice (`arr[start:int]`) or a dict key (`{i: ...}`) versus a `:type` tag, so a slice or dict-key colon followed by an identifier may briefly color the identifier as if it were a type tag. The actual equation parser handles this correctly; the visual mismatch is cosmetic.
 
-The extension provides coloring only. Validation, autocomplete on parameter names, and go-to-definition would need additional tooling beyond what coloring can do. A typo in a cardinality helper still surfaces when the file imports, with a clear error pointing at the offending line.
+The TextMate grammar provides only the coloring layer; semantic features (validation, autocomplete on parameter names, goto-definition, hover, rename) come from the language server, which understands the equations DSL the same way the runtime does. With the language server enabled, a typo in a cardinality helper surfaces as an inline squiggle while you type, not just at import time.

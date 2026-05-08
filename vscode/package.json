@@ -1,8 +1,8 @@
 {
   "name": "scadwright-vscode",
   "displayName": "SCADwright",
-  "description": "Preview, render, and manage OpenSCAD output for scadwright Python scripts.",
-  "version": "0.1.0",
+  "description": "Language server, preview/render commands, and equation-DSL coloring for scadwright Python scripts.",
+  "version": "0.2.0",
   "publisher": "scadwright-local",
   "engines": {
     "vscode": "^1.80.0"
@@ -14,6 +14,9 @@
   "activationEvents": [
     "onLanguage:python"
   ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
   "contributes": {
     "commands": [
       {
@@ -96,6 +99,17 @@
           "type": "boolean",
           "default": true,
           "description": "Save the active file before invoking scadwright build."
+        },
+        "scadwright.lsp.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the SCADwright language server on Python files (diagnostics, completion, hover, goto-definition, document symbols, rename for equations blocks). Disable to use the extension in TextMate-only coloring mode."
+        },
+        "scadwright.lsp.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Log JSON-RPC traffic between VSCode and the SCADwright language server. Set to 'messages' or 'verbose' when reporting LSP issues."
         }
       }
     },
