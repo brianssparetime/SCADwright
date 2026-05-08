@@ -79,4 +79,54 @@ def minkowski(*args) -> Minkowski:
     )
 
 
-__all__ = ["union", "difference", "intersection", "hull", "minkowski"]
+def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
+    """Combine ``a`` and ``b`` at coincident anchors with a small overlap.
+
+    ``at`` names an anchor on ``a``; ``on`` names an anchor on ``b``.
+    The two anchors' positions are aligned (no shift), and one side is
+    locally extended by ``eps`` along its anchor's normal so the union
+    stays manifold-clean against OpenSCAD's preview renderer.
+
+    Local extension preserves the user-facing dimensions and anchors of
+    the extended shape elsewhere — only the contact face moves. Symmetric
+    side selection: if ``a`` supports local extension along ``at``, that
+    side is extended; otherwise ``b`` is extended along ``on``.
+
+    When neither side supports local extension (the anchors aren't
+    planar, or the shapes lack a parametric extension lever — e.g. raw
+    Polyhedra, complex CSG results), falls back to translating ``a`` by
+    ``eps`` along ``b``'s anchor normal so they overlap. This matches
+    the legacy ``attach(fuse=True)`` behavior.
+
+    Returns ``union(extended_a, b)`` (or the symmetric / fallback form).
+    """
+    from scadwright.ast.placement import _resolve_attach_anchor, _shift_for_anchors
+    from scadwright.ast.transforms import Translate
+
+    loc = SourceLocation.from_caller()
+    a_anchor = _resolve_attach_anchor(a, at, "a", loc)
+    b_anchor = _resolve_attach_anchor(b, on, "b", loc)
+
+    # Local extension only when both anchors are planar.
+    if a_anchor.kind == "planar" and b_anchor.kind == "planar":
+        extended_a = a.fuse_extend(a_anchor, eps)
+        if extended_a is not None:
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=extended_a, source_location=loc)
+            return union(placed_a, b)
+        extended_b = b.fuse_extend(b_anchor, eps)
+        if extended_b is not None:
+            # Translate a onto b's unshifted anchor; b carries the eps
+            # extension on its end and the union closes the seam.
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=a, source_location=loc)
+            return union(placed_a, extended_b)
+
+    # Shift fallback: matches attach(fuse=True) behavior on shapes that
+    # don't qualify for local extension.
+    shift = _shift_for_anchors(a_anchor, b_anchor, True, eps)
+    placed_a = Translate(v=shift, child=a, source_location=loc)
+    return union(placed_a, b)
+
+
+__all__ = ["union", "difference", "intersection", "hull", "minkowski", "fuse"]

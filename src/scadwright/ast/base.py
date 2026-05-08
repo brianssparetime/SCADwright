@@ -335,7 +335,22 @@ class Node(
             other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)
         self_anchor = _resolve_attach_anchor(self, at, "self", loc)
 
+        # Local-extension fuse only applies when BOTH anchors are planar.
+        # Tangent-line contact (cube on cylinder wall, etc.) extends in
+        # the wrong direction relative to the curved surface, so those
+        # cases stay on the legacy shift mechanism.
+        planar_fuse = (
+            fuse
+            and self_anchor.kind == "planar"
+            and other_anchor.kind == "planar"
+        )
+
         if not orient:
+            if planar_fuse:
+                extended = self.fuse_extend(self_anchor, eps)
+                if extended is not None:
+                    shift = _shift_for_anchors(self_anchor, other_anchor, False, eps)
+                    return Translate(v=shift, child=extended, source_location=loc)
             shift = _shift_for_anchors(self_anchor, other_anchor, fuse, eps)
             return Translate(v=shift, child=self, source_location=loc)
 
@@ -348,6 +363,11 @@ class Node(
         rotated_self_anchor = rotated_anchors.get(
             at, rotated_anchors.get("bottom", self_anchor)
         )
+        if planar_fuse:
+            extended = child.fuse_extend(rotated_self_anchor, eps)
+            if extended is not None:
+                shift = _shift_for_anchors(rotated_self_anchor, other_anchor, False, eps)
+                return Translate(v=shift, child=extended, source_location=loc)
         shift = _shift_for_anchors(rotated_self_anchor, other_anchor, fuse, eps)
         return Translate(v=shift, child=child, source_location=loc)
 

@@ -96,13 +96,16 @@ def test_through_is_harmless_on_blind():
 
 
 def test_attach_fuse_extends_into_contact():
-    """fuse=True pushes self EPS into other."""
+    """fuse=True extends self's contact face into other by EPS, leaving
+    the opposite face at its declared position. Local extension on
+    Cube preserves the user-facing top dimension exactly."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10]).attach(floor, fuse=True)
     bb = bbox(pylon)
-    # Without fuse: bottom at z=2. With fuse: bottom at z=1.99 (pushed 0.01 into floor).
+    # Bottom extended into floor (1.99); top preserved at the declared 12.0
+    # (was 11.99 under the old global-shift mechanism).
     assert bb.min[2] == pytest.approx(1.99)
-    assert bb.max[2] == pytest.approx(11.99)
+    assert bb.max[2] == pytest.approx(12.0)
 
 
 def test_attach_fuse_false_is_default():
@@ -114,25 +117,35 @@ def test_attach_fuse_false_is_default():
 
 
 def test_attach_fuse_custom_eps():
+    """Custom eps controls the extension depth on the contact side; the
+    far face stays at its declared position."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10]).attach(floor, fuse=True, eps=0.05)
     bb = bbox(pylon)
     assert bb.min[2] == pytest.approx(1.95)
+    assert bb.max[2] == pytest.approx(12.0)  # top preserved
 
 
 def test_attach_fuse_bottom_face():
-    """fuse on bottom face pushes upward into other."""
+    """fuse on at='top' face: pendant's top face extends upward into
+    the ceiling, while the pendant's bottom stays at z=10 (preserved)."""
     ceiling = cube([40, 40, 2]).up(20)
     pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", at="top", fuse=True)
     bb = bbox(pendant)
-    # top face of pendant at z=20, pushed 0.01 up into ceiling -> z=20.01
+    # top face of pendant extended from z=20 up to z=20.01.
     assert bb.max[2] == pytest.approx(20.01)
+    # bottom face of pendant preserved at z=10 (was 10.01 under the
+    # old global-shift mechanism).
+    assert bb.min[2] == pytest.approx(10.0)
 
 
 def test_attach_fuse_side_face():
-    """fuse on a side face pushes into the side."""
+    """fuse on a side face: extension on the contact face only; the
+    opposite face stays at its declared position."""
     wall = cube([2, 40, 40])
     shelf = cube([20, 30, 3]).attach(wall, on="rside", at="lside", fuse=True)
     bb = bbox(shelf)
-    # Without fuse: lside at x=2. With fuse: pushed 0.01 into wall.
+    # Contact face (lside) extended into wall: x=1.99.
     assert bb.min[0] == pytest.approx(1.99)
+    # Opposite face (rside) preserved at x=22.0 (= 2 + 20).
+    assert bb.max[0] == pytest.approx(22.0)
