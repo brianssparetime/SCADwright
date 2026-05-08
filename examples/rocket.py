@@ -1,30 +1,30 @@
 """A 3D-printable rocket on a coiled-spring stand — scadwright brag.
 
-Total: ~50 lines of code in scadwright; ~325 in equivalent OpenSCAD.
+Total: ~45 lines of code in scadwright; ~325 in equivalent OpenSCAD.
 
 By component (scadwright / openscad):
 
 - Nose (Ogive Component → rotate_extrude):  ~3  / ~5
 - Body (Barrel arc-revolved bulge):         ~1  / ~10
 - Fins (polygon + Minkowski + attach):      ~14 / ~50
-- Nozzle (half-barrel via intersection):    ~4  / ~15
-- Helicoid (path_extrude + helix_path):     ~9  / ~120
+- Nozzle (Barrel + halve()):                ~1  / ~15
+- Helicoid (Helix + almond_profile):        ~5  / ~120
 - Base plate (filleted cube):               ~3  / ~10
 - Bolt-holes (M2 counterbores from ISO
   spec + 2x2 linear_copy + through()):      ~7  / ~25
 - Engraving (curved-meridian add_text):     ~4  / ~50
 
-Average: 6-7x reduction.
+Average: 7-8x reduction.
 
 Showcases:
 
 - Parabolic ogive nose via the ``Ogive`` Component (one line; the
   Component picks the meridian shape and emits a clean rotate_extrude).
-- Coiled-spring stem: almond cross-section (two mirrored circular
-  segments) path_extrude'd along a tapered helix_path with overhang=
-  to bury the endcaps in plate and body.
-- Half-barrel nozzle below the fin line: upper half of a fat Barrel,
-  intersected and dropped into place — flares outward going down.
+- Coiled-spring stem: ``Helix`` Component with custom ``wire_profile=``
+  (an ``almond_profile``), tapered ``r_end=``, and ``overhang=`` to
+  bury the tilted endcaps in the plate and body.
+- Half-barrel nozzle below the fin line: a fatter Barrel, ``.halve(z=1)``
+  keeps the upper half — flares outward going down.
 - Filleted M2-counterbored baseplate (Cube.fillet, Counterbore,
   nested linear_copy, through()).
 - Parabolic backswept fins: sampled polygon → linear_extrude →
@@ -38,15 +38,12 @@ Showcases:
 - Per-feature fragmentation (with resolution(fn=...), per-call fn=).
 """
 
-import math
-
 from scadwright import bbox, render, resolution
-from scadwright.boolops import difference, intersection, minkowski, union
+from scadwright.boolops import difference, minkowski, union
 from scadwright.composition_helpers import linear_copy
-from scadwright.primitives import cube, cylinder, polygon, sphere
+from scadwright.primitives import cube, polygon, sphere
 from scadwright.shapes import (
-    Barrel, Ogive, counterbore_for_screw, get_screw_spec, helix_path,
-    path_extrude,
+    Barrel, Helix, Ogive, almond_profile, counterbore_for_screw, get_screw_spec,
 )
 
 body_h, body_r = 60, 10
@@ -55,14 +52,10 @@ nozzle_h, nozzle_flare = 12, 3  # half-barrel nozzle below the fin line
 barrel_h = body_h - nozzle_h
 
 with resolution(fn=32):
-    # Body = upper Barrel (above the fin line); the nozzle below it is the
-    # upper half of a fat Barrel, intersected with a half-space and dropped
-    # into place — flares outward as it goes down to the rim.
+    # Body = upper Barrel; nozzle = upper half of a fatter Barrel, halved
+    # then lowered into place — flares outward going down to the rim.
     body = Barrel(h=barrel_h, end_r=body_r, bulge=body_bulge).up(nozzle_h)
-    nozzle = intersection(
-        Barrel(h=2*nozzle_h, end_r=body_r, bulge=nozzle_flare),
-        cube([4*body_r, 4*body_r, nozzle_h], center="xy").up(nozzle_h),
-    ).down(nozzle_h)
+    nozzle = Barrel(h=2*nozzle_h, end_r=body_r, bulge=nozzle_flare).down(nozzle_h).halve(z=1)
     # Parabolic ogive nose. r(z) = body_r * sqrt(1 - z/nose_h); the
     # Component samples the meridian and rotate_extrudes it.
     nose_h = 18
@@ -82,18 +75,14 @@ with resolution(fn=32):
     )
     plate = difference(plate_solid, holes.through(plate_solid, axis="z"))
 
-    # Tapered helix swept with an almond cross-section (two mirrored
-    # circular segments). overhang=chord_r centers the tilted endcaps
-    # on the plate/body joint planes, no fuse= needed.
-    n_turns, chord_r, sag, n_arc = 3, 1.5, 0.75, 8
-    seg_r = (chord_r**2 + sag**2) / (2 * sag)
-    half = math.asin(chord_r / seg_r)
-    wire = [(s * seg_r * math.sin(t), s * (seg_r * math.cos(t) - (seg_r - sag)))
-            for s in (+1, -1) for t in (half - 2*half*i/n_arc for i in range(n_arc))]
-    stem = path_extrude(wire, helix_path(
+    # Tapered Helix with almond cross-section. overhang=chord_r centers
+    # the tilted endcaps on the plate/body joint planes, no fuse= needed.
+    n_turns, chord_r, sag = 3, 1.5, 0.75
+    stem = Helix(
+        wire_profile=almond_profile(chord_r=chord_r, sag=sag),
         r=body_r - 2, r_end=4.0, pitch=stem_h/n_turns, turns=n_turns,
         overhang=chord_r, points_per_turn=64,
-    )).up(plate_thk)
+    ).up(plate_thk)
     stand = union(plate, stem).down(plate_thk + stem_h)
 
 # Parabolic-swept fins: polygon → linear_extrude → Minkowski sphere

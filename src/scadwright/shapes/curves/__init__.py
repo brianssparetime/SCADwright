@@ -10,6 +10,7 @@ from scadwright.shapes.curves.paths import (
 )
 from scadwright.shapes.curves.shapes_2d import bezier_2d, catmull_rom_2d
 from scadwright.shapes.curves.sweep import (
+    almond_profile,
     circle_profile,
     path_extrude,
     polygon_profile,
@@ -23,6 +24,7 @@ import scadwright.shapes.curves.transforms as _transforms  # noqa: F401
 __all__ = [
     "Helix",
     "Spring",
+    "almond_profile",
     "arc_path",
     "bezier_2d",
     "bezier_path",

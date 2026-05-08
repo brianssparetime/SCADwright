@@ -9,6 +9,7 @@ from scadwright.errors import ValidationError
 from scadwright.shapes.curves import (
     Helix,
     Spring,
+    almond_profile,
     arc_path,
     bezier_2d,
     bezier_path,
@@ -122,6 +123,39 @@ def test_circle_profile():
         assert math.sqrt(x**2 + y**2) == pytest.approx(5.0, abs=0.01)
 
 
+# --- almond_profile ---
+
+
+def test_almond_profile_dimensions():
+    pts = almond_profile(chord_r=1.5, sag=0.75, n_arc=8)
+    assert len(pts) == 16
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    assert max(xs) == pytest.approx(1.5, abs=0.01)
+    assert min(xs) == pytest.approx(-1.5, abs=0.01)
+    assert max(ys) == pytest.approx(0.75, abs=0.01)
+    assert min(ys) == pytest.approx(-0.75, abs=0.01)
+
+
+def test_almond_profile_ccw():
+    pts = almond_profile(chord_r=2.0, sag=1.0, n_arc=12)
+    n = len(pts)
+    area = 0.5 * sum(
+        pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1]
+        for i in range(n)
+    )
+    assert area > 0  # CCW winding
+
+
+def test_almond_profile_validation():
+    with pytest.raises(ValidationError, match="positive"):
+        almond_profile(chord_r=0, sag=0.5)
+    with pytest.raises(ValidationError, match="positive"):
+        almond_profile(chord_r=1.5, sag=-0.3)
+    with pytest.raises(ValidationError, match=">= 2"):
+        almond_profile(chord_r=1.5, sag=0.5, n_arc=1)
+
+
 # --- path_extrude ---
 
 
@@ -189,6 +223,39 @@ def test_helix_attributes():
     assert h.wire_r == 1
     assert h.pitch == 5
     assert h.turns == 3
+
+
+def test_helix_custom_wire_profile():
+    profile = almond_profile(chord_r=1.5, sag=0.5, n_arc=8)
+    h = Helix(wire_profile=profile, r=10, pitch=5, turns=2)
+    scad = emit_str(h)
+    assert "polyhedron" in scad
+
+
+def test_helix_taper_and_overhang():
+    h = Helix(
+        wire_profile=circle_profile(0.5, segments=12),
+        r=10, r_end=4, pitch=5, turns=2, overhang=2.5,
+    )
+    bb = bbox(h)
+    # overhang=2.5 extends the path past z=0 and z=10 by 2.5 each side.
+    assert bb.min[2] < -2.0
+    assert bb.max[2] > 12.0
+
+
+def test_helix_requires_wire_r_or_wire_profile():
+    h = Helix(r=10, pitch=5, turns=2)
+    with pytest.raises(ValidationError, match="wire_r .* wire_profile"):
+        emit_str(h)
+
+
+def test_helix_wire_r_and_wire_profile_mutually_exclusive():
+    h = Helix(
+        r=10, wire_r=1, pitch=5, turns=2,
+        wire_profile=circle_profile(0.5, segments=8),
+    )
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        emit_str(h)
 
 
 # --- Spring Component ---

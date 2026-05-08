@@ -99,6 +99,37 @@ def circle_profile(r: float, *, segments: int = 16) -> list[tuple[float, float]]
     ]
 
 
+def almond_profile(
+    chord_r: float, sag: float, *, n_arc: int = 8,
+) -> list[tuple[float, float]]:
+    """Almond / lens / vesica cross-section: two mirrored circular segments
+    arching above and below a shared chord on y=0.
+
+    ``chord_r`` is the half-chord (so total chord width is ``2*chord_r``);
+    ``sag`` is the maximum distance from the chord to either arc's apex
+    (so total thickness is ``2*sag``). Returns ``2*n_arc`` points
+    counter-clockwise — usable as a ``profile`` argument to
+    ``path_extrude``.
+    """
+    if chord_r <= 0 or sag <= 0:
+        raise ValidationError(
+            f"almond_profile: chord_r and sag must be positive, "
+            f"got chord_r={chord_r}, sag={sag}"
+        )
+    if n_arc < 2:
+        raise ValidationError(
+            f"almond_profile: n_arc must be >= 2, got {n_arc}"
+        )
+    seg_r = (chord_r * chord_r + sag * sag) / (2 * sag)
+    half = math.asin(chord_r / seg_r)
+    return [
+        (s * seg_r * math.sin(t),
+         s * (seg_r * math.cos(t) - (seg_r - sag)))
+        for s in (+1, -1)
+        for t in (half - 2 * half * i / n_arc for i in range(n_arc))
+    ]
+
+
 def square_profile(size, *, center: bool = True) -> list[tuple[float, float]]:
     """Square cross-section, four points counter-clockwise.
 

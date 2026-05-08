@@ -3,6 +3,7 @@
 from scadwright.shapes.curves import (
     Helix,
     Spring,
+    almond_profile,
     arc_path,
     bezier_2d,
     bezier_path,
@@ -206,6 +207,7 @@ __all__ = [
     "counterbore_for_screw",
     "countersink_for_screw",
     "gear_dimensions",
+    "almond_profile",
     "arc_path",
     "bezier_2d",
     "bezier_path",

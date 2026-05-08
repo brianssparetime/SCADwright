@@ -5,30 +5,58 @@ from __future__ import annotations
 import math
 
 from scadwright.component.base import Component
-from scadwright.component.params import Param
+from scadwright.errors import ValidationError
 from scadwright.shapes.curves.paths import helix_path
 from scadwright.shapes.curves.sweep import circle_profile, path_extrude
 
 
 class Helix(Component):
-    """Solid helix: a circular cross-section swept along a helical path.
+    """Solid helix: a 2D profile swept along a helical path.
 
-    The helix rises along the z-axis, centered on the origin.
+    The helix rises along the z-axis, centered on the origin. By default
+    the profile is a circle of radius ``wire_r``; pass ``wire_profile=``
+    (a list of ``(x, y)`` points, CCW) to use a custom cross-section.
+    ``r_end`` tapers the radius linearly from ``r`` (bottom) to
+    ``r_end`` (top); ``overhang`` extends the path past its nominal
+    endpoints (linearly extrapolating angle and tapered radius), useful
+    for burying the swept tube's endcap inside an adjacent solid.
+
+    ``wire_r`` and ``wire_profile`` are mutually exclusive — pass one.
     """
 
     equations = """
-        r, wire_r, pitch, turns > 0
+        r, pitch, turns > 0
+        ?wire_r > 0
+        ?r_end > 0
+        len(?wire_profile:list) >= 3
+        ?overhang = ?overhang or 0.0
+        overhang >= 0
         ?points_per_turn:int = ?points_per_turn or 36
     """
 
     def build(self):
+        if self.wire_profile is None and self.wire_r is None:
+            raise ValidationError(
+                "Helix: provide either wire_r (circular profile) or "
+                "wire_profile (custom 2D points)."
+            )
+        if self.wire_profile is not None and self.wire_r is not None:
+            raise ValidationError(
+                "Helix: wire_r and wire_profile are mutually exclusive."
+            )
+        ppt = self.points_per_turn
         path = helix_path(
             r=self.r,
+            r_end=self.r_end,
             pitch=self.pitch,
             turns=self.turns,
-            points_per_turn=self.points_per_turn,
+            overhang=self.overhang,
+            points_per_turn=ppt,
         )
-        profile = circle_profile(self.wire_r, segments=max(8, self.points_per_turn // 3))
+        if self.wire_profile is not None:
+            profile = self.wire_profile
+        else:
+            profile = circle_profile(self.wire_r, segments=max(8, ppt // 3))
         return path_extrude(profile, path)
 
 
