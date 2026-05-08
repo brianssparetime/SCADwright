@@ -129,6 +129,57 @@ class Cylinder(Node):
         from scadwright.ast._edge_fillets import cylinder_chamfer
         return cylinder_chamfer(self, rim, size=size)
 
+    def fuse_extend(self, anchor, eps: float):
+        """Locally extend this cylinder by ``eps`` along ``anchor``'s normal.
+
+        Supports the planar top and bottom disc anchors. Cylindrical
+        wall anchors (``kind="cylindrical"``) return ``None`` — there's
+        no parametric lever for radial extension here.
+
+        For a cone with ``r2=0`` (apex at top) extending the top is
+        meaningless (zero-area face); same for ``r1=0`` extending the
+        bottom. Both return ``None``.
+
+        For a cone with non-zero radii at both ends, bumping ``h`` makes
+        the cone slightly less steep — the apex angle changes by order
+        ``eps/h``, invisible inside the eps band where the union sits.
+        """
+        if anchor.kind != "planar":
+            return None
+        sign = 1 if anchor.normal[2] > 0 else -1
+        # Degenerate-apex check.
+        if sign > 0 and self.r2 == 0:
+            return None
+        if sign < 0 and self.r1 == 0:
+            return None
+
+        bumped = Cylinder(
+            h=self.h + eps,
+            r1=self.r1,
+            r2=self.r2,
+            center=self.center,
+            fn=self.fn,
+            fa=self.fa,
+            fs=self.fs,
+            source_location=self.source_location,
+        )
+
+        if self.center:
+            delta_z = sign * eps / 2.0
+        elif sign < 0:
+            delta_z = -eps
+        else:
+            delta_z = 0.0
+
+        if delta_z == 0.0:
+            return bumped
+        from scadwright.ast.transforms import Translate
+        return Translate(
+            v=(0.0, 0.0, delta_z),
+            child=bumped,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Polyhedron(Node):
