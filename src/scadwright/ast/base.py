@@ -198,6 +198,25 @@ class Node(
         values = tuple((None, v) for v in args) + tuple(sorted(kwargs.items()))
         return Echo(values=values, child=self, source_location=loc)
 
+    # --- fuse extension ---
+
+    def fuse_extend(self, anchor, eps: float):
+        """Return self extended by ``eps`` along ``anchor``'s outward normal,
+        or ``None`` if this shape doesn't support local extension.
+
+        Used by ``attach(fuse=True)`` and the standalone ``fuse(...)`` to
+        produce the small overlap that keeps a union manifold-clean
+        without shifting the entire shape — the eps geometry is added
+        locally at the interface, leaving the user-facing dimensions and
+        anchors elsewhere on the shape unchanged.
+
+        Default: ``None`` (this shape doesn't support local extension;
+        the caller falls back to the legacy bilateral shift). Subclasses
+        with a parametric extension lever (``Cube``, ``Cylinder`` planar
+        caps, ``LinearExtrude`` end-faces) override.
+        """
+        return None
+
     # --- placement helpers ---
 
     def center_bbox(self, axes=None) -> "Node":

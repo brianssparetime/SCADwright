@@ -37,6 +37,58 @@ class Cube(Node):
         from scadwright.ast._edge_fillets import cube_chamfer
         return cube_chamfer(self, edges, size=size)
 
+    def fuse_extend(self, anchor, eps: float):
+        """Locally extend this cube by ``eps`` along ``anchor``'s normal.
+
+        Bumps ``size[axis]`` by ``eps`` and translates so the opposite
+        face stays at its declared position. Per-axis center bool
+        controls the translate delta (centered cubes grow symmetrically
+        from the bump, so half the eps needs to be cancelled).
+
+        Returns ``None`` for non-planar anchors (cubes don't have any,
+        but defensive in case a caller passes one).
+        """
+        if anchor.kind != "planar":
+            return None
+        # Pick the axis the anchor's normal points along. For a true
+        # bbox face anchor this is exact; the max-|component| selection
+        # also tolerates small float drift from any computed anchor.
+        axis = max(range(3), key=lambda i: abs(anchor.normal[i]))
+        sign = 1 if anchor.normal[axis] > 0 else -1
+
+        new_size = list(self.size)
+        new_size[axis] += eps
+        bumped = Cube(
+            size=(new_size[0], new_size[1], new_size[2]),
+            center=self.center,
+            source_location=self.source_location,
+        )
+
+        # Translate so the OPPOSITE face stays put. A non-centered cube
+        # grows in the +axis direction from the origin; a centered cube
+        # grows symmetrically. Cases:
+        #   center=False, sign=+1: bumped already extends top, no translate.
+        #   center=False, sign=-1: shift -eps so the bottom moves out.
+        #   center=True,  sign=±1: bumped extended ±eps/2 either way; shift
+        #                          ±eps/2 to put the eps fully on the anchor side.
+        if self.center[axis]:
+            delta = sign * eps / 2.0
+        elif sign < 0:
+            delta = -eps
+        else:
+            delta = 0.0
+
+        if delta == 0.0:
+            return bumped
+        v = [0.0, 0.0, 0.0]
+        v[axis] = delta
+        from scadwright.ast.transforms import Translate
+        return Translate(
+            v=(v[0], v[1], v[2]),
+            child=bumped,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Sphere(Node):
