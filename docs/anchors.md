@@ -73,14 +73,35 @@ Pass `fuse=True` to `attach()` to add that overlap:
 pylon = cube([5, 5, 10]).attach(floor, fuse=True)
 ```
 
-For planar-to-planar fuses on `Cube`, `Cylinder` caps, and `linear_extrude` end-faces, the framework extends the contact face by `eps` (default 0.01 mm) **locally**, leaving the opposite face at its declared position:
+### When local extension applies
+
+Local extension activates only when **both** anchors have `kind="planar"` AND the side being extended is a shape the framework knows how to extend parametrically. Specifically:
+
+- `Cube` (any of the six bbox face anchors).
+- `Cylinder` planar caps (`top`, `bottom`).
+- `linear_extrude` end-cap anchors (`top`, `bottom`).
+
+These rules also apply through `Translate`, `Rotate`, and `Mirror` wrappers — `Cube.up(5).rotate([0, 90, 0])` still qualifies because the framework recurses through transforms to find the underlying primitive.
+
+When local extension applies:
 
 - `pylon.attach(floor, fuse=True)` — pylon's bottom extends into floor by eps; pylon's top stays exactly at the user-specified `z=10`.
 - `Counterbore(...).through(plate)` — the cutter's outer dimensions are preserved exactly, so `through()`'s coincidence detection on the plate's faces still works.
 
-For non-planar interfaces (cylindrical wall, sphere, etc.) and shapes without parametric extension support (raw polyhedra, custom Components), `fuse=True` falls back to a legacy bilateral shift — `self` translates by `eps` along the contact normal. The shift moves the entire shape, so the opposite face also drifts by `eps`. Cumulative-coincidence-sensitive operations should be done before the fuse for those cases.
+### When local extension doesn't apply
 
-The standalone `fuse(a, b, on=..., at=..., eps=0.01)` function in `scadwright.boolops` returns the union directly with the same machinery and supports symmetric side selection — if `a` doesn't qualify for local extension, `b` is tried.
+`fuse=True` falls back to translating `self` by `eps` along the contact normal — the legacy bilateral shift. This affects:
+
+- Non-planar interfaces. Either side has `kind="cylindrical"`, `"conical"`, or any non-`"planar"` anchor (e.g., a peg attached tangentially to a cylinder's `outer_wall`).
+- Shapes without intrinsic extension support — raw `Polyhedron`, custom Components without parametric extension lookups, results of `difference()` / `intersection()` / `hull()`.
+
+The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift-based fuse, not after.
+
+### `attach(fuse=True)` only extends `self`
+
+`attach()` returns `self` translated to land on `other`. When `fuse=True`, the framework tries to locally extend `self` along the contact face. It does **not** try to extend `other` — `other` isn't part of the returned value, so an extension on `other` would be invisible to downstream operations.
+
+For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., at=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
 
 ## Angular placement on cylindrical surfaces
 

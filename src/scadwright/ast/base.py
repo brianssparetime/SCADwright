@@ -288,6 +288,12 @@ class Node(
         translating ``self`` by ``eps`` along the contact normal,
         matching the legacy behavior.
 
+        ``attach()`` only attempts local extension on ``self``;
+        ``other`` isn't part of the returned value, so extending it
+        wouldn't help. For the symmetric case (extend whichever side
+        qualifies), use the ``fuse(a, b, on, at)`` free function in
+        ``scadwright.boolops``.
+
         Chain a directional helper for offset placement::
 
             peg.attach(plate).right(10)

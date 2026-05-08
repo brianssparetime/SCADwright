@@ -61,6 +61,35 @@ def test_attach_fuse_through_coincidence_preserved():
 # --- attach(fuse=True): non-planar fallback ---
 
 
+def test_attach_fuse_with_orient_uses_local_extension():
+    """attach(fuse=True, orient=True) on a planar interface uses local
+    extension via Rotate.fuse_extend's inverse-rotation recursion.
+    The contact face moves into the wall by eps; all other faces stay
+    at their declared world positions.
+
+    Geometry: orient rotates the peg around +Y so its bottom-normal
+    opposes wall.rside's +X. The bbox-derived "bottom" of the rotated
+    peg is the bbox −Z face (not the wall-normal direction), so the
+    local extension propagates along world −Z. With the old global
+    shift the peg would have shifted by eps in −X (wall normal); the
+    new local extension preserves the X range and extends Z instead.
+    The contrast is what proves the new mechanism is in use.
+    """
+    wall = cube([2, 40, 40])
+    peg = cube([5, 5, 10])
+    no_fuse = peg.attach(wall, on="rside", at="bottom", orient=True)
+    with_fuse = peg.attach(wall, on="rside", at="bottom", orient=True, fuse=True)
+    nb = bbox(no_fuse)
+    fb = bbox(with_fuse)
+    # X range unchanged: local extension does not shift along wall normal.
+    # (Old shift behavior would have moved both x edges by −0.01.)
+    assert fb.min[0] == pytest.approx(nb.min[0])
+    assert fb.max[0] == pytest.approx(nb.max[0])
+    # Z contact face extended by eps; far Z face preserved exactly.
+    assert fb.min[2] == pytest.approx(nb.min[2] - 0.01)
+    assert fb.max[2] == pytest.approx(nb.max[2])
+
+
 def test_attach_fuse_on_cylindrical_wall_falls_back_to_shift():
     """Cylinder outer_wall is kind='cylindrical' — Phase 1 doesn't apply.
     The old shift behavior is preserved exactly: peg is pushed radially
