@@ -106,6 +106,31 @@ def test_oblique_attach_on_curved_host_raises():
         peg.attach(hub, on="outer_wall", angle=0, fuse=True)
 
 
+def test_fuse_function_bridges_when_a_is_curved_host():
+    """fuse() is symmetric: bridges whether the curved side is a or b.
+    Here a (cylinder) is curved, b (peg) is planar — bridge fills the
+    inscription gap on a's outer wall."""
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5]).up(50)  # somewhere in space; bottom face faces -Z
+    # Configure anchors so peg.bottom (-Z) opposes hub.bottom (-Z)... no,
+    # use a coaxial pair: peg.bottom anti-parallel hub.top.
+    # Reverse: a=peg-rotated-onto-hub, b=hub. That uses b_curved branch.
+    # For a_curved branch, swap roles: a is hub (curved), b is peg.
+    # Need coaxial. Use hub.top (+Z, planar rim) as a's anchor — but
+    # planar isn't curved. Use outer_wall instead.
+    # Simplest: pre-orient the peg so its at-anchor normal opposes
+    # hub.outer_wall normal. cube.bottom normal is -Z; if we rotate peg
+    # 90° around -Y, peg.bottom normal becomes -X, anti-parallel to
+    # hub.outer_wall normal +X. But fuse() doesn't auto-orient. Use a
+    # peg whose normal already opposes by construction.
+    # Use peg.lside (normal -X) on hub.outer_wall (normal +X). Coaxial.
+    result = fuse(hub, peg, at="outer_wall", on="lside")
+    # a=hub is curved (outer_wall, kind=cylindrical), b=peg is planar
+    # (lside). Symmetric branch fires.
+    from scadwright.ast.csg import Difference
+    assert any(isinstance(c, Difference) for c in result.children)
+
+
 def test_oblique_fuse_on_curved_host_raises():
     """The standalone fuse() function applies the same coaxial check
     when b is the curved host."""

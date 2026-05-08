@@ -416,56 +416,39 @@ class Node(
         else:
             # orient=True: rotate self so at-normal opposes face-normal.
             target_normal = tuple(-c for c in other_anchor.normal)
-            # Already-aligned shortcut: when self_anchor.normal already
-            # equals target_normal, no rotation is needed. (The legacy
-            # _orient_child_to_normal does a needless 180° flip in this
-            # case which would invert the bridge_self_anchor's normal
-            # and trip the coaxial check.)
-            d_self_target = (
-                self_anchor.normal[0] * target_normal[0]
-                + self_anchor.normal[1] * target_normal[1]
-                + self_anchor.normal[2] * target_normal[2]
+            working_self = _orient_child_to_normal(
+                self, self_anchor.normal, target_normal, loc
             )
-            if d_self_target > 0.999:
-                working_self = self
-                working_self_anchor = self_anchor
+            rotated_anchors = anchors_from_bbox(_bbox(working_self))
+            working_self_anchor = rotated_anchors.get(
+                at, rotated_anchors.get("bottom", self_anchor)
+            )
+            if working_self is self:
+                # No rotation needed (self_anchor.normal already pointed
+                # at target_normal). At-anchor stays at its original
+                # position and normal.
                 bridge_self_anchor = self_anchor
             else:
-                working_self = _orient_child_to_normal(
-                    self, self_anchor.normal, target_normal, loc
+                # bbox-derived anchors carry axis-aligned normals that
+                # don't reflect the peg's orientation post-rotation. For
+                # the bridge dispatch we need the at-anchor's actual
+                # world-frame normal — apply the orient rotation matrix
+                # to self_anchor explicitly.
+                from scadwright.matrix import to_matrix
+                from scadwright.anchor import Anchor as _Anchor
+                import math as _math
+                rot = to_matrix(working_self)
+                new_pos = rot.apply_point(self_anchor.position)
+                new_norm = rot.apply_vector(self_anchor.normal)
+                nlen = _math.sqrt(sum(c * c for c in new_norm))
+                if nlen > 0:
+                    new_norm = tuple(c / nlen for c in new_norm)
+                bridge_self_anchor = _Anchor(
+                    position=new_pos,
+                    normal=new_norm,
+                    kind=self_anchor.kind,
+                    surface_params=self_anchor.surface_params,
                 )
-                rotated_anchors = anchors_from_bbox(_bbox(working_self))
-                working_self_anchor = rotated_anchors.get(
-                    at, rotated_anchors.get("bottom", self_anchor)
-                )
-                if working_self is self:
-                    # _orient_child_to_normal returned the child
-                    # unchanged (it does this for the d<-0.5 case as a
-                    # quirk — see test_orient_*_to_*_flips_peg coverage).
-                    # Without a Rotate wrapper the at-anchor stays at
-                    # its original position and normal.
-                    bridge_self_anchor = self_anchor
-                else:
-                    # bbox-derived anchors carry axis-aligned normals
-                    # that don't reflect the peg's orientation post-
-                    # rotation. For the bridge dispatch we need the at-
-                    # anchor's actual world-frame normal — apply the
-                    # orient rotation matrix to self_anchor explicitly.
-                    from scadwright.matrix import to_matrix
-                    from scadwright.anchor import Anchor as _Anchor
-                    import math as _math
-                    rot = to_matrix(working_self)
-                    new_pos = rot.apply_point(self_anchor.position)
-                    new_norm = rot.apply_vector(self_anchor.normal)
-                    nlen = _math.sqrt(sum(c * c for c in new_norm))
-                    if nlen > 0:
-                        new_norm = tuple(c / nlen for c in new_norm)
-                    bridge_self_anchor = _Anchor(
-                        position=new_pos,
-                        normal=new_norm,
-                        kind=self_anchor.kind,
-                        surface_params=self_anchor.surface_params,
-                    )
 
         # Curved-host bridge dispatch. Convex-outer cylindrical / conical
         # / spherical surfaces fill the inscription gap with a bridge

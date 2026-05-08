@@ -137,7 +137,7 @@ mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
 - **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
 - **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
 
-**Trust contract.** The framework can't verify that a Component-declared anchor is on the shape's surface, or that the declared `kind` matches the surface type at that position. If an author declares `kind="cylindrical"` on an anchor that's actually 50mm out in space, the bridge intersection produces wrong geometry without an error — this is the same trust boundary that already governs all anchor-driven operations. The bridge mechanism's failure mode on lying anchors is louder than Phase 1/2's (visible chunks of host material in unexpected places), but the contract is unchanged.
+**Trust contract.** The framework can't verify that a Component-declared anchor is on the shape's surface, or that the declared `kind` matches the surface type at that position. If an author declares `kind="cylindrical"` on an anchor that's actually 50mm out in space, the bridge difference produces wrong geometry without an error — this is the same trust boundary that already governs all anchor-driven operations. The bridge mechanism's failure mode on lying anchors is louder than Phase 1/2's (visible chunks of host material in unexpected places), but the contract is unchanged.
 
 ### When neither extension path applies
 

@@ -115,14 +115,17 @@ def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
         placed_a = Translate(v=shift, child=a, source_location=loc)
         return union(placed_a, b)
 
-    # Curved-host bridge dispatch. By convention ``b`` is the host (the
-    # ``on`` side); if b's on-anchor is convex-outer curved, bridge from
-    # a (the peg). Concave inner falls through (natural inscription);
-    # curved a with planar b also falls through (caller can swap args).
+    # Curved-host bridge dispatch. Symmetric across both sides: whichever
+    # side carries a convex-outer curved anchor is treated as the host;
+    # the other side is the peg. Concave inner (surface_params["inner"]
+    # =True) falls through to legacy shift on either side.
     from scadwright.ast._fuse_bridge import build_curved_bridge, coaxial_normals
+    a_curved = a_anchor.kind in ("cylindrical", "conical", "spherical")
     b_curved = b_anchor.kind in ("cylindrical", "conical", "spherical")
+    a_inner = bool(a_anchor.surface_param("inner", default=False))
     b_inner = bool(b_anchor.surface_param("inner", default=False))
     if b_curved and not b_inner:
+        # Standard convention: b is host, a is peg.
         if not coaxial_normals(a_anchor.normal, b_anchor.normal):
             from scadwright.errors import ValidationError
             raise ValidationError(
@@ -135,6 +138,26 @@ def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
         bridge = build_curved_bridge(a, a_anchor, b, b_anchor, unfused_shift, eps)
         if bridge is not None:
             placed_a = Translate(v=unfused_shift, child=a, source_location=loc)
+            return union(placed_a, b, bridge)
+    elif a_curved and not a_inner:
+        # Symmetric case: a is host, b is peg. Function still translates
+        # a (per its signature, a is the one that moves), so the bridge
+        # takes a-after-translation as host. Peg=b sits at its original
+        # position, no shift on the prism.
+        if not coaxial_normals(b_anchor.normal, a_anchor.normal):
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"fuse on a {a_anchor.kind} host (a) requires coaxial "
+                f"normals (b's on-anchor anti-parallel to a's at-anchor). "
+                f"Got a normal {a_anchor.normal}, b normal {b_anchor.normal}.",
+                source_location=loc,
+            )
+        unfused_shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+        placed_a = Translate(v=unfused_shift, child=a, source_location=loc)
+        bridge = build_curved_bridge(
+            b, b_anchor, placed_a, a_anchor, (0.0, 0.0, 0.0), eps
+        )
+        if bridge is not None:
             return union(placed_a, b, bridge)
 
     # Local extension only when both anchors are planar.
