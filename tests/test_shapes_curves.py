@@ -43,6 +43,42 @@ def test_helix_path_radius():
         assert r == pytest.approx(10.0, abs=0.01)
 
 
+def test_helix_path_taper():
+    path = helix_path(r=10, r_end=4, pitch=5, turns=2, points_per_turn=36)
+    # Endpoints lerp linearly: bottom at r=10, top at r=4.
+    assert math.sqrt(path[0][0]**2 + path[0][1]**2) == pytest.approx(10.0, abs=0.01)
+    assert math.sqrt(path[-1][0]**2 + path[-1][1]**2) == pytest.approx(4.0, abs=0.01)
+    # Midpoint at r = (10 + 4) / 2 = 7.
+    mid = path[len(path) // 2]
+    assert math.sqrt(mid[0]**2 + mid[1]**2) == pytest.approx(7.0, abs=0.05)
+
+
+def test_helix_path_overhang():
+    # Path extends symmetrically below z=0 and above z=turns*pitch.
+    path = helix_path(r=10, pitch=5, turns=2, overhang=2.5)
+    assert path[0][2] == pytest.approx(-2.5, abs=0.05)
+    assert path[-1][2] == pytest.approx(12.5, abs=0.05)
+    # Constant radius preserved across the extended range.
+    for x, y, z in path:
+        assert math.sqrt(x**2 + y**2) == pytest.approx(10.0, abs=0.01)
+
+
+def test_helix_path_overhang_with_taper():
+    # Taper extrapolates linearly past the nominal endpoints.
+    # total_height = turns*pitch = 10, eps = overhang/total_height = 0.25.
+    # At t=-0.25: r = 1.25*10 - 0.25*4 = 11.5
+    # At t=+1.25: r = -0.25*10 + 1.25*4 = 2.5
+    path = helix_path(r=10, r_end=4, pitch=5, turns=2, overhang=2.5)
+    assert math.sqrt(path[0][0]**2 + path[0][1]**2) == pytest.approx(11.5, abs=0.05)
+    assert math.sqrt(path[-1][0]**2 + path[-1][1]**2) == pytest.approx(2.5, abs=0.05)
+
+
+def test_helix_path_overhang_negative_radius_raises():
+    # Overhang large enough to extrapolate the radius past zero must raise.
+    with pytest.raises(ValidationError, match="non-positive"):
+        helix_path(r=10, r_end=2, pitch=5, turns=2, overhang=20)
+
+
 def test_bezier_path_endpoints():
     pts = [(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)]
     path = bezier_path(pts, steps=10)

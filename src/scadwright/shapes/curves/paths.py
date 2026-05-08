@@ -15,25 +15,54 @@ def helix_path(
     pitch: float,
     turns: float,
     *,
+    r_end: float | None = None,
+    overhang: float = 0.0,
     points_per_turn: int = 36,
 ) -> list[tuple[float, float, float]]:
     """Generate a helical path.
 
     The helix is centered on the z-axis, starting at (r, 0, 0) and
-    rising in +z.
+    rising in +z over a nominal range of ``turns * pitch`` z and
+    ``turns * 2π`` angle.
 
-    ``r`` is the helix radius, ``pitch`` is the z-rise per full turn,
-    and ``turns`` is the number of turns (fractional values allowed).
+    ``r`` is the helix radius at the start, ``pitch`` is the z-rise per
+    full turn, and ``turns`` is the number of turns (fractional values
+    allowed). When ``r_end`` is given the radius lerps linearly from
+    ``r`` at the bottom to ``r_end`` at the top, producing a tapered
+    spiral (use ``r_end < r`` for a funnel that constricts upward,
+    ``r_end > r`` for one that flares).
+
+    ``overhang`` extends the path past the nominal start and end by the
+    given z distance on each side, continuing the same helix (angle
+    and tapered radius extrapolated linearly). Useful when sweeping a
+    profile to bury the endcap inside an adjacent solid and avoid a
+    visible seam at the joint.
     """
-    total_points = max(2, int(turns * points_per_turn) + 1)
+    if r_end is None:
+        r_end = r
     total_angle = turns * 2 * math.pi
     total_height = turns * pitch
+    if overhang and total_height <= 0:
+        raise ValidationError(
+            f"helix_path: overhang requires non-zero total_height "
+            f"(turns * pitch); got turns={turns}, pitch={pitch}"
+        )
+    eps = overhang / total_height if total_height > 0 else 0.0
+    ext = 1 + 2 * eps  # extended t-range spans (1 + 2*eps) units
+    total_points = max(2, int(turns * ext * points_per_turn) + 1)
     points = []
     for i in range(total_points):
-        t = i / (total_points - 1)
+        u = i / (total_points - 1)            # u ∈ [0, 1] over extended path
+        t = -eps + u * ext                     # t ∈ [-eps, 1 + eps]
+        rt = (1 - t) * r + t * r_end
+        if rt <= 0:
+            raise ValidationError(
+                f"helix_path: extrapolated radius is non-positive ({rt:.4f}) "
+                f"at overhang={overhang}; reduce overhang or moderate the taper."
+            )
         angle = t * total_angle
         z = t * total_height
-        points.append((r * math.cos(angle), r * math.sin(angle), z))
+        points.append((rt * math.cos(angle), rt * math.sin(angle), z))
     return points
 
 
