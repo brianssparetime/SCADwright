@@ -90,28 +90,45 @@ def test_attach_fuse_with_orient_uses_local_extension():
     assert fb.max[2] == pytest.approx(nb.max[2])
 
 
-def test_attach_fuse_on_cylindrical_wall_falls_back_to_shift():
-    """Cylinder outer_wall is kind='cylindrical' — Phase 1 doesn't apply.
-    The old shift behavior is preserved exactly: peg is pushed radially
-    inward by eps."""
+def test_attach_fuse_on_cylindrical_wall_raises_oblique():
+    """attach(fuse=True) on a curved host without coaxial normals (no
+    orient=True, no manual alignment) is oblique — Phase 3 raises rather
+    than silently shifting in a direction that doesn't match the surface
+    geometry."""
+    from scadwright.errors import ValidationError
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    no_fuse = peg.attach(hub, on="outer_wall", angle=90)
-    with_fuse = peg.attach(hub, on="outer_wall", angle=90, fuse=True)
-    # Fuse pushes peg toward the cylinder axis along the rotated normal.
-    # At angle=90, that's the -y direction.
-    assert bbox(with_fuse).center[1] < bbox(no_fuse).center[1]
+    with pytest.raises(ValidationError, match="coaxial normals"):
+        peg.attach(hub, on="outer_wall", angle=90, fuse=True)
 
 
-def test_attach_fuse_on_sphere_raises_at_tangent_point():
-    """Spheres have no planar faces — every bbox-derived "face" is a
-    tangent point. The cross-section at any such plane is a single
-    point with no contact region. Phase 2 raises clearly rather than
-    silently producing an empty slab."""
-    from scadwright.errors import ValidationError
+def test_attach_fuse_on_cylindrical_wall_with_orient_bridges():
+    """With orient=True, peg's at-normal opposes host's on-normal so the
+    bridge dispatch fires. Result: union(placed_peg, bridge) where the
+    bridge fills the inscription gap between peg's flat face and the
+    cylinder's curved surface."""
+    from scadwright.ast.csg import Difference, Union
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    result = peg.attach(hub, on="outer_wall", angle=90, orient=True, fuse=True)
+    # Result is union(placed_peg, bridge_difference). Top-level Union.
+    assert isinstance(result, Union)
+    # One of the children should be a Difference (the bridge = prism - host).
+    assert any(isinstance(c, Difference) for c in result.children)
+
+
+def test_attach_fuse_on_sphere_to_planar_floor_falls_back_to_shift():
+    """Sphere's bbox-derived anchors are now kind='spherical'. With a
+    planar floor (kind='planar'), neither side qualifies for planar
+    extension, so attach falls through to the legacy shift. No raise."""
     floor = cube([40, 40, 2])
-    with pytest.raises(ValidationError, match="tangent point"):
-        sphere(r=5).attach(floor, fuse=True)
+    # Should not raise.
+    result = sphere(r=5).attach(floor, fuse=True)
+    # Sphere's bbox bottom is at z=-r=-5; floor's top is at z=2; sphere
+    # gets translated so its bottom meets floor top with eps offset.
+    bb = bbox(result)
+    # Sphere top should be at z = floor_top + 2r - eps = 2 + 10 - 0.01.
+    assert bb.max[2] == pytest.approx(11.99)
 
 
 # --- Standalone fuse(...) function ---
@@ -182,12 +199,14 @@ def test_fuse_function_prefers_wrapper_free_side():
     assert isinstance(a_placed, _Translate)
 
 
-def test_fuse_function_raises_at_sphere_tangent():
-    """Two spheres meeting at tangent points — every "face" anchor on
-    a sphere is a single tangent point, no planar contact. Cross-section
-    fuse raises clearly rather than producing an empty slab."""
-    from scadwright.errors import ValidationError
+def test_fuse_function_two_spheres_bridges():
+    """Two spheres tangent: b's anchor is kind='spherical' so the bridge
+    dispatch fires from a (peg) into b (host). Bridge = prism - b. Returns
+    union(placed_a, b, bridge)."""
+    from scadwright.ast.csg import Difference, Union
     s1 = sphere(r=5)
     s2 = sphere(r=5).up(10)
-    with pytest.raises(ValidationError, match="tangent point"):
-        fuse(s1, s2, on="bottom", at="top")
+    result = fuse(s1, s2, on="bottom", at="top")
+    assert isinstance(result, Union)
+    # union(placed_a, b, bridge) — bridge is a Difference.
+    assert any(isinstance(c, Difference) for c in result.children)

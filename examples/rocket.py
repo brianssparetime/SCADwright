@@ -81,10 +81,9 @@ with resolution(fn=32):
 # Three swept-leading-edge fins, mounted flush with the body bottom.
 # Wedge's right-triangular profile becomes the fin; rotate so base_h
 # runs along the body axis. at="lside" puts the body-facing face on
-# the cylinder wall. The fillet rounds all three corners — to keep the
-# rounded body-side corner from leaving a gap, we read the post-rotate
-# axial extent so attach centers correctly, then push the fin radially
-# inward by the fillet so the body-side curve embeds in the wall.
+# the cylinder wall. The Minkowski-edged fin is a polyhedron whose
+# projection() trips CGAL — so fuse=False here, with a manual radial
+# push by fin_fillet to embed the body-side curve into the wall.
 fin_fillet, edge_r = 2, 0.8
 fin_blank = minkowski(
     Wedge(base_w=14 - 2*edge_r, base_h=22 - 2*edge_r, thk=2 - 2*edge_r,
@@ -95,7 +94,6 @@ fin = (
     fin_blank.attach(
         body, on="outer_wall", at="lside",
         at_z=bbox(fin_blank).size[2] / 2 - body_h / 2,
-        fuse=True,
     ).left(fin_fillet)
 )
 fins = fin.rotate_copy(angle=120, n=3, axis=[0, 0, 1])

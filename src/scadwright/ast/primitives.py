@@ -97,25 +97,6 @@ class Sphere(Node):
     fa: float | None = None
     fs: float | None = None
 
-    def cross_section_extend(self, anchor, eps: float):
-        """Spheres have no planar surfaces. Every bbox-derived "face"
-        anchor is a tangent point — the bbox check passes (anchor is on
-        the bbox boundary), but the actual surface at that plane is a
-        single point with zero area. Raise to surface this clearly
-        rather than emit a no-op slab.
-        """
-        if anchor.kind != "planar":
-            return None
-        from scadwright.errors import ValidationError
-        raise ValidationError(
-            f"cross-section fuse: anchor at {anchor.position} on Sphere "
-            f"is a tangent point, not a planar face. Spheres have no "
-            f"planar surfaces; the cross-section at any tangent plane "
-            f"is a single point with no contact region to fuse onto. "
-            f"For tangent attachment, place the sphere with .translate() "
-            f"and a small overlap of your own choosing."
-        )
-
 
 @dataclass(frozen=True)
 class Cylinder(Node):

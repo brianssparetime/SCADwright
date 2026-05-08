@@ -148,15 +148,19 @@ def test_cylinder_cone_apex_bottom_cross_section_raises():
         cone.cross_section_extend(apex, 0.01)
 
 
-# --- Sphere tangent-point override ---
+# --- Sphere anchor kind ---
 
 
-def test_sphere_cross_section_raises():
-    """Sphere has no planar faces — every bbox face is a tangent point."""
+def test_sphere_anchors_are_spherical():
+    """Sphere's bbox-derived anchors carry kind='spherical' with the
+    radius in surface_params. The Phase 2 cross_section path is bypassed
+    for sphere; the curved-host bridge dispatch handles it instead."""
+    from scadwright.anchor import get_node_anchors
     s = sphere(r=5)
-    bottom = Anchor(position=(0, 0, -5), normal=(0, 0, -1), kind="planar")
-    with pytest.raises(ValidationError, match="tangent point"):
-        s.cross_section_extend(bottom, 0.01)
+    anchors = get_node_anchors(s)
+    bottom = anchors["bottom"]
+    assert bottom.kind == "spherical"
+    assert bottom.surface_param("radius") == 5.0
 
 
 # --- Cascade behavior in attach() ---

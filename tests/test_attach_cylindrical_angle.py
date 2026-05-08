@@ -79,15 +79,14 @@ def test_cylindrical_angle_with_orient_composes():
     assert "rotate(" in scad
 
 
-def test_cylindrical_angle_with_fuse_offsets_along_rotated_normal():
-    """``fuse=True`` pushes self into the contact face along the rotated
-    anchor normal (radial direction at the rotated angle)."""
+def test_cylindrical_angle_with_fuse_requires_orient():
+    """``fuse=True`` on a cylindrical wall now goes through the bridge
+    mechanism, which requires coaxial normals. Without orient=True (or
+    manual alignment), the call is oblique and raises."""
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    no_fuse = peg.attach(hub, on="outer_wall", angle=90)
-    with_fuse = peg.attach(hub, on="outer_wall", angle=90, fuse=True)
-    # Fuse pushes peg radially inward by eps. With angle=90, that's -y.
-    assert bbox(with_fuse).center[1] < bbox(no_fuse).center[1]
+    with pytest.raises(ValidationError, match="coaxial normals"):
+        peg.attach(hub, on="outer_wall", angle=90, fuse=True)
 
 
 def test_cylindrical_angle_rejects_radius():

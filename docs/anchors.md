@@ -99,7 +99,9 @@ For planar anchors on shapes without a parametric extension lever — `rotate_ex
 
 The result preserves the user-facing dimensions of the shape exactly — only the contact face moves by `eps`. The cost is one CGAL evaluation per fuse; for assemblies where this matters, use `disable_eps_fuse()` to opt out.
 
-The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases, and `Sphere.cross_section_extend` raises on every anchor (sphere has no planar surfaces, only tangent points).
+The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases.
+
+`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they bypass the planar cross-section path entirely and dispatch through the curved-host bridge mechanism instead (next section).
 
 Documented limitations the bbox check can't catch:
 
@@ -109,9 +111,37 @@ Documented limitations the bbox check can't catch:
 
 Workarounds for all the limitations: restructure the geometry so the fuse anchor is on a clean convex planar face, use `fuse=False` on that one attach, wrap the assembly in `disable_eps_fuse()`, or hand-craft the eps overlap.
 
+### Curved-host fuse: bridge mechanism
+
+When `attach(fuse=True)`'s on-anchor is a curved-surface kind (`cylindrical`, `conical`, `spherical`) on a convex-outer surface, the framework builds a **bridge** piece that fills the air gap between the peg's planar near-face and the host's curved surface. The bridge is the peg's cross-section extruded along the contact normal by the analytical inscription depth (`R - sqrt(R² - r²)` where `R` is host radius and `r` is peg's max radial extent in the tangent plane), differenced with the host. The result is `union(placed_peg, bridge)`.
+
+The bridge solves two problems with one piece:
+
+- **Inscription mounting (Duty B).** A peg attached tangent to a curved surface visually appears to be balanced on a thin contact line. The bridge fills the small inscription gap so the peg looks merged into the surface — what users almost always intend when mounting a feature on a cylinder, sphere, or cone.
+- **Manifold-clean union (Duty A).** The bridge extends `eps` past the peg's near-face on the peg side, providing the small overlap that keeps F5 preview clean — same purpose as Phase 1/2's planar eps but here built into the bridge geometry.
+
+```python
+peg = cube([2, 2, 5])
+hub = cylinder(h=20, r=10)
+mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
+# Returns union(placed_peg, bridge). Bridge fills the gap between peg's
+# flat near-face and the cylinder's curved surface at angle=30.
+```
+
+**Coaxial requirement.** The bridge dispatch requires the peg's at-anchor normal to be anti-parallel to the host's on-anchor normal (within tolerance). Without `orient=True` or manual peg alignment, the call raises `ValidationError("requires coaxial normals")` rather than silently producing geometry that doesn't match user intent.
+
+**Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. The dispatch falls through to the legacy shift instead.
+
+**Inherited limitations from the cross-section primitive** (same as Phase 2):
+
+- **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
+- **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
+
+**Trust contract.** The framework can't verify that a Component-declared anchor is on the shape's surface, or that the declared `kind` matches the surface type at that position. If an author declares `kind="cylindrical"` on an anchor that's actually 50mm out in space, the bridge intersection produces wrong geometry without an error — this is the same trust boundary that already governs all anchor-driven operations. The bridge mechanism's failure mode on lying anchors is louder than Phase 1/2's (visible chunks of host material in unexpected places), but the contract is unchanged.
+
 ### When neither extension path applies
 
-`fuse=True` falls back to translating `self` by `eps` along the contact normal — the legacy bilateral shift. This affects only **non-planar interfaces**: either side has `kind="cylindrical"`, `"conical"`, or any non-`"planar"` anchor (e.g., a peg attached tangentially to a cylinder's `outer_wall`).
+`fuse=True` falls back to translating `self` by `eps` along the contact normal — the legacy bilateral shift. This affects: shapes that don't qualify for planar extension (kind isn't planar on at least one side) and aren't on the convex-curved-host bridge path (e.g., concave inner walls), and shapes whose curved-host bridge mechanism couldn't compute an analytical depth (no usable radius in `surface_params`).
 
 The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift-based fuse, not after.
 

@@ -406,48 +406,135 @@ class Node(
         from scadwright.api.fuse_mode import fuse_enabled
         effective_fuse = fuse and fuse_enabled()
 
-        # Local-extension fuse only applies when BOTH anchors are planar.
-        # Tangent-line contact (cube on cylinder wall, etc.) extends in
-        # the wrong direction relative to the curved surface, so those
-        # cases stay on the legacy shift mechanism.
+        if not orient:
+            working_self = self
+            working_self_anchor = self_anchor
+            # bridge dispatch reads the at-anchor's actual normal (not a
+            # bbox face) so curved-surface fuse can verify coaxial
+            # alignment. With orient=False, that's just self_anchor.
+            bridge_self_anchor = self_anchor
+        else:
+            # orient=True: rotate self so at-normal opposes face-normal.
+            target_normal = tuple(-c for c in other_anchor.normal)
+            # Already-aligned shortcut: when self_anchor.normal already
+            # equals target_normal, no rotation is needed. (The legacy
+            # _orient_child_to_normal does a needless 180° flip in this
+            # case which would invert the bridge_self_anchor's normal
+            # and trip the coaxial check.)
+            d_self_target = (
+                self_anchor.normal[0] * target_normal[0]
+                + self_anchor.normal[1] * target_normal[1]
+                + self_anchor.normal[2] * target_normal[2]
+            )
+            if d_self_target > 0.999:
+                working_self = self
+                working_self_anchor = self_anchor
+                bridge_self_anchor = self_anchor
+            else:
+                working_self = _orient_child_to_normal(
+                    self, self_anchor.normal, target_normal, loc
+                )
+                rotated_anchors = anchors_from_bbox(_bbox(working_self))
+                working_self_anchor = rotated_anchors.get(
+                    at, rotated_anchors.get("bottom", self_anchor)
+                )
+                if working_self is self:
+                    # _orient_child_to_normal returned the child
+                    # unchanged (it does this for the d<-0.5 case as a
+                    # quirk — see test_orient_*_to_*_flips_peg coverage).
+                    # Without a Rotate wrapper the at-anchor stays at
+                    # its original position and normal.
+                    bridge_self_anchor = self_anchor
+                else:
+                    # bbox-derived anchors carry axis-aligned normals
+                    # that don't reflect the peg's orientation post-
+                    # rotation. For the bridge dispatch we need the at-
+                    # anchor's actual world-frame normal — apply the
+                    # orient rotation matrix to self_anchor explicitly.
+                    from scadwright.matrix import to_matrix
+                    from scadwright.anchor import Anchor as _Anchor
+                    import math as _math
+                    rot = to_matrix(working_self)
+                    new_pos = rot.apply_point(self_anchor.position)
+                    new_norm = rot.apply_vector(self_anchor.normal)
+                    nlen = _math.sqrt(sum(c * c for c in new_norm))
+                    if nlen > 0:
+                        new_norm = tuple(c / nlen for c in new_norm)
+                    bridge_self_anchor = _Anchor(
+                        position=new_pos,
+                        normal=new_norm,
+                        kind=self_anchor.kind,
+                        surface_params=self_anchor.surface_params,
+                    )
+
+        # Curved-host bridge dispatch. Convex-outer cylindrical / conical
+        # / spherical surfaces fill the inscription gap with a bridge
+        # piece (see ``_fuse_bridge``); concave-inner surfaces fall
+        # through to legacy shift since the peg's corners naturally sit
+        # inside host material.
+        is_curved_host = other_anchor.kind in ("cylindrical", "conical", "spherical")
+        is_inner = bool(other_anchor.surface_param("inner", default=False))
+        if effective_fuse and is_curved_host and not is_inner:
+            from scadwright.ast._fuse_bridge import (
+                build_curved_bridge,
+                coaxial_normals,
+            )
+            if not coaxial_normals(bridge_self_anchor.normal, other_anchor.normal):
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"attach(fuse=True) on a {other_anchor.kind} host "
+                    f"requires coaxial normals (peg at-anchor "
+                    f"anti-parallel to host on-anchor). Got peg normal "
+                    f"{bridge_self_anchor.normal}, host normal "
+                    f"{other_anchor.normal}. Pass orient=True, or align "
+                    f"the peg manually so its at-anchor faces the host's "
+                    f"on-anchor.",
+                    source_location=loc,
+                )
+            unfused_shift = _shift_for_anchors(
+                bridge_self_anchor, other_anchor, False, eps
+            )
+            bridge = build_curved_bridge(
+                working_self,
+                bridge_self_anchor,
+                other,
+                other_anchor,
+                unfused_shift,
+                eps,
+            )
+            if bridge is not None:
+                from scadwright.boolops import union as _union
+                placed_peg = Translate(
+                    v=unfused_shift, child=working_self, source_location=loc
+                )
+                return _union(placed_peg, bridge)
+            # No analytical depth available (host has no radius in
+            # surface_params): fall through to legacy shift.
+
+        # Planar-planar local extension. Curved hosts that bypassed the
+        # bridge (concave inner, no analytical depth) fall through here,
+        # but the planar gate excludes them.
         planar_fuse = (
             effective_fuse
-            and self_anchor.kind == "planar"
+            and working_self_anchor.kind == "planar"
             and other_anchor.kind == "planar"
         )
-
-        if not orient:
-            if planar_fuse:
-                extended = self.fuse_extend(self_anchor, eps)
-                if extended is None:
-                    # Parametric path didn't apply; fall through to the
-                    # generic cross-section path. Raises on degenerate
-                    # contact (anchor not on the shape's outer face).
-                    extended = self.cross_section_extend(self_anchor, eps)
-                if extended is not None:
-                    shift = _shift_for_anchors(self_anchor, other_anchor, False, eps)
-                    return Translate(v=shift, child=extended, source_location=loc)
-            shift = _shift_for_anchors(self_anchor, other_anchor, effective_fuse, eps)
-            return Translate(v=shift, child=self, source_location=loc)
-
-        # orient=True: rotate self so at-normal opposes face-normal, then translate.
-        target_normal = tuple(-c for c in other_anchor.normal)
-        child = _orient_child_to_normal(self, self_anchor.normal, target_normal, loc)
-
-        # Recompute self's anchor position after rotation.
-        rotated_anchors = anchors_from_bbox(_bbox(child))
-        rotated_self_anchor = rotated_anchors.get(
-            at, rotated_anchors.get("bottom", self_anchor)
-        )
         if planar_fuse:
-            extended = child.fuse_extend(rotated_self_anchor, eps)
+            extended = working_self.fuse_extend(working_self_anchor, eps)
             if extended is None:
-                extended = child.cross_section_extend(rotated_self_anchor, eps)
+                # Parametric path didn't apply; fall through to the
+                # generic cross-section path. Raises on degenerate
+                # contact (anchor not on the shape's outer face).
+                extended = working_self.cross_section_extend(working_self_anchor, eps)
             if extended is not None:
-                shift = _shift_for_anchors(rotated_self_anchor, other_anchor, False, eps)
+                shift = _shift_for_anchors(working_self_anchor, other_anchor, False, eps)
                 return Translate(v=shift, child=extended, source_location=loc)
-        shift = _shift_for_anchors(rotated_self_anchor, other_anchor, effective_fuse, eps)
-        return Translate(v=shift, child=child, source_location=loc)
+
+        # Legacy shift fallback.
+        shift = _shift_for_anchors(
+            working_self_anchor, other_anchor, effective_fuse, eps
+        )
+        return Translate(v=shift, child=working_self, source_location=loc)
 
     def through(
         self,
