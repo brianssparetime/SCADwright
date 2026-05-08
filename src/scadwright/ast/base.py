@@ -269,10 +269,24 @@ class Node(
         positions coincide). Pass ``orient=True`` to also rotate self so the
         two anchors' normals oppose each other (faces touching).
 
-        Pass ``fuse=True`` to extend self by ``eps`` into the contact face,
-        eliminating coincident-surface artifacts in unions::
+        Pass ``fuse=True`` to add a small overlap (``eps``, default
+        0.01 mm) at the contact face, eliminating coincident-surface
+        artifacts in unions::
 
             pylon = Tube(od=7, id=3, h=8).attach(floor, fuse=True)
+
+        For planar-to-planar fuses where ``self`` is a ``Cube``, a
+        ``Cylinder`` planar cap, or a ``linear_extrude`` end-face
+        (possibly wrapped in ``Translate`` / ``Rotate`` / ``Mirror``),
+        the framework extends only the contact face by ``eps`` and
+        leaves the opposite face at its declared position. Downstream
+        operations that depend on exact coincidence (``through()``,
+        further ``attach`` chains using the result's anchors) see
+        the user-facing dimensions exactly. For other shapes — non-
+        planar anchors, raw polyhedra, custom Components without
+        intrinsic extension support — ``fuse=True`` falls back to
+        translating ``self`` by ``eps`` along the contact normal,
+        matching the legacy behavior.
 
         Chain a directional helper for offset placement::
 

@@ -121,6 +121,38 @@ def test_fuse_function_uses_either_side():
     assert bb.max[2] == pytest.approx(18.0)  # pillar top preserved (3 + 15)
 
 
+def test_fuse_function_prefers_wrapper_free_side():
+    """When both sides qualify for local extension, fuse picks the side
+    whose fuse_extend produces no Translate wrapper (the +axis-direction
+    face). For a stacked-cubes join — top of the lower meeting bottom of
+    the upper — that's the lower cube's top: cleaner SCAD output, the
+    same final geometry as picking either side.
+    """
+    lower = cube([10, 10, 5])    # b: fuse on its top face (+Z) → no wrapper.
+    upper = cube([10, 10, 5])    # a: fuse on its bottom face (−Z) → Translate wrapper.
+    result = fuse(upper, lower, on="top", at="bottom")
+    bb = bbox(result)
+    # Lower spans z=0..5, extended top to z=5.01. Upper spans z=5..10
+    # (preserved). Combined bbox: 0..10.
+    assert bb.min[2] == pytest.approx(0.0)
+    assert bb.max[2] == pytest.approx(10.0)
+    # The extended side should be b (the lower cube), since picking a
+    # would require a Translate wrapper around the bumped cube. Confirm
+    # by inspecting the union's children.
+    from scadwright.ast.csg import Union
+    from scadwright.ast.primitives import Cube
+    from scadwright.ast.transforms import Translate as _Translate
+    assert isinstance(result, Union)
+    # Children: [placed_a (Translate wrapping original cube), extended_b
+    # (Cube with size[2]=5.01)]. The original ``a`` becomes a Translate;
+    # ``b`` is the bumped Cube directly.
+    a_placed, b_extended = result.children
+    assert isinstance(b_extended, Cube)
+    assert b_extended.size[2] == pytest.approx(5.01)
+    # a is the unmodified upper cube wrapped in a Translate.
+    assert isinstance(a_placed, _Translate)
+
+
 def test_fuse_function_falls_back_for_non_planar():
     """Two non-planar / unsupported shapes: fuse falls back to shift,
     matching the legacy attach(fuse=True) behavior."""

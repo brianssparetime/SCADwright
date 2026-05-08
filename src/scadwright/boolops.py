@@ -110,23 +110,47 @@ def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
     # Local extension only when both anchors are planar.
     if a_anchor.kind == "planar" and b_anchor.kind == "planar":
         extended_a = a.fuse_extend(a_anchor, eps)
-        if extended_a is not None:
+        extended_b = b.fuse_extend(b_anchor, eps)
+        # Pick the side that produces the cleaner extension when both
+        # qualify: a face on the +axis side (top, rside, back) extends
+        # without a Translate wrapper; the −axis side (bottom, lside,
+        # front) needs one. Prefer the wrapper-free side. When both are
+        # equal-complexity, default to ``a``.
+        chosen = _pick_simpler_extension(extended_a, extended_b)
+        if chosen == "a":
             shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
             placed_a = Translate(v=shift, child=extended_a, source_location=loc)
             return union(placed_a, b)
-        extended_b = b.fuse_extend(b_anchor, eps)
-        if extended_b is not None:
-            # Translate a onto b's unshifted anchor; b carries the eps
-            # extension on its end and the union closes the seam.
+        if chosen == "b":
             shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
             placed_a = Translate(v=shift, child=a, source_location=loc)
             return union(placed_a, extended_b)
+        # chosen is None: neither side qualified, fall through to shift.
 
     # Shift fallback: matches attach(fuse=True) behavior on shapes that
     # don't qualify for local extension.
     shift = _shift_for_anchors(a_anchor, b_anchor, True, eps)
     placed_a = Translate(v=shift, child=a, source_location=loc)
     return union(placed_a, b)
+
+
+def _pick_simpler_extension(extended_a, extended_b):
+    """Pick the side whose fuse_extend output is simpler. Returns 'a',
+    'b', or None (neither qualified)."""
+    if extended_a is None and extended_b is None:
+        return None
+    if extended_a is None:
+        return "b"
+    if extended_b is None:
+        return "a"
+    # Both qualified. Prefer the one that's a leaf (no Translate
+    # wrapper); when both are leaves or both are wrapped, prefer ``a``.
+    from scadwright.ast.transforms import Translate as _Translate
+    a_wrapped = isinstance(extended_a, _Translate)
+    b_wrapped = isinstance(extended_b, _Translate)
+    if a_wrapped and not b_wrapped:
+        return "b"
+    return "a"
 
 
 __all__ = ["union", "difference", "intersection", "hull", "minkowski", "fuse"]
