@@ -22,15 +22,20 @@ from scadwright.boolops import union
 from scadwright.primitives import cube
 from scadwright.shapes import (
     AlignmentPin,
+    Annulus,
     Arc,
+    Barrel,
     Bearing,
     BevelGear,
     Bolt,
     Capsule,
     ChamferedBox,
+    CircularSegment,
     Counterbore,
     DShaft,
     Dome,
+    Elbow,
+    Ellipsoid,
     Funnel,
     GT2Pulley,
     GridfinityBase,
@@ -40,6 +45,8 @@ from scadwright.shapes import (
     Icosahedron,
     KeyedShaft,
     Keyhole,
+    Ogive,
+    Paraboloid,
     PieSlice,
     PolyHole,
     PressFitPeg,
@@ -56,10 +63,12 @@ from scadwright.shapes import (
     Spring,
     SpurGear,
     Standoff,
+    Star,
     Teardrop,
     Torus,
     Tube,
     Wedge,
+    almond_profile,
     bezier_path,
     rounded_rect,
 )
@@ -89,6 +98,23 @@ def _2d_teardrop():
 
 def _2d_keyhole():
     return Keyhole(r_big=5, r_slot=2, slot_length=10).linear_extrude(height=3)
+
+
+def _2d_annulus():
+    return Annulus(id=10, od=18).linear_extrude(height=3)
+
+
+def _2d_star():
+    return Star(points=5, r_outer=12, r_inner=5).linear_extrude(height=3)
+
+
+def _2d_circular_segment():
+    return CircularSegment(circle_r=12, height=5).linear_extrude(height=3)
+
+
+def _2d_almond_profile():
+    from scadwright.primitives import polygon
+    return polygon(points=almond_profile(chord_r=9, sag=4)).linear_extrude(height=3)
 
 
 def _d_shaft():
@@ -137,6 +163,8 @@ COMPONENTS = [
     {"out": "docs/shapes/images/rounded-box.png", "component": RoundedBox, "kwargs": {"size": (40, 25, 15), "r": 3}},
     {"out": "docs/shapes/images/funnel.png",      "component": Funnel,     "kwargs": {"h": 30, "thk": 2, "bot_id": 8, "top_id": 30}},
     {"out": "docs/shapes/images/rect-tube.png",   "component": RectTube,   "kwargs": {"outer_w": 30, "outer_d": 20, "wall_thk": 2, "h": 10}},
+    {"out": "docs/shapes/images/barrel.png",      "component": Barrel,     "kwargs": {"h": 30, "end_r": 8, "bulge": 3}},
+    {"out": "docs/shapes/images/elbow.png",       "component": Elbow,      "kwargs": {"id": 8, "od": 12, "bend_radius": 20}},
 
     # curves.md
     {"out": "docs/shapes/images/helix.png",  "component": Helix,  "kwargs": {"r": 10, "wire_r": 1.5, "pitch": 5, "turns": 4}},
@@ -178,12 +206,16 @@ COMPONENTS = [
     {"out": "docs/shapes/images/keyed-shaft.png",  "build": _keyed_shaft,   "name": "keyed-shaft"},
 
     # profiles_2d.md
-    {"out": "docs/shapes/images/rounded-rect.png", "build": _2d_rounded_rect, "name": "rounded-rect"},
-    {"out": "docs/shapes/images/sector.png",       "build": _2d_sector,       "name": "sector"},
-    {"out": "docs/shapes/images/rounded-slot.png", "build": _2d_rounded_slot, "name": "rounded-slot"},
-    {"out": "docs/shapes/images/arc.png",          "build": _2d_arc,          "name": "arc"},
-    {"out": "docs/shapes/images/teardrop.png",     "build": _2d_teardrop,     "name": "teardrop"},
-    {"out": "docs/shapes/images/keyhole.png",      "build": _2d_keyhole,      "name": "keyhole"},
+    {"out": "docs/shapes/images/rounded-rect.png",     "build": _2d_rounded_rect,     "name": "rounded-rect"},
+    {"out": "docs/shapes/images/sector.png",           "build": _2d_sector,           "name": "sector"},
+    {"out": "docs/shapes/images/rounded-slot.png",     "build": _2d_rounded_slot,     "name": "rounded-slot"},
+    {"out": "docs/shapes/images/arc.png",              "build": _2d_arc,              "name": "arc"},
+    {"out": "docs/shapes/images/teardrop.png",         "build": _2d_teardrop,         "name": "teardrop"},
+    {"out": "docs/shapes/images/keyhole.png",          "build": _2d_keyhole,          "name": "keyhole"},
+    {"out": "docs/shapes/images/annulus.png",          "build": _2d_annulus,          "name": "annulus"},
+    {"out": "docs/shapes/images/star.png",             "build": _2d_star,             "name": "star"},
+    {"out": "docs/shapes/images/circular-segment.png", "build": _2d_circular_segment, "name": "circular-segment"},
+    {"out": "docs/shapes/images/almond-profile.png",   "build": _2d_almond_profile,   "name": "almond-profile"},
 
     # fillets.md
     {"out": "docs/shapes/images/chamfered-box.png", "component": ChamferedBox, "kwargs": {"size": (30, 20, 10), "fillet": 2}},
@@ -199,6 +231,9 @@ COMPONENTS = [
     {"out": "docs/shapes/images/dome.png",        "component": Dome,        "kwargs": {"r": 15, "thk": 2}},
     {"out": "docs/shapes/images/capsule.png",     "component": Capsule,     "kwargs": {"r": 6, "length": 30}},
     {"out": "docs/shapes/images/pie-slice.png",   "component": PieSlice,    "kwargs": {"r": 15, "angles": (0, 120), "h": 8}},
+    {"out": "docs/shapes/images/ogive.png",       "component": Ogive,       "kwargs": {"base_r": 8, "length": 22}},
+    {"out": "docs/shapes/images/ellipsoid.png",   "component": Ellipsoid,   "kwargs": {"a": 10, "b": 10, "c": 16}},
+    {"out": "docs/shapes/images/paraboloid.png",  "component": Paraboloid,  "kwargs": {"radius": 12, "depth": 12}},
 ]
 
 
