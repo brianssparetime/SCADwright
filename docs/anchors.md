@@ -63,6 +63,25 @@ This rotates the peg so its bottom normal faces in the -X direction (opposing th
 
 When the normals already oppose (e.g. attaching bottom-to-top), `orient=True` produces the same result as `orient=False`.
 
+## Manifold-clean unions: `fuse=True`
+
+When two solids meet at exactly-coincident planar faces, OpenSCAD's preview can show wavering or missing surfaces — the renderer can't classify points on a coincident boundary. The fix is a tiny overlap.
+
+Pass `fuse=True` to `attach()` to add that overlap:
+
+```python
+pylon = cube([5, 5, 10]).attach(floor, fuse=True)
+```
+
+For planar-to-planar fuses on `Cube`, `Cylinder` caps, and `linear_extrude` end-faces, the framework extends the contact face by `eps` (default 0.01 mm) **locally**, leaving the opposite face at its declared position:
+
+- `pylon.attach(floor, fuse=True)` — pylon's bottom extends into floor by eps; pylon's top stays exactly at the user-specified `z=10`.
+- `Counterbore(...).through(plate)` — the cutter's outer dimensions are preserved exactly, so `through()`'s coincidence detection on the plate's faces still works.
+
+For non-planar interfaces (cylindrical wall, sphere, etc.) and shapes without parametric extension support (raw polyhedra, custom Components), `fuse=True` falls back to a legacy bilateral shift — `self` translates by `eps` along the contact normal. The shift moves the entire shape, so the opposite face also drifts by `eps`. Cumulative-coincidence-sensitive operations should be done before the fuse for those cases.
+
+The standalone `fuse(a, b, on=..., at=..., eps=0.01)` function in `scadwright.boolops` returns the union directly with the same machinery and supports symmetric side selection — if `a` doesn't qualify for local extension, `b` is tried.
+
 ## Angular placement on cylindrical surfaces
 
 For attachments at a specific angle around a cylinder, cone, or rim, pass `angle=` (degrees CCW from +X, or one of the friendly aliases `"rside"`, `"back"`, `"lside"`, `"front"`, `"+x"`, `"+y"`, `"-x"`, `"-y"`):
