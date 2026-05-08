@@ -355,12 +355,19 @@ class Node(
             other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)
         self_anchor = _resolve_attach_anchor(self, at, "self", loc)
 
+        # The scope-wide ``disable_eps_fuse()`` opt-out makes fuse=True
+        # behave as fuse=False — no parametric extension, no shift. Read
+        # the flag once here and use ``effective_fuse`` for the rest of
+        # the dispatch.
+        from scadwright.api.fuse_mode import fuse_enabled
+        effective_fuse = fuse and fuse_enabled()
+
         # Local-extension fuse only applies when BOTH anchors are planar.
         # Tangent-line contact (cube on cylinder wall, etc.) extends in
         # the wrong direction relative to the curved surface, so those
         # cases stay on the legacy shift mechanism.
         planar_fuse = (
-            fuse
+            effective_fuse
             and self_anchor.kind == "planar"
             and other_anchor.kind == "planar"
         )
@@ -371,7 +378,7 @@ class Node(
                 if extended is not None:
                     shift = _shift_for_anchors(self_anchor, other_anchor, False, eps)
                     return Translate(v=shift, child=extended, source_location=loc)
-            shift = _shift_for_anchors(self_anchor, other_anchor, fuse, eps)
+            shift = _shift_for_anchors(self_anchor, other_anchor, effective_fuse, eps)
             return Translate(v=shift, child=self, source_location=loc)
 
         # orient=True: rotate self so at-normal opposes face-normal, then translate.
@@ -388,7 +395,7 @@ class Node(
             if extended is not None:
                 shift = _shift_for_anchors(rotated_self_anchor, other_anchor, False, eps)
                 return Translate(v=shift, child=extended, source_location=loc)
-        shift = _shift_for_anchors(rotated_self_anchor, other_anchor, fuse, eps)
+        shift = _shift_for_anchors(rotated_self_anchor, other_anchor, effective_fuse, eps)
         return Translate(v=shift, child=child, source_location=loc)
 
     def through(

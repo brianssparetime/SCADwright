@@ -103,6 +103,32 @@ The shift moves the entire shape, so the opposite face also drifts by `eps`. Coi
 
 For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., at=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
 
+### Disabling fuse in a scope: `disable_eps_fuse()`
+
+Two cases need a way to turn fuse-mechanism eps adjustments off without rewriting individual call sites:
+
+- **Precision builds.** Final dimensions or anchor positions need to match the source declarations exactly — no eps sneaking in anywhere.
+- **Performance debugging.** Many fuses in a complex assembly add up; disabling the entire mechanism in a sub-tree lets you compare frame rates or isolate a slow path.
+
+Wrap the affected block in `with disable_eps_fuse():`:
+
+```python
+from scadwright import disable_eps_fuse
+
+@variant
+def precise(self):
+    with disable_eps_fuse():
+        return self.assembly()    # all fuse=True calls become exact contacts
+
+@variant
+def normal(self):
+    return self.assembly()        # all fuse=True calls get eps overlap as usual
+```
+
+Inside the block, `attach(fuse=True)` and the standalone `fuse(...)` behave as if `fuse` were `False`: exact anchor coincidence, no parametric extension, no shift. Anchor lookup, placement, `orient=True`, `angle=`, `at_z=`, `radius=`, and `through()` composition all continue to work — only the eps geometry is suppressed.
+
+The flag is scope-bounded; nested blocks are no-ops, and exiting any block restores the prior state.
+
 ## Angular placement on cylindrical surfaces
 
 For attachments at a specific angle around a cylinder, cone, or rim, pass `angle=` (degrees CCW from +X, or one of the friendly aliases `"rside"`, `"back"`, `"lside"`, `"front"`, `"+x"`, `"+y"`, `"-x"`, `"-y"`):

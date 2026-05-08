@@ -100,12 +100,20 @@ def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
 
     Returns ``union(extended_a, b)`` (or the symmetric / fallback form).
     """
+    from scadwright.api.fuse_mode import fuse_enabled
     from scadwright.ast.placement import _resolve_attach_anchor, _shift_for_anchors
     from scadwright.ast.transforms import Translate
 
     loc = SourceLocation.from_caller()
     a_anchor = _resolve_attach_anchor(a, at, "a", loc)
     b_anchor = _resolve_attach_anchor(b, on, "b", loc)
+
+    # Scope-wide ``disable_eps_fuse()``: skip all fuse machinery, do
+    # exact-contact union at the unshifted anchor positions.
+    if not fuse_enabled():
+        shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+        placed_a = Translate(v=shift, child=a, source_location=loc)
+        return union(placed_a, b)
 
     # Local extension only when both anchors are planar.
     if a_anchor.kind == "planar" and b_anchor.kind == "planar":
