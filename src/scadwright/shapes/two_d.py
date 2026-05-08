@@ -202,6 +202,52 @@ class Teardrop(Component):
         return shape
 
 
+class CircularSegment(Component):
+    """A 2D circular segment: a chunk of a disc cut off by a chord.
+
+    The segment sits with its chord on y=0 and arches up in +y. The 2D
+    counterpart of ``SphericalCap``. Five linked dimensional parameters
+    (the chord half-length is exposed as ``chord_r`` for symmetry with
+    SphericalCap) — specify any two and the framework solves the rest::
+
+        CircularSegment(circle_r=20, height=8)         # underlying radius + sagitta
+        CircularSegment(circle_d=40, chord=30)         # full diameter + chord length
+        CircularSegment(chord=30, height=5)            # chord + sagitta
+        CircularSegment(circle_r=20, angle=60)         # radius + subtended angle (deg)
+        CircularSegment(chord=30, angle=90)            # chord + subtended angle
+
+    ``angle`` is the central angle subtended by the chord at the
+    underlying circle's center, measured in degrees from 0 to 360. A
+    semicircle is ``angle=180``.
+    """
+
+    equations = """
+        circle_r = circle_d / 2
+        chord_r = chord / 2
+        chord_r**2 = height * (2 * circle_r - height)
+        height = circle_r * (1 - cos(angle / 2))
+        circle_r, circle_d, chord, chord_r, height > 0
+        angle > 0
+        angle <= 360
+        height <= 2 * circle_r
+    """
+
+    def build(self):
+        # Place a full circle so the segment chord lies on y=0 and the
+        # arch rises into +y. Circle center y = height - circle_r (for
+        # height < circle_r the center is below y=0; for height >
+        # circle_r the segment is more than a semicircle and the center
+        # is above y=0 — both work).
+        disc = circle(r=self.circle_r).forward(self.height - self.circle_r)
+        # Clip to y ∈ [0, height]. Width spans the full circle diameter
+        # so off-center points within the segment aren't clipped.
+        margin = 0.01
+        w = 2 * (self.circle_r + margin)
+        h = self.height + margin
+        clip = square([w, h]).left(w / 2)
+        return intersection(disc, clip)
+
+
 class Keyhole(Component):
     """Keyhole profile: circle (head) with a narrower slot extending in -y.
 
