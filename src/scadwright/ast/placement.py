@@ -531,9 +531,9 @@ def _orient_child_to_normal(child, self_normal, target_normal, loc):
         # General case: rotate around the cross-product axis.
         angle_deg = _math.degrees(_math.acos(max(-1.0, min(1.0, d))))
         return Rotate(a=angle_deg, v=axis, child=child, source_location=loc)
-    if d < -0.5:
-        # Normals already opposite (touching-aligned) — no rotation.
+    if d > 0.5:
+        # Already aligned: self_normal already points toward target_normal.
         return child
-    # Normals coincide (d ~ +1); 180° flip around any perpendicular axis.
+    # Anti-parallel: 180° flip around any perpendicular axis.
     perp = _cross(self_normal, (1, 0, 0) if abs(self_normal[0]) < 0.9 else (0, 1, 0))
     return Rotate(a=180.0, v=perp, child=child, source_location=loc)
