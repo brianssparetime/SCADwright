@@ -79,4 +79,143 @@ def minkowski(*args) -> Minkowski:
     )
 
 
-__all__ = ["union", "difference", "intersection", "hull", "minkowski"]
+def fuse(a: Node, b: Node, *, on: str, at: str, eps: float = 0.01) -> Union:
+    """Combine ``a`` and ``b`` at coincident anchors with a small overlap.
+
+    ``at`` names an anchor on ``a``; ``on`` names an anchor on ``b``.
+    The two anchors' positions are aligned (no shift), and one side is
+    locally extended by ``eps`` along its anchor's normal so the union
+    stays manifold-clean against OpenSCAD's preview renderer.
+
+    Local extension preserves the user-facing dimensions and anchors of
+    the extended shape elsewhere — only the contact face moves. Symmetric
+    side selection: if ``a`` supports local extension along ``at``, that
+    side is extended; otherwise ``b`` is extended along ``on``.
+
+    When neither side supports local extension (the anchors aren't
+    planar, or the shapes lack a parametric extension lever — e.g. raw
+    Polyhedra, complex CSG results), falls back to translating ``a`` by
+    ``eps`` along ``b``'s anchor normal so they overlap. This matches
+    the legacy ``attach(fuse=True)`` behavior.
+
+    Returns ``union(extended_a, b)`` (or the symmetric / fallback form).
+    """
+    from scadwright.api.fuse_mode import fuse_enabled
+    from scadwright.ast.placement import _resolve_attach_anchor, _shift_for_anchors
+    from scadwright.ast.transforms import Translate
+
+    loc = SourceLocation.from_caller()
+    a_anchor = _resolve_attach_anchor(a, at, "a", loc)
+    b_anchor = _resolve_attach_anchor(b, on, "b", loc)
+
+    # Scope-wide ``disable_eps_fuse()``: skip all fuse machinery, do
+    # exact-contact union at the unshifted anchor positions.
+    if not fuse_enabled():
+        shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+        placed_a = Translate(v=shift, child=a, source_location=loc)
+        return union(placed_a, b)
+
+    # Curved-host bridge dispatch. Symmetric across both sides: whichever
+    # side carries a convex-outer curved anchor is treated as the host;
+    # the other side is the peg. Concave inner (surface_params["inner"]
+    # =True) falls through to legacy shift on either side.
+    from scadwright.ast._fuse_bridge import build_curved_bridge, coaxial_normals
+    a_curved = a_anchor.kind in ("cylindrical", "conical", "spherical")
+    b_curved = b_anchor.kind in ("cylindrical", "conical", "spherical")
+    a_inner = bool(a_anchor.surface_param("inner", default=False))
+    b_inner = bool(b_anchor.surface_param("inner", default=False))
+    if b_curved and not b_inner:
+        # Standard convention: b is host, a is peg.
+        if not coaxial_normals(a_anchor.normal, b_anchor.normal):
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"fuse on a {b_anchor.kind} host (b) requires coaxial "
+                f"normals (a's at-anchor anti-parallel to b's on-anchor). "
+                f"Got a normal {a_anchor.normal}, b normal {b_anchor.normal}.",
+                source_location=loc,
+            )
+        unfused_shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+        bridge = build_curved_bridge(a, a_anchor, b, b_anchor, unfused_shift, eps)
+        if bridge is not None:
+            placed_a = Translate(v=unfused_shift, child=a, source_location=loc)
+            return union(placed_a, b, bridge)
+    elif a_curved and not a_inner:
+        # Symmetric case: a is host, b is peg. Function still translates
+        # a (per its signature, a is the one that moves), so the bridge
+        # takes a-after-translation as host. Peg=b sits at its original
+        # position, no shift on the prism.
+        if not coaxial_normals(b_anchor.normal, a_anchor.normal):
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"fuse on a {a_anchor.kind} host (a) requires coaxial "
+                f"normals (b's on-anchor anti-parallel to a's at-anchor). "
+                f"Got a normal {a_anchor.normal}, b normal {b_anchor.normal}.",
+                source_location=loc,
+            )
+        unfused_shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+        placed_a = Translate(v=unfused_shift, child=a, source_location=loc)
+        bridge = build_curved_bridge(
+            b, b_anchor, placed_a, a_anchor, (0.0, 0.0, 0.0), eps
+        )
+        if bridge is not None:
+            return union(placed_a, b, bridge)
+
+    # Local extension only when both anchors are planar.
+    if a_anchor.kind == "planar" and b_anchor.kind == "planar":
+        # Tier 1: parametric extension wins on either side. Pick the
+        # side with the cleaner output (no Translate wrapper).
+        extended_a = a.fuse_extend(a_anchor, eps)
+        extended_b = b.fuse_extend(b_anchor, eps)
+        chosen = _pick_simpler_extension(extended_a, extended_b)
+        if chosen == "a":
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=extended_a, source_location=loc)
+            return union(placed_a, b)
+        if chosen == "b":
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=a, source_location=loc)
+            return union(placed_a, extended_b)
+
+        # Tier 2: neither side has parametric extension. Try the
+        # generic cross-section path on each side. cross_section_extend
+        # raises on degenerate contact, so a passing call is non-None.
+        extended_a = a.cross_section_extend(a_anchor, eps)
+        extended_b = b.cross_section_extend(b_anchor, eps)
+        chosen = _pick_simpler_extension(extended_a, extended_b)
+        if chosen == "a":
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=extended_a, source_location=loc)
+            return union(placed_a, b)
+        if chosen == "b":
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=a, source_location=loc)
+            return union(placed_a, extended_b)
+        # Both cross_section_extend calls returned None (defensive;
+        # should be unreachable for planar anchors). Fall through.
+
+    # Shift fallback: non-planar anchors land here.
+    shift = _shift_for_anchors(a_anchor, b_anchor, True, eps)
+    placed_a = Translate(v=shift, child=a, source_location=loc)
+    return union(placed_a, b)
+
+
+def _pick_simpler_extension(extended_a, extended_b):
+    """Pick the side whose fuse_extend output is simpler. Returns 'a',
+    'b', or None (neither qualified)."""
+    if extended_a is None and extended_b is None:
+        return None
+    if extended_a is None:
+        return "b"
+    if extended_b is None:
+        return "a"
+    # Both qualified. Prefer the one that's a leaf (no Translate
+    # wrapper); when both are leaves or both are wrapped, prefer ``a``.
+    from scadwright.ast.transforms import Translate as _Translate
+    a_wrapped = isinstance(extended_a, _Translate)
+    b_wrapped = isinstance(extended_b, _Translate)
+    if a_wrapped and not b_wrapped:
+        return "b"
+    return "a"
+
+
+__all__ = ["union", "difference", "intersection", "hull", "minkowski", "fuse"]

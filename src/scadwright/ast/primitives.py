@@ -37,6 +37,58 @@ class Cube(Node):
         from scadwright.ast._edge_fillets import cube_chamfer
         return cube_chamfer(self, edges, size=size)
 
+    def fuse_extend(self, anchor, eps: float):
+        """Locally extend this cube by ``eps`` along ``anchor``'s normal.
+
+        Bumps ``size[axis]`` by ``eps`` and translates so the opposite
+        face stays at its declared position. Per-axis center bool
+        controls the translate delta (centered cubes grow symmetrically
+        from the bump, so half the eps needs to be cancelled).
+
+        Returns ``None`` for non-planar anchors (cubes don't have any,
+        but defensive in case a caller passes one).
+        """
+        if anchor.kind != "planar":
+            return None
+        # Pick the axis the anchor's normal points along. For a true
+        # bbox face anchor this is exact; the max-|component| selection
+        # also tolerates small float drift from any computed anchor.
+        axis = max(range(3), key=lambda i: abs(anchor.normal[i]))
+        sign = 1 if anchor.normal[axis] > 0 else -1
+
+        new_size = list(self.size)
+        new_size[axis] += eps
+        bumped = Cube(
+            size=(new_size[0], new_size[1], new_size[2]),
+            center=self.center,
+            source_location=self.source_location,
+        )
+
+        # Translate so the OPPOSITE face stays put. A non-centered cube
+        # grows in the +axis direction from the origin; a centered cube
+        # grows symmetrically. Cases:
+        #   center=False, sign=+1: bumped already extends top, no translate.
+        #   center=False, sign=-1: shift -eps so the bottom moves out.
+        #   center=True,  sign=±1: bumped extended ±eps/2 either way; shift
+        #                          ±eps/2 to put the eps fully on the anchor side.
+        if self.center[axis]:
+            delta = sign * eps / 2.0
+        elif sign < 0:
+            delta = -eps
+        else:
+            delta = 0.0
+
+        if delta == 0.0:
+            return bumped
+        v = [0.0, 0.0, 0.0]
+        v[axis] = delta
+        from scadwright.ast.transforms import Translate
+        return Translate(
+            v=(v[0], v[1], v[2]),
+            child=bumped,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Sphere(Node):
@@ -76,6 +128,80 @@ class Cylinder(Node):
         """
         from scadwright.ast._edge_fillets import cylinder_chamfer
         return cylinder_chamfer(self, rim, size=size)
+
+    def cross_section_extend(self, anchor, eps: float):
+        """Cross-section extension on a cylinder, with an explicit
+        cone-apex check that the bbox-based detection can't catch.
+
+        For a cone with ``r2=0`` the top disc face has zero area but
+        the bbox at z=h is the full base disc — the dot-product check
+        passes spuriously. Detect r=0 at the requested side here and
+        raise with a cone-apex-specific message.
+        """
+        if anchor.kind != "planar":
+            return None
+        sign = 1 if anchor.normal[2] > 0 else -1
+        if (sign > 0 and self.r2 == 0) or (sign < 0 and self.r1 == 0):
+            from scadwright.errors import ValidationError
+            side = "top" if sign > 0 else "bottom"
+            raise ValidationError(
+                f"cross-section fuse: cone apex at {side} (radius=0); the "
+                f"bbox face at that plane is the full base disc, but the "
+                f"actual material is a single point with no planar contact "
+                f"region to fuse onto."
+            )
+        return super().cross_section_extend(anchor, eps)
+
+    def fuse_extend(self, anchor, eps: float):
+        """Locally extend this cylinder by ``eps`` along ``anchor``'s normal.
+
+        Supports the planar top and bottom disc anchors. Cylindrical
+        wall anchors (``kind="cylindrical"``) return ``None`` — there's
+        no parametric lever for radial extension here.
+
+        For a cone with ``r2=0`` (apex at top) extending the top is
+        meaningless (zero-area face); same for ``r1=0`` extending the
+        bottom. Both return ``None``.
+
+        For a cone with non-zero radii at both ends, bumping ``h`` makes
+        the cone slightly less steep — the apex angle changes by order
+        ``eps/h``, invisible inside the eps band where the union sits.
+        """
+        if anchor.kind != "planar":
+            return None
+        sign = 1 if anchor.normal[2] > 0 else -1
+        # Degenerate-apex check.
+        if sign > 0 and self.r2 == 0:
+            return None
+        if sign < 0 and self.r1 == 0:
+            return None
+
+        bumped = Cylinder(
+            h=self.h + eps,
+            r1=self.r1,
+            r2=self.r2,
+            center=self.center,
+            fn=self.fn,
+            fa=self.fa,
+            fs=self.fs,
+            source_location=self.source_location,
+        )
+
+        if self.center:
+            delta_z = sign * eps / 2.0
+        elif sign < 0:
+            delta_z = -eps
+        else:
+            delta_z = 0.0
+
+        if delta_z == 0.0:
+            return bumped
+        from scadwright.ast.transforms import Translate
+        return Translate(
+            v=(0.0, 0.0, delta_z),
+            child=bumped,
+            source_location=self.source_location,
+        )
 
 
 @dataclass(frozen=True)

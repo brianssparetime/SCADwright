@@ -38,6 +38,7 @@ from scadwright.component import (
 )
 from scadwright.api.args import arg, from_json, parse_args
 from scadwright.api.clearances import DEFAULT_CLEARANCES, Clearances, clearances
+from scadwright.api.fuse_mode import disable_eps_fuse, fuse_enabled
 from scadwright.api.resolution import resolution
 from scadwright.api.variant import Variant, current_variant, register_variants, variant
 from scadwright.emit import emit, emit_str
@@ -82,6 +83,8 @@ __all__ = [
     "render",
     # Config
     "resolution",
+    "disable_eps_fuse",
+    "fuse_enabled",
     "clearances",
     "Clearances",
     "DEFAULT_CLEARANCES",

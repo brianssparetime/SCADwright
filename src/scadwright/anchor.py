@@ -389,6 +389,27 @@ class _AnchorVisitor(_Visitor):
             anchors["outer_wall"] = wall
         return anchors
 
+    # --- Sphere: bbox-derived faces, but every face anchor is on the
+    # spherical surface (a tangent point), not a planar face. Declare
+    # kind="spherical" so curved-surface fuse dispatches via the bridge
+    # mechanism instead of trying the planar cross-section path. ---
+
+    def visit_Sphere(self, n):
+        from scadwright.bbox import bbox as _bbox
+        bb = _bbox(n)
+        radius = float(n.r)
+        anchors: dict[str, Anchor] = {}
+        for name, (axis, sign) in FACE_NAMES.items():
+            pos = [bb.center[0], bb.center[1], bb.center[2]]
+            pos[axis] = bb.max[axis] if sign > 0 else bb.min[axis]
+            anchors[name] = Anchor(
+                position=(pos[0], pos[1], pos[2]),
+                normal=_NORMALS[(axis, sign)],
+                kind="spherical",
+                surface_params=(("radius", radius),),
+            )
+        return anchors
+
     # --- Default: bbox-derived only (other primitives, CSG, etc). ---
 
     def generic_visit(self, n):

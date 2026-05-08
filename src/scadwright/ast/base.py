@@ -198,6 +198,69 @@ class Node(
         values = tuple((None, v) for v in args) + tuple(sorted(kwargs.items()))
         return Echo(values=values, child=self, source_location=loc)
 
+    # --- fuse extension ---
+
+    def fuse_extend(self, anchor, eps: float):
+        """Return self extended by ``eps`` along ``anchor``'s outward normal,
+        or ``None`` if this shape doesn't support local extension.
+
+        Used by ``attach(fuse=True)`` and the standalone ``fuse(...)`` to
+        produce the small overlap that keeps a union manifold-clean
+        without shifting the entire shape — the eps geometry is added
+        locally at the interface, leaving the user-facing dimensions and
+        anchors elsewhere on the shape unchanged.
+
+        Default: ``None`` (this shape doesn't support local extension;
+        the caller falls back to ``cross_section_extend`` for planar
+        anchors, or the legacy shift for non-planar). Subclasses with a
+        parametric extension lever (``Cube``, ``Cylinder`` planar caps,
+        ``LinearExtrude`` end-faces) override.
+        """
+        return None
+
+    def cross_section_extend(self, anchor, eps: float):
+        """Generic local extension via projection + slab.
+
+        Aligns ``anchor.position`` to the origin and ``anchor.normal``
+        to +Z, takes ``projection(cut=True)`` to extract the 2D
+        cross-section, ``linear_extrude``s by ``eps``, applies the
+        inverse alignment, and unions the slab into self.
+
+        The result has the contact face moved out by ``eps`` along the
+        anchor normal while every other surface of the shape stays
+        exactly where the user put it.
+
+        Raises ``ValidationError`` if the anchor doesn't lie on the
+        shape's outermost face along its normal (per the bbox-based
+        check in ``_fuse_cross_section``). Returns ``None`` only if
+        ``anchor.kind`` isn't ``"planar"`` — defensive; the cascade
+        already gates on planarity.
+
+        Subclasses can override to raise on shape-specific degenerate
+        cases the bbox check misses (e.g., ``Cylinder`` with ``r=0``
+        on the apex side).
+        """
+        if anchor.kind != "planar":
+            return None
+        from scadwright.ast._fuse_cross_section import (
+            align_anchor_to_z_up,
+            validate_planar_anchor_for_cross_section,
+        )
+        from scadwright.boolops import union as _union
+        from scadwright.ast.transforms import MultMatrix
+
+        validate_planar_anchor_for_cross_section(self, anchor)
+        m = align_anchor_to_z_up(anchor)
+        m_inv = m.invert()
+        loc = self.source_location
+        slab = (
+            MultMatrix(matrix=m, child=self, source_location=loc)
+            .projection(cut=True)
+            .linear_extrude(height=eps)
+        )
+        slab = MultMatrix(matrix=m_inv, child=slab, source_location=loc)
+        return _union(self, slab)
+
     # --- placement helpers ---
 
     def center_bbox(self, axes=None) -> "Node":
@@ -250,10 +313,30 @@ class Node(
         positions coincide). Pass ``orient=True`` to also rotate self so the
         two anchors' normals oppose each other (faces touching).
 
-        Pass ``fuse=True`` to extend self by ``eps`` into the contact face,
-        eliminating coincident-surface artifacts in unions::
+        Pass ``fuse=True`` to add a small overlap (``eps``, default
+        0.01 mm) at the contact face, eliminating coincident-surface
+        artifacts in unions::
 
             pylon = Tube(od=7, id=3, h=8).attach(floor, fuse=True)
+
+        For planar-to-planar fuses where ``self`` is a ``Cube``, a
+        ``Cylinder`` planar cap, or a ``linear_extrude`` end-face
+        (possibly wrapped in ``Translate`` / ``Rotate`` / ``Mirror``),
+        the framework extends only the contact face by ``eps`` and
+        leaves the opposite face at its declared position. Downstream
+        operations that depend on exact coincidence (``through()``,
+        further ``attach`` chains using the result's anchors) see
+        the user-facing dimensions exactly. For other shapes — non-
+        planar anchors, raw polyhedra, custom Components without
+        intrinsic extension support — ``fuse=True`` falls back to
+        translating ``self`` by ``eps`` along the contact normal,
+        matching the legacy behavior.
+
+        ``attach()`` only attempts local extension on ``self``;
+        ``other`` isn't part of the returned value, so extending it
+        wouldn't help. For the symmetric case (extend whichever side
+        qualifies), use the ``fuse(a, b, on, at)`` free function in
+        ``scadwright.boolops``.
 
         Chain a directional helper for offset placement::
 
@@ -316,21 +399,125 @@ class Node(
             other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)
         self_anchor = _resolve_attach_anchor(self, at, "self", loc)
 
+        # The scope-wide ``disable_eps_fuse()`` opt-out makes fuse=True
+        # behave as fuse=False — no parametric extension, no shift. Read
+        # the flag once here and use ``effective_fuse`` for the rest of
+        # the dispatch.
+        from scadwright.api.fuse_mode import fuse_enabled
+        effective_fuse = fuse and fuse_enabled()
+
         if not orient:
-            shift = _shift_for_anchors(self_anchor, other_anchor, fuse, eps)
-            return Translate(v=shift, child=self, source_location=loc)
+            working_self = self
+            working_self_anchor = self_anchor
+            # bridge dispatch reads the at-anchor's actual normal (not a
+            # bbox face) so curved-surface fuse can verify coaxial
+            # alignment. With orient=False, that's just self_anchor.
+            bridge_self_anchor = self_anchor
+        else:
+            # orient=True: rotate self so at-normal opposes face-normal.
+            target_normal = tuple(-c for c in other_anchor.normal)
+            working_self = _orient_child_to_normal(
+                self, self_anchor.normal, target_normal, loc
+            )
+            rotated_anchors = anchors_from_bbox(_bbox(working_self))
+            working_self_anchor = rotated_anchors.get(
+                at, rotated_anchors.get("bottom", self_anchor)
+            )
+            if working_self is self:
+                # No rotation needed (self_anchor.normal already pointed
+                # at target_normal). At-anchor stays at its original
+                # position and normal.
+                bridge_self_anchor = self_anchor
+            else:
+                # bbox-derived anchors carry axis-aligned normals that
+                # don't reflect the peg's orientation post-rotation. For
+                # the bridge dispatch we need the at-anchor's actual
+                # world-frame normal — apply the orient rotation matrix
+                # to self_anchor explicitly.
+                from scadwright.matrix import to_matrix
+                from scadwright.anchor import Anchor as _Anchor
+                import math as _math
+                rot = to_matrix(working_self)
+                new_pos = rot.apply_point(self_anchor.position)
+                new_norm = rot.apply_vector(self_anchor.normal)
+                nlen = _math.sqrt(sum(c * c for c in new_norm))
+                if nlen > 0:
+                    new_norm = tuple(c / nlen for c in new_norm)
+                bridge_self_anchor = _Anchor(
+                    position=new_pos,
+                    normal=new_norm,
+                    kind=self_anchor.kind,
+                    surface_params=self_anchor.surface_params,
+                )
 
-        # orient=True: rotate self so at-normal opposes face-normal, then translate.
-        target_normal = tuple(-c for c in other_anchor.normal)
-        child = _orient_child_to_normal(self, self_anchor.normal, target_normal, loc)
+        # Curved-host bridge dispatch. Convex-outer cylindrical / conical
+        # / spherical surfaces fill the inscription gap with a bridge
+        # piece (see ``_fuse_bridge``); concave-inner surfaces fall
+        # through to legacy shift since the peg's corners naturally sit
+        # inside host material.
+        is_curved_host = other_anchor.kind in ("cylindrical", "conical", "spherical")
+        is_inner = bool(other_anchor.surface_param("inner", default=False))
+        if effective_fuse and is_curved_host and not is_inner:
+            from scadwright.ast._fuse_bridge import (
+                build_curved_bridge,
+                coaxial_normals,
+            )
+            if not coaxial_normals(bridge_self_anchor.normal, other_anchor.normal):
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"attach(fuse=True) on a {other_anchor.kind} host "
+                    f"requires coaxial normals (peg at-anchor "
+                    f"anti-parallel to host on-anchor). Got peg normal "
+                    f"{bridge_self_anchor.normal}, host normal "
+                    f"{other_anchor.normal}. Pass orient=True, or align "
+                    f"the peg manually so its at-anchor faces the host's "
+                    f"on-anchor.",
+                    source_location=loc,
+                )
+            unfused_shift = _shift_for_anchors(
+                bridge_self_anchor, other_anchor, False, eps
+            )
+            bridge = build_curved_bridge(
+                working_self,
+                bridge_self_anchor,
+                other,
+                other_anchor,
+                unfused_shift,
+                eps,
+            )
+            if bridge is not None:
+                from scadwright.boolops import union as _union
+                placed_peg = Translate(
+                    v=unfused_shift, child=working_self, source_location=loc
+                )
+                return _union(placed_peg, bridge)
+            # No analytical depth available (host has no radius in
+            # surface_params): fall through to legacy shift.
 
-        # Recompute self's anchor position after rotation.
-        rotated_anchors = anchors_from_bbox(_bbox(child))
-        rotated_self_anchor = rotated_anchors.get(
-            at, rotated_anchors.get("bottom", self_anchor)
+        # Planar-planar local extension. Curved hosts that bypassed the
+        # bridge (concave inner, no analytical depth) fall through here,
+        # but the planar gate excludes them.
+        planar_fuse = (
+            effective_fuse
+            and working_self_anchor.kind == "planar"
+            and other_anchor.kind == "planar"
         )
-        shift = _shift_for_anchors(rotated_self_anchor, other_anchor, fuse, eps)
-        return Translate(v=shift, child=child, source_location=loc)
+        if planar_fuse:
+            extended = working_self.fuse_extend(working_self_anchor, eps)
+            if extended is None:
+                # Parametric path didn't apply; fall through to the
+                # generic cross-section path. Raises on degenerate
+                # contact (anchor not on the shape's outer face).
+                extended = working_self.cross_section_extend(working_self_anchor, eps)
+            if extended is not None:
+                shift = _shift_for_anchors(working_self_anchor, other_anchor, False, eps)
+                return Translate(v=shift, child=extended, source_location=loc)
+
+        # Legacy shift fallback.
+        shift = _shift_for_anchors(
+            working_self_anchor, other_anchor, effective_fuse, eps
+        )
+        return Translate(v=shift, child=working_self, source_location=loc)
 
     def through(
         self,

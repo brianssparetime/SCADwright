@@ -18,7 +18,7 @@ _SUBMODULE_CASES = [
       "square", "circle", "polygon", "text", "surface", "scad_import"},
      True),
     ("boolops",
-     {"union", "difference", "intersection", "hull", "minkowski"},
+     {"union", "difference", "intersection", "hull", "minkowski", "fuse"},
      True),
     ("extrusions",
      {"linear_extrude", "rotate_extrude"},

@@ -16,6 +16,34 @@ class Translate(Node):
     v: tuple[float, float, float]
     child: Node
 
+    def fuse_extend(self, anchor, eps: float):
+        """Recurse into the child with the anchor inverse-translated.
+
+        The anchor is given in the wrapper's local frame (after the
+        translate is applied). To pass it to the child, undo the
+        translate; if the child can extend along that anchor, re-wrap
+        the extended child in the same translate.
+        """
+        from scadwright.anchor import Anchor
+        inverse_anchor = Anchor(
+            position=(
+                anchor.position[0] - self.v[0],
+                anchor.position[1] - self.v[1],
+                anchor.position[2] - self.v[2],
+            ),
+            normal=anchor.normal,
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+        extended_child = self.child.fuse_extend(inverse_anchor, eps)
+        if extended_child is None:
+            return None
+        return Translate(
+            v=self.v,
+            child=extended_child,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Rotate(Node):
@@ -25,6 +53,34 @@ class Rotate(Node):
     angles: tuple[float, float, float] | None = None
     a: float | None = None
     v: tuple[float, float, float] | None = None
+
+    def fuse_extend(self, anchor, eps: float):
+        """Recurse into the child with the anchor inverse-rotated.
+
+        The anchor is given in the wrapper's local frame (after the
+        rotation is applied). To pass it to the child, undo the rotation
+        on both position and normal; if the child can extend, re-wrap
+        in the same Rotate.
+        """
+        from scadwright.anchor import Anchor
+        from scadwright.matrix import to_matrix
+        inv = to_matrix(self).invert()
+        inverse_anchor = Anchor(
+            position=inv.apply_point(anchor.position),
+            normal=inv.apply_vector(anchor.normal),
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+        extended_child = self.child.fuse_extend(inverse_anchor, eps)
+        if extended_child is None:
+            return None
+        return Rotate(
+            child=extended_child,
+            angles=self.angles,
+            a=self.a,
+            v=self.v,
+            source_location=self.source_location,
+        )
 
 
 @dataclass(frozen=True)
@@ -37,6 +93,31 @@ class Scale(Node):
 class Mirror(Node):
     normal: tuple[float, float, float]
     child: Node
+
+    def fuse_extend(self, anchor, eps: float):
+        """Recurse into the child with the anchor mirrored.
+
+        Mirror is its own inverse (M @ M == identity), so applying it
+        again gives child-frame coordinates. If the child can extend,
+        re-wrap in the same Mirror.
+        """
+        from scadwright.anchor import Anchor
+        from scadwright.matrix import to_matrix
+        m = to_matrix(self)
+        inverse_anchor = Anchor(
+            position=m.apply_point(anchor.position),
+            normal=m.apply_vector(anchor.normal),
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+        extended_child = self.child.fuse_extend(inverse_anchor, eps)
+        if extended_child is None:
+            return None
+        return Mirror(
+            normal=self.normal,
+            child=extended_child,
+            source_location=self.source_location,
+        )
 
 
 @dataclass(frozen=True)
