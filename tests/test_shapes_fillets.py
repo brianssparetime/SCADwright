@@ -96,7 +96,8 @@ def test_chamfered_box_too_small_raises():
 def test_countersink_builds():
     c = Countersink(shaft_d=3, head_d=6, head_depth=2, shaft_depth=10)
     scad = emit_str(c)
-    assert "cylinder" in scad
+    assert "rotate_extrude" in scad
+    assert "polygon" in scad
 
 
 def test_countersink_bbox():
@@ -106,13 +107,25 @@ def test_countersink_bbox():
     assert bb.max[0] == pytest.approx(3.0, abs=0.1)  # head_d/2
 
 
+def test_countersink_is_single_solid_no_internal_union():
+    """Regression: built as a single rotate_extrude, not a union of
+    cylinders. The cylinder-stack form had a coincident annular face
+    at z=shaft_depth that produced visible CSG artifacts when the
+    Component was used as a difference cutter."""
+    c = Countersink(shaft_d=3, head_d=6, head_depth=2, shaft_depth=10)
+    scad = emit_str(c)
+    assert "union" not in scad
+    assert "cylinder" not in scad
+
+
 # --- Counterbore ---
 
 
 def test_counterbore_builds():
     c = Counterbore(shaft_d=3, head_d=6, head_depth=3, shaft_depth=10)
     scad = emit_str(c)
-    assert "cylinder" in scad
+    assert "rotate_extrude" in scad
+    assert "polygon" in scad
 
 
 def test_counterbore_bbox():
@@ -120,6 +133,17 @@ def test_counterbore_bbox():
     bb = bbox(c)
     assert bb.size[2] == pytest.approx(13.0, abs=0.1)
     assert bb.max[0] == pytest.approx(3.0, abs=0.1)  # head_d/2
+
+
+def test_counterbore_is_single_solid_no_internal_union():
+    """Regression: built as a single rotate_extrude, not a union of
+    cylinders. The cylinder-stack form had a coincident annular face
+    at z=shaft_depth that produced visible CSG artifacts when the
+    Component was used as a difference cutter."""
+    c = Counterbore(shaft_d=3, head_d=6, head_depth=3, shaft_depth=10)
+    scad = emit_str(c)
+    assert "union" not in scad
+    assert "cylinder" not in scad
 
 
 # --- Screw-spec factories ---
