@@ -72,9 +72,11 @@ with resolution(fn=32):
         wire,
         helix_path(r=body_r - 2, pitch=stem_h/n_turns, turns=n_turns, points_per_turn=64),
     ).up(plate_thk)
-    stand = union(plate, stem).attach(
-        body, on="bottom", at="top", fuse=True,
-    )
+    # The stand's "top" anchor is on the helical wire's tip — a
+    # near-point contact that falls into the cross-section path's
+    # documented non-convex limitation. Use fuse=False here; the
+    # stem touches the body at a vertex either way.
+    stand = union(plate, stem).attach(body, on="bottom", at="top")
 
 # Three swept-leading-edge fins, mounted flush with the body bottom.
 # Wedge's right-triangular profile becomes the fin; rotate so base_h

@@ -101,7 +101,13 @@ The result preserves the user-facing dimensions of the shape exactly — only th
 
 The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases, and `Sphere.cross_section_extend` raises on every anchor (sphere has no planar surfaces, only tangent points).
 
-A documented limitation: a non-convex shape can have an anchor that passes the dot-product check but produces an empty cross-section in practice — a torus tangent point, two separated parts whose union bbox includes the gap. For these cases the fuse is silently a no-op (the same as `fuse=False`). Workarounds: restructure the geometry so the fuse anchor is on a convex face, wrap the assembly in `disable_eps_fuse()`, or hand-craft the eps overlap.
+Documented limitations the bbox check can't catch:
+
+- **Non-convex shapes with empty cross-sections.** A torus tangent point, two separated parts whose union bbox includes the gap, an anchor placed where a `difference()` removed all the material at that plane. Bbox check passes but the cross-section is empty; the fuse silently becomes a no-op (geometrically the same as `fuse=False`).
+
+- **Polyhedra with degenerate end caps at the bbox extreme.** A path_extrude'd helix or other polyhedron whose top/bottom face lies exactly at the bbox max or min along the normal can cause OpenSCAD's CGAL to fail at render time with an opaque "given mesh is not closed" / "Projection() failed" error. The scadwright build succeeds but the rendered output is broken.
+
+Workarounds for all the limitations: restructure the geometry so the fuse anchor is on a clean convex planar face, use `fuse=False` on that one attach, wrap the assembly in `disable_eps_fuse()`, or hand-craft the eps overlap.
 
 ### When neither extension path applies
 
