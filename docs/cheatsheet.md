@@ -767,7 +767,12 @@ scadwright build widget.py --from-json design.json --from-json caps.json
 scadwright build widget.py --help
 scadwright preview widget.py                                # build + open in OpenSCAD GUI
 scadwright render widget.py -o widget.stl                   # build + headless STL render
+scadwright graph project/                                   # Mermaid dependency graph
+scadwright graph project/ --format json --filter Holder     # JSON / DOT / focus + depth
+scadwright lsp                                              # language server (editors spawn this)
 ```
+
+LSP integration: `pip install 'scadwright[lsp]'`, then point your editor at `scadwright lsp`. Full setup → [lsp_setup.md](lsp_setup.md).
 
 ## Errors &nbsp; &nbsp;[→ full](errors_and_logging.md)
 

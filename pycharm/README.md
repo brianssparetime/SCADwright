@@ -107,4 +107,6 @@ Autocomplete behavior:
 - After `:` (and optional whitespace), only the six type names are suggested.
 - At expression position (anywhere else inside the block), all five categories of the curated namespace are suggested, plus the keywords. Math/builtin/cardinality entries auto-insert `()` and place the caret between the parens.
 
-Identifiers outside the curated namespace (your own Param names) get the editor's default text color and aren't auto-completed; cross-line name awareness inside an equations block isn't there yet and would need a real parser to do well.
+Identifiers outside the curated namespace (your own Param names) get the editor's default text color and aren't auto-completed by this plugin; cross-line name awareness inside an equations block isn't part of the native plugin's scope.
+
+For richer features — inline diagnostics, hover, goto-definition, project-wide rename, and Param-aware completion across `equations` blocks — the SCADwright language server (`scadwright lsp`, installed via `pip install 'scadwright[lsp]'`) provides them. PyCharm Community has no built-in LSP client, but PyCharm Professional does and can run `scadwright lsp` alongside this plugin. See [`docs/lsp_setup.md`](../docs/lsp_setup.md) for the LSP feature list and editor configs.

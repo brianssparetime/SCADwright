@@ -2,7 +2,7 @@
 
 Three things this extension does:
 
-1. **Language server**: spawns `scadwright lsp` to provide diagnostics, completion, hover, goto-definition, document symbols, and rename for `equations = """..."""` blocks. Errors appear as squiggles while you type, completion offers Param names and the curated math/builtins namespace, hover shows declared types and defaults.
+1. **Language server**: spawns `scadwright lsp` for diagnostics, completion, hover, goto-definition, document symbols, and project-wide rename inside `equations = """..."""` blocks. Feature details live in [`docs/lsp_setup.md`](../docs/lsp_setup.md).
 2. Adds **Kill / Preview / Render** icons to the editor title bar, so you can build and view a scadwright script without leaving VSCode.
 3. Colors the small equation language inside `equations = """..."""` blocks, so the `?` sigils, `:type` tags, math functions, and operators show up with their own colors instead of all looking like one string.
 
@@ -72,20 +72,14 @@ If you only want the toolbar and coloring, set `scadwright.lsp.enable` to `false
 
 The language server's binary is auto-discovered. If you set `scadwright.scadwrightCommand` (in workspace, user, or folder settings), the LSP uses that path. Otherwise, it looks for `<workspaceRoot>/.venv/bin/scadwright` (or `.venv\Scripts\scadwright.exe` on Windows) before falling back to `scadwright` on `PATH`. The first-found binary wins across multi-root workspaces.
 
-## What the language server provides
+## Language server
 
-While editing an `equations = """..."""` block:
+The extension spawns `scadwright lsp` on every Python file. The full feature list (diagnostics, completion, hover, goto-definition, document symbols, project-wide rename) and the editor-agnostic background lives in [`docs/lsp_setup.md`](../docs/lsp_setup.md). The VSCode-specific behavior:
 
-- **Diagnostics**: every error the resolver raises at class-definition time (unknown function names, type-tag disagreements, mutual inconsistency, malformed adjustments, comma-broadcast mistakes, override-pattern unsafety) appears as a squiggle on the offending range, with the same message the runtime would print.
-- **Completion** at expression position (curated math/builtins, the surrounding class's `Param` declarations, bare-Name targets declared on earlier equation lines), after `:` (the inline type-tag allowlist), and after `.` (a Component-typed Param's own `Param` names — same-file only). Callables auto-insert parentheses.
-- **Hover** on any name: curated functions show signatures and brief descriptions; `Param`-declared names show their type, default, and `doc=` text; auto-declared targets show the equation line where they were first introduced.
-- **Goto-definition** on any name: jumps to the `name = Param(...)` assignment for declared Params, or to the equation line that first introduces an auto-declared bare-Name target.
-- **Document symbols** for outline view: each Component class with an equations block shows its declared Params nested underneath.
-- **Rename** on any renameable name: updates the `Param` assignment if applicable plus every reference inside the same class's equations strings, in one workspace edit.
-
-The language server runs on every Python file but only does work when it sees an `equations = ...` assignment. No user code is imported — the server parses the source via `ast.parse`, the same surface the runtime resolver uses.
-
-If pygls isn't installed (or `scadwright[lsp]` hasn't been pip-installed), the language server fails to start and a one-time install hint appears in the SCADwright output channel. The toolbar icons and coloring keep working regardless.
+- The language server runs on every Python file but only does work when it sees an `equations = ...` assignment — harmless on non-scadwright files.
+- If `vscode-languageclient` (npm) hasn't been installed, the extension activates in TextMate-only mode and pops a one-time warning so you know to run `npm install`.
+- If `pygls` (Python) isn't installed, the language server fails to start and a hedged install hint appears in the SCADwright output channel; toolbar icons and coloring keep working.
+- `scadwright.lsp.enable=false` opts out of the language server entirely (TextMate + toolbar only).
 
 ## What the icons do
 

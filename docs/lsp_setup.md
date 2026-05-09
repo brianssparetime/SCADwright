@@ -151,7 +151,7 @@ The `"..."` keeps Zed's default Python servers active alongside `scadwright`.
 
 ### VSCode
 
-VSCode users already have the SCADwright extension (which provides a TextMate grammar for coloring inside `equations = """..."""`). The LSP can be configured alongside, but the existing extension does not spawn it automatically; consult the extension's README if you want to point at a specific Python interpreter for runtime tasks.
+The SCADwright extension spawns `scadwright lsp` automatically when a Python file opens — the same `[lsp]` extra install (`pip install 'scadwright[lsp]'`) is the only thing you need on the Python side. The extension auto-discovers `<workspaceRoot>/.venv/bin/scadwright` (or the `.venv\Scripts\scadwright.exe` Windows equivalent), or honors `scadwright.scadwrightCommand` if set in workspace / user / folder settings. See `vscode/README.md` for install steps and the full list of settings (toolbar `scadwright.scadwrightCommand`, `scadwright.lsp.enable`, `scadwright.lsp.trace.server`).
 
 ### PyCharm / IntelliJ
 

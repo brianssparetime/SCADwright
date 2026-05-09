@@ -2,7 +2,7 @@
 
 A Component is a parametric part you define as a Python class. It behaves like an OpenSCAD `module`, with two additions: the caller can read computed values off it, and it acts like a shape itself. You can transform it, combine it with other shapes, or render it directly.
 
-For when and why to introduce Components in a project, see [Organizing a project](organizing_a_project.md).
+For when and why to introduce Components in a project, see [Organizing a project](organizing_a_project.md). For inline editor support on the equations DSL — diagnostics, completion, hover, goto-definition, and project-wide rename — see [LSP setup](lsp_setup.md).
 
 ## Your first Component
 
