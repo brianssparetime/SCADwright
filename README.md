@@ -39,6 +39,8 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
+## A picture is worth 250 lines of OpenSCAD
+
 <p align="center">
   <a href="examples/rocket.py"><img src="examples/images/Rocket.png" alt="Rocket" width="416"></a>
 </p>
