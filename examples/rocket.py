@@ -1,6 +1,6 @@
 """A 3D-printable rocket on a coiled-spring stand
 
-Total: 59 lines of code in scadwright; ~340 in equivalent OpenSCAD.
+Total: 59 lines of code in scadwright; ~360 in equivalent OpenSCAD.
 
 By component (scadwright / openscad):
 
@@ -13,7 +13,9 @@ By component (scadwright / openscad):
 - Bolt-holes (M2 counterbores from ISO
   spec + 2x2 linear_copy + through()):       6  / ~25
 - Engravings (two curved-meridian add_text
-  calls — SCAD-1 + two-line punchline):      8  / ~70
+  calls; per-glyph proportional spacing
+  and surface-tangent rotation; SCAD-1 +
+  multi-line punchline):                     8  / ~90
 
 Average: 6x reduction.
 

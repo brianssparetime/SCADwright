@@ -20,7 +20,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | A `Lid` that reads values off a `Box` (the `Box` is a parameter on the `Lid`). `build()` written as a series of `yield` lines. `add_text()` labels the lid. |
 | Complex | [`electronics-case.py`](electronics-case.py) | `namedtuple` specs for the PCB and its ports. Three custom transforms. Separate variants for print vs. display. |
 | Complex | [`lens-housing.py`](lens-housing.py) | A helper that turns each lens element into a record with precomputed fields. A conditional that picks between two body shapes. A `halve()` section view in the print variant. |
-| Complex | [`rocket.py`](rocket.py) | A wide cross-section of the shape library: `Helix` with a custom `almond_profile`, `Barrel`, `Ogive`, fins via `polygon` + `minkowski(sphere)`, M2 counterbores stamped in a 2x2 array, curved-meridian `add_text` engravings. 59 lines vs. ~340 of equivalent OpenSCAD. |
+| Complex | [`rocket.py`](rocket.py) | A wide cross-section of the shape library: `Helix` with a custom `almond_profile`, `Barrel`, `Ogive`, fins via `polygon` + `minkowski(sphere)`, M2 counterbores stamped in a 2x2 array, curved-meridian `add_text` engravings. 59 lines vs. ~360 of equivalent OpenSCAD. |
 
 ---
 
@@ -178,7 +178,7 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 
 ## 8. [`rocket.py`](rocket.py)
 
-A 3D-printable model rocket on a coiled-spring stand: parabolic ogive nose, bulged body, three parabolic-swept fins with rounded edges, a flared nozzle, a tapered helicoid stem with an almond cross-section, and a filleted M2-counterbored baseplate. The body carries a horizontal `SCADwright` wordmark and an axial multi-line punchline, both engraved on a curved meridian. **59 lines of scadwright vs. ~340 of equivalent OpenSCAD** — most of the savings come from the helicoid (which OpenSCAD has to hand-roll as a polyhedron from explicit points and faces) and the engravings (which OpenSCAD has to position one glyph at a time).
+A 3D-printable model rocket on a coiled-spring stand: parabolic ogive nose, bulged body, three parabolic-swept fins with rounded edges, a flared nozzle, a tapered helicoid stem with an almond cross-section, and a filleted M2-counterbored baseplate. The body carries a horizontal `SCADwright` wordmark and an axial multi-line punchline, both engraved on a curved meridian. **59 lines of scadwright vs. ~360 of equivalent OpenSCAD** — most of the savings come from the helicoid (which OpenSCAD has to hand-roll as a polyhedron from explicit points and faces) and the engravings (which OpenSCAD has to compute per-glyph advances, place each glyph against the bulged surface's tangent frame, and rotate each glyph 90° for the axial punchline — all by hand).
 
 This is a flat script — no Components, no Design class — built from shape-library parts and the composition helpers earlier examples introduced. The one new surface is passing a custom 2D profile (`almond_profile(...)`) to a swept Component (`Helix`).
 
