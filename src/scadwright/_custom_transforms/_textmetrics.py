@@ -239,29 +239,55 @@ def _resolve_font_path(font: str | None) -> str | None:
     return None
 
 
-# Common install locations for Liberation Sans Regular, in priority order.
-# OpenSCAD bundles it on macOS/Windows; Linux distros usually package it.
+# Where Liberation Sans Regular tends to live, in priority order. OpenSCAD
+# bundles it on macOS/Windows; Linux distros usually package it. Patterns
+# with wildcards expand via ``glob`` so version-numbered Homebrew Cellar
+# paths and similar are reachable without re-pinning. Order matters — we
+# return the first hit, so app-bundle paths come before bare system paths
+# (we want the same font OpenSCAD would render with).
 _LIBERATION_SANS_CANDIDATES: tuple[str, ...] = (
-    # macOS — OpenSCAD app bundle
-    "/Applications/OpenSCAD.app/Contents/Resources/fonts/Liberation-2.00.1/ttf/LiberationSans-Regular.ttf",
+    # macOS — OpenSCAD app bundle (DMG/installer)
+    "/Applications/OpenSCAD.app/Contents/Resources/fonts/Liberation-*/ttf/LiberationSans-Regular.ttf",
+    # macOS — Homebrew Cellar (Apple Silicon and Intel)
+    "/opt/homebrew/Cellar/openscad/*/OpenSCAD.app/Contents/Resources/fonts/Liberation-*/ttf/LiberationSans-Regular.ttf",
+    "/usr/local/Cellar/openscad/*/OpenSCAD.app/Contents/Resources/fonts/Liberation-*/ttf/LiberationSans-Regular.ttf",
+    # Linux — Flatpak OpenSCAD
+    "/var/lib/flatpak/app/org.openscad.OpenSCAD/current/active/files/share/openscad/fonts/Liberation-*/ttf/LiberationSans-Regular.ttf",
+    # Linux — Snap OpenSCAD
+    "/snap/openscad/current/usr/share/openscad/fonts/Liberation-*/ttf/LiberationSans-Regular.ttf",
     # Linux — common distro paths
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
     "/usr/share/fonts/TTF/LiberationSans-Regular.ttf",
     "/usr/local/share/fonts/LiberationSans-Regular.ttf",
-    # Homebrew (macOS) — if user installed font-liberation cask
+    # Homebrew (macOS) — font-liberation cask
     "/opt/homebrew/share/fonts/LiberationSans-Regular.ttf",
+    "/usr/local/share/fonts/LiberationSans-Regular.ttf",
     # Windows — OpenSCAD installer
+    r"C:\Program Files\OpenSCAD\fonts\Liberation-*\ttf\LiberationSans-Regular.ttf",
+    r"C:\Program Files (x86)\OpenSCAD\fonts\Liberation-*\ttf\LiberationSans-Regular.ttf",
     r"C:\Program Files\OpenSCAD\fonts\LiberationSans-Regular.ttf",
     r"C:\Program Files (x86)\OpenSCAD\fonts\LiberationSans-Regular.ttf",
 )
 
 
 def _find_default_liberation_sans() -> str | None:
-    """Walk known install locations for Liberation Sans Regular."""
-    for path in _LIBERATION_SANS_CANDIDATES:
-        if os.path.isfile(path):
-            return path
+    """Walk known install locations for Liberation Sans Regular.
+
+    Each candidate is a path or a ``glob`` pattern (used for the
+    version-numbered Homebrew Cellar / Liberation-2.x.y bundle layouts).
+    Returns the first existing file, or None.
+    """
+    import glob
+    for pattern in _LIBERATION_SANS_CANDIDATES:
+        if any(c in pattern for c in "*?["):
+            for hit in sorted(glob.glob(pattern), reverse=True):
+                if os.path.isfile(hit):
+                    return hit
+        else:
+            if os.path.isfile(pattern):
+                return pattern
     return None
 
 
