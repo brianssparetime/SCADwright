@@ -23,57 +23,57 @@
         "command": "scadwright.kill",
         "title": "SCADwright: Kill OpenSCAD",
         "icon": {
-          "light": "icons/kill.svg",
-          "dark": "icons/kill.svg"
+          "light": "icons/kill-light.svg",
+          "dark": "icons/kill-dark.svg"
         }
       },
       {
         "command": "scadwright.preview",
         "title": "SCADwright: Preview in OpenSCAD",
         "icon": {
-          "light": "icons/preview.svg",
-          "dark": "icons/preview.svg"
+          "light": "icons/preview-light.svg",
+          "dark": "icons/preview-dark.svg"
         }
       },
       {
         "command": "scadwright.render",
         "title": "SCADwright: Render to STL",
         "icon": {
-          "light": "icons/render.svg",
-          "dark": "icons/render.svg"
+          "light": "icons/render-light.svg",
+          "dark": "icons/render-dark.svg"
         }
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "scadwright.kill",
-          "when": "scadwright.isSCADwrightFile",
+          "command": "scadwright.preview",
+          "when": "scadwright.isscadwrightFile",
           "group": "navigation@1"
         },
         {
-          "command": "scadwright.preview",
-          "when": "scadwright.isSCADwrightFile",
+          "command": "scadwright.kill",
+          "when": "scadwright.isscadwrightFile",
           "group": "navigation@2"
         },
         {
           "command": "scadwright.render",
-          "when": "scadwright.isSCADwrightFile",
+          "when": "scadwright.isscadwrightFile",
           "group": "navigation@3"
         }
       ],
       "commandPalette": [
         {
           "command": "scadwright.kill",
-          "when": "scadwright.isSCADwrightFile"
+          "when": "scadwright.isscadwrightFile"
         },
         {
           "command": "scadwright.preview",
-          "when": "scadwright.isSCADwrightFile"
+          "when": "scadwright.isscadwrightFile"
         },
         {
           "command": "scadwright.render",
-          "when": "scadwright.isSCADwrightFile"
+          "when": "scadwright.isscadwrightFile"
         }
       ]
     },
