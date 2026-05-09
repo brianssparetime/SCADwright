@@ -4,34 +4,42 @@
 union() {
     cylinder(h=30, r=12, center=false);
 
-    translate([11.9301, -1.197, 17.4]) {
+    translate([11.9301, -1.197, 21.8]) {
         multmatrix([[0.0998334, 0, 0.995004, 0], [0.995004, 0, -0.0998334, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                text("A", size=4, halign="center", valign="center");
+                translate([-1.2, 0, 0]) {
+                    text("A", size=4);
+                }
             }
         }
     }
 
-    translate([11.9301, 1.197, 17.4]) {
+    translate([11.9301, 1.197, 21.8]) {
         multmatrix([[-0.0998334, 0, 0.995004, 0], [0.995004, 0, 0.0998334, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                text("B", size=4, halign="center", valign="center");
+                translate([-1.2, 0, 0]) {
+                    text("B", size=4);
+                }
             }
         }
     }
 
-    translate([11.9301, -1.197, 12.6]) {
+    translate([11.9301, -1.197, 17]) {
         multmatrix([[0.0998334, 0, 0.995004, 0], [0.995004, 0, -0.0998334, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                text("C", size=4, halign="center", valign="center");
+                translate([-1.2, 0, 0]) {
+                    text("C", size=4);
+                }
             }
         }
     }
 
-    translate([11.9301, 1.197, 12.6]) {
+    translate([11.9301, 1.197, 17]) {
         multmatrix([[-0.0998334, 0, 0.995004, 0], [0.995004, 0, 0.0998334, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                text("D", size=4, halign="center", valign="center");
+                translate([-1.2, 0, 0]) {
+                    text("D", size=4);
+                }
             }
         }
     }

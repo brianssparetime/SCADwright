@@ -207,3 +207,188 @@ class TestRealMetrics:
         msgs = [r.getMessage() for r in caplog.records]
         name_warnings = [m for m in msgs if "name-based system font lookup" in m]
         assert len(name_warnings) == 2, f"expected one warning per font, got {msgs}"
+
+
+# --- Dispatch-level valign behaviour ---
+
+
+from scadwright.errors import ValidationError
+from scadwright.primitives import cube, cylinder
+from scadwright.shapes import Tube
+
+
+def _emit(node):
+    """Render to an emitter-debug string for substring assertions."""
+    from scadwright.emit.scad import emit_str
+    return emit_str(node)
+
+
+class TestValignDispatch:
+    """``valign`` resolution and rejection at the dispatch level."""
+
+    def test_curved_default_is_baseline(self):
+        # Default valign on a cylindrical wall should resolve to "baseline".
+        # The OpenSCAD ``text()`` default is also baseline, so no halign/valign
+        # arg appears at all in the emitted text() call.
+        scad = _emit(
+            cylinder(h=20, r=10).add_text(
+                label="X", relief=0.4, on="outer_wall", font_size=4,
+            )
+        )
+        # No explicit valign in the per-glyph text() call (baseline is the
+        # OpenSCAD default and the emitter omits it).
+        assert 'valign="center"' not in scad
+        assert 'valign="baseline"' not in scad
+        # And halign="left" is also the default, so it's omitted too.
+        assert 'halign="center"' not in scad
+        assert 'text("X", size=4)' in scad
+
+    def test_curved_explicit_valign_center_rejected(self):
+        # add_text is a custom transform — validation happens at emit time
+        # when the body actually expands, not at call time.
+        node = cylinder(h=20, r=10).add_text(
+            label="X", relief=0.4, on="outer_wall", font_size=4,
+            valign="center",
+        )
+        with pytest.raises(ValidationError, match="valign='center' is not supported"):
+            _emit(node)
+
+    def test_conical_explicit_valign_center_rejected(self):
+        node = cylinder(h=20, r1=10, r2=4).add_text(
+            label="X", relief=0.4, on="outer_wall", font_size=4,
+            valign="center",
+        )
+        with pytest.raises(ValidationError, match="valign='center' is not supported"):
+            _emit(node)
+
+    def test_inner_wall_explicit_valign_center_rejected(self):
+        node = Tube(h=30, od=24, thk=2).add_text(
+            label="X", relief=0.4, on="inner_wall", font_size=4,
+            valign="center",
+        )
+        with pytest.raises(ValidationError, match="valign='center' is not supported"):
+            _emit(node)
+
+    def test_rim_arc_explicit_valign_center_rejected(self):
+        # A cylinder top with default text_curvature is a rim arc.
+        node = cylinder(h=10, r=15).add_text(
+            label="X", relief=0.4, on="top", font_size=4,
+            valign="center",
+        )
+        with pytest.raises(ValidationError, match="valign='center' is not supported"):
+            _emit(node)
+
+    def test_planar_default_valign_unchanged_center(self):
+        # A flat planar face still defaults to valign="center" because the
+        # whole label emits as one text() call, where "center" works.
+        scad = _emit(
+            cube([20, 20, 4], center="xy").add_text(
+                label="X", relief=0.4, on="top", font_size=4,
+            )
+        )
+        # Single-line planar emit forwards the resolved valign into text();
+        # OpenSCAD's text() default is "baseline", so "center" appears.
+        assert 'valign="center"' in scad
+
+    def test_planar_explicit_valign_center_accepted(self):
+        # Planar still allows explicit "center" — validation only fires on curved/rim.
+        scad = _emit(
+            cube([20, 20, 4], center="xy").add_text(
+                label="X", relief=0.4, on="top", font_size=4,
+                valign="center",
+            )
+        )
+        assert 'valign="center"' in scad
+
+    def test_rim_arc_flat_curvature_default_center(self):
+        # text_curvature="flat" on a rim takes the planar (whole-line) path,
+        # so valign default reverts to "center".
+        scad = _emit(
+            cylinder(h=10, r=15).add_text(
+                label="X", relief=0.4, on="top", font_size=4,
+                text_curvature="flat",
+            )
+        )
+        assert 'valign="center"' in scad
+
+    def test_rim_arc_flat_curvature_explicit_center_accepted(self):
+        # And explicit valign="center" on flat-curvature rim is accepted.
+        scad = _emit(
+            cylinder(h=10, r=15).add_text(
+                label="X", relief=0.4, on="top", font_size=4,
+                text_curvature="flat", valign="center",
+            )
+        )
+        assert 'valign="center"' in scad
+
+
+class TestPerGlyphEmission:
+    """Per-glyph emit shape: halign="left", valign="baseline", advance-centered."""
+
+    def test_per_glyph_text_omits_center_args(self):
+        # halign="left" and valign="baseline" are OpenSCAD's text() defaults,
+        # so the emitter omits both. The 2D translate that pre-centers each
+        # glyph is the visible artefact.
+        scad = _emit(
+            cylinder(h=20, r=10).add_text(
+                label="AB", relief=0.4, on="outer_wall", font_size=4,
+            )
+        )
+        assert 'halign="center"' not in scad
+        assert 'valign="center"' not in scad
+        # Advance midpoint pre-centering: heuristic mode → advance=0.6*4=2.4,
+        # half=1.2, applied as a 2D translate before linear_extrude.
+        assert "translate([-1.2, 0, 0])" in scad
+
+    def test_per_glyph_emit_on_rim_arc(self):
+        scad = _emit(
+            cylinder(h=10, r=15).add_text(
+                label="AB", relief=0.4, on="top", font_size=4,
+            )
+        )
+        assert 'halign="center"' not in scad
+        assert 'valign="center"' not in scad
+        assert "translate([-1.2, 0, 0])" in scad
+
+
+def test_heuristic_uniform_pre_translate():
+    """In heuristic mode (no freetype marker → autouse fixture disables it)
+    every glyph gets the same -advance/2 pre-translate."""
+    scad = _emit(
+        cylinder(h=20, r=10).add_text(
+            label="iW", relief=0.4, on="outer_wall", font_size=4,
+        )
+    )
+    import re
+    translates = re.findall(r"translate\(\[(-?\d+\.\d+), 0, 0\]\)", scad)
+    vals = {float(t) for t in translates if float(t) < 0}
+    # Heuristic: every glyph gets the same pre-translate of -0.6 * size / 2
+    # = -1.2 at size=4.
+    assert vals == {-1.2}, (
+        f"expected uniform -1.2 pre-translate, got {translates}"
+    )
+
+
+@pytest.mark.freetype
+class TestProportionalSpacingIntegration:
+    """End-to-end: real font metrics drive non-uniform glyph spacing on curved hosts."""
+
+    def test_narrow_glyph_packs_tighter_than_wide(self, bundled_font_path):
+        # Place "iW" on a cylinder; with proportional metrics the i pre-translate
+        # is much smaller than the W pre-translate (i is much narrower than W).
+        scad = _emit(
+            cylinder(h=20, r=10).add_text(
+                label="iW", relief=0.4, on="outer_wall", font_size=4,
+                font=bundled_font_path,
+            )
+        )
+        # Liberation Sans 2.00.1 advances at size=4: i ~ 0.889mm, W ~ 3.775mm.
+        # Pre-translate per glyph is -advance/2 in the 2D frame. Don't assert
+        # exact byte values (that would tie the test to a specific float-format
+        # of the rendering), but both must be present and distinct.
+        import re
+        translates = re.findall(r"translate\(\[(-?\d+\.\d+), 0, 0\]\)", scad)
+        vals = sorted({float(t) for t in translates if float(t) < 0})
+        assert len(vals) >= 2, (
+            f"expected distinct per-glyph 2D pre-translates, got {translates}"
+        )

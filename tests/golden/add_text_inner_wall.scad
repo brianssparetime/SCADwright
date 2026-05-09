@@ -18,7 +18,9 @@ union() {
     translate([7.92006, -1.197, 10]) {
         multmatrix([[-0.149438, 0, -0.988771, 0], [-0.988771, 0, 0.149438, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                text("I", size=4, halign="center", valign="center");
+                translate([-1.2, 0, 0]) {
+                    text("I", size=4);
+                }
             }
         }
     }
@@ -26,7 +28,9 @@ union() {
     translate([7.92006, 1.197, 10]) {
         multmatrix([[0.149438, 0, -0.988771, 0], [-0.988771, 0, -0.149438, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                text("N", size=4, halign="center", valign="center");
+                translate([-1.2, 0, 0]) {
+                    text("N", size=4);
+                }
             }
         }
     }

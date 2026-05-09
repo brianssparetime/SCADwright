@@ -287,10 +287,14 @@ def test_rim_line_non_positive_radius_rejected():
     """If the inner line of a multi-line rim arc would have non-positive
     path radius, raise."""
     # Small rim (r=5), large font_size and line_spacing → inner line
-    # radius could go below 0.
+    # radius could go below 0. valign="top" pulls the block's inner
+    # line below the rim's path_radius so the safety check fires;
+    # the default "baseline" stacks lines in the positive-offset
+    # direction only.
     with pytest.raises(ValidationError, match="non-positive"):
         emit_str(cylinder(h=10, r=5).add_text(
             label="A\nB", relief=0.3, on="top", font_size=8, line_spacing=2.0,
+            valign="top",
         ))
 
 

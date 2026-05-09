@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from scadwright._custom_transforms._textmetrics import get_advances
 from scadwright._custom_transforms.base import transform
 from scadwright._logging import get_logger
 from scadwright.anchor import (
@@ -35,6 +36,12 @@ _log = get_logger("scadwright.add_text")
 # prism slightly into the host (clean union seam) and overshoots a cutter
 # both above and below the surface (clean difference cut).
 _PLACEMENT_EPS = 0.01
+
+# Sentinel used as the default for ``valign`` so we can resolve it
+# context-dependently (curved/rim → "baseline", flat planar → "center")
+# without changing the kwarg's documented default for users who pass an
+# explicit value.
+_UNSET = object()
 
 
 # --- Multi-line helpers ---
@@ -215,6 +222,29 @@ def _resolve_placement(host, on, at, normal, loc):
         anchor = _apply_face_offset(anchor, anchor_name, at)
 
     return anchor, face_dims
+
+
+def _resolve_planar_curvature(placement_anchor, text_curvature):
+    """Resolve the rim/flat split for a planar anchor.
+
+    Returns ``(is_rim, use_arc)``. Validates that ``text_curvature='arc'``
+    only appears on rim anchors. Used both upfront (so the valign default
+    can know whether placement will be per-glyph) and inside the planar
+    dispatch (where it's always called).
+    """
+    rim_radius = placement_anchor.surface_param("rim_radius")
+    is_rim = rim_radius is not None
+    if text_curvature == "arc":
+        if not is_rim:
+            raise ValidationError(
+                "add_text: text_curvature='arc' requires a rim anchor "
+                "(top/bottom of a Cylinder, Tube, or Funnel). This "
+                "anchor has no rim_radius surface_param."
+            )
+        return is_rim, True
+    if text_curvature == "flat":
+        return is_rim, False
+    return is_rim, is_rim  # default: arc on rim, flat elsewhere
 
 
 def _apply_face_offset(anchor, face_name, at):
@@ -692,7 +722,7 @@ def _place_wrapped(
             abs_relief=abs_relief,
             raised=raised,
             base_meridian_rad=line_meridian_rad,
-            halign=halign, valign=valign,
+            halign=halign,
             axis=axis,
             anchor_normal=anchor.normal,
             axis_origin=axis_origin,
@@ -720,7 +750,7 @@ def _emit_wrap_line(
     *,
     line, line_radius, line_at_z,
     font_size, extrude_h, eps, abs_relief, raised,
-    base_meridian_rad, halign, valign,
+    base_meridian_rad, halign,
     axis, anchor_normal, axis_origin, s_outward,
     is_conical, text_orient,
     text_dir, rotate_glyphs, flip,
@@ -749,15 +779,31 @@ def _emit_wrap_line(
     where (e1, e2) = (surface tangent, surface "up" direction). The "up"
     direction is the surface axis in the simple case and the slant axis
     when text_orient="slant" on a conical or meridional wall.
+
+    Per-glyph emit always uses ``halign="left"`` and ``valign="baseline"``,
+    pre-translated by ``-advance/2`` along local 2D-x so each glyph's
+    advance midpoint sits at the placement origin. The caller's halign
+    drives where that line of advance midpoints sits relative to
+    ``base_meridian_rad`` (or ``line_at_z`` in axial mode); the caller's
+    valign was applied at the line-stacking stage (see ``_line_y_offsets``)
+    and doesn't reach here.
+
+    Centering on the advance midpoint (rather than the left edge) keeps
+    the orientation matrix evaluated at the glyph's visual centre, which
+    matters most for short labels where evaluating at the left edge
+    leaves the whole glyph noticeably rotated.
     """
-    n_chars = len(line)
-    advance_mm = 0.6 * font_size * text_kwargs.get("spacing", 1.0)
+    advances_mm = get_advances(
+        tuple(line),
+        font=text_kwargs.get("font"),
+        size=font_size,
+        spacing=text_kwargs.get("spacing", 1.0),
+    )
 
     # Per-char offset list and overflow check, branching on text_dir.
     if text_dir == "circumferential":
-        # Step is angular (radians around axis).
-        arc_step = advance_mm / line_radius
-        total_arc_rad = n_chars * arc_step
+        total_mm = sum(advances_mm)
+        total_arc_rad = total_mm / line_radius
         if total_arc_rad > 2 * math.pi:
             loc_str = f" (at {loc})" if loc else ""
             _log.warning(
@@ -765,40 +811,56 @@ def _emit_wrap_line(
                 "%.2f mm — glyphs will overlap%s",
                 line, 100 * total_arc_rad / (2 * math.pi), line_radius, loc_str,
             )
+        # Per-glyph CENTER position (mm, from base_meridian). Each glyph's
+        # advance midpoint sits here; the per-glyph 2D shape is shifted
+        # by -advance/2 so that midpoint coincides with the placement origin.
+        # halign decides how the cumulative line spans relative to base_meridian.
         sign = -1.0 if flip else 1.0
+        cum = [0.0]
+        for a in advances_mm[:-1]:
+            cum.append(cum[-1] + a)
         if halign == "left":
-            scalar_offsets = [(i + 0.5) * arc_step * sign for i in range(n_chars)]
+            centers_mm = [c + a / 2.0 for c, a in zip(cum, advances_mm)]
         elif halign == "right":
-            scalar_offsets = [-(n_chars - i - 0.5) * arc_step * sign for i in range(n_chars)]
+            centers_mm = [c + a / 2.0 - total_mm for c, a in zip(cum, advances_mm)]
         else:
-            scalar_offsets = [(i - (n_chars - 1) / 2.0) * arc_step * sign for i in range(n_chars)]
+            centers_mm = [c + a / 2.0 - total_mm / 2.0 for c, a in zip(cum, advances_mm)]
+        scalar_offsets = [m / line_radius * sign for m in centers_mm]
         char_advances = [(o, 0.0) for o in scalar_offsets]
     else:  # text_dir == "axial"
-        # Step is axial (mm along axis or slant). On slanted surfaces with
-        # text_orient="slant", scale by the line-center slant_axial_component
-        # so spacing measures arc-length along the slant (gives uniform
-        # visual spacing on a tapered surface).
+        # On slanted surfaces with text_orient="slant", scale per-glyph
+        # advance by the line-center slant_axial_component so spacing
+        # measures arc-length along the slant (uniform visual spacing on
+        # a tapered surface; using the line-center value uniformly is the
+        # same approximation as before).
         if (is_conical or anchor_normal is None) and text_orient == "slant":
-            axial_step = advance_mm * slant_axial_component
+            axial_advances = [a * slant_axial_component for a in advances_mm]
         else:
-            axial_step = advance_mm
+            axial_advances = list(advances_mm)
+        total_mm = sum(axial_advances)
+        cum = [0.0]
+        for a in axial_advances[:-1]:
+            cum.append(cum[-1] + a)
         # Default axial direction: -axis (top-to-bottom on a vertical
         # cylinder, char 0 at the top). flip negates.
         sign = 1.0 if flip else -1.0
         if halign == "left":
-            scalar_offsets = [(i + 0.5) * axial_step * sign for i in range(n_chars)]
+            centers_mm = [c + a / 2.0 for c, a in zip(cum, axial_advances)]
         elif halign == "right":
-            scalar_offsets = [-(n_chars - i - 0.5) * axial_step * sign for i in range(n_chars)]
+            centers_mm = [c + a / 2.0 - total_mm for c, a in zip(cum, axial_advances)]
         else:
-            scalar_offsets = [(i - (n_chars - 1) / 2.0) * axial_step * sign for i in range(n_chars)]
+            centers_mm = [c + a / 2.0 - total_mm / 2.0 for c, a in zip(cum, axial_advances)]
+        scalar_offsets = [m * sign for m in centers_mm]
         char_advances = [(0.0, o) for o in scalar_offsets]
         # Axial-extent overflow check: warn if the total axial extent
         # plus the line center's offset pushes any glyph past the wall.
         if surface_length is not None:
             char_at_zs = [line_at_z + o for o in scalar_offsets]
             half_len = surface_length / 2.0
-            min_at_z = min(char_at_zs) - font_size / 2.0
-            max_at_z = max(char_at_zs) + font_size / 2.0
+            # Use the widest per-glyph advance as the half-width at each end.
+            edge_pad = max(advances_mm) / 2.0 if advances_mm else 0.0
+            min_at_z = min(char_at_zs) - edge_pad
+            max_at_z = max(char_at_zs) + edge_pad
             if min_at_z < -half_len or max_at_z > half_len:
                 loc_str = f" (at {loc})" if loc else ""
                 _log.warning(
@@ -808,7 +870,7 @@ def _emit_wrap_line(
                 )
 
     out = []
-    for char, (theta_off, at_z_off) in zip(line, char_advances):
+    for char, glyph_advance_mm, (theta_off, at_z_off) in zip(line, advances_mm, char_advances):
         theta = base_meridian_rad + theta_off
         char_at_z = line_at_z + at_z_off
 
@@ -873,12 +935,20 @@ def _emit_wrap_line(
             g_right = e2
             g_up = (-e1[0], -e1[1], -e1[2])
 
+        # Per-glyph emit always uses halign="left" / valign="baseline" so
+        # the glyph's left edge sits at 2D x=0 and its baseline at y=0,
+        # then we shift by -advance/2 in 2D so the advance midpoint sits
+        # at the placement origin (the center of the glyph's allotted arc
+        # range). Baseline alignment keeps mixed-height glyphs (g, t, i)
+        # on a common line — per-glyph "center" centers each glyph on its
+        # own bbox, which has different heights per glyph and produces
+        # visible vertical jitter.
         glyph_2d = _text_factory(
             char,
             size=font_size,
             font=text_kwargs.get("font"),
-            halign="center",
-            valign=valign if len(label_repr.split("\n")) == 1 else "center",
+            halign="left",
+            valign="baseline",
             spacing=text_kwargs.get("spacing", 1.0),
             direction=text_kwargs.get("direction", "ltr"),
             language=text_kwargs.get("language", "en"),
@@ -887,7 +957,12 @@ def _emit_wrap_line(
             fa=text_kwargs.get("fa"),
             fs=text_kwargs.get("fs"),
         )
-        extruded = linear_extrude(glyph_2d, height=extrude_h)
+        glyph_2d_centered = Translate(
+            v=(-glyph_advance_mm / 2.0, 0.0, 0.0),
+            child=glyph_2d,
+            source_location=loc,
+        )
+        extruded = linear_extrude(glyph_2d_centered, height=extrude_h)
         oriented = MultMatrix(
             matrix=_orient_glyph_matrix(g_right, g_up, extrude_dir),
             child=extruded,
@@ -1016,7 +1091,7 @@ def _place_on_rim(
             eps=eps,
             raised=raised,
             base_meridian_rad=base_meridian_rad,
-            halign=halign, valign=valign,
+            halign=halign,
             face_normal=face_normal,
             rim_center=rim_center,
             u_axis=u_axis,
@@ -1035,7 +1110,7 @@ def _emit_rim_line(
     *,
     line, line_path_radius,
     font_size, extrude_h, eps, raised,
-    base_meridian_rad, halign, valign,
+    base_meridian_rad, halign,
     face_normal, rim_center, u_axis, rotation_axis,
     text_kwargs, label_repr, loc,
 ):
@@ -1048,13 +1123,18 @@ def _emit_rim_line(
     for the glyph "right" direction (tangent = face_normal × radial)
     and for the small offset that lifts the glyph above or sinks it
     below the rim surface.
+
+    Per-glyph emit always uses ``halign="left"`` and ``valign="baseline"``
+    (see ``_emit_wrap_line`` for the same rationale).
     """
-    n_chars = len(line)
-
-    advance_mm = 0.6 * font_size * text_kwargs.get("spacing", 1.0)
-    arc_step = advance_mm / line_path_radius
-
-    total_arc_rad = n_chars * arc_step
+    advances_mm = get_advances(
+        tuple(line),
+        font=text_kwargs.get("font"),
+        size=font_size,
+        spacing=text_kwargs.get("spacing", 1.0),
+    )
+    total_mm = sum(advances_mm)
+    total_arc_rad = total_mm / line_path_radius
     if total_arc_rad > 2 * math.pi:
         loc_str = f" (at {loc})" if loc else ""
         _log.warning(
@@ -1063,15 +1143,22 @@ def _emit_rim_line(
             line, 100 * total_arc_rad / (2 * math.pi), line_path_radius, loc_str,
         )
 
+    cum = [0.0]
+    for a in advances_mm[:-1]:
+        cum.append(cum[-1] + a)
+    # Per-glyph CENTER position (mm, from base_meridian along the arc).
+    # See ``_emit_wrap_line`` for the rationale: orient each glyph at its
+    # advance midpoint and pre-translate the 2D shape by -advance/2.
     if halign == "left":
-        offsets = [(i + 0.5) * arc_step for i in range(n_chars)]
+        centers_mm = [c + a / 2.0 for c, a in zip(cum, advances_mm)]
     elif halign == "right":
-        offsets = [-(n_chars - i - 0.5) * arc_step for i in range(n_chars)]
+        centers_mm = [c + a / 2.0 - total_mm for c, a in zip(cum, advances_mm)]
     else:
-        offsets = [(i - (n_chars - 1) / 2.0) * arc_step for i in range(n_chars)]
+        centers_mm = [c + a / 2.0 - total_mm / 2.0 for c, a in zip(cum, advances_mm)]
+    offsets = [m / line_path_radius for m in centers_mm]
 
     out = []
-    for char, offset_from_meridian in zip(line, offsets):
+    for char, glyph_advance_mm, offset_from_meridian in zip(line, advances_mm, offsets):
         theta = base_meridian_rad + offset_from_meridian
         radial = _rotate_around_axis(u_axis, theta, rotation_axis)
         tangent = (
@@ -1084,8 +1171,8 @@ def _emit_rim_line(
             char,
             size=font_size,
             font=text_kwargs.get("font"),
-            halign="center",
-            valign=valign if len(label_repr.split("\n")) == 1 else "center",
+            halign="left",
+            valign="baseline",
             spacing=text_kwargs.get("spacing", 1.0),
             direction=text_kwargs.get("direction", "ltr"),
             language=text_kwargs.get("language", "en"),
@@ -1094,7 +1181,12 @@ def _emit_rim_line(
             fa=text_kwargs.get("fa"),
             fs=text_kwargs.get("fs"),
         )
-        extruded = linear_extrude(glyph_2d, height=extrude_h)
+        glyph_2d_centered = Translate(
+            v=(-glyph_advance_mm / 2.0, 0.0, 0.0),
+            child=glyph_2d,
+            source_location=loc,
+        )
+        extruded = linear_extrude(glyph_2d_centered, height=extrude_h)
         oriented = MultMatrix(
             matrix=_orient_glyph_matrix(tangent, radial, face_normal),
             child=extruded,
@@ -1134,7 +1226,7 @@ def add_text(
     flip=False,
     font=None,
     halign="center",
-    valign="center",
+    valign=_UNSET,
     spacing=1.0,
     line_spacing=1.2,
     direction="ltr",
@@ -1262,24 +1354,39 @@ def add_text(
                 f"meridian kwargs to reverse reading order."
             )
 
+    # Resolve `valign`. Curved walls and rim arcs emit one ``text()`` per
+    # glyph, where ``valign="center"`` centers each glyph's bbox on the
+    # baseline — but a tall ``t``, an ``i`` whose ink starts above zero,
+    # and a ``g`` with a descender all have different bbox heights, so
+    # per-glyph centering produces visible vertical jitter. The right
+    # answer is per-glyph baseline alignment. Reject explicit "center" on
+    # those hosts, and resolve the unset default to "baseline" there.
+    # Flat planar dispatch emits one whole-line ``text()`` so its
+    # ``valign="center"`` keeps working correctly — that path's default
+    # stays "center".
+    if placement_anchor.kind in ("cylindrical", "conical", "meridional"):
+        is_per_glyph = True
+    elif placement_anchor.kind == "planar":
+        _, is_per_glyph = _resolve_planar_curvature(placement_anchor, text_curvature)
+    else:
+        is_per_glyph = False
+    if valign is _UNSET:
+        valign = "baseline" if is_per_glyph else "center"
+    elif is_per_glyph and valign == "center":
+        raise ValidationError(
+            "add_text: valign='center' is not supported on cylindrical, "
+            "conical, meridional, or rim-arc placements. Per-glyph "
+            "centering produces uneven baselines because each glyph's "
+            "bbox is sized to its own ink (a 't' is tall, an 'i' starts "
+            "above zero, a 'g' has a descender). Use 'baseline' "
+            "(default), 'top', or 'bottom'."
+        )
+
     # 2. Dispatch by surface kind.
     if placement_anchor.kind == "planar":
         # Resolve text_curvature for planar surfaces. Rim anchors (carrying
         # `rim_radius`) default to arc; flat faces default to straight.
-        rim_radius = placement_anchor.surface_param("rim_radius")
-        is_rim = rim_radius is not None
-        if text_curvature == "arc":
-            if not is_rim:
-                raise ValidationError(
-                    "add_text: text_curvature='arc' requires a rim anchor "
-                    "(top/bottom of a Cylinder, Tube, or Funnel). This "
-                    "anchor has no rim_radius surface_param."
-                )
-            use_arc = True
-        elif text_curvature == "flat":
-            use_arc = False
-        else:  # None — default
-            use_arc = is_rim
+        is_rim, use_arc = _resolve_planar_curvature(placement_anchor, text_curvature)
 
         # at_z is axial along a curved wall — never meaningful on a planar
         # rim or flat face.
