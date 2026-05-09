@@ -219,7 +219,7 @@ def test_ogive_anchors():
     a = o.get_anchors()
     assert a["base"].position == pytest.approx((0.0, 0.0, 0.0))
     assert a["base"].normal == pytest.approx((0.0, 0.0, -1.0))
-    assert a["base"].surface_param("rim_radius") == pytest.approx(10.0)
+    assert a["base"].rim_radius == pytest.approx(10.0)
     assert a["tip"].position == pytest.approx((0.0, 0.0, 18.0))
     assert a["tip"].normal == pytest.approx((0.0, 0.0, 1.0))
 
@@ -316,7 +316,7 @@ def test_paraboloid_top_anchor_has_rim_radius():
     a = p.get_anchors()
     assert a["top"].position == pytest.approx((0.0, 0.0, 8.0))
     assert a["top"].normal == pytest.approx((0.0, 0.0, 1.0))
-    assert a["top"].surface_param("rim_radius") == pytest.approx(10.0)
+    assert a["top"].rim_radius == pytest.approx(10.0)
 
 
 def test_paraboloid_bottom_is_vertex():
@@ -433,7 +433,7 @@ def test_elbow_start_anchor_at_angle_zero():
     a = e.get_anchors()
     assert a["start"].position == pytest.approx((20.0, 0.0, 0.0))
     assert a["start"].normal == pytest.approx((0.0, -1.0, 0.0))
-    assert a["start"].surface_param("rim_radius") == pytest.approx(6.0)
+    assert a["start"].rim_radius == pytest.approx(6.0)
 
 
 def test_elbow_end_anchor_at_90_degrees():

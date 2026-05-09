@@ -88,7 +88,7 @@ def test_attach_uses_with_anchor():
     peg = cube([5, 5, 10]).with_anchor(
         "base", at=(2.5, 2.5, 0), normal=(0, 0, -1)
     )
-    placed = peg.attach(plate, on="top", at="base")
+    placed = peg.attach(plate, on="top", using_anchor="base")
     # The translate puts peg's "base" at plate's "top" (= (20, 20, 2)).
     # Peg's "base" was at (2.5, 2.5, 0); shift = (17.5, 17.5, 2).
     from scadwright.ast.transforms import Translate
@@ -146,7 +146,7 @@ def test_with_anchor_fuse_extend_reaches_cube():
     peg = cube([5, 5, 10]).with_anchor(
         "base", at=(2.5, 2.5, 0), normal=(0, 0, -1)
     )
-    placed = peg.attach(plate, on="top", at="base", fuse=True)
+    placed = peg.attach(plate, on="top", using_anchor="base", fuse=True)
     # The result should be a Translate wrapping a WithAnchor wrapping a
     # Translate wrapping the bumped Cube — i.e., the parametric path was
     # taken (no Union with a slab).
@@ -200,8 +200,8 @@ def test_with_anchor_carries_surface_params():
         at=(0, 0, 10),
         normal=(0, 0, 1),
         kind="planar",
-        surface_params={"rim_radius": 5.0},
+        rim_radius=5.0,
     )
     anchors = get_node_anchors(c)
     assert anchors["rim"].kind == "planar"
-    assert anchors["rim"].surface_param("rim_radius") == 5.0
+    assert anchors["rim"].rim_radius == 5.0

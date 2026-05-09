@@ -19,10 +19,10 @@ def test_sphere_anchors_carry_full_surface_params():
     anchors = get_node_anchors(s)
     a = anchors["top"]
     assert a.kind == "spherical"
-    assert a.surface_param("radius") == 10.0
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
-    assert a.surface_param("axis_origin") == pytest.approx((0.0, 0.0, 0.0))
-    assert a.surface_param("meridian_zero") == (1.0, 0.0, 0.0)
+    assert a.radius == 10.0
+    assert a.axis == (0.0, 0.0, 1.0)
+    assert a.axis_origin == pytest.approx((0.0, 0.0, 0.0))
+    assert a.meridian_zero == (1.0, 0.0, 0.0)
 
 
 def test_sphere_publishes_surface_anchor():
@@ -35,7 +35,7 @@ def test_sphere_publishes_surface_anchor():
 def test_sphere_translated_axis_origin_tracks():
     s = sphere(r=5).translate([10, 0, 0])
     anchors = get_node_anchors(s)
-    assert anchors["surface"].surface_param("axis_origin") == pytest.approx(
+    assert anchors["surface"].axis_origin == pytest.approx(
         (10.0, 0.0, 0.0)
     )
 

@@ -25,7 +25,9 @@ def test_bridge_raises_on_off_face_peg_anchor():
         position=(10.0, 0.0, 10.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("axis", (0.0, 0.0, 1.0)), ("radius", 10.0)),
+        axis=(0.0, 0.0, 1.0),
+        radius=10.0,
+        length=20.0,
     )
     with pytest.raises(ValidationError, match="bridge fuse.*outermost face"):
         build_curved_bridge(
@@ -45,7 +47,9 @@ def test_bridge_raises_on_degenerate_peg_bbox():
         position=(10.0, 0.0, 10.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("axis", (0.0, 0.0, 1.0)), ("radius", 10.0)),
+        axis=(0.0, 0.0, 1.0),
+        radius=10.0,
+        length=20.0,
     )
     # cube(z=0) has 1 zero-extent axis (z); 2 non-zero. That's fine
     # for the existing cross-section gate (requires 2+ non-zero), so
@@ -72,7 +76,9 @@ def test_bridge_passes_on_legitimate_peg():
         position=(10.0, 0.0, 10.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("axis", (0.0, 0.0, 1.0)), ("radius", 10.0)),
+        axis=(0.0, 0.0, 1.0),
+        radius=10.0,
+        length=20.0,
     )
     bridge = build_curved_bridge(
         peg, bottom_anchor, host, host_anchor,

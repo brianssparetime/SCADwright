@@ -4,8 +4,8 @@ import pytest
 
 from scadwright import Component, anchor
 from scadwright.anchor import (
+    ANCHOR_KINDS,
     Anchor,
-    _normalize_surface_params,
     anchors_from_bbox,
     get_node_anchors,
     transform_anchors,
@@ -13,18 +13,20 @@ from scadwright.anchor import (
 from scadwright.ast.base import Node
 from scadwright.bbox import BBox
 from scadwright.boolops import union
+from scadwright.errors import ValidationError
 from scadwright.matrix import Matrix
 from scadwright.primitives import cube
 from scadwright.transforms import transform
 
 
-# --- Anchor extension ---
+# --- Anchor surface fields ---
 
 
 def test_anchor_default_kind_is_planar():
     a = Anchor(position=(0, 0, 0), normal=(0, 0, 1))
     assert a.kind == "planar"
-    assert a.surface_params == ()
+    assert a.radius is None
+    assert a.axis is None
 
 
 def test_anchor_with_explicit_kind():
@@ -32,38 +34,45 @@ def test_anchor_with_explicit_kind():
         position=(0, 0, 0),
         normal=(1, 0, 0),
         kind="cylindrical",
-        surface_params=(("axis", (0, 0, 1)), ("radius", 5.0)),
+        axis=(0, 0, 1),
+        radius=5.0,
+        length=20.0,
     )
     assert a.kind == "cylindrical"
-    assert a.surface_param("radius") == 5.0
-    assert a.surface_param("axis") == (0, 0, 1)
-    assert a.surface_param("missing", default=42) == 42
+    assert a.radius == 5.0
+    assert a.axis == (0, 0, 1)
 
 
-def test_anchor_surface_param_default_is_none():
-    a = Anchor(position=(0, 0, 0), normal=(0, 0, 1))
-    assert a.surface_param("anything") is None
+def test_anchor_kind_must_be_in_closed_set():
+    with pytest.raises(ValidationError, match="kind="):
+        Anchor(position=(0, 0, 0), normal=(0, 0, 1), kind="bogus")
 
 
-def test_normalize_surface_params_dict():
-    out = _normalize_surface_params({"radius": 3, "axis": (0, 0, 1)})
-    assert out == (("axis", (0, 0, 1)), ("radius", 3))
+def test_anchor_kind_set_is_closed():
+    assert set(ANCHOR_KINDS) == {
+        "planar", "cylindrical", "conical", "spherical", "meridional",
+    }
 
 
-def test_normalize_surface_params_none_and_empty():
-    assert _normalize_surface_params(None) == ()
-    assert _normalize_surface_params(()) == ()
+def test_anchor_curved_kind_requires_fields():
+    """A cylindrical anchor without radius/axis/length must raise."""
+    with pytest.raises(ValidationError, match="missing required"):
+        Anchor(
+            position=(0, 0, 0), normal=(1, 0, 0), kind="cylindrical",
+            # radius / axis / length all missing
+        )
 
 
-def test_anchor_is_hashable_with_surface_params():
+def test_anchor_is_hashable_with_curved_fields():
     a = Anchor(
         position=(0, 0, 0),
         normal=(1, 0, 0),
         kind="cylindrical",
-        surface_params=(("axis", (0, 0, 1)), ("radius", 5.0)),
+        axis=(0, 0, 1),
+        radius=5.0,
+        length=20.0,
     )
-    # Round-trip through a set requires hashability; the sorted tuple-of-pairs
-    # form preserves it.
+    # Round-trip through a set requires hashability.
     assert {a, a} == {a}
 
 
@@ -75,25 +84,28 @@ def test_anchors_from_bbox_all_planar():
     anchors = anchors_from_bbox(bb)
     for name, a in anchors.items():
         assert a.kind == "planar", f"{name} should be planar"
-        assert a.surface_params == (), f"{name} surface_params should be empty"
+        assert a.axis is None, f"{name} axis should be None"
+        assert a.radius is None, f"{name} radius should be None"
 
 
-# --- transform_anchors preserves kind / params ---
+# --- transform_anchors preserves kind / curved fields ---
 
 
-def test_transform_anchors_preserves_kind_and_params():
-    cyl_params = (("axis", (0, 0, 1)), ("radius", 5.0))
+def test_transform_anchors_preserves_kind_and_curved_fields():
     a = Anchor(
         position=(5, 0, 0),
         normal=(1, 0, 0),
         kind="cylindrical",
-        surface_params=cyl_params,
+        axis=(0, 0, 1),
+        radius=5.0,
+        length=20.0,
     )
-    # Pure translate: kind/params survive unchanged. Position/normal transform.
+    # Pure translate: kind survives unchanged. Position/normal transform.
     m = Matrix.translate(10, 0, 0)
     out = transform_anchors({"wall": a}, m)
     assert out["wall"].kind == "cylindrical"
-    assert out["wall"].surface_params == cyl_params
+    assert out["wall"].radius == 5.0
+    assert out["wall"].axis == pytest.approx((0, 0, 1))
     assert out["wall"].position == pytest.approx((15, 0, 0))
 
 
@@ -109,10 +121,7 @@ class CylinderShape(Component):
         at="0, 0, h/2",
         normal=(1, 0, 0),
         kind="cylindrical",
-        surface_params={"axis": (0, 0, 1), "radius": "r"},
-        # Note: surface_params values are stored verbatim (no expression eval
-        # for now — that lands when curved kinds are used). For PR 1 we just
-        # check the metadata flows through unchanged.
+        surface_params={"axis": (0, 0, 1), "radius": "r", "length": "h"},
     )
 
     def build(self):
@@ -125,12 +134,9 @@ def test_anchor_factory_propagates_kind():
     anchors = c.get_anchors()
     assert "outer_wall" in anchors
     assert anchors["outer_wall"].kind == "cylindrical"
-    # surface_params is the sorted tuple-of-pairs form.
-    sp = dict(anchors["outer_wall"].surface_params)
-    assert sp["axis"] == (0, 0, 1)
-    # radius was passed as the string "r" — for PR 1 we don't evaluate this.
-    # The presence of the key is what we verify.
-    assert "radius" in sp
+    assert anchors["outer_wall"].axis == (0, 0, 1)
+    assert anchors["outer_wall"].radius == 5
+    assert anchors["outer_wall"].length == 10
 
 
 # --- Decoration flag round-trip on @transform ---

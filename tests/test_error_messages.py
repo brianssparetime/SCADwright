@@ -259,7 +259,7 @@ def test_attach_custom_anchor_on_primitive_errors_with_guidance():
     a = cube([10, 10, 10])
     b = cube([5, 5, 5])
     with pytest.raises(ValidationError) as exc_info:
-        b.attach(a, on="top", at="custom_thing")
+        b.attach(a, on="top", using_anchor="custom_thing")
     msg = str(exc_info.value)
     assert "custom anchor" in msg
     assert "Components" in msg or "Component" in msg

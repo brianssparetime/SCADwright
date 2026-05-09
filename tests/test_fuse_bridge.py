@@ -138,7 +138,7 @@ def test_fuse_function_bridges_when_a_is_curved_host():
     # hub.outer_wall normal +X. But fuse() doesn't auto-orient. Use a
     # peg whose normal already opposes by construction.
     # Use peg.lside (normal -X) on hub.outer_wall (normal +X). Coaxial.
-    result = fuse(hub, peg, at="outer_wall", on="lside")
+    result = fuse(hub, peg, using_anchor="outer_wall", on="lside")
     # a=hub is curved (outer_wall, kind=cylindrical), b=peg is planar
     # (lside). Symmetric branch fires.
     from scadwright.ast.csg import Difference
@@ -152,7 +152,7 @@ def test_oblique_fuse_on_curved_host_raises():
     peg = cube([2, 2, 5])
     with pytest.raises(ValidationError, match="coaxial normals"):
         # Without orient/manual rotation, peg normal doesn't oppose host.
-        fuse(peg, hub, on="outer_wall", at="bottom")
+        fuse(peg, hub, on="outer_wall", using_anchor="bottom")
 
 
 # --- Inscription depth math ---
@@ -177,7 +177,9 @@ def test_inscription_depth_formula():
         position=(0.0, 0.0, 0.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("axis", (0.0, 0.0, 1.0)), ("radius", 10.0)),
+        axis=(0.0, 0.0, 1.0),
+        radius=10.0,
+        length=20.0,
     )
     r = _peg_max_radial_extent(peg, peg_anchor)
     assert r == pytest.approx(math.sqrt(2))
@@ -196,7 +198,9 @@ def test_inscription_depth_fits_huge_peg():
         position=(0.0, 0.0, 0.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("radius", 5.0),),
+        axis=(0.0, 0.0, 1.0),
+        radius=5.0,
+        length=20.0,
     )
     d = _inscription_depth(host_anchor, peg_max_radial=20.0)
     assert d == 5.0
@@ -233,7 +237,7 @@ def test_sphere_bbox_anchors_are_spherical():
     anchors = get_node_anchors(s)
     for name in ("top", "bottom", "lside", "rside", "front", "back"):
         assert anchors[name].kind == "spherical", f"{name} anchor"
-        assert anchors[name].surface_param("radius") == 7.0
+        assert anchors[name].radius == 7.0
 
 
 # --- disable_eps_fuse() opt-out applies to bridge too ---

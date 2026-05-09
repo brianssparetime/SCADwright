@@ -18,52 +18,52 @@ from scadwright.shapes import Funnel, Tube
 def test_cylinder_top_has_rim_radius():
     a = get_node_anchors(cylinder(h=10, r=5))["top"]
     assert a.kind == "planar"
-    assert a.surface_param("rim_radius") == 5.0
+    assert a.rim_radius == 5.0
     # axis is the cylinder's central axis (consistent with wall + bottom rim)
     # so attach(angle=) and add_text wrap behave the same on every rim.
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
+    assert a.axis == (0.0, 0.0, 1.0)
 
 
 def test_cylinder_bottom_has_rim_radius():
     a = get_node_anchors(cylinder(h=10, r=5))["bottom"]
-    assert a.surface_param("rim_radius") == 5.0
+    assert a.rim_radius == 5.0
     # Same central-axis convention as the top rim.
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
+    assert a.axis == (0.0, 0.0, 1.0)
 
 
 def test_cone_top_uses_r2_and_bottom_uses_r1():
     """Tapered cylinder: rim radii differ between top and bottom."""
     c = cylinder(h=10, r1=8, r2=3)
-    assert get_node_anchors(c)["top"].surface_param("rim_radius") == 3.0
-    assert get_node_anchors(c)["bottom"].surface_param("rim_radius") == 8.0
+    assert get_node_anchors(c)["top"].rim_radius == 3.0
+    assert get_node_anchors(c)["bottom"].rim_radius == 8.0
 
 
 def test_tube_rim_radii():
     t = Tube(h=10, od=12, thk=2)
-    assert get_node_anchors(t)["top"].surface_param("rim_radius") == pytest.approx(6.0)
-    assert get_node_anchors(t)["bottom"].surface_param("rim_radius") == pytest.approx(6.0)
+    assert get_node_anchors(t)["top"].rim_radius == pytest.approx(6.0)
+    assert get_node_anchors(t)["bottom"].rim_radius == pytest.approx(6.0)
 
 
 def test_funnel_rim_radii_differ():
     f = Funnel(h=20, bot_od=20, top_od=10, thk=2)
-    assert get_node_anchors(f)["top"].surface_param("rim_radius") == pytest.approx(5.0)
-    assert get_node_anchors(f)["bottom"].surface_param("rim_radius") == pytest.approx(10.0)
+    assert get_node_anchors(f)["top"].rim_radius == pytest.approx(5.0)
+    assert get_node_anchors(f)["bottom"].rim_radius == pytest.approx(10.0)
 
 
 def test_cube_top_has_no_rim_radius():
     """Plain cubes don't get rim metadata — default text on top stays flat."""
     a = get_node_anchors(cube([10, 10, 10]))["top"]
-    assert a.surface_param("rim_radius") is None
+    assert a.rim_radius is None
 
 
 def test_rim_radius_scales_under_uniform_scale():
     a = get_node_anchors(cylinder(h=10, r=5).scale(2))["top"]
-    assert a.surface_param("rim_radius") == pytest.approx(10.0)
+    assert a.rim_radius == pytest.approx(10.0)
 
 
 def test_rim_axis_rotates_with_host():
     a = get_node_anchors(cylinder(h=10, r=5).rotate([90, 0, 0]))["top"]
-    ax = a.surface_param("axis")
+    ax = a.axis
     # Top face normal originally +Z; after rotating 90° around +X → -Y.
     assert ax[0] == pytest.approx(0.0, abs=1e-9)
     assert ax[1] == pytest.approx(-1.0, abs=1e-9)

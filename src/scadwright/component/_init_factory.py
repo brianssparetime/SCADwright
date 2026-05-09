@@ -118,15 +118,16 @@ def _resolve_anchor_defs(instance):
     for name, adef in anchor_defs.items():
         pos = adef.resolve(instance)
         normal = adef.resolve_normal(instance)
-        if hasattr(adef, "resolve_surface_params"):
-            sp = adef.resolve_surface_params(instance)
-        else:
-            sp = ()
+        surface_kwargs = (
+            adef.resolve_surface_params(instance)
+            if hasattr(adef, "resolve_surface_params")
+            else {}
+        )
         instance._anchors[name] = _Anchor(
             position=pos,
             normal=normal,
             kind=getattr(adef, "kind", "planar"),
-            surface_params=sp,
+            **surface_kwargs,
         )
 
 

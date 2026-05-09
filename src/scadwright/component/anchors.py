@@ -79,10 +79,12 @@ class AnchorDef:
         self._name = name
 
     @property
-    def surface_params(self) -> tuple[tuple[str, "object"], ...]:
+    def surface_params(self) -> dict:
         """Inspection-only view of the raw spec (strings unresolved)."""
-        from scadwright.anchor import _normalize_surface_params
-        return _normalize_surface_params(self._surface_params_spec)
+        spec = self._surface_params_spec
+        if not spec:
+            return {}
+        return dict(spec) if isinstance(spec, dict) else dict(spec)
 
     def resolve(self, instance) -> tuple[float, float, float]:
         """Evaluate ``at`` against *instance* and return a position 3-tuple."""
@@ -94,23 +96,22 @@ class AnchorDef:
             return _eval_3tuple(self.normal, instance, self._name, "normal")
         return self.normal
 
-    def resolve_surface_params(self, instance) -> tuple[tuple[str, "object"], ...]:
-        """Evaluate any string values in ``surface_params`` against *instance*.
+    def resolve_surface_params(self, instance) -> dict:
+        """Evaluate any string values in ``surface_params`` against *instance*
+        and return them as a kwargs dict suitable for ``Anchor(**kwargs)``.
 
         String values are Python expressions evaluated against the instance's
         attributes (the same namespace used by ``at=`` strings). Non-string
-        values pass through unchanged. The result is normalized to a sorted
-        tuple of pairs — the form the frozen ``Anchor`` dataclass requires.
+        values pass through unchanged.
         """
-        from scadwright.anchor import _normalize_surface_params
         from scadwright.errors import ValidationError
 
         spec = self._surface_params_spec
         if not spec:
-            return ()
+            return {}
         items = spec.items() if isinstance(spec, dict) else spec
         namespace = instance.__dict__
-        resolved = {}
+        resolved: dict = {}
         for key, val in items:
             if isinstance(val, str):
                 try:
@@ -122,7 +123,7 @@ class AnchorDef:
                     ) from exc
             else:
                 resolved[key] = val
-        return _normalize_surface_params(resolved)
+        return resolved
 
 
 def anchor(at, normal, *, kind: str = "planar", surface_params=None):

@@ -130,7 +130,7 @@ def test_attach_fuse_bottom_face():
     """fuse on at='top' face: pendant's top face extends upward into
     the ceiling, while the pendant's bottom stays at z=10 (preserved)."""
     ceiling = cube([40, 40, 2]).up(20)
-    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", at="top", fuse=True)
+    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", using_anchor="top", fuse=True)
     bb = bbox(pendant)
     # top face of pendant extended from z=20 up to z=20.01.
     assert bb.max[2] == pytest.approx(20.01)
@@ -143,7 +143,7 @@ def test_attach_fuse_side_face():
     """fuse on a side face: extension on the contact face only; the
     opposite face stays at its declared position."""
     wall = cube([2, 40, 40])
-    shelf = cube([20, 30, 3]).attach(wall, on="rside", at="lside", fuse=True)
+    shelf = cube([20, 30, 3]).attach(wall, on="rside", using_anchor="lside", fuse=True)
     bb = bbox(shelf)
     # Contact face (lside) extended into wall: x=1.99.
     assert bb.min[0] == pytest.approx(1.99)

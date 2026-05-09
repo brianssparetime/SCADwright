@@ -32,7 +32,7 @@ def test_attach_fuse_preserves_far_face_pendant():
     """Pendant attached at top: the bottom face stays at z=10 (declared);
     the top face extends into the ceiling."""
     ceiling = cube([40, 40, 2]).up(20)
-    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", at="top", fuse=True)
+    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", using_anchor="top", fuse=True)
     bb = bbox(pendant)
     assert bb.min[2] == pytest.approx(10.0)   # PRESERVED (was 10.01 with shift)
     assert bb.max[2] == pytest.approx(20.01)  # extended into ceiling
@@ -77,8 +77,8 @@ def test_attach_fuse_with_orient_uses_local_extension():
     """
     wall = cube([2, 40, 40])
     peg = cube([5, 5, 10])
-    no_fuse = peg.attach(wall, on="rside", at="bottom", orient=True)
-    with_fuse = peg.attach(wall, on="rside", at="bottom", orient=True, fuse=True)
+    no_fuse = peg.attach(wall, on="rside", using_anchor="bottom", orient=True)
+    with_fuse = peg.attach(wall, on="rside", using_anchor="bottom", orient=True, fuse=True)
     nb = bbox(no_fuse)
     fb = bbox(with_fuse)
     # X range unchanged: local extension does not shift along wall normal.
@@ -147,7 +147,7 @@ def test_fuse_function_basic():
     as one call."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10])
-    result = fuse(pylon, floor, on="top", at="bottom")
+    result = fuse(pylon, floor, on="top", using_anchor="bottom")
     bb = bbox(result)
     # Result includes both shapes; bbox covers floor (z=0..2) and pylon
     # (extended bottom z=1.99, preserved top z=12). Union bbox z range
@@ -164,7 +164,7 @@ def test_fuse_function_uses_either_side():
     # Cube does. Either order should work via either-side selection.
     plate = cube([20, 20, 3])
     pillar = Tube(od=10, id=6, h=15)
-    result = fuse(pillar, plate, on="top", at="bottom")
+    result = fuse(pillar, plate, on="top", using_anchor="bottom")
     # pillar.fuse_extend → None (Tube). plate.fuse_extend → extended cube.
     # pillar translates onto plate's top at z=3 (the original plate top
     # anchor position). Plate top extended into pillar by eps (to z=3.01).
@@ -183,7 +183,7 @@ def test_fuse_function_prefers_wrapper_free_side():
     """
     lower = cube([10, 10, 5])    # b: fuse on its top face (+Z) → no wrapper.
     upper = cube([10, 10, 5])    # a: fuse on its bottom face (−Z) → Translate wrapper.
-    result = fuse(upper, lower, on="top", at="bottom")
+    result = fuse(upper, lower, on="top", using_anchor="bottom")
     bb = bbox(result)
     # Lower spans z=0..5, extended top to z=5.01. Upper spans z=5..10
     # (preserved). Combined bbox: 0..10.
@@ -213,7 +213,7 @@ def test_fuse_function_two_spheres_bridges():
     from scadwright.ast.csg import Difference, Union
     s1 = sphere(r=5)
     s2 = sphere(r=5).up(10)
-    result = fuse(s1, s2, on="bottom", at="top")
+    result = fuse(s1, s2, on="bottom", using_anchor="top")
     assert isinstance(result, Union)
     # union(placed_a, b, bridge) — bridge is a Difference.
     assert any(isinstance(c, Difference) for c in result.children)

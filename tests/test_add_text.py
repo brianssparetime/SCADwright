@@ -185,18 +185,16 @@ def test_zero_normal_rejected():
         ))
 
 
-def test_unknown_surface_kind_raises():
-    """A surface kind we don't know about falls through to a clear error."""
-    weird_anchor = Anchor(
-        position=(5, 0, 5),
-        normal=(1, 0, 0),
-        kind="spherical",
-        surface_params=(),
-    )
-    with pytest.raises(ValidationError, match="not supported"):
-        emit_str(cube([10, 10, 10]).add_text(
-            label="X", relief=0.5, font_size=4, on=weird_anchor,
-        ))
+def test_invalid_surface_kind_raises_at_anchor_construction():
+    """Anchor's __post_init__ validates kind against the closed set
+    (ANCHOR_KINDS), so an unknown kind fails at Anchor construction —
+    add_text never sees it."""
+    with pytest.raises(ValidationError, match="kind="):
+        Anchor(
+            position=(5, 0, 5),
+            normal=(1, 0, 0),
+            kind="not_a_real_kind",
+        )
 
 
 # --- Pathway B: decoration preserves host anchors ---

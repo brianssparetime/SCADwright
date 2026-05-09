@@ -189,9 +189,9 @@ def test_bottom_angle_lands_on_bottom_rim():
     attached = peg.attach(hub, on="bottom", angle=0)
     cx, cy, cz = bbox(attached).center
     # Peg's bottom-center at the bottom rim points down — but the
-    # default `at="bottom"` puts peg's bottom face on the contact point.
+    # default `using_anchor="bottom"` puts peg's bottom face on the contact point.
     # With no orient, peg sits with its bottom-face *on* z=0. centroid at z=2.5.
-    # Wait — the bottom anchor's normal is -Z, peg's at="bottom" anchor
+    # Wait — the bottom anchor's normal is -Z, peg's using_anchor="bottom" anchor
     # normal is also -Z, and without orient they don't oppose. Peg's
     # bottom-face goes to position (10, 0, 0); centroid at (10, 0, 2.5).
     assert cx == pytest.approx(10.0)
@@ -293,8 +293,8 @@ def test_attach_with_at_kwarg_and_angle():
     """``at=`` (which face of self touches the anchor) composes with angle=."""
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    # Default at="bottom"; switch to at="top" — peg's top face on the wall.
-    attached = peg.attach(hub, on="outer_wall", angle=0, at="top")
+    # Default using_anchor="bottom"; switch to using_anchor="top" — peg's top face on the wall.
+    attached = peg.attach(hub, on="outer_wall", angle=0, using_anchor="top")
     cz = bbox(attached).center[2]
     # Peg's top-center anchor goes to (10, 0, 10); peg extends -z by full height.
     # Centroid at z=10 - 2.5 = 7.5.

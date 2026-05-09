@@ -9,8 +9,10 @@ OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in 
 | Position a part flush against another, with overlap so `union()` is preview-clean | `part.attach(other, fuse=True)` |
 | Same, but pick the bond explicitly | `part.attach(other, bond="overlap" | "bridge" | "shift")` |
 | Drill a cutter through a parent shape | `cutter.through(parent)` inside `difference()` |
-| Combine two parts symmetrically with overlap (no "self" / "other" asymmetry) | `fuse(a, b, on=..., at=..., bond=..., eps=...)` from `scadwright.boolops` |
+| Combine two parts symmetrically with overlap (no "self" / "other" asymmetry) | `fuse(a, b, on=..., using_anchor=..., bond=..., eps=...)` from `scadwright.boolops` |
 | Disable all auto-eps inside a scope (precision builds, perf debugging) | `with disable_eps_fuse(): ...` |
+| Override the default `eps` value across a scope (precision / unit-conversion / tight-tolerance models) | `with tolerances(eps=0.001): ...` |
+| Override `through()`'s coincident-face matching tolerance | `with tolerances(coincidence=1e-5): ...` |
 
 ## Bonds: explicit control over how the overlap is constructed
 

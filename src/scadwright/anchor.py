@@ -11,54 +11,101 @@ if TYPE_CHECKING:
     from scadwright.bbox import BBox
 
 
+# Closed set of anchor surface kinds. Adding a new kind requires updating
+# this tuple, ``_REQUIRED_FIELDS_BY_KIND``, and any consumer that branches
+# on kind.
+ANCHOR_KINDS = ("planar", "cylindrical", "conical", "spherical", "meridional")
+
+# Per-kind required fields. Validated in ``Anchor.__post_init__`` — an
+# anchor declared with a curved kind must carry the geometry its consumers
+# (``add_text``, fuse bridge, attach angle/at_z/polar) rely on.
+#
+# Planar anchors don't have required fields by default. Cap anchors
+# (cylinder/cone/barrel top/bottom) are kind="planar" with rim_radius +
+# axis + meridian_zero, but those are only required for ``add_text`` and
+# ``attach(angle=, radius=)`` on the cap; bare planar faces (cube top
+# etc.) don't carry them.
+_REQUIRED_FIELDS_BY_KIND: dict[str, tuple[str, ...]] = {
+    "planar": (),
+    "cylindrical": ("axis", "radius", "length"),
+    "conical": ("axis", "r1", "r2", "length"),
+    "spherical": ("axis", "axis_origin", "meridian_zero", "radius"),
+    "meridional": (
+        "axis", "axis_origin", "meridian_zero",
+        "meridian_r", "mid_r", "meridian_s", "length",
+    ),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class Anchor:
     """A named attachment point: position in local space plus outward normal.
 
-    ``kind`` describes the surface geometry the anchor lives on. ``"planar"``
-    is the default and covers every bbox-derived face. Curved-surface kinds
-    (``"cylindrical"``, ``"conical"``) carry the parameters needed to wrap
-    decorations like text on ``surface_params`` — a sorted tuple of
-    ``(name, value)`` pairs. The kwarg form accepts a dict for ergonomics
-    and is normalized at construction.
+    ``kind`` describes the surface geometry the anchor lives on (one of
+    ``ANCHOR_KINDS``). Curved kinds carry their geometric parameters as
+    first-class fields (``axis``, ``radius``, etc.); ``__post_init__``
+    validates that the required fields for a given kind are present.
+
+    Planar bbox-face anchors (cube top, etc.) only need ``position`` and
+    ``normal``. Planar cap anchors of cylinders / cones / barrels also
+    carry ``axis`` + ``meridian_zero`` + ``rim_radius`` so ``add_text``
+    can wrap arc text on them and ``attach(angle=, radius=)`` can place
+    on the cap.
     """
 
     position: tuple[float, float, float]
     normal: tuple[float, float, float]
     kind: str = "planar"
-    surface_params: tuple[tuple[str, Any], ...] = ()
 
-    def surface_param(self, name: str, default: Any = None) -> Any:
-        """Return ``surface_params[name]`` or ``default`` if missing."""
-        for k, v in self.surface_params:
-            if k == name:
-                return v
-        return default
+    # Curved-surface metadata. Populated per-kind; defaults are None /
+    # False so planar anchors don't have to specify any of them.
+    axis: tuple[float, float, float] | None = None
+    axis_origin: tuple[float, float, float] | None = None
+    meridian_zero: tuple[float, float, float] | None = None
+    radius: float | None = None
+    r1: float | None = None
+    r2: float | None = None
+    length: float | None = None
+    rim_radius: float | None = None
+    inner: bool = False
+
+    # Meridional (curved-meridian wall, e.g. Barrel) specifics.
+    meridian_r: float | None = None
+    mid_r: float | None = None
+    meridian_s: int | None = None     # +1 convex / -1 concave
+    end_r: float | None = None
+
+    def __post_init__(self):
+        if self.kind not in ANCHOR_KINDS:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"Anchor: kind={self.kind!r} is not one of {list(ANCHOR_KINDS)}."
+            )
+        required = _REQUIRED_FIELDS_BY_KIND.get(self.kind, ())
+        missing = [name for name in required if getattr(self, name) is None]
+        if missing:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"Anchor(kind={self.kind!r}): missing required field(s) "
+                f"{missing}. Curved-kind anchors must carry these for "
+                f"add_text / attach(angle=, at_z=, polar=) / fuse bridge "
+                f"to work."
+            )
 
 
-def _point_in_bbox(p, bb, tol: float = 1e-6) -> bool:
+def _point_in_bbox(p, bb, tol: float | None = None) -> bool:
     """Whether ``p`` lies inside (or on, within ``tol``) the bbox ``bb``.
 
     Used by ``visit_Difference`` to decide whether a propagated
     custom anchor might have been invalidated by a cutter — a cutter
     whose bbox covers the anchor's position may have removed material
-    at the anchor's face.
+    at the anchor's face. ``tol`` defaults to ``POINT_IN_BBOX_TOL``
+    from ``scadwright.api.tolerances``.
     """
+    if tol is None:
+        from scadwright.api.tolerances import POINT_IN_BBOX_TOL
+        tol = POINT_IN_BBOX_TOL
     return all(bb.min[i] - tol <= p[i] <= bb.max[i] + tol for i in range(3))
-
-
-def _normalize_surface_params(sp) -> tuple[tuple[str, Any], ...]:
-    """Coerce a dict/tuple/None to a sorted tuple-of-pairs.
-
-    Accepts a dict for caller ergonomics, a tuple-of-pairs for direct
-    construction, or None/empty for the no-params case. Sorting keeps the
-    Anchor hashable and stable for cache/equality use.
-    """
-    if sp is None or sp == ():
-        return ()
-    if isinstance(sp, dict):
-        return tuple(sorted(sp.items()))
-    return tuple(sorted(sp))
 
 
 # Mapping from friendly face names to (axis_index, sign).
@@ -196,15 +243,18 @@ def transform_anchors(
     anchors: dict[str, "Anchor"],
     matrix: "Matrix",
 ) -> dict[str, "Anchor"]:
-    """Apply a transform matrix to every anchor's position and normal.
+    """Apply a transform matrix to every anchor's position, normal, and
+    curved-surface metadata.
 
-    Returns a new dict. Normals are re-normalized after transformation.
-    Cylindrical / conical surface params (``axis``, ``radius``, ``r1``,
-    ``r2``) are transformed alongside position and normal so curved
-    anchors survive ``.scale()`` and ``.rotate()`` correctly. Non-uniform
-    scaling perpendicular to the axis turns a cylinder into an ellipse —
-    we don't model that; the radius scales by the magnitude of a unit
-    perpendicular vector after transform.
+    Returns a new dict. Normals and direction fields (``axis``,
+    ``meridian_zero``) are rotated and re-normalized; ``axis_origin``
+    gets the full affine transform; radial scalars (``radius``,
+    ``r1``, ``r2``, ``rim_radius``, ``mid_r``, ``end_r``,
+    ``meridian_r``) scale by the matrix's effect on a unit vector
+    perpendicular to the axis; ``length`` scales by the matrix's
+    effect along the axis. Non-uniform scaling perpendicular to the
+    axis turns a cylinder into an ellipse — not modeled; the radius
+    scales by the magnitude of a single perpendicular reference.
     """
     import math as _math
 
@@ -212,101 +262,96 @@ def transform_anchors(
     for name, a in anchors.items():
         pos = matrix.apply_point(a.position)
         norm = matrix.apply_vector(a.normal)
-        length = _math.sqrt(norm[0] ** 2 + norm[1] ** 2 + norm[2] ** 2)
-        if length > 0:
-            norm = (norm[0] / length, norm[1] / length, norm[2] / length)
-        new_params = _transform_surface_params(a.surface_params, matrix)
+        nlen = _math.sqrt(sum(c * c for c in norm))
+        if nlen > 0:
+            norm = (norm[0] / nlen, norm[1] / nlen, norm[2] / nlen)
+
+        # Curved-surface metadata transformation. Anchors without an
+        # ``axis`` carry no orientable curved geometry — pass radial /
+        # length / boolean fields through unchanged.
+        new_axis = a.axis
+        new_meridian_zero = a.meridian_zero
+        new_axis_origin = a.axis_origin
+        new_radius = a.radius
+        new_r1 = a.r1
+        new_r2 = a.r2
+        new_rim_radius = a.rim_radius
+        new_meridian_r = a.meridian_r
+        new_mid_r = a.mid_r
+        new_end_r = a.end_r
+        new_length = a.length
+
+        if a.axis is not None:
+            from scadwright.api.tolerances import AXIS_LEN_DEGEN_TOL
+            new_axis_raw = matrix.apply_vector(a.axis)
+            axis_len = _math.sqrt(sum(c * c for c in new_axis_raw))
+            if axis_len >= AXIS_LEN_DEGEN_TOL:
+                new_axis = tuple(c / axis_len for c in new_axis_raw)
+
+                if a.meridian_zero is not None:
+                    mz_raw = matrix.apply_vector(a.meridian_zero)
+                    mz_len = _math.sqrt(sum(c * c for c in mz_raw))
+                    if mz_len > AXIS_LEN_DEGEN_TOL:
+                        new_meridian_zero = tuple(c / mz_len for c in mz_raw)
+
+                if a.axis_origin is not None:
+                    new_axis_origin = matrix.apply_point(a.axis_origin)
+
+                # Radial scaling — perpendicular reference vector.
+                ax, ay, az = a.axis
+                ref = (0.0, 0.0, 1.0) if abs(az) < 0.99 else (1.0, 0.0, 0.0)
+                perp = (
+                    ref[1] * az - ref[2] * ay,
+                    ref[2] * ax - ref[0] * az,
+                    ref[0] * ay - ref[1] * ax,
+                )
+                perp_len = _math.sqrt(sum(c * c for c in perp))
+                if perp_len > AXIS_LEN_DEGEN_TOL:
+                    perp_unit = tuple(c / perp_len for c in perp)
+                    new_perp = matrix.apply_vector(perp_unit)
+                    radial_scale = _math.sqrt(sum(c * c for c in new_perp))
+                else:
+                    radial_scale = 1.0
+
+                if a.radius is not None:
+                    new_radius = a.radius * radial_scale
+                if a.r1 is not None:
+                    new_r1 = a.r1 * radial_scale
+                if a.r2 is not None:
+                    new_r2 = a.r2 * radial_scale
+                if a.rim_radius is not None:
+                    new_rim_radius = a.rim_radius * radial_scale
+                if a.meridian_r is not None:
+                    new_meridian_r = a.meridian_r * radial_scale
+                if a.mid_r is not None:
+                    new_mid_r = a.mid_r * radial_scale
+                if a.end_r is not None:
+                    new_end_r = a.end_r * radial_scale
+
+                if a.length is not None:
+                    new_axis_full = matrix.apply_vector(a.axis)
+                    axial_scale = _math.sqrt(sum(c * c for c in new_axis_full))
+                    new_length = a.length * axial_scale
+
         result[name] = Anchor(
             position=pos,
             normal=norm,
             kind=a.kind,
-            surface_params=new_params,
+            axis=new_axis,
+            axis_origin=new_axis_origin,
+            meridian_zero=new_meridian_zero,
+            radius=new_radius,
+            r1=new_r1,
+            r2=new_r2,
+            length=new_length,
+            rim_radius=new_rim_radius,
+            inner=a.inner,
+            meridian_r=new_meridian_r,
+            mid_r=new_mid_r,
+            meridian_s=a.meridian_s,
+            end_r=new_end_r,
         )
     return result
-
-
-def _transform_surface_params(
-    surface_params: tuple[tuple[str, Any], ...],
-    matrix: "Matrix",
-) -> tuple[tuple[str, Any], ...]:
-    """Transform curved-surface parameters: rotate direction vectors, scale
-    radii, translate axis_origin.
-
-    Direction-vector params (``axis``, ``meridian_zero``) get the
-    matrix's rotational part applied and are re-normalized. Radial
-    scalars (``radius``, ``r1``, ``r2``, ``rim_radius``, ``mid_r``,
-    ``end_r``, ``meridian_r``) scale by the matrix's effect on a unit
-    vector perpendicular to the axis. ``length`` scales by the matrix's
-    effect along the axis direction. ``axis_origin`` is a point on the
-    axis line — gets the full affine transform (rotation + translation).
-    Other params pass through unchanged.
-    """
-    import math as _math
-
-    if not surface_params:
-        return surface_params
-
-    params = dict(surface_params)
-    axis = params.get("axis")
-    if axis is None:
-        return surface_params  # nothing axis-relative to transform
-
-    # Rotate the axis (it's a direction, not a point).
-    new_axis_raw = matrix.apply_vector(axis)
-    axis_len = _math.sqrt(sum(c * c for c in new_axis_raw))
-    if axis_len < 1e-12:
-        # Degenerate matrix collapsed the axis — leave params untouched.
-        return surface_params
-    new_axis = tuple(c / axis_len for c in new_axis_raw)
-    params["axis"] = new_axis
-
-    # ``meridian_zero`` (rim and meridional anchors) is a direction vector;
-    # transforms exactly like ``axis``.
-    mz = params.get("meridian_zero")
-    if mz is not None:
-        new_mz_raw = matrix.apply_vector(mz)
-        mz_len = _math.sqrt(sum(c * c for c in new_mz_raw))
-        if mz_len > 1e-12:
-            params["meridian_zero"] = tuple(c / mz_len for c in new_mz_raw)
-
-    # ``axis_origin`` (meridional anchors) is a point on the central axis
-    # line; transforms with the full affine matrix.
-    ao = params.get("axis_origin")
-    if ao is not None:
-        params["axis_origin"] = matrix.apply_point(ao)
-
-    # Pick a unit vector perpendicular to the original axis to measure
-    # radial scaling. The choice doesn't matter for uniform scales; for
-    # non-uniform scales we approximate with this single perpendicular.
-    ax, ay, az = axis
-    if abs(az) < 0.99:
-        ref = (0.0, 0.0, 1.0)
-    else:
-        ref = (1.0, 0.0, 0.0)
-    perp = (
-        ref[1] * az - ref[2] * ay,
-        ref[2] * ax - ref[0] * az,
-        ref[0] * ay - ref[1] * ax,
-    )
-    perp_len = _math.sqrt(sum(c * c for c in perp))
-    if perp_len > 1e-12:
-        perp_unit = tuple(c / perp_len for c in perp)
-        new_perp = matrix.apply_vector(perp_unit)
-        radial_scale = _math.sqrt(sum(c * c for c in new_perp))
-    else:
-        radial_scale = 1.0
-
-    for key in ("radius", "r1", "r2", "rim_radius", "mid_r", "end_r", "meridian_r"):
-        if key in params and isinstance(params[key], (int, float)):
-            params[key] = params[key] * radial_scale
-
-    # Axial scaling for `length`, if present.
-    if "length" in params and isinstance(params["length"], (int, float)):
-        new_axis_full = matrix.apply_vector(axis)
-        axial_scale = _math.sqrt(sum(c * c for c in new_axis_full))
-        params["length"] = params["length"] * axial_scale
-
-    return tuple(sorted(params.items()))
 
 
 def get_node_anchors(node) -> dict[str, "Anchor"]:
@@ -466,11 +511,12 @@ class _AnchorVisitor(_Visitor):
         bb = _bbox(n)
         radius = float(n.r)
         center = (bb.center[0], bb.center[1], bb.center[2])
-        params = (
-            ("axis", (0.0, 0.0, 1.0)),
-            ("axis_origin", center),
-            ("meridian_zero", (1.0, 0.0, 0.0)),
-            ("radius", radius),
+        common = dict(
+            kind="spherical",
+            axis=(0.0, 0.0, 1.0),
+            axis_origin=center,
+            meridian_zero=(1.0, 0.0, 0.0),
+            radius=radius,
         )
         anchors: dict[str, Anchor] = {}
         for name, (axis, sign) in FACE_NAMES.items():
@@ -479,8 +525,7 @@ class _AnchorVisitor(_Visitor):
             anchors[name] = Anchor(
                 position=(pos[0], pos[1], pos[2]),
                 normal=_NORMALS[(axis, sign)],
-                kind="spherical",
-                surface_params=params,
+                **common,
             )
         # ``surface`` is the canonical entry-point anchor for polar /
         # angle placement on a sphere — defaults to the +Z tangent
@@ -489,8 +534,7 @@ class _AnchorVisitor(_Visitor):
         anchors["surface"] = Anchor(
             position=(center[0], center[1], center[2] + radius),
             normal=(0.0, 0.0, 1.0),
-            kind="spherical",
-            surface_params=params,
+            **common,
         )
         return anchors
 
@@ -531,11 +575,9 @@ def _cylinder_rim_anchors(cyl):
             position=(0.0, 0.0, z_max),
             normal=(0.0, 0.0, 1.0),
             kind="planar",
-            surface_params=(
-                ("axis", (0.0, 0.0, 1.0)),
-                ("meridian_zero", (1.0, 0.0, 0.0)),
-                ("rim_radius", float(cyl.r2)),
-            ),
+            axis=(0.0, 0.0, 1.0),
+            meridian_zero=(1.0, 0.0, 0.0),
+            rim_radius=float(cyl.r2),
         )
     rim_bottom = None
     if cyl.r1 > 0:
@@ -543,11 +585,9 @@ def _cylinder_rim_anchors(cyl):
             position=(0.0, 0.0, z_min),
             normal=(0.0, 0.0, -1.0),
             kind="planar",
-            surface_params=(
-                ("axis", (0.0, 0.0, 1.0)),
-                ("meridian_zero", (1.0, 0.0, 0.0)),
-                ("rim_radius", float(cyl.r1)),
-            ),
+            axis=(0.0, 0.0, 1.0),
+            meridian_zero=(1.0, 0.0, 0.0),
+            rim_radius=float(cyl.r1),
         )
     return rim_top, rim_bottom
 
@@ -575,11 +615,9 @@ def _cylinder_outer_wall_anchor(cyl) -> "Anchor | None":
             position=(r, 0.0, z_mid),
             normal=(1.0, 0.0, 0.0),
             kind="cylindrical",
-            surface_params=(
-                ("axis", (0.0, 0.0, 1.0)),
-                ("length", float(h)),
-                ("radius", float(r)),
-            ),
+            axis=(0.0, 0.0, 1.0),
+            length=float(h),
+            radius=float(r),
         )
 
     # Conical: r1 at z_min, r2 at z_max. Mid-wall radius for the reference position.
@@ -592,19 +630,17 @@ def _cylinder_outer_wall_anchor(cyl) -> "Anchor | None":
         position=(r_mid, 0.0, z_mid),
         normal=(1.0, 0.0, 0.0),
         kind="conical",
-        surface_params=(
-            ("axis", (0.0, 0.0, 1.0)),
-            ("length", float(h)),
-            ("r1", float(cyl.r1)),
-            ("r2", float(cyl.r2)),
-        ),
+        axis=(0.0, 0.0, 1.0),
+        length=float(h),
+        r1=float(cyl.r1),
+        r2=float(cyl.r2),
     )
 
 
 __all__ = [
+    "ANCHOR_KINDS",
     "Anchor",
     "FACE_NAMES",
-    "_normalize_surface_params",
     "anchors_from_bbox",
     "get_node_anchors",
     "resolve_angle_to_radians",

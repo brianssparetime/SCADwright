@@ -160,7 +160,7 @@ def test_sphere_anchors_are_spherical():
     anchors = get_node_anchors(s)
     bottom = anchors["bottom"]
     assert bottom.kind == "spherical"
-    assert bottom.surface_param("radius") == 5.0
+    assert bottom.radius == 5.0
 
 
 # --- Cascade behavior in attach() ---
@@ -174,7 +174,7 @@ def test_attach_fuse_cascades_to_cross_section_for_rotate_extrude():
     ).rotate_extrude(fn=24)
     # nose's bottom is at z=0, top at z=10. Use bottom for fuse to a plate.
     plate = cube([20, 20, 2]).up(-2)  # plate top at z=0
-    result = nose.attach(plate, on="top", at="bottom", fuse=True)
+    result = nose.attach(plate, on="top", using_anchor="bottom", fuse=True)
     bb = bbox(result)
     # Nose bottom extended into plate by eps; nose top preserved at z=10.
     assert bb.max[2] == pytest.approx(10.0)
@@ -186,7 +186,7 @@ def test_attach_fuse_propagates_cone_apex_error():
     cone = cylinder(h=10, r1=10, r2=0)
     plate = cube([20, 20, 2]).up(10)  # plate sits on cone apex
     with pytest.raises(ValidationError, match="cone apex"):
-        cone.attach(plate, on="bottom", at="top", fuse=True)
+        cone.attach(plate, on="bottom", using_anchor="top", fuse=True)
 
 
 def test_attach_fuse_propagates_outside_bbox_error():
@@ -203,7 +203,7 @@ def test_attach_fuse_propagates_outside_bbox_error():
     bad = BadAnchor(size=10)
     plate = cube([5, 5, 1])
     with pytest.raises(ValidationError, match="outermost face"):
-        bad.attach(plate, on="top", at="bogus", fuse=True)
+        bad.attach(plate, on="top", using_anchor="bogus", fuse=True)
 
 
 # --- Cascade behavior in fuse() ---
@@ -215,7 +215,7 @@ def test_fuse_function_parametric_strictly_preferred_over_cross_section():
     the Cube extended, not the rotate_extrude."""
     plate = cube([20, 20, 5])  # parametric extension via Cube.fuse_extend
     nose = polygon(points=[(0, 0), (5, 0), (0, 10)]).rotate_extrude(fn=16)
-    result = fuse(nose, plate, on="top", at="bottom")
+    result = fuse(nose, plate, on="top", using_anchor="bottom")
     # Result is union(translated_nose, extended_plate). Verify the plate
     # got the parametric extension by checking bbox: plate spans z=0..5.01;
     # nose is placed on top so it goes from z=5 to z=15.
@@ -230,7 +230,7 @@ def test_fuse_function_both_sides_cross_section():
     a = polygon(points=[(0, 0), (5, 0), (5, 10), (0, 10)]).rotate_extrude(fn=16)
     b = polygon(points=[(0, 0), (5, 0), (5, 10), (0, 10)]).rotate_extrude(fn=16)
     # b's top fuses to a's bottom — a is placed on top of b.
-    result = fuse(a, b, on="top", at="bottom")
+    result = fuse(a, b, on="top", using_anchor="bottom")
     bb = bbox(result)
     # a sits on b: b spans z=0..10, a spans z=10..20.
     assert bb.min[2] == pytest.approx(0.0)
@@ -246,9 +246,9 @@ def test_disable_eps_fuse_skips_cross_section():
     from scadwright import disable_eps_fuse
     nose = polygon(points=[(0, 0), (5, 0), (0, 10)]).rotate_extrude(fn=16)
     plate = cube([20, 20, 2]).up(-2)
-    no_disable = nose.attach(plate, on="top", at="bottom", fuse=True)
+    no_disable = nose.attach(plate, on="top", using_anchor="bottom", fuse=True)
     with disable_eps_fuse():
-        with_disable = nose.attach(plate, on="top", at="bottom", fuse=True)
+        with_disable = nose.attach(plate, on="top", using_anchor="bottom", fuse=True)
     # Inside disable: exact contact — nose top at z=10 (no extension).
     bb_with = bbox(with_disable)
     assert bb_with.max[2] == pytest.approx(10.0)

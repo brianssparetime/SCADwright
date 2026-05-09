@@ -31,19 +31,19 @@ plate = cube([40, 40, 2])
 peg   = cube([10, 10, 5]).attach(plate)    # bottom of peg on top of plate
 ```
 
-`attach()` defaults to `on="top"` (the anchor on the other shape) and `at="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
+`attach()` defaults to `on="top"` (the anchor on the other shape) and `using_anchor="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
 
 ## Choosing faces
 
-Use `on` and `at` to pick which anchors to align:
+Use `on=` and `using_anchor=` to pick which anchors to align:
 
 ```python
-peg.attach(plate, on="bottom", at="top")       # peg underneath plate
-peg.attach(plate, on="rside", at="lside")      # peg to the right of plate
-peg.attach(plate, on="top", at="top")           # align top faces (peg hangs down)
+peg.attach(plate, on="bottom", using_anchor="top")       # peg underneath plate
+peg.attach(plate, on="rside", using_anchor="lside")      # peg to the right of plate
+peg.attach(plate, on="top", using_anchor="top")           # align top faces (peg hangs down)
 ```
 
-`on` names the anchor on the parent (the thing being attached to); `at` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. `at` is context-sensitive — see [`at=` across the API](#at-across-the-api) below.
+`on` names the anchor on the parent (the thing being attached to); `using_anchor` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. See [Naming convention: on= / using_anchor= / at=](#naming-convention-on-using_anchor-at) below for the full split.
 
 Chain a translate for offset placement:
 
@@ -56,7 +56,7 @@ peg.attach(plate).right(10)           # on top, shifted 10 in +X
 By default, `attach()` only translates. Pass `orient=True` to also rotate self so the two anchors' normals oppose each other (faces touching):
 
 ```python
-peg.attach(plate, on="rside", at="bottom", orient=True)
+peg.attach(plate, on="rside", using_anchor="bottom", orient=True)
 ```
 
 This rotates the peg so its bottom normal faces in the -X direction (opposing the plate's rside +X normal), then translates it into position.
@@ -151,7 +151,7 @@ The shift moves the entire shape, so the opposite face also drifts by `eps`. Coi
 
 `attach()` returns `self` translated to land on `other`. When `fuse=True`, the framework tries to locally extend `self` along the contact face. It does **not** try to extend `other` — `other` isn't part of the returned value, so an extension on `other` would be invisible to downstream operations.
 
-For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., at=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
+For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., using_anchor=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
 
 ### Disabling fuse in a scope: `disable_eps_fuse()`
 
@@ -293,7 +293,7 @@ peg = (
     .with_anchor("base", at=(2.5, 2.5, 0), normal=(0, 0, -1))
 )
 
-placed = peg.attach(plate, on="top", at="base")
+placed = peg.attach(plate, on="top", using_anchor="base")
 ```
 
 `at=` and `normal=` are 3-tuples in the wrapped node's local frame. Spatial transforms applied after `with_anchor()` propagate to the anchor's position and normal exactly the same way Component custom anchors propagate. Custom anchors with the same name as a bbox-derived face override the default. Boolean operations drop them, like all custom anchors.
@@ -368,15 +368,14 @@ Shape-library Components ship with useful custom anchors:
 | `Bolt`         | `tip`             | Bottom of the shaft             |
 | `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
 
-## `at=` across the API
+## Naming convention: `on=` / `using_anchor=` / `at=`
 
-`at=` answers "where on the placed/moved thing?" Its form varies with the call:
+The three kwargs that show up across the anchor-aware APIs:
 
-| Call | `at=` form | Meaning |
+| Kwarg | Type | Meaning |
 |---|---|---|
-| `attach(other, on=..., at=...)` | string | anchor name on self (the thing being moved) |
-| `add_text(on=..., at=(u, v))` | 2-tuple in mm | offset in the chosen face's tangent plane |
-| `add_text(at=(x, y, z), normal=...)` | 3-tuple in mm | ad-hoc 3D position (no `on=`) |
-| `anchor(at=..., normal=...)` (declaration) | 3-tuple or string-expr | the anchor's position |
+| `on=` | string (anchor name) | The anchor on the **other** shape — the host being attached/decorated. |
+| `using_anchor=` | string (anchor name) | The anchor on **self** — the moving shape (only on `attach()` and `fuse()`). |
+| `at=` | tuple or string-expr (position) | A 3D position or in-face 2D offset (used by `anchor()` declarations, `add_text()`, `with_anchor()`). |
 
-The asymmetry is deliberate: `attach` moves an existing shape (which has its own anchors), so `at=` selects one. `add_text` stamps a generated 2D feature onto a host (no self-anchors), so `at=` is the placement offset within the chosen face. Anchor *declarations* use `at=` for the anchor's position itself.
+The split keeps anchor-name kwargs distinct from position kwargs: `on=` and `using_anchor=` always select named anchors; `at=` is always a coordinate.

@@ -79,13 +79,20 @@ def minkowski(*args) -> Minkowski:
     )
 
 
-def fuse(a: Node, b: Node, *, on: str, at: str, bond: str | None = None, eps: float = 0.01) -> Union:
+def fuse(
+    a: Node, b: Node,
+    *,
+    on: str,
+    using_anchor: str,
+    bond: str | None = None,
+    eps: float | None = None,
+) -> Union:
     """Combine ``a`` and ``b`` at coincident anchors with a small overlap.
 
-    ``at`` names an anchor on ``a``; ``on`` names an anchor on ``b``.
-    The two anchors' positions are aligned (no shift); the framework
-    adds the small overlap that keeps a union manifold-clean against
-    OpenSCAD's preview renderer.
+    ``using_anchor`` names an anchor on ``a``; ``on`` names an anchor on
+    ``b``. The two anchors' positions are aligned (no shift); the
+    framework adds the small overlap that keeps a union manifold-clean
+    against OpenSCAD's preview renderer.
 
     The default (``bond=None``) runs the smart cascade: bridge if either
     side is a convex-outer curved host, otherwise local face extension
@@ -123,8 +130,11 @@ def fuse(a: Node, b: Node, *, on: str, at: str, bond: str | None = None, eps: fl
     from scadwright.ast.transforms import Translate
 
     loc = SourceLocation.from_caller()
+    if eps is None:
+        from scadwright.api.tolerances import default_eps
+        eps = default_eps()
     bond = _validate_bond_value(bond, loc, context="fuse")
-    a_anchor = _resolve_attach_anchor(a, at, "a", loc)
+    a_anchor = _resolve_attach_anchor(a, using_anchor, "a", loc)
     b_anchor = _resolve_attach_anchor(b, on, "b", loc)
 
     # disable_eps_fuse() short-circuits everything to exact contact.

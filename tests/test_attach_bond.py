@@ -232,7 +232,7 @@ def test_fuse_true_curved_unchanged():
 def test_fuse_function_bond_overlap():
     plate = cube([20, 20, 2])
     peg = cube([4, 4, 5])
-    result = fuse(peg, plate, on="top", at="bottom", bond="overlap")
+    result = fuse(peg, plate, on="top", using_anchor="bottom", bond="overlap")
     assert isinstance(result, Union)
 
 
@@ -243,7 +243,7 @@ def test_fuse_function_bond_bridge():
     # rotate peg first.
     peg_rotated = peg.rotate([0, 90, 0])
     result = fuse(
-        peg_rotated, hub, on="outer_wall", at="bottom", bond="bridge",
+        peg_rotated, hub, on="outer_wall", using_anchor="bottom", bond="bridge",
     )
     assert isinstance(result, Union)
 
@@ -251,7 +251,7 @@ def test_fuse_function_bond_bridge():
 def test_fuse_function_bond_shift():
     plate = cube([20, 20, 2])
     peg = cube([4, 4, 5])
-    result = fuse(peg, plate, on="top", at="bottom", bond="shift")
+    result = fuse(peg, plate, on="top", using_anchor="bottom", bond="shift")
     assert isinstance(result, Union)
 
 
@@ -259,21 +259,21 @@ def test_fuse_function_invalid_bond_raises():
     plate = cube([20, 20, 2])
     peg = cube([4, 4, 5])
     with pytest.raises(ValidationError, match="bond= must be one of"):
-        fuse(peg, plate, on="top", at="bottom", bond="bogus")
+        fuse(peg, plate, on="top", using_anchor="bottom", bond="bogus")
 
 
 def test_fuse_function_overlap_on_curved_raises():
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
     with pytest.raises(ValidationError, match="bond='overlap'.*planar"):
-        fuse(peg, hub, on="outer_wall", at="bottom", bond="overlap")
+        fuse(peg, hub, on="outer_wall", using_anchor="bottom", bond="overlap")
 
 
 def test_fuse_function_bridge_on_planar_raises():
     plate = cube([20, 20, 2])
     peg = cube([4, 4, 5])
     with pytest.raises(ValidationError, match="bond='bridge'.*curved"):
-        fuse(peg, plate, on="top", at="bottom", bond="bridge")
+        fuse(peg, plate, on="top", using_anchor="bottom", bond="bridge")
 
 
 # --- smart cascade (fuse=True without bond=) raises when no bond applies ---
@@ -313,4 +313,4 @@ def test_fuse_function_smart_cascade_raises():
     a = Tube(od=20, id=10, h=15)
     b = Tube(od=30, id=12, h=20)
     with pytest.raises(ValidationError, match="no applicable bond"):
-        fuse(a, b, on="inner_wall", at="inner_wall")
+        fuse(a, b, on="inner_wall", using_anchor="inner_wall")

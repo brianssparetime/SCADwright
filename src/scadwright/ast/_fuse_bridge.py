@@ -23,14 +23,20 @@ from __future__ import annotations
 import math
 
 
-def coaxial_normals(n_a, n_b, *, tol: float = 1e-3) -> bool:
+def coaxial_normals(n_a, n_b, *, tol: float | None = None) -> bool:
     """Return True if two unit normals are anti-parallel within tolerance.
 
     ``attach(fuse=True)`` to a curved host requires coaxial normals: the
     peg's at-anchor normal must oppose the host's on-anchor normal so the
     bridge extrusion direction is well-defined. Oblique attachment is
     rejected with an explicit error in the dispatcher.
+
+    ``tol`` defaults to ``NORMAL_PARALLEL_TOL`` from
+    ``scadwright.api.tolerances``.
     """
+    if tol is None:
+        from scadwright.api.tolerances import NORMAL_PARALLEL_TOL
+        tol = NORMAL_PARALLEL_TOL
     d = n_a[0] * n_b[0] + n_a[1] * n_b[1] + n_a[2] * n_b[2]
     return abs(d - (-1.0)) <= tol
 
@@ -77,11 +83,9 @@ def _inscription_depth(host_on_anchor, peg_max_radial: float) -> float | None:
     Returns ``None`` if the host's surface_params don't carry a usable
     radius — the dispatcher should fall through to legacy shift.
     """
-    radius = host_on_anchor.surface_param("radius")
+    radius = host_on_anchor.radius
     if radius is None and host_on_anchor.kind == "conical":
-        r1 = host_on_anchor.surface_param("r1") or 0.0
-        r2 = host_on_anchor.surface_param("r2") or 0.0
-        radius = max(r1, r2)
+        radius = max(host_on_anchor.r1 or 0.0, host_on_anchor.r2 or 0.0)
     if not radius:
         return None
     if peg_max_radial >= radius:
@@ -138,7 +142,8 @@ def build_curved_bridge(peg, peg_at_anchor, host, host_on_anchor, shift, eps):
     # Tiny margin past analytical inscription guards against numerical
     # error around the host surface; the surplus is inside host material
     # and gets subtracted, so it doesn't change the visible bridge.
-    depth_total = depth + 1e-3
+    from scadwright.api.tolerances import INSCRIPTION_MARGIN
+    depth_total = depth + INSCRIPTION_MARGIN
     prism_height = depth_total + eps
 
     m = align_anchor_to_z_up(peg_at_anchor)

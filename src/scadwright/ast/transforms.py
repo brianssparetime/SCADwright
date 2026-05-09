@@ -24,16 +24,14 @@ class Translate(Node):
         translate; if the child can extend along that anchor, re-wrap
         the extended child in the same translate.
         """
-        from scadwright.anchor import Anchor
-        inverse_anchor = Anchor(
+        from dataclasses import replace
+        inverse_anchor = replace(
+            anchor,
             position=(
                 anchor.position[0] - self.v[0],
                 anchor.position[1] - self.v[1],
                 anchor.position[2] - self.v[2],
             ),
-            normal=anchor.normal,
-            kind=anchor.kind,
-            surface_params=anchor.surface_params,
         )
         extended_child = self.child.fuse_extend(inverse_anchor, eps)
         if extended_child is None:
@@ -62,14 +60,13 @@ class Rotate(Node):
         on both position and normal; if the child can extend, re-wrap
         in the same Rotate.
         """
-        from scadwright.anchor import Anchor
+        from dataclasses import replace
         from scadwright.matrix import to_matrix
         inv = to_matrix(self).invert()
-        inverse_anchor = Anchor(
+        inverse_anchor = replace(
+            anchor,
             position=inv.apply_point(anchor.position),
             normal=inv.apply_vector(anchor.normal),
-            kind=anchor.kind,
-            surface_params=anchor.surface_params,
         )
         extended_child = self.child.fuse_extend(inverse_anchor, eps)
         if extended_child is None:
@@ -101,14 +98,13 @@ class Mirror(Node):
         again gives child-frame coordinates. If the child can extend,
         re-wrap in the same Mirror.
         """
-        from scadwright.anchor import Anchor
+        from dataclasses import replace
         from scadwright.matrix import to_matrix
         m = to_matrix(self)
-        inverse_anchor = Anchor(
+        inverse_anchor = replace(
+            anchor,
             position=m.apply_point(anchor.position),
             normal=m.apply_vector(anchor.normal),
-            kind=anchor.kind,
-            surface_params=anchor.surface_params,
         )
         extended_child = self.child.fuse_extend(inverse_anchor, eps)
         if extended_child is None:

@@ -21,10 +21,10 @@ def test_cone_has_conical_outer_wall():
     c = cylinder(h=20, r1=10, r2=5)
     a = get_node_anchors(c)["outer_wall"]
     assert a.kind == "conical"
-    assert a.surface_param("r1") == 10.0
-    assert a.surface_param("r2") == 5.0
-    assert a.surface_param("length") == 20.0
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
+    assert a.r1 == 10.0
+    assert a.r2 == 5.0
+    assert a.length == 20.0
+    assert a.axis == (0.0, 0.0, 1.0)
     # Reference position is at mid-wall, mid-radius.
     assert a.position == pytest.approx((7.5, 0.0, 10.0))
 
@@ -33,9 +33,9 @@ def test_funnel_has_conical_outer_wall():
     f = Funnel(h=20, bot_od=20, top_od=10, thk=2)
     a = get_node_anchors(f)["outer_wall"]
     assert a.kind == "conical"
-    assert a.surface_param("r1") == pytest.approx(10.0)
-    assert a.surface_param("r2") == pytest.approx(5.0)
-    assert a.surface_param("length") == pytest.approx(20.0)
+    assert a.r1 == pytest.approx(10.0)
+    assert a.r2 == pytest.approx(5.0)
+    assert a.length == pytest.approx(20.0)
 
 
 # --- Conical surface params survive transforms ---
@@ -44,21 +44,21 @@ def test_funnel_has_conical_outer_wall():
 def test_uniform_scale_scales_cone_radii_and_length():
     f = Funnel(h=20, bot_od=20, top_od=10, thk=2).scale(2)
     a = get_node_anchors(f)["outer_wall"]
-    assert a.surface_param("r1") == pytest.approx(20.0)
-    assert a.surface_param("r2") == pytest.approx(10.0)
-    assert a.surface_param("length") == pytest.approx(40.0)
+    assert a.r1 == pytest.approx(20.0)
+    assert a.r2 == pytest.approx(10.0)
+    assert a.length == pytest.approx(40.0)
 
 
 def test_rotate_rotates_cone_axis():
     c = cylinder(h=20, r1=10, r2=5).rotate([90, 0, 0])
     a = get_node_anchors(c)["outer_wall"]
-    ax = a.surface_param("axis")
+    ax = a.axis
     assert ax[0] == pytest.approx(0.0, abs=1e-9)
     assert ax[1] == pytest.approx(-1.0, abs=1e-9)
     assert ax[2] == pytest.approx(0.0, abs=1e-9)
     # Radii preserved.
-    assert a.surface_param("r1") == pytest.approx(10.0)
-    assert a.surface_param("r2") == pytest.approx(5.0)
+    assert a.r1 == pytest.approx(10.0)
+    assert a.r2 == pytest.approx(5.0)
 
 
 # --- Conical add_text smoke ---

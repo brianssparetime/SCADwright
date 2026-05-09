@@ -43,7 +43,8 @@ def align_anchor_to_z_up(anchor):
     )
     cross_len = math.sqrt(cross[0] ** 2 + cross[1] ** 2 + cross[2] ** 2)
 
-    if cross_len > 1e-10:
+    from scadwright.api.tolerances import PARALLEL_CROSS_TOL
+    if cross_len > PARALLEL_CROSS_TOL:
         angle_deg = -math.degrees(math.acos(max(-1.0, min(1.0, d))))
         R = Matrix.rotate_axis_angle(angle_deg, cross)
     elif d > 0.5:
@@ -87,7 +88,7 @@ def validate_planar_anchor_for_cross_section(node, anchor, *, context: str = "cr
     ``"bridge fuse"`` from the curved-host bridge dispatcher so the
     message blames the right path.
     """
-    from scadwright.anchor import Anchor
+    from dataclasses import replace
     from scadwright.ast.transforms import Mirror, Rotate, Translate
     from scadwright.bbox import bbox as _bbox
     from scadwright.errors import ValidationError
@@ -97,26 +98,23 @@ def validate_planar_anchor_for_cross_section(node, anchor, *, context: str = "cr
     # the underlying primitive's local frame, where its AABB matches
     # its actual silhouette.
     if isinstance(node, Translate):
-        local_anchor = Anchor(
+        local_anchor = replace(
+            anchor,
             position=(
                 anchor.position[0] - node.v[0],
                 anchor.position[1] - node.v[1],
                 anchor.position[2] - node.v[2],
             ),
-            normal=anchor.normal,
-            kind=anchor.kind,
-            surface_params=anchor.surface_params,
         )
         return validate_planar_anchor_for_cross_section(
             node.child, local_anchor, context=context,
         )
     if isinstance(node, (Rotate, Mirror)):
         inv = to_matrix(node).invert()
-        local_anchor = Anchor(
+        local_anchor = replace(
+            anchor,
             position=inv.apply_point(anchor.position),
             normal=inv.apply_vector(anchor.normal),
-            kind=anchor.kind,
-            surface_params=anchor.surface_params,
         )
         return validate_planar_anchor_for_cross_section(
             node.child, local_anchor, context=context,
@@ -136,8 +134,8 @@ def validate_planar_anchor_for_cross_section(node, anchor, *, context: str = "cr
     ]
     b_max = max(c[0] * n[0] + c[1] * n[1] + c[2] * n[2] for c in corners)
 
-    tol = 1e-3
-    if abs(p_proj - b_max) > tol:
+    from scadwright.api.tolerances import ANCHOR_PLANE_TOL, BBOX_DEGEN_TOL
+    if abs(p_proj - b_max) > ANCHOR_PLANE_TOL:
         raise ValidationError(
             f"{context}: anchor at {p} with normal {n} on "
             f"{type(node).__name__} doesn't lie on the shape's outermost "
@@ -151,7 +149,7 @@ def validate_planar_anchor_for_cross_section(node, anchor, *, context: str = "cr
         )
 
     sizes = [bb.max[i] - bb.min[i] for i in range(3)]
-    nonzero = sum(1 for s in sizes if s > tol)
+    nonzero = sum(1 for s in sizes if s > BBOX_DEGEN_TOL)
     if nonzero < 2:
         raise ValidationError(
             f"{context}: shape {type(node).__name__} has zero "

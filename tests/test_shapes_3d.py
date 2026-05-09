@@ -377,7 +377,7 @@ def test_barrel_attach_peg_to_outer_wall():
     from scadwright import bbox as _bbox
     from scadwright.primitives import cube
     b = Barrel(h=80, end_d=50, mid_d=64)
-    peg = cube([4, 4, 4]).attach(b, on="outer_wall", at="lside")
+    peg = cube([4, 4, 4]).attach(b, on="outer_wall", using_anchor="lside")
     bb = _bbox(peg)
     # lside (at x=0) lands at the equator surface (32, 0, 40); cube center
     # ends up at +x of the surface.
@@ -393,7 +393,7 @@ def test_barrel_attach_peg_with_at_z_and_angle():
     # leaves the cube axis-aligned; only the lside anchor is moved onto
     # the surface point).
     peg = cube([4, 4, 4]).attach(
-        b, on="outer_wall", at="lside", at_z=20, angle=90,
+        b, on="outer_wall", using_anchor="lside", at_z=20, angle=90,
     )
     bb = _bbox(peg)
     # Surface point at at_z=20, angle=90: x=0, y≈30.29, z=60.
@@ -438,7 +438,7 @@ def test_barrel_attach_under_translate_uses_correct_axis_origin():
     from scadwright import bbox as _bbox
     from scadwright.primitives import cube
     b = Barrel(h=80, end_d=50, mid_d=64).translate([100, 0, 0])
-    peg = cube([4, 4, 4]).attach(b, on="outer_wall", at="lside", angle=180)
+    peg = cube([4, 4, 4]).attach(b, on="outer_wall", using_anchor="lside", angle=180)
     bb = _bbox(peg)
     # At angle=180 around axis at (100, 0, 40), the equator surface is at
     # (100 - 32, 0, 40) = (68, 0, 40). Lside lands there; without orient,

@@ -97,7 +97,7 @@ cube(1).red()     .steelblue(alpha=0.5)   # any SVG/X11 color name
 # Placement helpers:
 part.center_bbox()                        # AABB centered at origin
 peg.attach(plate)                         # bottom of peg on top of plate
-peg.attach(plate, on="rside", at="lside")  # side-by-side
+peg.attach(plate, on="rside", using_anchor="lside")  # side-by-side
 peg.attach(plate, orient=True)            # rotate to align normals
 peg.attach(hub, on="outer_wall", angle=30) # 30° meridian on a cylinder/cone/barrel wall
 peg.attach(hub, on="outer_wall", angle=30, at_z=5)  # 30° meridian, 5mm above mid-wall (curve-aware on Barrel)
@@ -109,10 +109,12 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)  # bridge fil
 peg.attach(plate, bond="overlap")         # explicit: planar local extension; raises on curved host
 peg.attach(hub, on="outer_wall", angle=0, orient=True, bond="bridge")  # explicit: curved-host bridge; raises on planar
 peg.attach(plate, bond="shift")           # explicit: bilateral shift; always works, opposite face drifts by eps
-fuse(pylon, floor, at="bottom", on="top")  # standalone form; symmetric side selection
+fuse(pylon, floor, using_anchor="bottom", on="top")  # standalone form; symmetric side selection
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
 cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter
 with disable_eps_fuse(): ...              # scope-wide opt-out (precision builds, perf debugging, fuse-can't-fix-it)
+with tolerances(eps=0.001): ...           # override default eps across attach/fuse/through (no per-call thread)
+with tolerances(coincidence=1e-5): ...    # tighter coincident-face matching for through()
 cube(5).array(count=3, spacing=10, axis="x")   # alias over linear_copy
 ```
 

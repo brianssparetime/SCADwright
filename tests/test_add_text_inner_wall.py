@@ -17,10 +17,10 @@ def test_tube_has_inner_wall():
     t = Tube(h=20, od=20, thk=2)  # id = 16
     a = get_node_anchors(t)["inner_wall"]
     assert a.kind == "cylindrical"
-    assert a.surface_param("radius") == pytest.approx(8.0)
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
-    assert a.surface_param("length") == pytest.approx(20.0)
-    assert a.surface_param("inner") is True
+    assert a.radius == pytest.approx(8.0)
+    assert a.axis == (0.0, 0.0, 1.0)
+    assert a.length == pytest.approx(20.0)
+    assert a.inner is True
     # Reference position: +X meridian on inner surface, mid-wall.
     assert a.position == pytest.approx((8.0, 0.0, 10.0))
     # Outward normal points TOWARD the axis (into the hollow).
@@ -31,9 +31,9 @@ def test_funnel_has_conical_inner_wall():
     f = Funnel(h=20, bot_od=20, top_od=10, thk=2)  # bot_id=16, top_id=6
     a = get_node_anchors(f)["inner_wall"]
     assert a.kind == "conical"
-    assert a.surface_param("r1") == pytest.approx(8.0)
-    assert a.surface_param("r2") == pytest.approx(3.0)
-    assert a.surface_param("inner") is True
+    assert a.r1 == pytest.approx(8.0)
+    assert a.r2 == pytest.approx(3.0)
+    assert a.inner is True
     # Reference position: mid-wall mid-radius on inner surface.
     assert a.position == pytest.approx((5.5, 0.0, 10.0))
 
@@ -41,19 +41,19 @@ def test_funnel_has_conical_inner_wall():
 def test_tube_inner_wall_scales_under_uniform_scale():
     t = Tube(h=20, od=20, thk=2).scale(2)
     a = get_node_anchors(t)["inner_wall"]
-    assert a.surface_param("radius") == pytest.approx(16.0)
-    assert a.surface_param("length") == pytest.approx(40.0)
-    assert a.surface_param("inner") is True
+    assert a.radius == pytest.approx(16.0)
+    assert a.length == pytest.approx(40.0)
+    assert a.inner is True
 
 
 def test_tube_inner_wall_axis_rotates_with_host():
     t = Tube(h=20, od=20, thk=2).rotate([90, 0, 0])
     a = get_node_anchors(t)["inner_wall"]
-    ax = a.surface_param("axis")
+    ax = a.axis
     # +Z axis rotates 90° around +X → -Y.
     assert ax[0] == pytest.approx(0.0, abs=1e-9)
     assert ax[1] == pytest.approx(-1.0, abs=1e-9)
-    assert a.surface_param("inner") is True
+    assert a.inner is True
 
 
 # --- Geometry: glyph world positions ---

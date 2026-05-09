@@ -240,12 +240,8 @@ def _apply_face_offset(anchor, face_name, at):
         anchor.position[1] + u * u_axis[1] + v * v_axis[1],
         anchor.position[2] + u * u_axis[2] + v * v_axis[2],
     )
-    return Anchor(
-        position=new_position,
-        normal=anchor.normal,
-        kind=anchor.kind,
-        surface_params=anchor.surface_params,
-    )
+    from dataclasses import replace
+    return replace(anchor, position=new_position)
 
 
 def _warn_if_host_is_curved(host, loc):
@@ -478,14 +474,13 @@ def _place_wrapped(
     if not any(line for line in lines):
         raise ValidationError("add_text: label is empty.")
 
-    axis = anchor.surface_param("axis")
+    axis = anchor.axis
     if axis is None:
-        raise ValidationError("add_text: anchor missing 'axis' surface_param.")
+        raise ValidationError("add_text: anchor missing 'axis'.")
 
     # Inner walls: see _place_wrapped header doc — flip sign so
     # outward_from_axis_unit always points away from axis.
-    inner = bool(anchor.surface_param("inner", default=False))
-    s_outward = -1.0 if inner else 1.0
+    s_outward = -1.0 if anchor.inner else 1.0
     outward_from_axis_unit = (
         s_outward * anchor.normal[0],
         s_outward * anchor.normal[1],
@@ -496,38 +491,35 @@ def _place_wrapped(
     is_meridional = anchor.kind == "meridional"
     is_curved_axially = is_conical or is_meridional
     if is_conical:
-        r1 = anchor.surface_param("r1")
-        r2 = anchor.surface_param("r2")
-        length = anchor.surface_param("length")
-        if r1 is None or r2 is None or length is None:
+        if anchor.r1 is None or anchor.r2 is None or anchor.length is None:
             raise ValidationError(
-                "add_text: conical anchor missing 'r1', 'r2', or 'length' "
-                "surface_params."
+                "add_text: conical anchor missing 'r1', 'r2', or 'length'."
             )
-        r_mid = (r1 + r2) / 2.0
-        slope = (r2 - r1) / length if length > 0 else 0.0
+        r_mid = (anchor.r1 + anchor.r2) / 2.0
+        slope = (
+            (anchor.r2 - anchor.r1) / anchor.length if anchor.length > 0 else 0.0
+        )
         meridian_r = mid_r_param = meridian_s_param = None
         merid_length = None
     elif is_meridional:
-        meridian_r = anchor.surface_param("meridian_r")
-        mid_r_param = anchor.surface_param("mid_r")
-        meridian_s_param = anchor.surface_param("meridian_s")
-        merid_length = anchor.surface_param("length")
+        meridian_r = anchor.meridian_r
+        mid_r_param = anchor.mid_r
+        meridian_s_param = anchor.meridian_s
+        merid_length = anchor.length
         if (meridian_r is None or mid_r_param is None
                 or meridian_s_param is None or merid_length is None):
             raise ValidationError(
                 "add_text: meridional anchor missing 'meridian_r', 'mid_r', "
-                "'meridian_s', or 'length' surface_params."
+                "'meridian_s', or 'length'."
             )
         r_mid = mid_r_param
         slope = 0.0  # unused; per-line slant is computed from the arc
     else:
-        radius = anchor.surface_param("radius")
-        if radius is None:
+        if anchor.radius is None:
             raise ValidationError(
-                "add_text: cylindrical anchor missing 'radius' surface_param."
+                "add_text: cylindrical anchor missing 'radius'."
             )
-        r_mid = radius
+        r_mid = anchor.radius
         slope = 0.0
         meridian_r = mid_r_param = meridian_s_param = None
         merid_length = None
@@ -589,10 +581,8 @@ def _place_wrapped(
     # warnings; ``None`` when the anchor doesn't carry it.
     if is_meridional:
         surface_length = merid_length
-    elif is_conical:
-        surface_length = anchor.surface_param("length")
     else:
-        surface_length = anchor.surface_param("length")
+        surface_length = anchor.length
 
     # Per-line axial offsets. Single-line collapses to [0.0] so behavior
     # is identical to the previous single-string path.
@@ -931,11 +921,11 @@ def _place_on_rim(
     if not any(line for line in lines):
         raise ValidationError("add_text: label is empty.")
 
-    rim_radius = anchor.surface_param("rim_radius")
+    rim_radius = anchor.rim_radius
     if rim_radius is None or rim_radius <= 0:
         raise ValidationError(
-            "add_text: rim anchor missing 'rim_radius' surface_param "
-            "(or radius is non-positive)."
+            "add_text: rim anchor missing 'rim_radius' "
+            "(or rim_radius is non-positive)."
         )
 
     face_normal = anchor.normal
@@ -961,12 +951,12 @@ def _place_on_rim(
                 path_radius, rim_radius, loc_str,
             )
 
-    # Prefer meridian_zero / axis from surface_params so meridian=N
-    # follows the cylinder's local frame (transforms with the host),
-    # consistent with attach(rim, angle=N). Fall back to deriving from
-    # face_normal for ad-hoc rim Anchors that lack the surface params.
-    meridian_zero = anchor.surface_param("meridian_zero")
-    rotation_axis = anchor.surface_param("axis")
+    # Prefer meridian_zero / axis from the anchor so meridian=N follows
+    # the cylinder's local frame (transforms with the host), consistent
+    # with attach(rim, angle=N). Fall back to deriving from face_normal
+    # for ad-hoc rim Anchors that lack the curved-surface metadata.
+    meridian_zero = anchor.meridian_zero
+    rotation_axis = anchor.axis
     if meridian_zero is None or rotation_axis is None:
         u_axis, _v_axis = _face_tangent_frame(None, face_normal)
         rotation_axis = face_normal
@@ -1266,14 +1256,14 @@ def add_text(
     if placement_anchor.kind == "planar":
         # Resolve text_curvature for planar surfaces. Rim anchors (carrying
         # `rim_radius`) default to arc; flat faces default to straight.
-        rim_radius = placement_anchor.surface_param("rim_radius")
+        rim_radius = placement_anchor.rim_radius
         is_rim = rim_radius is not None
         if text_curvature == "arc":
             if not is_rim:
                 raise ValidationError(
                     "add_text: text_curvature='arc' requires a rim anchor "
                     "(top/bottom of a Cylinder, Tube, or Funnel). This "
-                    "anchor has no rim_radius surface_param."
+                    "anchor has no rim_radius."
                 )
             use_arc = True
         elif text_curvature == "flat":

@@ -195,7 +195,7 @@ class Component(Node):
         normal: tuple,
         *,
         kind: str = "planar",
-        surface_params=None,
+        **surface_kwargs,
     ) -> None:
         """Declare a named anchor on this Component at runtime.
 
@@ -205,17 +205,19 @@ class Component(Node):
         escape hatch for Components that genuinely can't express an anchor
         declaratively.
 
-        ``kind`` and ``surface_params`` carry surface-type metadata for
-        decoration transforms (see ``docs/add_text.md``). The default
-        ``"planar"`` covers every flat face.
+        ``kind`` and the curved-surface kwargs (``axis``, ``radius``,
+        ``r1``/``r2``, ``length``, ``rim_radius``, ``axis_origin``,
+        ``meridian_zero``, ``inner``, etc.) carry surface-type metadata
+        for decoration transforms (see ``docs/add_text.md``). The default
+        ``kind="planar"`` covers every flat face.
         """
-        from scadwright.anchor import Anchor, _normalize_surface_params
+        from scadwright.anchor import Anchor
 
         self._anchors[name] = Anchor(
             position=(float(position[0]), float(position[1]), float(position[2])),
             normal=(float(normal[0]), float(normal[1]), float(normal[2])),
             kind=kind,
-            surface_params=_normalize_surface_params(surface_params),
+            **surface_kwargs,
         )
 
     def adjustments_for(self, name: str) -> list:

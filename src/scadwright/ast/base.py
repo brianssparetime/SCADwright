@@ -205,7 +205,7 @@ class Node(
         at: tuple[float, float, float],
         normal: tuple[float, float, float],
         kind: str = "planar",
-        surface_params=None,
+        **surface_kwargs,
     ) -> "Node":
         """Attach a named anchor to this node without wrapping in a Component.
 
@@ -213,11 +213,17 @@ class Node(
         transforms applied after this call propagate to the anchor's
         position and normal, the same way custom Component anchors do.
 
+        Curved-surface kwargs (``axis``, ``radius``, ``r1``/``r2``,
+        ``length``, ``rim_radius``, ``axis_origin``, ``meridian_zero``,
+        ``inner``, etc.) carry the geometry that ``add_text`` and the
+        fuse bridge dispatch need on curved kinds.
+
         Custom anchors added this way override bbox-derived defaults of
         the same name. They are dropped by boolean operations (``union``,
-        ``difference``, ``intersection``), like all custom anchors.
+        ``intersection``); ``difference`` propagates first-child anchors
+        through with a cutter-bbox check.
         """
-        from scadwright.anchor import Anchor, _normalize_surface_params
+        from scadwright.anchor import Anchor
         from scadwright.ast.transforms import WithAnchor
 
         loc = SourceLocation.from_caller()
@@ -225,7 +231,7 @@ class Node(
             position=(float(at[0]), float(at[1]), float(at[2])),
             normal=(float(normal[0]), float(normal[1]), float(normal[2])),
             kind=kind,
-            surface_params=_normalize_surface_params(surface_params),
+            **surface_kwargs,
         )
         return WithAnchor(
             child=self,
@@ -330,8 +336,8 @@ class Node(
         self,
         other: "Node",
         on: str = "top",
-        at: str = "bottom",
         *,
+        using_anchor: str = "bottom",
         angle: float | str | None = None,
         radius: float | None = None,
         at_z: float | None = None,
@@ -339,13 +345,16 @@ class Node(
         orient: bool = False,
         fuse=None,        # sentinel-default; see _validate_bond_and_fuse
         bond: str | None = None,
-        eps: float = 0.01,
+        eps: float | None = None,    # default from scadwright.tolerances.default_eps()
     ) -> "Node":
-        """Position self so its ``at`` anchor touches ``other``'s ``on`` anchor.
+        """Position self so its ``using_anchor`` anchor touches ``other``'s
+        ``on`` anchor.
 
-        Both ``on`` and ``at`` accept friendly names (``"top"``, ``"bottom"``,
-        ``"front"``, ``"back"``, ``"lside"``, ``"rside"``) or axis-sign names
-        (``"+z"``, ``"-z"``, ``"+y"``, ``"-y"``, ``"+x"``, ``"-x"``).
+        Both ``on`` and ``using_anchor`` accept friendly names
+        (``"top"``, ``"bottom"``, ``"front"``, ``"back"``, ``"lside"``,
+        ``"rside"``) or axis-sign names (``"+z"``, ``"-z"``, ``"+y"``,
+        ``"-y"``, ``"+x"``, ``"-x"``). ``on`` selects the anchor on
+        ``other``; ``using_anchor`` selects the anchor on self.
 
         By default, only translation is applied (self is moved so the anchor
         positions coincide). Pass ``orient=True`` to also rotate self so the
@@ -374,8 +383,8 @@ class Node(
         ``attach()`` only attempts local extension on ``self``;
         ``other`` isn't part of the returned value, so extending it
         wouldn't help. For the symmetric case (extend whichever side
-        qualifies), use the ``fuse(a, b, on, at)`` free function in
-        ``scadwright.boolops``.
+        qualifies), use the ``fuse(a, b, on=, using_anchor=)`` free
+        function in ``scadwright.boolops``.
 
         Chain a directional helper for offset placement::
 
@@ -452,6 +461,10 @@ class Node(
 
         loc = SourceLocation.from_caller()
 
+        if eps is None:
+            from scadwright.api.tolerances import default_eps
+            eps = default_eps()
+
         if angle is None and radius is not None:
             from scadwright.errors import ValidationError
             raise ValidationError(
@@ -497,7 +510,7 @@ class Node(
         if angle is not None:
             from scadwright.ast.placement import _apply_attach_angle
             other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)
-        self_anchor = _resolve_attach_anchor(self, at, "self", loc)
+        self_anchor = _resolve_attach_anchor(self, using_anchor, "self", loc)
 
         # Validate bond/fuse pair. Explicit bond= implies fuse=True;
         # fuse=False with a bond is a contradiction.
@@ -526,7 +539,7 @@ class Node(
             )
             rotated_anchors = anchors_from_bbox(_bbox(working_self))
             working_self_anchor = rotated_anchors.get(
-                at, rotated_anchors.get("bottom", self_anchor)
+                using_anchor, rotated_anchors.get("bottom", self_anchor)
             )
             if working_self is self:
                 # No rotation needed; self_anchor stays as-is.
@@ -537,8 +550,8 @@ class Node(
                 # the bridge dispatch we need the at-anchor's actual
                 # world-frame normal — apply the orient rotation
                 # explicitly.
+                from dataclasses import replace
                 from scadwright.matrix import to_matrix
-                from scadwright.anchor import Anchor as _Anchor
                 import math as _math
                 rot = to_matrix(working_self)
                 new_pos = rot.apply_point(self_anchor.position)
@@ -546,11 +559,8 @@ class Node(
                 nlen = _math.sqrt(sum(c * c for c in new_norm))
                 if nlen > 0:
                     new_norm = tuple(c / nlen for c in new_norm)
-                bridge_self_anchor = _Anchor(
-                    position=new_pos,
-                    normal=new_norm,
-                    kind=self_anchor.kind,
-                    surface_params=self_anchor.surface_params,
+                bridge_self_anchor = replace(
+                    self_anchor, position=new_pos, normal=new_norm,
                 )
 
         # disable_eps_fuse() short-circuits everything to exact contact.
@@ -598,7 +608,7 @@ class Node(
         parent: "Node",
         *,
         axis: str | None = None,
-        eps: float = 0.01,
+        eps: float | None = None,
     ) -> "Node":
         """Extend self through coincident faces of ``parent`` by ``eps``.
 
@@ -640,6 +650,10 @@ class Node(
         from scadwright.bbox import bbox as _bbox
 
         loc = SourceLocation.from_caller()
+
+        if eps is None:
+            from scadwright.api.tolerances import default_eps
+            eps = default_eps()
 
         if is_local_axis(axis):
             return extend_through_faces_local(self, parent, axis, eps, loc)
