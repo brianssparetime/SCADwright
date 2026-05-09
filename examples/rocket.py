@@ -17,26 +17,6 @@ By component (scadwright / openscad):
 
 Average: 6x reduction.
 
-Showcases:
-
-- Parabolic ogive nose via the ``Ogive`` Component (one line; the
-  Component picks the meridian shape and emits a clean rotate_extrude).
-- Coiled-spring stem: ``Helix`` Component with custom ``wire_profile=``
-  (an ``almond_profile``), tapered ``r_end=``, and ``overhang=`` to
-  bury the tilted endcaps in the plate and body.
-- Half-barrel nozzle below the fin line: a fatter Barrel, ``.halve(z=1)``
-  keeps the upper half — flares outward going down.
-- Filleted M2-counterbored baseplate (Cube.fillet, Counterbore,
-  nested linear_copy, through()).
-- Parabolic backswept fins: sampled polygon → linear_extrude →
-  Minkowski sphere for round edges.
-- Surface-aware attach with axial offset (at_z=) on Barrel's
-  meridional outer_wall anchor — the fin's body-side edge lands on
-  the actual barrel surface.
-- Auto-EPS at coincident faces (fuse=, through()).
-- Radial copies via rotate_copy.
-- Curved-meridian text wrap (add_text + meridian= + relief=).
-- Per-feature fragmentation (with resolution(fn=...), per-call fn=).
 """
 
 from scadwright import bbox, render, resolution
@@ -107,19 +87,14 @@ fin = fin_blank.attach(
 ).left(fin_fillet)
 fins = fin.rotate_copy(angle=120, n=3, axis=[0, 0, 1])
 
-# Engraved labels: SCADwright wraps the +X meridian; on the opposite
-# side the two-line punchline runs axially (text_dir="axial",
-# rotate_glyphs=True — the wine-bottle case), lines stacking
-# circumferentially via \n.
+# Engraved labels: 
 labeled_body = body.add_text(
-    label="SCADwright", on="outer_wall", meridian=0,
-    font_size=4, spacing=1.2, relief=-0.4,
+    label="SCADwright:", on="outer_wall", meridian=45,
+    font_size=2.5, spacing=1.2, relief=0.5, at_z = 16,
 ).add_text(
     label="Can your SCAD do\nthis in ~50 lines?",
-    on="outer_wall", meridian=180,
-    text_dir="axial", rotate_glyphs=True,
-    font_size=3, line_spacing=1.5, relief=-0.4,
-    spacing=1.0,
+    on="outer_wall", meridian=45, text_dir="axial", rotate_glyphs=True,
+    font_size=2.5, line_spacing=1.5, relief=-0.5, spacing=1.0, at_z = -3,
 )
 
 rocket = union(labeled_body, nose, stand, fins, nozzle)

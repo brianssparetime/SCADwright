@@ -36,6 +36,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import importlib.util
 import logging
@@ -207,9 +208,36 @@ def _import_script(script_path: Path):
 def _extract_model(module, script_path: Path):
     if not hasattr(module, "MODEL"):
         raise SCADwrightError(
-            f"{script_path.name} must define a top-level `MODEL` (a scadwright Node) for `scadwright build`"
+            f"{script_path.name} must define a top-level `MODEL` (a scadwright Node) "
+            f"or call `render(...)` at module level (or define a Design subclass) "
+            f"for `scadwright build` to find what to render."
         )
     return module.MODEL
+
+
+def _import_with_self_render_capture(script_path: Path):
+    """Import a script while tracking any ``render()`` calls it makes at
+    module level. Returns ``(module, last_rendered_path_or_None)``.
+
+    For self-contained example scripts that do their own ``render(model,
+    "out.scad")`` rather than exposing a top-level ``MODEL`` for the CLI
+    to render, the captured path becomes the .scad we hand to OpenSCAD.
+    Runs the import with ``cwd`` = script's directory so the typical
+    relative ``render(model, "rocket.scad")`` lands next to the source.
+    """
+    # The package's ``__init__`` re-exports ``render`` as the function,
+    # which shadows the same-named submodule attribute on the package.
+    # ``importlib.import_module`` reaches the submodule via sys.modules
+    # rather than attribute lookup.
+    _render_module = importlib.import_module("scadwright.render")
+    _render_module._reset_last_rendered_for_testing()
+    prev_cwd = os.getcwd()
+    os.chdir(script_path.parent)
+    try:
+        module = _import_script(script_path)
+    finally:
+        os.chdir(prev_cwd)
+    return module, _render_module.last_rendered_path()
 
 
 def _temp_scad_path(script_path: Path, variant: str | None) -> Path:
@@ -223,16 +251,52 @@ def _temp_scad_path(script_path: Path, variant: str | None) -> Path:
 
 
 def _resolve_openscad(explicit: str | None) -> str:
-    """Pick the openscad binary: --openscad flag, then $SCADWRIGHT_OPENSCAD env,
-    then PATH lookup. Raise if nothing's found."""
+    """Pick the openscad binary.
+
+    Lookup order: ``--openscad`` flag → ``$SCADWRIGHT_OPENSCAD`` env →
+    ``openscad`` on ``PATH`` → known install locations (macOS app bundle,
+    Linux distro packages, Windows installer). Raise if nothing's found.
+    """
     candidate = explicit or os.environ.get("SCADWRIGHT_OPENSCAD") or "openscad"
     found = shutil.which(candidate)
-    if not found:
-        raise SCADwrightError(
-            f"could not find openscad binary {candidate!r} on PATH. "
-            f"Install OpenSCAD, or pass --openscad PATH, or set $SCADWRIGHT_OPENSCAD."
-        )
-    return found
+    if found:
+        return found
+    # Fall back to known install locations. macOS ships OpenSCAD as a .app
+    # bundle that doesn't put `openscad` on $PATH; on Linux distro packages
+    # the binary is usually on PATH already, but Snap and Flatpak aren't;
+    # Windows installer drops to Program Files without modifying PATH.
+    if candidate == "openscad":
+        for path in _OPENSCAD_BINARY_CANDIDATES:
+            if any(c in path for c in "*?["):
+                hits = sorted(glob.glob(path), reverse=True)
+                for hit in hits:
+                    if os.path.isfile(hit) and os.access(hit, os.X_OK):
+                        return hit
+            elif os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+    raise SCADwrightError(
+        f"could not find openscad binary {candidate!r} on PATH or in any "
+        f"of the standard install locations. Install OpenSCAD, or pass "
+        f"--openscad PATH, or set $SCADWRIGHT_OPENSCAD."
+    )
+
+
+_OPENSCAD_BINARY_CANDIDATES: tuple[str, ...] = (
+    # macOS — DMG/installer app bundle
+    "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
+    # macOS — Homebrew Cellar (Apple Silicon and Intel)
+    "/opt/homebrew/Cellar/openscad/*/OpenSCAD.app/Contents/MacOS/OpenSCAD",
+    "/usr/local/Cellar/openscad/*/OpenSCAD.app/Contents/MacOS/OpenSCAD",
+    # macOS — Homebrew bottle exposing a CLI binary
+    "/opt/homebrew/bin/openscad",
+    "/usr/local/bin/openscad",
+    # Linux — Flatpak / Snap (the bare `openscad` command isn't on PATH)
+    "/var/lib/flatpak/exports/bin/org.openscad.OpenSCAD",
+    "/snap/bin/openscad",
+    # Windows — installer default
+    r"C:\Program Files\OpenSCAD\openscad.exe",
+    r"C:\Program Files (x86)\OpenSCAD\openscad.exe",
+)
 
 
 def _cli_viewpoint(args: argparse.Namespace) -> dict | None:
@@ -352,18 +416,49 @@ def _cmd_build(args: argparse.Namespace, unknown: list[str]) -> int:
     return 0
 
 
-def _cmd_preview(args: argparse.Namespace, unknown: list[str]) -> int:
-    script_path = _common_setup(args, unknown)
-    openscad = _resolve_openscad(args.openscad)
+def _resolve_scad_output(
+    script_path: Path, args: argparse.Namespace, *, kind: str,
+) -> Path:
+    """Return the .scad path to feed OpenSCAD, building it as needed.
+
+    Three production paths, in priority order:
+
+    1. **Design subclass.** Reset registry, import, run the resolver.
+       Output goes to a stable temp path keyed on (script, variant).
+    2. **Top-level ``MODEL``.** Import, render ``MODEL`` to a temp path.
+    3. **Self-rendering script.** Import; if the script called
+       ``render(...)`` at module level, use the path it wrote. Lets
+       example scripts that already do their own rendering work with
+       ``scadwright preview`` / ``render`` without rewriting them to
+       expose ``MODEL``.
+    """
     _, designs = _import_with_fresh_design_registry(script_path)
     if designs:
         scad_path = _temp_scad_path(script_path, args.variant)
         _render_design_variants(
-            script_path, designs, args, kind="preview", out_override=scad_path,
+            script_path, designs, args, kind=kind, out_override=scad_path,
         )
-    else:
+        return scad_path
+
+    # No Design subclass — try MODEL, then fall back to capture.
+    module, captured_path = _import_with_self_render_capture(script_path)
+    if hasattr(module, "MODEL"):
         scad_path = _temp_scad_path(script_path, args.variant)
         _build_to(scad_path, script_path, args)
+        return scad_path
+    if captured_path is not None and captured_path.is_file():
+        return captured_path
+    raise SCADwrightError(
+        f"{script_path.name} must define a top-level `MODEL`, call "
+        f"`render(...)` at module level, or define a `Design` subclass "
+        f"for `scadwright {kind}` to find what to render."
+    )
+
+
+def _cmd_preview(args: argparse.Namespace, unknown: list[str]) -> int:
+    script_path = _common_setup(args, unknown)
+    openscad = _resolve_openscad(args.openscad)
+    scad_path = _resolve_scad_output(script_path, args, kind="preview")
     print(f"preview: wrote {scad_path}", file=sys.stderr)
     subprocess.Popen(
         [openscad, str(scad_path)],
@@ -379,14 +474,7 @@ def _cmd_render(args: argparse.Namespace, unknown: list[str]) -> int:
     script_path = _common_setup(args, unknown)
     openscad = _resolve_openscad(args.openscad)
     out_stl = Path(args.output) if args.output else script_path.with_suffix(".stl")
-    _, designs = _import_with_fresh_design_registry(script_path)
-    scad_path = _temp_scad_path(script_path, args.variant)
-    if designs:
-        _render_design_variants(
-            script_path, designs, args, kind="render", out_override=scad_path,
-        )
-    else:
-        _build_to(scad_path, script_path, args)
+    scad_path = _resolve_scad_output(script_path, args, kind="render")
     print(f"rendering {scad_path} -> {out_stl}", file=sys.stderr)
     result = subprocess.run([openscad, "-o", str(out_stl), str(scad_path)])
     if result.returncode != 0:

@@ -65,21 +65,86 @@ function buildscadwrightArgs(subcommand, pyPath, extra = []) {
   return args.concat(extra);
 }
 
+// Captured stderr from the most recent `scadwright` invocation, so the
+// caller's error handler can pattern-match on it (e.g., to detect the
+// "openscad not found" failure and offer a Browse... button).
+let _lastStderr = '';
+
 function runscadwright(subcommand, pyPath, channel, extraArgs = []) {
   return new Promise((resolve, reject) => {
     const cmd = discoverScadwrightCommand();
     const args = buildscadwrightArgs(subcommand, pyPath, extraArgs);
     channel.appendLine(`$ ${cmd} ${args.join(' ')}`);
     const p = cp.spawn(cmd, args, { cwd: path.dirname(pyPath) });
+    let stderrBuf = '';
     p.stdout.on('data', (d) => channel.append(d.toString()));
-    p.stderr.on('data', (d) => channel.append(d.toString()));
-    p.on('error', (err) => reject(new Error(`failed to launch ${cmd}: ${err.message}`)));
+    p.stderr.on('data', (d) => {
+      const s = d.toString();
+      stderrBuf += s;
+      channel.append(s);
+    });
+    p.on('error', (err) => {
+      _lastStderr = stderrBuf;
+      reject(new Error(`failed to launch ${cmd}: ${err.message}`));
+    });
     p.on('close', (code) => {
+      _lastStderr = stderrBuf;
       if (code === 0) return resolve();
       channel.show(true);
       reject(new Error(`scadwright ${subcommand} exited with code ${code}`));
     });
   });
+}
+
+// Detect the "could not find openscad" failure shape from cli.py and
+// offer a native file picker so the user doesn't have to dig through
+// settings.json or learn $SCADWRIGHT_OPENSCAD.
+async function maybeOfferOpenscadPicker(verb) {
+  if (!/could not find openscad/i.test(_lastStderr)) return false;
+  const choice = await vscode.window.showErrorMessage(
+    `scadwright ${verb} couldn't find OpenSCAD on PATH or in any standard install location.`,
+    'Browse for OpenSCAD…',
+    'Open Settings',
+    'Cancel',
+  );
+  if (choice === 'Browse for OpenSCAD…') {
+    const isWin = process.platform === 'win32';
+    const isMac = process.platform === 'darwin';
+    const filters = isWin ? { Executable: ['exe'] }
+                  : isMac ? { 'OpenSCAD app or binary': ['app', ''] }
+                  : { 'OpenSCAD binary': ['*'] };
+    const defaultUri = isMac
+      ? vscode.Uri.file('/Applications')
+      : isWin
+      ? vscode.Uri.file('C:\\Program Files')
+      : vscode.Uri.file('/usr/bin');
+    const picked = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      defaultUri,
+      title: 'Select the OpenSCAD binary',
+      filters,
+    });
+    if (!picked || picked.length === 0) return true;
+    let p = picked[0].fsPath;
+    // On macOS, point `.app` selections at the binary inside the bundle.
+    if (isMac && p.endsWith('.app')) {
+      const inside = path.join(p, 'Contents', 'MacOS', 'OpenSCAD');
+      if (fs.existsSync(inside)) p = inside;
+    }
+    await vscode.workspace.getConfiguration('scadwright').update(
+      'openscadCommand', p, vscode.ConfigurationTarget.Global,
+    );
+    vscode.window.showInformationMessage(
+      `scadwright.openscadCommand set to ${p}. Try ${verb} again.`,
+    );
+  } else if (choice === 'Open Settings') {
+    vscode.commands.executeCommand(
+      'workbench.action.openSettings', 'scadwright.openscadCommand',
+    );
+  }
+  return true;
 }
 
 async function previewCommand(channel) {
@@ -89,6 +154,7 @@ async function previewCommand(channel) {
   try {
     await runscadwright('preview', sel.py, channel);
   } catch (e) {
+    if (await maybeOfferOpenscadPicker('preview')) return;
     vscode.window.showErrorMessage(`scadwright preview failed: ${e.message}`);
   }
 }
@@ -102,6 +168,7 @@ async function renderCommand(channel) {
     await runscadwright('render', sel.py, channel);
     vscode.window.showInformationMessage(`scadwright: rendered ${path.basename(sel.py.replace(/\.py$/, '.stl'))}`);
   } catch (e) {
+    if (await maybeOfferOpenscadPicker('render')) return;
     vscode.window.showErrorMessage(`scadwright render failed: ${e.message}`);
   }
 }

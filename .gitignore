@@ -13,6 +13,9 @@ s2-evolving/
 !tests/golden/*.scad
 !examples/s2-lens-v2b.scad
 
+# Generated mesh exports (3D-printable output of `scadwright render`).
+*.stl
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -47,6 +47,32 @@ def _capture_unsnapshotted_components(node: Node) -> None:
     _walk(node)
 
 
+# Most recent path passed to ``render()``. The CLI's preview/render
+# subcommands read this so a script that does its own ``render(model,
+# "out.scad")`` at module level (rather than exposing a top-level
+# ``MODEL = …`` for the CLI to render) still works with
+# ``scadwright preview script.py``: import the script, observe what it
+# wrote, hand that to OpenSCAD. Reset to None on each fresh import via
+# ``_reset_last_rendered_for_testing``.
+_last_rendered_path: Path | None = None
+
+
+def last_rendered_path() -> Path | None:
+    """Return the path most recently passed to ``render()``, or None.
+
+    Set as a side effect of every ``render()`` call. Cleared by the CLI
+    between script imports.
+    """
+    return _last_rendered_path
+
+
+def _reset_last_rendered_for_testing() -> None:
+    """Test/CLI helper. Clears ``_last_rendered_path`` so the next
+    ``render()`` call's value is observable in isolation."""
+    global _last_rendered_path
+    _last_rendered_path = None
+
+
 def render(
     node: Node,
     path: str | Path,
@@ -70,4 +96,6 @@ def render(
         emit(node, f, pretty=pretty, debug=debug, banner=banner,
              glossary=glossary,
              scad_use=scad_use, scad_include=scad_include)
+    global _last_rendered_path
+    _last_rendered_path = p
     return p
