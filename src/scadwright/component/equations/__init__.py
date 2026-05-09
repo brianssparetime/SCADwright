@@ -8,7 +8,7 @@ pieces, organized by concern:
   ``_extract_name_annotations_with_colmap``,
   ``_extract_optional_markers``, ``_split_equations_text``,
   ``_split_logical_lines``, ``LogicalLine``, ``_bracket_depth``,
-  ``_INLINE_TYPE_ALLOWLIST``, ``_require_sympy``).
+  ``_INLINE_TYPE_ALLOWLIST``).
 - :mod:`.curated` — the curated namespace exposed inside derivation
   and predicate expressions (``_CURATED_BUILTINS``, ``_CURATED_MATH``)
   plus the cardinality helpers
@@ -36,7 +36,6 @@ from scadwright.component.equations.lex import (
     _extract_name_annotations,
     _extract_name_annotations_with_colmap,
     _extract_optional_markers,
-    _require_sympy,
     _split_equations_text,
     _split_equations_with_comments,
     _split_logical_lines,
@@ -61,7 +60,6 @@ __all__ = [
     "_extract_name_annotations",
     "_extract_name_annotations_with_colmap",
     "_extract_optional_markers",
-    "_require_sympy",
     "_split_equations_text",
     "_split_equations_with_comments",
     "_split_logical_lines",

@@ -380,7 +380,7 @@ mount = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))
 tip   = anchor(at=(0, 0, 10), normal=(0, 0, 1))
 ```
 
-Equations require `pip install 'scadwright[equations]'` (sympy). Components are frozen after construction.
+Components are frozen after construction.
 
 ### Composite build(): yield parts, auto-unioned
 

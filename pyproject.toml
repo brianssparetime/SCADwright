@@ -19,11 +19,11 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Topic :: Multimedia :: Graphics :: 3D Modeling",
 ]
+dependencies = ["sympy>=1.12"]
 
 [project.optional-dependencies]
-equations = ["sympy>=1.12"]
-lsp = ["pygls>=1.3", "sympy>=1.12"]
-dev = ["pytest>=7", "sympy>=1.12"]
+lsp = ["pygls>=1.3"]
+dev = ["pytest>=7"]
 
 [project.scripts]
 scadwright = "scadwright.cli:main"

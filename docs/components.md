@@ -439,10 +439,6 @@ assert len(tree.children) == 2
 
 Once constructed, a Component's values can't be reassigned. `t.id = 5` raises an error. To change values, build a new Component.
 
-### `sympy` dependency
-
-Install `sympy` with `pip install 'scadwright[equations]'`. It's highly recommended: without it, you can't use the `equations` feature, which is how you'll declare most Components.
-
 ### The list form for equations
 
 The triple-quoted string is the recommended way to write equations. The list form also works:

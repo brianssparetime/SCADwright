@@ -204,22 +204,3 @@ def test_quadratic_filters_negative_root_via_validator():
     import math
     q = _Quadratic(area=math.pi * 9)
     assert q.r == pytest.approx(3.0)
-
-
-# --- Sympy missing ---
-
-
-def test_sympy_missing_raises_helpful_import_error(monkeypatch):
-    # Simulate sympy not installed by blocking future imports.
-    import scadwright.component.equations as eq_mod
-
-    def _blocker():
-        raise ImportError("no sympy")
-
-    monkeypatch.setattr(eq_mod, "_require_sympy", _blocker)
-
-    with pytest.raises(ImportError, match="no sympy"):
-        class _ShouldFail(Component):
-            a = Param(float)
-            equations = ["a = 5"]
-            def build(self): return cube(1)

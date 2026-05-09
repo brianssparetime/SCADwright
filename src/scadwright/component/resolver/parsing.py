@@ -338,8 +338,7 @@ def parse_equations_unified(
     Per-line classification, comma-expansion, malformed-shape rejection,
     self-reference detection, and mutual-inconsistency detection all
     happen here. Anything malformed or inconsistent surfaces as a
-    ValidationError. Sympy is required (used for the algebraic checks);
-    if it's not importable, ``_require_sympy`` raises a helpful error.
+    ValidationError.
 
     ``class_name`` (optional) is the owning Component's class name. When
     set, error messages prefix with ``ClassName.equations[N]:``; when
@@ -360,7 +359,6 @@ def parse_equations_unified(
     from scadwright.component.equations import (
         _INLINE_TYPE_ALLOWLIST,
         _extract_name_annotations_with_colmap,
-        _require_sympy,
     )
     from scadwright.component.resolver.checks import (
         _check_adjusted_only_in_rules,
@@ -374,8 +372,6 @@ def parse_equations_unified(
         _check_self_reference,
         _check_unknown_function_calls,
     )
-
-    _require_sympy()
 
     equations: list[ParsedEquation] = []
     constraints: list[ParsedConstraint] = []

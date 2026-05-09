@@ -33,7 +33,7 @@ I have put significant effort into refining the UX of SCADwright:  the more adva
 
 SCADwright optimizes for common cases, for those with little background in object-oriented python or advanced OpenSCAD, but retains full python capabilities and a low-level interface for exceptional cases.
 
-SCADwright calls OpenSCAD only at render time. The Python side has no external dependencies, but sympy is highly recommended to enable full functionality.  I've taken some care to make emitted SCAD human-readable.
+SCADwright calls OpenSCAD only at render time. The Python side requires `sympy` (pulled in automatically by pip) and nothing else.  I've taken some care to make emitted SCAD human-readable.
 
 If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build123d, or other Python+CAD tools, see [How is SCADwright different?](docs/how_is_scadwright_different.md) for a side-by-side.
 
@@ -572,20 +572,29 @@ The `scadwright` command becomes available.
 
 ## Dependencies
 
-SCADwright has no required dependencies beyond Python's standard library, however, equation solving (the `equations` class attribute) requires sympy, installed via `pip install 'scadwright[equations]'`.  Installing this is highly recommended for the full functionality of SCADwright.
+SCADwright requires `sympy` (for equation solving — the `equations` class attribute on Components is the framework's central feature, and `pip install scadwright` pulls sympy in automatically).
+
+Two optional extras layer in deeper functionality:
+
+- `pip install 'scadwright[lsp]'` — adds `pygls` for the language server. Editors with an LSP client get inline diagnostics, completion, hover, goto-definition, and project-wide rename inside `equations` blocks. See [Editor integration](#editor-integration) below.
+- `pip install -e '.[dev]'` — adds `pytest` for running the test suite from a clone. Combine with `[lsp]` if you also want to work on the language server: `pip install -e '.[dev,lsp]'`.
 
 
-## IDE integration
+## Editor integration
 
-This project ships editor integrations for both VS Code and PyCharm. Both detect when you open a Python SCADwright file and add icons to preview in OpenSCAD, render to a file, or kill any running OpenSCAD instances. Clicking preview is enough to see the results of a change: as long as the generated filename is the same (same script, same variant), an already-open OpenSCAD window auto-reloads, saving the time of closing and reopening the application.
+Any editor with an LSP client gets inline support for `equations = """..."""` blocks: red squiggles for every error the resolver would raise, completion for the curated math/builtins namespace and the surrounding class's declarations, hover with declared types and defaults, goto-definition, document symbols, and project-wide rename that updates cross-file references atomically. 
+
+Install with `pip install 'scadwright[lsp]'`, then point your editor at `scadwright lsp`. Configs for Vim, Neovim, Helix, Emacs (eglot / lsp-mode), Sublime, Zed, VSCode, and PyCharm Pro live in [`docs/lsp_setup.md`](docs/lsp_setup.md).
+
+This project also includes VSCode and PyCharm extensions. Both add toolbar buttons (Preview / Render / Kill OpenSCAD) on Python files that import scadwright, plus syntax coloring inside `equations` blocks. Clicking Preview is enough to see the results of a change: as long as the generated filename is the same (same script, same variant), an already-open OpenSCAD window auto-reloads.
 
 ### VS Code
 
-[The Visual Studio Code extension](/vscode/) provides the three preview/render/kill actions, plus syntax coloring inside `equations = """..."""` blocks via TextMate injection.
+[The VSCode extension](/vscode/) bundles the LSP client. Install the `[lsp]` extra in your project venv and the extension spawns `scadwright lsp` automatically. The extension also provides the three Preview / Render / Kill toolbar actions and TextMate coloring inside equations blocks. See [`vscode/README.md`](vscode/README.md) for install steps and settings.
 
 ### PyCharm
 
-[The PyCharm plugin](/pycharm/) provides the same three actions and goes a step further on the equations side: it uses PyCharm's native language injection to give both syntax coloring and autocomplete inside `equations = """..."""` blocks (type names after `:`, and the curated namespace of math functions, builtins, cardinality helpers, and constants at expression position).
+[The PyCharm plugin](/pycharm/) provides the three toolbar actions plus PyCharm-native equations coloring and curated-namespace autocomplete (math functions, builtins, cardinality helpers, type tags, and constants, with auto-paren insertion on callables). PyCharm Community has no built-in LSP client, so the richer LSP features aren't available there. PyCharm Pro users can run `scadwright lsp` alongside the native plugin for diagnostics, Param-aware completion, hover, and project-wide rename — see [`docs/lsp_setup.md`](docs/lsp_setup.md).
 
 ## SCADwright and modeling with AI
 

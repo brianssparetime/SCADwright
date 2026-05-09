@@ -21,10 +21,6 @@ Three scanners share a common discipline (string-literal awareness,
 ``_INLINE_TYPE_ALLOWLIST`` (the closed set of type names accepted in
 ``name:type`` annotations) lives here so the scanner-side validation
 shares the table with the auto-declare path downstream.
-
-``_require_sympy`` raises a helpful ``ImportError`` when sympy isn't
-installed; the resolver and the equation parser call it at the points
-they're about to use sympy.
 """
 
 from __future__ import annotations
@@ -44,17 +40,6 @@ _INLINE_TYPE_ALLOWLIST: dict[str, type] = {
     "bool": bool, "int": int, "str": str,
     "tuple": tuple, "list": list, "dict": dict,
 }
-
-
-def _require_sympy():
-    """Import sympy, or raise ImportError with extras-install hint."""
-    try:
-        import sympy  # noqa: F401
-    except ImportError as e:
-        raise ImportError(
-            "Components with `equations` require sympy. "
-            "Install with: pip install 'scadwright[equations]'"
-        ) from e
 
 
 # =============================================================================
