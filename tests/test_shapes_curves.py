@@ -210,6 +210,21 @@ def test_path_extrude_mesh_is_manifold():
         assert (b, a) in half_edges, f"half-edge {(a, b)} has no opposite"
 
 
+def test_path_extrude_emits_only_triangles():
+    """Caps must be fan-triangulated, not single n-gon faces. CGAL's
+    planarity check is strict to a few ULPs, and an n>3 cap polygon
+    drifts past tolerance even when mathematically planar — leading
+    to "PolySet has nonplanar faces" warnings during boolean ops.
+    Triangles are planar by construction.
+    """
+    from scadwright.ast.primitives import Polyhedron
+
+    poly = path_extrude(circle_profile(2, segments=16), [(0, 0, 0), (0, 0, 5)])
+    assert isinstance(poly, Polyhedron)
+    for face in poly.faces:
+        assert len(face) == 3, f"non-triangular face: {face}"
+
+
 def test_path_extrude_too_few_profile_raises():
     with pytest.raises(ValidationError, match="at least 3"):
         path_extrude([(0, 0), (1, 0)], [(0, 0, 0), (0, 0, 1)])

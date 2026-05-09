@@ -31,6 +31,13 @@ def path_extrude(
 
     ``closed`` connects the last cross-section back to the first (for
     torus-like shapes). When False, flat end-caps are generated.
+
+    The end-caps are fan-triangulated from the first profile vertex,
+    which assumes a convex profile. Every shipping profile generator
+    (``circle_profile``, ``almond_profile``, ``square_profile``,
+    ``polygon_profile``, ``rounded_rect_profile``) is convex; for a
+    custom non-convex profile, pre-triangulate or use ``closed=True``
+    to skip caps entirely.
     """
     if len(profile) < 3:
         raise ValidationError(
@@ -78,12 +85,21 @@ def path_extrude(
     # neighboring side-face edge for OpenSCAD to see a closed manifold.
     # Side faces have inward-pointing normals, so caps need inward normals
     # too: start cap winds with profile order, end cap winds reversed.
+    #
+    # Fan-triangulate the caps rather than emitting one n-vertex polygon:
+    # the n profile points lie in their frame's plane mathematically but
+    # drift by a few ULPs in float, and CGAL's planarity check is strict
+    # enough to reject a 16-gon almond cap as non-planar. Triangles are
+    # planar by construction. Fan from vertex 0 is valid for any convex
+    # profile — every shipping profile generator (circle, almond, square,
+    # polygon, rounded_rect) is convex.
     if not closed:
-        start_face = list(range(n_profile))
-        faces.append(start_face)
+        for j in range(1, n_profile - 1):
+            faces.append([0, j, j + 1])
         end_base = (n_path - 1) * n_profile
-        end_face = list(range(end_base + n_profile - 1, end_base - 1, -1))
-        faces.append(end_face)
+        last = end_base + n_profile - 1
+        for j in range(1, n_profile - 1):
+            faces.append([last, last - j, last - j - 1])
 
     return _polyhedron(points=points, faces=faces, convexity=convexity)
 
