@@ -128,6 +128,8 @@ mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
 # flat near-face and the cylinder's curved surface at angle=30.
 ```
 
+**Peg-anchor validation.** Like the planar cross-section path, the bridge dispatch validates the peg's at-anchor against the peg's bbox before building the prism: the anchor must lie on the peg's outermost face along its normal direction, and the peg must have non-zero extent in at least two axes. Failures raise a clear `ValidationError` rather than silently producing an empty bridge. The check unwraps `Translate` / `Rotate` / `Mirror` so a peg rotated by `orient=True` is validated against its underlying primitive's local frame.
+
 **Coaxial requirement.** The bridge dispatch requires the peg's at-anchor normal to be anti-parallel to the host's on-anchor normal (within tolerance). Without `orient=True` or manual peg alignment, the call raises `ValidationError("requires coaxial normals")` rather than silently producing geometry that doesn't match user intent.
 
 **Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. The dispatch falls through to the legacy shift instead.
@@ -229,6 +231,25 @@ On a conical wall, `at_z=` also adjusts the position radially so the new anchor 
 
 Other shapes — `cube()`, `RectTube`, `RingGear`, `Bearing`, `RoundedBox`, etc. — only carry the six bbox-derived planar anchors. Their outer surfaces aren't simple cylinders (rectangular, toothed, balls-and-races), so a single `angle=` rotation around an axis doesn't have a meaningful target. Use bbox-derived faces, or attach to a raw `cylinder()` if you need angular placement.
 
+## Polar / azimuth placement on spherical surfaces
+
+`sphere()` publishes the six bbox-tangent anchors (all kind `"spherical"`) plus a `surface` anchor for arbitrary polar / azimuth placement:
+
+```python
+ball = sphere(r=10)
+
+peg.attach(ball, on="surface", polar=30, angle=45)   # 30° from +Z axis, 45° azimuth
+peg.attach(ball, on="surface", angle=90)             # equator wrap (polar defaults to 90)
+peg.attach(ball, on="surface", polar=0)              # north pole
+peg.attach(ball, on="surface", polar=180)            # south pole
+```
+
+`polar=` is degrees from the north-pole direction (range [0, 180]). `angle=` is the azimuth, degrees CCW from the +X meridian. If only `angle=` is supplied, `polar` defaults to 90 (equator). If only `polar=` is supplied, `angle` defaults to 0 (the +X meridian).
+
+`at_z=` and `radius=` are not valid on spherical anchors — sphere placement uses the `polar` / `angle` pair.
+
+The polar/azimuth math uses the host's local frame, so a sphere that has been translated, rotated, or scaled tracks correctly: `sphere(r=5).rotate([0, 90, 0])` rotates the north pole to point along +X, and `polar=0` lands at the rotated pole.
+
 ## Custom anchors on Components
 
 Declare anchors at class scope with the `anchor()` descriptor, alongside equations:
@@ -262,6 +283,23 @@ Custom anchors with the same name as a standard face (e.g. `"top"`) override the
 
 The `at=` string supports ternary expressions evaluated against instance attributes, so conditional positions don't need any special machinery: `anchor(at="0 if n_shape else h", normal=(0, 0, 1))`. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal is a framework-internal escape hatch (library Components only; not a user-facing pattern).
 
+## One-off anchors on any node: `with_anchor()`
+
+When you want a named point on a primitive (or any other Node) without writing a Component, use the chained `with_anchor()` method:
+
+```python
+peg = (
+    cube([5, 5, 10])
+    .with_anchor("base", at=(2.5, 2.5, 0), normal=(0, 0, -1))
+)
+
+placed = peg.attach(plate, on="top", at="base")
+```
+
+`at=` and `normal=` are 3-tuples in the wrapped node's local frame. Spatial transforms applied after `with_anchor()` propagate to the anchor's position and normal exactly the same way Component custom anchors propagate. Custom anchors with the same name as a bbox-derived face override the default. Boolean operations drop them, like all custom anchors.
+
+`with_anchor()` is the lightweight escape hatch for "I want one named point on this shape" — for a parametric family with multiple anchors, write a Component.
+
 ## Anchor propagation
 
 Anchors (including custom ones) propagate through transforms:
@@ -272,7 +310,12 @@ sensor = cube([8, 8, 4]).attach(bracket, on="mount_face")
 # mount_face position is correctly shifted by both transforms
 ```
 
-Boolean operations (union, difference, intersection) drop custom anchors. Only the standard bbox-derived faces survive, because a boolean combination creates new geometry whose custom attachment points are no longer meaningful.
+Boolean operations follow these rules for custom anchors:
+
+- **`union` and `intersection`** drop all custom anchors. The semantic ambiguity is real — there's no clear "this anchor still means the same thing" rule when two shapes are combined.
+- **`difference`** propagates custom anchors from the first child (the thing being subtracted from), with one defensive check: any custom anchor whose position falls inside a cutter's bounding box is dropped, since the cutter may have removed material at the anchor's face. The 80% case — drilling a hole through a bracket far from `mount_face` — keeps `mount_face`. The breaking case — drilling through `mount_face` itself — drops it, and the next `attach()` to that name raises a clear missing-anchor error rather than silently producing wrong-looking output.
+
+Bbox-derived face anchors (`top`, `bottom`, etc.) always survive booleans — they're tied to the result's conservative bbox, not to specific geometry.
 
 Non-spatial wrappers (`.color()`, `.highlight()`, etc.) pass anchors through unchanged.
 

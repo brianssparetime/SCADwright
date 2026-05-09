@@ -36,6 +36,17 @@ class Anchor:
         return default
 
 
+def _point_in_bbox(p, bb, tol: float = 1e-6) -> bool:
+    """Whether ``p`` lies inside (or on, within ``tol``) the bbox ``bb``.
+
+    Used by ``visit_Difference`` to decide whether a propagated
+    custom anchor might have been invalidated by a cutter — a cutter
+    whose bbox covers the anchor's position may have removed material
+    at the anchor's face.
+    """
+    return all(bb.min[i] - tol <= p[i] <= bb.max[i] + tol for i in range(3))
+
+
 def _normalize_surface_params(sp) -> tuple[tuple[str, Any], ...]:
     """Coerce a dict/tuple/None to a sorted tuple-of-pairs.
 
@@ -356,6 +367,59 @@ class _AnchorVisitor(_Visitor):
     def visit_PreviewModifier(self, n): return self.visit(n.child)
     def visit_ForceRender(self, n): return self.visit(n.child)
 
+    # --- WithAnchor: recurse, then add the named anchor on top. ---
+
+    def visit_WithAnchor(self, n):
+        anchors = dict(self.visit(n.child))
+        anchors[n.anchor_name] = n.anchor
+        return anchors
+
+    # --- Difference: propagate first-child anchors, dropping any custom
+    # anchor whose position falls inside a cutter's bbox.
+    #
+    # The first child's bbox is the difference's bbox (conservative);
+    # its bbox-derived faces are also the difference's bbox-derived
+    # faces, so they propagate as-is. Custom anchors on the first
+    # child usually survive a difference — drilling a hole doesn't move
+    # the bracket's mount face — but a cutter whose bbox covers an
+    # anchor's position may have removed material at it. Drop those
+    # defensively. The user gets a clear missing-anchor error at attach
+    # time pointing at the lost anchor; if the cutter actually doesn't
+    # affect the anchor's face, the user can re-declare a fresh anchor.
+    #
+    # Union and Intersection still drop all custom anchors (handled by
+    # generic_visit) — the semantic ambiguity there is real and there's
+    # no clear "first child's anchors carry through" rule.
+
+    def visit_Difference(self, n):
+        from scadwright.bbox import bbox as _bbox
+
+        if not n.children:
+            return self.generic_visit(n)
+
+        first_anchors = dict(self.visit(n.children[0]))
+        if len(n.children) == 1:
+            return first_anchors
+
+        first_bb = _bbox(n.children[0])
+        bbox_defaults = anchors_from_bbox(first_bb)
+        cutter_bboxes = [_bbox(c) for c in n.children[1:]]
+
+        result: dict[str, Anchor] = {}
+        for name, a in first_anchors.items():
+            # Bbox-derived defaults of the first child = bbox-derived
+            # defaults of the difference. Propagate without the cutter
+            # check (they're at the bbox extreme and unaffected by the
+            # boolean's conservative bbox).
+            if bbox_defaults.get(name) == a:
+                result[name] = a
+                continue
+            # Custom anchor: drop if any cutter's bbox covers it.
+            if any(_point_in_bbox(a.position, cb) for cb in cutter_bboxes):
+                continue
+            result[name] = a
+        return result
+
     def visit_Echo(self, n):
         if n.child is None:
             return self.generic_visit(n)
@@ -392,22 +456,42 @@ class _AnchorVisitor(_Visitor):
     # --- Sphere: bbox-derived faces, but every face anchor is on the
     # spherical surface (a tangent point), not a planar face. Declare
     # kind="spherical" so curved-surface fuse dispatches via the bridge
-    # mechanism instead of trying the planar cross-section path. ---
+    # mechanism instead of trying the planar cross-section path.
+    # ``axis_origin`` (sphere center), ``axis`` (north-pole direction),
+    # and ``meridian_zero`` (azimuth=0 reference) let attach() compute
+    # arbitrary polar/azimuth points on the sphere.
 
     def visit_Sphere(self, n):
         from scadwright.bbox import bbox as _bbox
         bb = _bbox(n)
         radius = float(n.r)
+        center = (bb.center[0], bb.center[1], bb.center[2])
+        params = (
+            ("axis", (0.0, 0.0, 1.0)),
+            ("axis_origin", center),
+            ("meridian_zero", (1.0, 0.0, 0.0)),
+            ("radius", radius),
+        )
         anchors: dict[str, Anchor] = {}
         for name, (axis, sign) in FACE_NAMES.items():
-            pos = [bb.center[0], bb.center[1], bb.center[2]]
+            pos = [center[0], center[1], center[2]]
             pos[axis] = bb.max[axis] if sign > 0 else bb.min[axis]
             anchors[name] = Anchor(
                 position=(pos[0], pos[1], pos[2]),
                 normal=_NORMALS[(axis, sign)],
                 kind="spherical",
-                surface_params=(("radius", radius),),
+                surface_params=params,
             )
+        # ``surface`` is the canonical entry-point anchor for polar /
+        # angle placement on a sphere — defaults to the +Z tangent
+        # point but the attach() helper recomputes position and normal
+        # from polar/azimuth, so the actual default doesn't matter much.
+        anchors["surface"] = Anchor(
+            position=(center[0], center[1], center[2] + radius),
+            normal=(0.0, 0.0, 1.0),
+            kind="spherical",
+            surface_params=params,
+        )
         return anchors
 
     # --- Default: bbox-derived only (other primitives, CSG, etc). ---

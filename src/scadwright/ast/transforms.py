@@ -203,3 +203,38 @@ class Offset(Node):
     fn: float | None = None
     fa: float | None = None
     fs: float | None = None
+
+
+@dataclass(frozen=True)
+class WithAnchor(Node):
+    """Metadata-only wrapper that publishes a named anchor on its child.
+
+    Lets users add a custom anchor to any Node without wrapping in a
+    Component. The wrapper is transparent to bbox and emit — the only
+    thing it changes is the anchor dict reported by ``get_node_anchors``.
+
+    The anchor's position and normal are in the wrapped child's local
+    frame; spatial transforms above the wrapper compose normally.
+    """
+
+    child: Node
+    anchor_name: str
+    anchor: "Anchor"  # type: ignore[name-defined]
+
+    def fuse_extend(self, anchor, eps: float):
+        """Pass through to child; re-wrap the extended result.
+
+        WithAnchor is metadata-only — the anchor space is the child's
+        own local frame. Recursing lets parametric extension reach the
+        underlying primitive (Cube/Cylinder/LinearExtrude) and keeps
+        the named anchor attached to the result.
+        """
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return WithAnchor(
+            child=extended_child,
+            anchor_name=self.anchor_name,
+            anchor=self.anchor,
+            source_location=self.source_location,
+        )

@@ -148,7 +148,9 @@ class Cylinder(Node):
                 f"cross-section fuse: cone apex at {side} (radius=0); the "
                 f"bbox face at that plane is the full base disc, but the "
                 f"actual material is a single point with no planar contact "
-                f"region to fuse onto."
+                f"region to fuse onto. Workarounds: pass fuse=False on this "
+                f"attach, wrap the block in disable_eps_fuse(), or attach "
+                f"to the cone's non-degenerate end."
             )
         return super().cross_section_extend(anchor, eps)
 

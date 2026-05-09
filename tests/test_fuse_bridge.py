@@ -81,15 +81,29 @@ def test_bridge_on_cone_outer_wall():
 # --- Concave inner: bridge bypassed ---
 
 
-def test_concave_inner_wall_bypasses_bridge():
+def test_concave_inner_wall_with_fuse_raises():
     """Concave inner walls (Tube.inner_wall has surface_params['inner']=True)
-    naturally inscribe peg corners into wall material. Bridge is skipped;
-    the call falls through to legacy shift, no Difference in the tree."""
+    aren't a bridge case (the peg's corners naturally inscribe into wall
+    material as tangent contact) and aren't planar+planar. fuse=True
+    raises with workaround pointers; bond='shift' is the recovery path
+    when the user actually wants the bilateral overlap."""
+    from scadwright.errors import ValidationError
+
     pipe = Tube(od=20, id=10, h=20)
     peg = cube([2, 2, 5])
-    result = peg.attach(pipe, on="inner_wall", angle=0, orient=True, fuse=True)
-    # Result is a Translate (legacy shift), not a Union with Difference.
+    with pytest.raises(ValidationError, match="no applicable bond"):
+        peg.attach(pipe, on="inner_wall", angle=0, orient=True, fuse=True)
+
+
+def test_concave_inner_wall_with_bond_shift():
+    """bond='shift' is the recovery path for concave inner walls."""
     from scadwright.ast.transforms import Translate as _Translate
+
+    pipe = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5])
+    result = peg.attach(
+        pipe, on="inner_wall", angle=0, orient=True, bond="shift",
+    )
     assert isinstance(result, _Translate)
 
 

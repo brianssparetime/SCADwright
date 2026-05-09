@@ -102,11 +102,17 @@ peg.attach(plate, orient=True)            # rotate to align normals
 peg.attach(hub, on="outer_wall", angle=30) # 30° meridian on a cylinder/cone/barrel wall
 peg.attach(hub, on="outer_wall", angle=30, at_z=5)  # 30° meridian, 5mm above mid-wall (curve-aware on Barrel)
 peg.attach(hub, on="top", angle=30, radius=12)  # 30° on cap, 12mm from center
+peg.attach(ball, on="surface", polar=30, angle=45)  # spherical: polar from +Z, angle = azimuth
+peg.with_anchor("base", at=(2.5, 2.5, 0), normal=(0, 0, -1))  # name a point on any node
 pylon.attach(floor, fuse=True)            # local extension at planar contact (Cube/Cylinder/extrude)
 peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)  # bridge fills inscription gap on cylinder/sphere/cone
+peg.attach(plate, bond="overlap")         # explicit: planar local extension; raises on curved host
+peg.attach(hub, on="outer_wall", angle=0, orient=True, bond="bridge")  # explicit: curved-host bridge; raises on planar
+peg.attach(plate, bond="shift")           # explicit: bilateral shift; always works, opposite face drifts by eps
 fuse(pylon, floor, at="bottom", on="top")  # standalone form; symmetric side selection
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
 cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter
+with disable_eps_fuse(): ...              # scope-wide opt-out (precision builds, perf debugging, fuse-can't-fix-it)
 cube(5).array(count=3, spacing=10, axis="x")   # alias over linear_copy
 ```
 

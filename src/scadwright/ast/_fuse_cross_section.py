@@ -57,7 +57,7 @@ def align_anchor_to_z_up(anchor):
     return R.compose(T)
 
 
-def validate_planar_anchor_for_cross_section(node, anchor):
+def validate_planar_anchor_for_cross_section(node, anchor, *, context: str = "cross-section fuse"):
     """Raise ``ValidationError`` if ``anchor`` doesn't satisfy the
     necessary conditions for a non-degenerate cross-section on ``node``.
 
@@ -66,6 +66,12 @@ def validate_planar_anchor_for_cross_section(node, anchor):
     1. The anchor must lie on the shape's outermost face along its
        normal direction. Computed as a dot-product comparison so the
        check works uniformly for axis-aligned and slanted normals.
+       Translate / Rotate / Mirror wrappers are unwrapped first by
+       inverse-transforming the anchor and recursing into the child —
+       a peg rotated by ``orient=True`` to face a slanted host wall
+       has a non-axis-aligned anchor in world frame, but its underlying
+       primitive's AABB matches its actual silhouette and the check
+       passes there.
 
     2. The shape must have non-zero extent in at least two of the three
        axes. A line- or point-shaped bbox can't yield a planar contact
@@ -76,9 +82,45 @@ def validate_planar_anchor_for_cross_section(node, anchor):
     plane. The fuse will silently no-op in that case; the documented
     workarounds are restructuring, ``disable_eps_fuse()``, or hand-
     crafted overlap.
+
+    ``context`` is interpolated into error messages — pass
+    ``"bridge fuse"`` from the curved-host bridge dispatcher so the
+    message blames the right path.
     """
+    from scadwright.anchor import Anchor
+    from scadwright.ast.transforms import Mirror, Rotate, Translate
     from scadwright.bbox import bbox as _bbox
     from scadwright.errors import ValidationError
+    from scadwright.matrix import to_matrix
+
+    # Unwrap spatial transforms so the bbox-projection check happens in
+    # the underlying primitive's local frame, where its AABB matches
+    # its actual silhouette.
+    if isinstance(node, Translate):
+        local_anchor = Anchor(
+            position=(
+                anchor.position[0] - node.v[0],
+                anchor.position[1] - node.v[1],
+                anchor.position[2] - node.v[2],
+            ),
+            normal=anchor.normal,
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+        return validate_planar_anchor_for_cross_section(
+            node.child, local_anchor, context=context,
+        )
+    if isinstance(node, (Rotate, Mirror)):
+        inv = to_matrix(node).invert()
+        local_anchor = Anchor(
+            position=inv.apply_point(anchor.position),
+            normal=inv.apply_vector(anchor.normal),
+            kind=anchor.kind,
+            surface_params=anchor.surface_params,
+        )
+        return validate_planar_anchor_for_cross_section(
+            node.child, local_anchor, context=context,
+        )
 
     bb = _bbox(node)
     n = anchor.normal
@@ -97,20 +139,25 @@ def validate_planar_anchor_for_cross_section(node, anchor):
     tol = 1e-3
     if abs(p_proj - b_max) > tol:
         raise ValidationError(
-            f"cross-section fuse: anchor at {p} with normal {n} on "
+            f"{context}: anchor at {p} with normal {n} on "
             f"{type(node).__name__} doesn't lie on the shape's outermost "
             f"face along its normal direction. Projected anchor extent: "
             f"{p_proj:.4f}; expected ~{b_max:.4f} (max of bbox extents). "
             f"The anchor may be in the shape's interior, on the wrong "
-            f"side, or otherwise misplaced."
+            f"side, or otherwise misplaced. Workarounds: pass "
+            f"fuse=False on this attach, wrap the block in "
+            f"disable_eps_fuse(), or restructure so the anchor lies "
+            f"on a clean planar face."
         )
 
     sizes = [bb.max[i] - bb.min[i] for i in range(3)]
     nonzero = sum(1 for s in sizes if s > tol)
     if nonzero < 2:
         raise ValidationError(
-            f"cross-section fuse: shape {type(node).__name__} has zero "
+            f"{context}: shape {type(node).__name__} has zero "
             f"or near-zero extent in {3 - nonzero} of three axes "
             f"(sizes: {sizes!r}). No planar contact region exists for "
-            f"the cross-section to span."
+            f"the cross-section to span. Workarounds: pass fuse=False "
+            f"on this attach, wrap the block in disable_eps_fuse(), or "
+            f"give the shape non-zero extent in two axes."
         )

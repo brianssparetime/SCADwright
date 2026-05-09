@@ -111,10 +111,25 @@ def build_curved_bridge(peg, peg_at_anchor, host, host_on_anchor, shift, eps):
     cross-section extruded along ``-on_anchor.normal`` from ``-eps`` (peg
     side, providing Duty-A overlap with the placed peg) to
     ``inscription_depth`` (host side, just past the inscription gap).
+
+    Validates the peg's at-anchor against the peg's bbox before building
+    the prism — a peg whose at-anchor isn't on the outermost face, or a
+    peg with degenerate bbox extent, would produce an empty or wrong-
+    sided projection and silently no-op the fuse. Catches what we can
+    statically; non-convex pegs whose cross-section happens to be empty
+    despite a sane bbox are still a documented limitation (CGAL evaluates
+    that at render time).
     """
-    from scadwright.ast._fuse_cross_section import align_anchor_to_z_up
+    from scadwright.ast._fuse_cross_section import (
+        align_anchor_to_z_up,
+        validate_planar_anchor_for_cross_section,
+    )
     from scadwright.ast.transforms import MultMatrix, Translate
     from scadwright.boolops import difference as _difference
+
+    validate_planar_anchor_for_cross_section(
+        peg, peg_at_anchor, context="bridge fuse",
+    )
 
     peg_max_radial = _peg_max_radial_extent(peg, peg_at_anchor)
     depth = _inscription_depth(host_on_anchor, peg_max_radial)

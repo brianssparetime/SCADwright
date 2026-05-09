@@ -117,17 +117,24 @@ def test_attach_fuse_on_cylindrical_wall_with_orient_bridges():
     assert any(isinstance(c, Difference) for c in result.children)
 
 
-def test_attach_fuse_on_sphere_to_planar_floor_falls_back_to_shift():
-    """Sphere's bbox-derived anchors are now kind='spherical'. With a
-    planar floor (kind='planar'), neither side qualifies for planar
-    extension, so attach falls through to the legacy shift. No raise."""
+def test_attach_fuse_on_sphere_to_planar_floor_raises():
+    """Sphere's bbox-derived anchors are kind='spherical', but the floor
+    is planar. Neither bond='overlap' (needs planar+planar) nor
+    bond='bridge' (needs convex-outer curved host on the *other* side)
+    applies, so fuse=True raises with workaround pointers."""
+    from scadwright.errors import ValidationError
+
     floor = cube([40, 40, 2])
-    # Should not raise.
-    result = sphere(r=5).attach(floor, fuse=True)
-    # Sphere's bbox bottom is at z=-r=-5; floor's top is at z=2; sphere
-    # gets translated so its bottom meets floor top with eps offset.
+    with pytest.raises(ValidationError, match="no applicable bond"):
+        sphere(r=5).attach(floor, fuse=True)
+
+
+def test_attach_fuse_on_sphere_to_planar_floor_with_bond_shift():
+    """bond='shift' is the recovery path: sphere on floor, bilateral shift."""
+    floor = cube([40, 40, 2])
+    result = sphere(r=5).attach(floor, bond="shift")
     bb = bbox(result)
-    # Sphere top should be at z = floor_top + 2r - eps = 2 + 10 - 0.01.
+    # Sphere top at z = floor_top + 2r - eps = 2 + 10 - 0.01.
     assert bb.max[2] == pytest.approx(11.99)
 
 
