@@ -168,7 +168,9 @@ OpenSCAD has no built-in module library, only primitives.
 
 SCADwright offers a [shape library](docs/shapes/) with 50+ ready-made Components across geometric, mechanical, fastener, gear, and print-oriented categories.  These eliminate sub-tasks, so you don't have to roll your own tubes, rounded rectangles, screw holes, or look up M3 bolt head diameters, hex profiles, and clearance hole sizes each time. Did I mention gears?
 
-![Shape library](docs/shapes/images/hero.png)
+<p align="center">
+  <img src="docs/shapes/images/hero.png" alt="Shape library" width="130%">
+</p>
 
 ```python
 from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bearing
