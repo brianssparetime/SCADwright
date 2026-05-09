@@ -39,6 +39,10 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
+<a href="examples/rocket.py"><img src="examples/images/Rocket.png" alt="Rocket" width="320"></a>
+
+*Less than 60 lines of SCADwright gives you: parabolic ogive nose, bulged body, three parabolic-swept fins with rounded edges, a flared nozzle, a tapered helicoid stem with an almond cross-section, a filleted M2-counterbored baseplate, and correctly spaced text (both raised and engraved) on a doubly curved surface.*
+
 
 ## SCADwright addresses 16 annoying limitations of OpenSCAD:
 

@@ -33,12 +33,22 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    import tomllib
+except ImportError:  # Python 3.10
+    tomllib = None
+
 
 CAMERA = "0,0,0,60,0,45,500"   # rx=60° inclination, rz=45° azimuth; dist overridden by --viewall
 IMGSIZE = "1200,900"
 COLORSCHEME = "Metallic"
 FN = 96                        # override $fn globally for smooth circles
 MAC_DEFAULT = "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
+
+# Per-entry overrides for example shots — camera, imgsize, $fn, etc.
+# Keyed by script stem (e.g. ``[rocket]`` matches ``examples/rocket.py``).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CAMERAS_TOML = PROJECT_ROOT / "examples" / ".beauty-cameras.toml"
 
 # Shape-library hero/gallery mosaic — fixed layout so successive regens
 # stay consistent. Re-run with --hero after adding/removing shapes.
@@ -65,6 +75,33 @@ def _resolve_openscad(explicit: str | None) -> str:
     )
 
 
+def _load_camera_overrides() -> dict[str, dict]:
+    """Per-entry overrides keyed by section name. Empty when the file is
+    missing or tomllib isn't available."""
+    if tomllib is None or not CAMERAS_TOML.is_file():
+        return {}
+    with open(CAMERAS_TOML, "rb") as f:
+        return tomllib.load(f)
+
+
+def _resolve_opts(args: argparse.Namespace, override: dict | None) -> dict:
+    """Merge CLI flags > TOML overrides > built-in defaults.
+
+    CLI flags default to ``None`` and only win when explicitly passed,
+    so a TOML override (e.g. the rocket's saved camera) survives a
+    bare ``render_beauty_shots.py`` invocation.
+    """
+    o = override or {}
+    return {
+        "camera": args.camera if args.camera is not None else o.get("camera", CAMERA),
+        "imgsize": args.imgsize if args.imgsize is not None else o.get("imgsize", IMGSIZE),
+        "colorscheme": args.colorscheme if args.colorscheme is not None else o.get("colorscheme", COLORSCHEME),
+        "fn": args.fn if args.fn is not None else o.get("fn", FN),
+        "viewall": o.get("viewall", True),
+        "autocenter": o.get("autocenter", True),
+    }
+
+
 def _render_png(scad_path: Path, out_png: Path, openscad: str, opts: dict) -> None:
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -76,11 +113,12 @@ def _render_png(scad_path: Path, out_png: Path, openscad: str, opts: dict) -> No
         f"--camera={opts['camera']}",
         f"--imgsize={opts['imgsize']}",
         f"--colorscheme={opts['colorscheme']}",
-        "--autocenter",
-        "--viewall",
-        "-D", f"$fn={opts['fn']}",
-        str(scad_path),
     ]
+    if opts.get("autocenter", True):
+        cmd.append("--autocenter")
+    if opts.get("viewall", True):
+        cmd.append("--viewall")
+    cmd += ["-D", f"$fn={opts['fn']}", str(scad_path)]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise SystemExit(
@@ -172,24 +210,54 @@ def _render_composite(entry: dict) -> bool:
     return True
 
 
-def _render_example_entry(entry: dict, tmpdir: str, openscad: str, opts: dict) -> None:
-    # Run `scadwright build` in a subprocess so each example imports in a
-    # fresh interpreter — avoids collisions on module-level state like the
-    # @transform decorator's global registry when multiple variants of the
-    # same script are rendered in one run.
+def _render_example_entry(
+    entry: dict, tmpdir: str, openscad: str,
+    args: argparse.Namespace, overrides: dict[str, dict],
+) -> None:
+    # Run each example in a fresh interpreter so module-level state (the
+    # @transform decorator's registry, the render() capture singleton)
+    # doesn't leak between scripts or between variants of one script.
     script = entry["script"]
-    variant = entry["variant"]
-    scad_path = Path(tmpdir) / f"{Path(script).stem}-{variant}.scad"
-    result = subprocess.run(
-        [sys.executable, "-m", "scadwright.cli",
-         "build", script, "--variant", variant, "-o", str(scad_path)],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise SystemExit(
-            f"scadwright build failed for {script} variant {variant}:\n"
-            f"{result.stderr.strip() or result.stdout.strip()}"
+    stem = Path(script).stem
+    override = overrides.get(stem)
+    opts = _resolve_opts(args, override)
+
+    variant = entry.get("variant")
+    if variant is not None:
+        scad_path = Path(tmpdir) / f"{stem}-{variant}.scad"
+        result = subprocess.run(
+            [sys.executable, "-m", "scadwright.cli",
+             "build", script, "--variant", variant, "-o", str(scad_path)],
+            capture_output=True, text=True,
         )
+        if result.returncode != 0:
+            raise SystemExit(
+                f"scadwright build failed for {script} variant {variant}:\n"
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            )
+    else:
+        # Flat script (no Design class, no MODEL): just run it. Its
+        # module-level render() writes the .scad to its cwd, so we cd
+        # to the script's directory first — that's also where the
+        # script expects to find its sibling .scad if it reads one.
+        script_path = (PROJECT_ROOT / script).resolve()
+        scad_filename = (override or {}).get("scad", f"{stem}.scad")
+        scad_path = script_path.parent / scad_filename
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(script_path.parent),
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit(
+                f"running {script} failed:\n"
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            )
+        if not scad_path.is_file():
+            raise SystemExit(
+                f"{script} produced no {scad_filename} at {scad_path}"
+            )
+
     _render_png(scad_path, Path(entry["out"]), openscad, opts)
 
 
@@ -197,10 +265,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render beauty-shot PNGs from the manifest.")
     parser.add_argument("--filter", help="render only entries whose output path contains this substring")
     parser.add_argument("--openscad", default=None, help="path to openscad binary")
-    parser.add_argument("--camera", default=CAMERA, help=f"OpenSCAD --camera arg (default: {CAMERA})")
-    parser.add_argument("--imgsize", default=IMGSIZE, help=f"WxH comma pair (default: {IMGSIZE})")
-    parser.add_argument("--colorscheme", default=COLORSCHEME, help=f"OpenSCAD colorscheme (default: {COLORSCHEME})")
-    parser.add_argument("--fn", type=int, default=FN, help=f"override $fn for smooth circles (default: {FN})")
+    # Render opts default to None so a TOML per-entry override (e.g. the
+    # rocket's saved camera) wins over the built-in default. Explicit CLI
+    # flags still beat the TOML.
+    parser.add_argument("--camera", default=None,
+                        help=f"OpenSCAD --camera arg (default: {CAMERA}, or per-entry from {CAMERAS_TOML.name})")
+    parser.add_argument("--imgsize", default=None,
+                        help=f"WxH comma pair (default: {IMGSIZE}, or per-entry)")
+    parser.add_argument("--colorscheme", default=None,
+                        help=f"OpenSCAD colorscheme (default: {COLORSCHEME}, or per-entry)")
+    parser.add_argument("--fn", type=int, default=None,
+                        help=f"override $fn for smooth circles (default: {FN}, or per-entry)")
     parser.add_argument("--hero", action="store_true",
                         help=f"regenerate {HERO_OUTPUT} from the current shape-library PNGs and exit (no shot rendering)")
     args = parser.parse_args(argv)
@@ -213,7 +288,8 @@ def main(argv: list[str] | None = None) -> int:
     import beauty_shots as manifest
 
     openscad = _resolve_openscad(args.openscad)
-    opts = {"camera": args.camera, "imgsize": args.imgsize, "colorscheme": args.colorscheme, "fn": args.fn}
+    overrides = _load_camera_overrides()
+    component_opts = _resolve_opts(args, None)
 
     def _match(path: str) -> bool:
         return args.filter is None or args.filter in path
@@ -230,10 +306,10 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as tmpdir:
         for e in components:
             print(f"  [component] -> {e['out']}", file=sys.stderr)
-            _render_component_entry(e, tmpdir, openscad, opts)
+            _render_component_entry(e, tmpdir, openscad, component_opts)
         for e in examples:
             print(f"  [example]   -> {e['out']}", file=sys.stderr)
-            _render_example_entry(e, tmpdir, openscad, opts)
+            _render_example_entry(e, tmpdir, openscad, args, overrides)
 
     composite_count = 0
     for e in composites:

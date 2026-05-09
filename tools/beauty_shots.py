@@ -252,6 +252,9 @@ EXAMPLES = [
     {"out": "examples/images/ProjectBox-display.png",    "script": "examples/electronics-case.py", "variant": "display"},
     {"out": "examples/images/ProjectBox-print_base.png", "script": "examples/electronics-case.py", "variant": "print_base"},
     {"out": "examples/images/ProjectBox-print_lid.png",  "script": "examples/electronics-case.py", "variant": "print_lid"},
+    # Flat script (no variant): handler runs the script directly and uses
+    # the camera/imgsize from examples/.beauty-cameras.toml's [rocket].
+    {"out": "examples/images/Rocket.png",                "script": "examples/rocket.py"},
 ]
 
 
