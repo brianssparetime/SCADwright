@@ -9,20 +9,20 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
 **SCADwright keeps the basic OpenSCAD model and primitives, but SCADwright goes way beyond just a python wrapper,  offering additional functionality not easily possible with OpenSCAD**:
 
  - [Components](#1-components-make-what-they-know-accessible-externally-modules-cant) that 
-   - [accept any set of arguments from which the rest can be calculated, using defined equations](#2-define-a-component-once-call-it-with-any-set-of-sufficient-arguments-the-framework-handles-the-rest-by-solving-equations-and-no-boilerplate-to-achieve-this-components-are-as-nice-to-use-as-they-are-to-write)
-   - [enforce constraints and validate arguments](#2-define-a-component-once-call-it-with-any-set-of-sufficient-arguments-the-framework-handles-the-rest-by-solving-equations-and-no-boilerplate-to-achieve-this-components-are-as-nice-to-use-as-they-are-to-write), also through the same equations
+   - accept [any set of arguments](#2-define-a-component-once-call-it-with-any-set-of-sufficient-arguments-the-framework-handles-the-rest-by-solving-equations-and-no-boilerplate-to-achieve-this-components-are-as-nice-to-use-as-they-are-to-write) from which the rest can be calculated, using defined equations
+   - [enforce constraints](#2-define-a-component-once-call-it-with-any-set-of-sufficient-arguments-the-framework-handles-the-rest-by-solving-equations-and-no-boilerplate-to-achieve-this-components-are-as-nice-to-use-as-they-are-to-write) and validate arguments, also through the same equations
    - expose their attributes, calculations, and bounding boxes (even attachment points) to other parts of your code
    - are about as easy to write as they are to call - virtually no boilerplate
- - [a library of reusable shapes out of the box](#4-scadwrights-component-library-lets-you-focus-on-your-part-not-the-parts-its-made-of)
- - [auto-EPS adjustment on difference() and union()](#3-no-more-eps-on-every-uniondiff-the-framework-handles-it)
- - [surface-based attachment, in a single chaining command](#8-positioning-parts-relative-to-each-other-easily-without-extra-calculation)
- - [placing text on geometric objects (plates, cylinders, cones) is easy](#6-putting-text-on-a-plate-cylinder-cone-or-funnel-is-easy---one-operator)
- - [ability to add new transforms to the language](#5-scadwright-lets-you-build-reusable-transforms-in-addition-to-reusable-objects)
- - [smart centering built into new components by default](#10-centering-components-is-easy-and-straightforward)
- - [separate print/display/integration/debug arrangements of your part](#7-clean-separation-between-variants-for-printing-display-integration-testing-etc)
+ - a library of [reusable shapes](#4-scadwrights-component-library-lets-you-focus-on-your-part-not-the-parts-its-made-of) out of the box
+ - [auto-EPS adjustment](#3-no-more-eps-on-every-uniondiff-the-framework-handles-it) on difference() and union()
+ - [surface-based attachment](#8-positioning-parts-relative-to-each-other-easily-without-extra-calculation), in a single chaining command
+ - [placing text](#6-putting-text-on-a-plate-cylinder-cone-or-funnel-is-easy---one-operator) on geometric objects (plates, cylinders, cones) is easy
+ - ability to [add new transforms](#5-scadwright-lets-you-build-reusable-transforms-in-addition-to-reusable-objects) to the language
+ - [smart centering](#10-centering-components-is-easy-and-straightforward) built into new components by default
+ - separate [print/display/integration/debug arrangements](#7-clean-separation-between-variants-for-printing-display-integration-testing-etc) of your part
  - [python-style chaining](#11-transforms-chain-naturally-starting-with-the-object-being-affected) (e.g. `shape.linear_extrude(height=15).left(10)`, rather than OpenSCAD's transform-first and object-last notation)
- - [scripts you can parametrize from the command line (including via json)](#13-scripts-can-declare-command-line-parameters-allowing-fully-programmatic-part-design)
- - [real error messages with line numbers](#12-error-types-and-messages-provide-detail-on-what-caused-the-error-and-where)
+ - scripts you can [parametrize from the command line](#13-scripts-can-declare-command-line-parameters-allowing-fully-programmatic-part-design) (including via json)
+ - [real error messages](#12-error-types-and-messages-provide-detail-on-what-caused-the-error-and-where) with line numbers
  - [automated tests](#16-you-know-if-a-part-has-changed)
 
  and more.
