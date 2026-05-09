@@ -188,6 +188,28 @@ def test_path_extrude_closed():
     assert "polyhedron" in scad
 
 
+def test_path_extrude_mesh_is_manifold():
+    """Each interior edge of an open sweep must appear in exactly two
+    faces with opposite orientations — otherwise OpenSCAD rejects the
+    polyhedron with "mesh is not closed" at CGAL time. Regression for
+    a cap-winding bug that broke every Helix/Spring render.
+    """
+    from scadwright.ast.primitives import Polyhedron
+
+    profile = circle_profile(2, segments=8)
+    path = [(0, 0, 0), (0, 0, 5)]
+    poly = path_extrude(profile, path)
+    assert isinstance(poly, Polyhedron)
+    half_edges: dict[tuple[int, int], int] = {}
+    for face in poly.faces:
+        for i in range(len(face)):
+            a, b = face[i], face[(i + 1) % len(face)]
+            half_edges[(a, b)] = half_edges.get((a, b), 0) + 1
+    for (a, b), count in half_edges.items():
+        assert count == 1, f"half-edge {(a, b)} appears {count} times"
+        assert (b, a) in half_edges, f"half-edge {(a, b)} has no opposite"
+
+
 def test_path_extrude_too_few_profile_raises():
     with pytest.raises(ValidationError, match="at least 3"):
         path_extrude([(0, 0), (1, 0)], [(0, 0, 0), (0, 0, 1)])

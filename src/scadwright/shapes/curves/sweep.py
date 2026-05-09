@@ -74,14 +74,15 @@ def path_extrude(
                 base + j_next,
             ])
 
-    # End caps (when not closed).
+    # End caps (when not closed). Each cap edge must run opposite to the
+    # neighboring side-face edge for OpenSCAD to see a closed manifold.
+    # Side faces have inward-pointing normals, so caps need inward normals
+    # too: start cap winds with profile order, end cap winds reversed.
     if not closed:
-        # Start cap: profile at path[0], reversed winding.
-        start_face = list(range(n_profile - 1, -1, -1))
+        start_face = list(range(n_profile))
         faces.append(start_face)
-        # End cap: profile at path[-1], normal winding.
         end_base = (n_path - 1) * n_profile
-        end_face = list(range(end_base, end_base + n_profile))
+        end_face = list(range(end_base + n_profile - 1, end_base - 1, -1))
         faces.append(end_face)
 
     return _polyhedron(points=points, faces=faces, convexity=convexity)
