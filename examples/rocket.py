@@ -89,7 +89,7 @@ fins = fin_blank.attach(
 ).left(fin_fillet).rotate_copy(angle=120, n=3, axis=[0, 0, 1])
 
 # Engraved labels: 
-labeled_body = body.add_text(
+labeled_body = body.color("gold").add_text(
     label="SCADwright:", on="outer_wall", meridian=45,
     font_size=2.5, spacing=1.2, relief=0.5, at_z = 16,
 ).add_text(
