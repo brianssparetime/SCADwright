@@ -65,7 +65,7 @@ with resolution(fn=32):
         wire_profile=almond_profile(chord_r=chord_r, sag=sag),
         r=body_r - 2, r_end=4.0, pitch=stem_h/n_turns, turns=n_turns,
         overhang=chord_r, points_per_turn=64,
-    ).up(plate_thk)
+    ).up(plate_thk).color("gold")
     stand = union(plate, stem).down(plate_thk + stem_h)
 
 # Parabolic-swept fins: polygon → linear_extrude → Minkowski sphere
