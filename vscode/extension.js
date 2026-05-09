@@ -161,7 +161,34 @@ function discoverScadwrightCommand() {
   return conf.get('scadwrightCommand') || 'scadwright';
 }
 
-async function startLanguageServer(channel) {
+// Once-per-installation key for the "vscode-languageclient missing"
+// warning popup. Stored in globalState so dismissing on one
+// workspace silences it everywhere; users who want a fresh prompt
+// can clear it from the command palette via ``Developer: Reset
+// Workspace`` (clears workspaceState only) or by reinstalling.
+const NO_LANGUAGECLIENT_DISMISSED_KEY =
+  'scadwright.lsp.missingLanguageClient.dismissed';
+
+async function notifyMissingLanguageClient(channel, context) {
+  if (context.globalState.get(NO_LANGUAGECLIENT_DISMISSED_KEY)) return;
+  const choice = await vscode.window.showWarningMessage(
+    'SCADwright language server is disabled — vscode-languageclient ' +
+      'is not installed. Run `npm install` in the extension directory ' +
+      'to enable diagnostics, completion, hover, goto-definition, ' +
+      'and rename.',
+    'Show output',
+    "Don't show again",
+  );
+  if (choice === 'Show output') {
+    channel.show(true);
+  } else if (choice === "Don't show again") {
+    await context.globalState.update(
+      NO_LANGUAGECLIENT_DISMISSED_KEY, true,
+    );
+  }
+}
+
+async function startLanguageServer(channel, context) {
   const conf = vscode.workspace.getConfiguration('scadwright');
   if (!conf.get('lsp.enable', true)) {
     channel.appendLine('[lsp] disabled by scadwright.lsp.enable=false.');
@@ -172,6 +199,7 @@ async function startLanguageServer(channel) {
       '[lsp] vscode-languageclient not installed; LSP disabled. ' +
       'Run `npm install` in the extension directory to enable.',
     );
+    notifyMissingLanguageClient(channel, context);
     return;
   }
   const cmd = discoverScadwrightCommand();
@@ -248,7 +276,7 @@ function activate(context) {
   // Fire-and-forget LSP startup. Failures land in the output channel
   // and a one-time notification (see errorHandler in startLanguageServer);
   // the rest of the extension keeps working in TextMate-only mode.
-  startLanguageServer(channel);
+  startLanguageServer(channel, context);
 
   refreshContext();
 }
