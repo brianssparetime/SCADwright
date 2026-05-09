@@ -24,6 +24,9 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
  - scripts you can [parametrize from the command line](#13-scripts-can-declare-command-line-parameters-allowing-fully-programmatic-part-design) (including via json)
  - [real error messages](#12-error-types-and-messages-provide-detail-on-what-caused-the-error-and-where) with line numbers
  - [automated tests](#16-you-know-if-a-part-has-changed)
+ - parts [know their own bounding box](#9-parts-know-their-bounds-without-needing-to-render-allowing-print-bed-tests-and-overlap-tests) without rendering — print-bed checks, overlap tests
+ - `$fn` is [managed automatically](#14-resolution-fn-is-managed-for-you-but-easily-overridable), but easy to override
+ - [manufacturing fudges](#15-manufacturing-specific-fudges-are-easy-to-add-track-and-keep-separate-from-design-considerations) (clearances, slop) tracked separately from design dimensions
 
  and more.
 
