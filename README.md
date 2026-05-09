@@ -572,11 +572,12 @@ The `scadwright` command becomes available.
 
 ## Dependencies
 
-SCADwright requires `sympy` (for equation solving — the `equations` class attribute on Components is the framework's central feature, and `pip install scadwright` pulls sympy in automatically).
+SCADwright requires `sympy`.
 
-Two optional extras layer in deeper functionality:
+Three optional extras layer in deeper functionality:
 
 - `pip install 'scadwright[lsp]'` — adds `pygls` for the language server. Editors with an LSP client get inline diagnostics, completion, hover, goto-definition, and project-wide rename inside `equations` blocks. See [Editor integration](#editor-integration) below.
+- `pip install 'scadwright[curved-text]'` — adds `freetype-py` for proportional glyph spacing in `add_text` on cylindrical, conical, and rim surfaces. Without it, those paths fall back to a uniform-width heuristic.
 - `pip install -e '.[dev]'` — adds `pytest` for running the test suite from a clone. Combine with `[lsp]` if you also want to work on the language server: `pip install -e '.[dev,lsp]'`.
 
 

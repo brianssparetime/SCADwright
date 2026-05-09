@@ -254,6 +254,14 @@ shape.add_text(label="X", relief=0.4, font_size=5,
 intact, so you can chain more labels or call `.attach()` afterward. `text()`
 options (`font`, `halign`, `valign`, etc.) pass through.
 
+`valign` defaults to `"center"` on flat planar faces and `"baseline"` on
+curved walls and rim arcs (where per-glyph centering produces uneven
+baselines and is rejected). Curved walls and rim arcs emit one `text()`
+per glyph for surface-following layout, so per-glyph spacing follows a
+`0.6 * font_size` heuristic by default. Install
+`pip install scadwright[curved-text]` to use real font metrics via
+freetype-py for proportional spacing.
+
 ## Preview modifiers &nbsp; &nbsp;[→ full](transformations.md#preview-modifiers)
 
 Affect preview only, not rendered output.

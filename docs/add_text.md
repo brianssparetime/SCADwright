@@ -282,9 +282,9 @@ Baseline-to-baseline distance, expressed as a multiple of `font_size`. Default `
 
 For a multi-line label, `valign` positions the *whole block* on the face:
 
-- `"center"` (default) — block center on the face center / wall mid / rim default radius.
+- `"center"` — block center on the face center / wall mid / rim default radius. Default on flat planar faces; rejected on curved walls and rim arcs.
 - `"top"` — top of line 0 sits at the face anchor.
-- `"bottom"` / `"baseline"` — bottom of the last line sits at the face anchor.
+- `"bottom"` / `"baseline"` — bottom of the last line sits at the face anchor. Default on curved walls and rim arcs.
 
 `halign=` is applied per-line as supplied.
 
@@ -324,6 +324,24 @@ If you wrap a labeled host in an explicit `union()` or `difference()`, the host'
 
 For text on a named face whose size scadwright can determine, you get a warning if the label would overflow the face. The estimate is conservative and font-agnostic, so it's a best-effort heads-up. Ad-hoc placements (no named face) skip the check.
 
+## Glyph spacing on curved walls
+
+Flat planar surfaces emit one OpenSCAD `text()` for the whole label, so OpenSCAD handles glyph layout — proportional advances, kerning, and so on — exactly as you'd expect.
+
+Curved walls (cylindrical, conical, meridional) and rim arcs are different. Each glyph has to be rotated to follow the surface, so scadwright emits one `text()` *per glyph* and computes the per-glyph advance widths itself.
+
+By default, scadwright uses a font-agnostic estimate (`0.6 * font_size * spacing`) for that advance — uniform across glyphs. With proportional fonts that's visibly wrong: a narrow `i` floats in a slot sized for a wide `M`. Install the optional extra to use real font metrics:
+
+```
+pip install scadwright[curved-text]
+```
+
+That pulls in `freetype-py` and queries the font for per-glyph advance widths at emit time. Output is still pure SCAD — the metrics drive *placement*; OpenSCAD still rasterizes the glyphs.
+
+`font=None` resolves Liberation Sans Regular from known install locations (the OpenSCAD app bundle on macOS / Windows; system locations on Linux). Absolute font paths are loaded directly. OpenSCAD-style font name patterns like `"DejaVu Sans:style=Bold"` aren't yet resolved by scadwright — those fall back to the heuristic with a one-time warning suggesting an absolute path. OpenSCAD will still render the label in the requested font; only the *spacing* uses the heuristic.
+
+`valign="center"` is rejected on curved walls and rim arcs because per-glyph centering on different bbox heights produces visible vertical jitter (a tall `t`, an `i` whose ink starts above zero, and a `g` with a descender all sit at different visual heights). Default `"baseline"` aligns every glyph to a common baseline; use `"top"` or `"bottom"` for block-level alignment in multi-line labels.
+
 ## Other `text()` options
 
 Anything `text()` takes passes through: `font`, `halign`, `valign`, `spacing`, `direction`, `language`, `script`, plus `fn`/`fa`/`fs` for resolution. For example:
@@ -358,7 +376,7 @@ plate.add_text(
 | `line_spacing` | multi-line only | Baseline-to-baseline distance as a multiple of `font_size`. Default `1.2`. |
 | `font` | no | Font family/style. |
 | `halign` | no | `"left" \| "center" \| "right"` (default `"center"`). |
-| `valign` | no | `"top" \| "center" \| "baseline" \| "bottom"` (default `"center"`). |
+| `valign` | no | `"top" \| "center" \| "baseline" \| "bottom"`. Default is `"center"` on flat planar surfaces and `"baseline"` on curved walls and rim arcs. Passing `"center"` on a curved wall or rim arc raises an error — see "Glyph spacing on curved walls" below. |
 | `spacing` | no | Glyph-advance multiplier (default `1.0`). |
 | `direction` | no | `"ltr" \| "rtl" \| "ttb" \| "btt"`. |
 | `language`, `script` | no | Same as on the 2D `text()` factory. |
