@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from scadwright.graph.walk import (
+from scadwright.project_index.walk import (
     ClassDefInfo,
     FileInfo,
     ImportInfo,

@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from scadwright.graph.extract import ParamRef, extract_params
-from scadwright.graph.registry import build_class_registry
-from scadwright.graph.walk import walk_project
+from scadwright.project_index.registry import build_class_registry
+from scadwright.project_index.walk import walk_project
 
 
 def _project(tmp_path: Path):

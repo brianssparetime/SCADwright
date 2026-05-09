@@ -25,13 +25,13 @@ from scadwright.graph.extract import (
     extract_variants,
 )
 from scadwright.graph.model import Edge, Graph, Node
-from scadwright.graph.registry import (
+from scadwright.project_index.registry import (
     ClassRegistry,
     ResolvedClass,
     build_class_registry,
     resolve_name_in_file,
 )
-from scadwright.graph.walk import FileInfo, walk_project
+from scadwright.project_index.walk import FileInfo, walk_project
 
 
 def build_graph(project_root: str | Path) -> Graph:
@@ -243,7 +243,7 @@ def _resolve_base_target(
     or ``None`` for shapes the resolver can't handle / external
     bases.
     """
-    from scadwright.graph.registry import _base_to_dotted_name
+    from scadwright.project_index.registry import _base_to_dotted_name
 
     name = _base_to_dotted_name(base_node)
     if name is None:

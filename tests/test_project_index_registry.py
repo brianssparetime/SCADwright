@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scadwright.graph.registry import (
+from scadwright.project_index.registry import (
     ClassRegistry,
     build_class_registry,
 )
-from scadwright.graph.walk import walk_project
+from scadwright.project_index.walk import walk_project
 
 
 def _registry(tmp_path: Path) -> ClassRegistry:

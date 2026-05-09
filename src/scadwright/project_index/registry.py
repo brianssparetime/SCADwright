@@ -1,6 +1,6 @@
 """Whole-project class registry with category resolution.
 
-Given the per-file output of :mod:`scadwright.graph.walk`, this
+Given the per-file output of :mod:`scadwright.project_index.walk`, this
 module determines for every discovered class whether it derives
 from :class:`scadwright.Component`, :class:`scadwright.Spec`, or
 :class:`scadwright.Design` — directly or via project-local
@@ -30,7 +30,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from scadwright.graph.walk import ClassDefInfo, FileInfo, ImportInfo
+from scadwright.project_index.walk import ClassDefInfo, FileInfo, ImportInfo
 
 
 # Base-class categories. The values are the canonical category
@@ -82,7 +82,7 @@ def build_class_registry(
 ) -> ClassRegistry:
     """Build the project-wide class registry.
 
-    ``files`` is the output of :func:`scadwright.graph.walk.walk_project`.
+    ``files`` is the output of :func:`scadwright.project_index.walk.walk_project`.
     ``project_root`` is the directory rooted module paths against;
     typically the directory passed to ``walk_project`` (or, for a
     single-file run, that file's parent).

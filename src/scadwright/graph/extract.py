@@ -1,24 +1,13 @@
-"""Per-class extractors for the graph builder.
+"""Graph-specific extractors: composition (build()-body and class-
+attribute Component instantiation) and ``@variant`` build targets.
 
-Given a :class:`scadwright.graph.registry.ResolvedClass` (the
-output of :func:`scadwright.graph.registry.build_class_registry`),
-these extractors pull out the structured information the graph
-needs from the class's body — Param declarations, equations
-references, ``build()`` attribute reads — without re-parsing the
-source.
-
-The Param extractor reuses the LSP analyzer's per-statement
-classifier (``_is_param_call``) and per-Param info builder
-(``_build_param_info``) so the textual fields (name, type-text,
-default, doc, extras) match what the LSP surfaces for hover and
-completion. The graph layer adds one new field on top:
-``type_resolves_to``, the :class:`ResolvedClass` corresponding to
-the Param's type-text when it names another project class.
-
-The equations extractor reuses ``_block_from_classdef`` (also
-from the LSP analyzer) plus ``parse_equations_unified`` from the
-resolver. Failed parses degrade gracefully — the graph still
-includes the class, just without its equation-derived edges.
+The neutral per-class extractors — ``extract_params``,
+``extract_equations_attribute_reads``, ``extract_build_attribute_reads``
+plus ``ParamRef`` / ``AttributeRead`` / ``_find_build_method`` —
+live in :mod:`scadwright.project_index.extract` so the LSP layer
+can use them without depending on the graph package. This module
+re-exports them for graph consumers and adds graph-only
+extractors on top.
 """
 
 from __future__ import annotations
@@ -27,289 +16,36 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from scadwright.component.equations.lex import _split_logical_lines
-from scadwright.component.resolver import parse_equations_unified
-from scadwright.errors import ValidationError
-from scadwright.graph.registry import (
+from scadwright.project_index.extract import (
+    AttributeRead,
+    ParamRef,
+    _find_build_method,
+    _iter_walked_nodes,
+    _try_build_param_info,
+    extract_build_attribute_reads,
+    extract_equations_attribute_reads,
+    extract_params,
+)
+from scadwright.project_index.registry import (
     ClassRegistry,
     ResolvedClass,
     resolve_name_in_file,
 )
-from scadwright.graph.walk import FileInfo
-from scadwright.lsp.analyze import (
-    ParamInfo,
-    _block_from_classdef,
-    _build_param_info,
-    _is_param_call,
-)
+from scadwright.project_index.walk import FileInfo
 
 
-@dataclass(frozen=True)
-class ParamRef:
-    """One Param declaration with project-aware type resolution.
-
-    The textual fields (``name``, ``type_text``, ``default_text``,
-    ``doc_text``, ``extras``) mirror :class:`ParamInfo` so callers
-    can treat the two interchangeably.
-
-    ``type_resolves_to`` is the :class:`ResolvedClass` corresponding
-    to the Param's type-text when it names a project-local class
-    (e.g., ``Param(BatterySpec)`` where ``BatterySpec`` is a class
-    in the same project). ``None`` for primitive types
-    (``Param(float)``), unresolvable references, and Params with no
-    positional argument.
-    """
-    name: str
-    type_text: str | None
-    default_text: str | None
-    doc_text: str | None
-    extras: tuple[tuple[str, str], ...]
-    type_resolves_to: ResolvedClass | None
-
-
-def extract_params(
-    cls: ResolvedClass,
-    file_info: FileInfo,
-    registry: ClassRegistry,
-    project_root: Path,
-) -> tuple[ParamRef, ...]:
-    """Walk a class's body for ``name = Param(...)`` and
-    ``name: T = Param(...)`` assignments and produce a tuple of
-    :class:`ParamRef` in source order.
-
-    For each Param, the type-text (the source of the first
-    positional argument, e.g., ``"BatterySpec"``) is resolved
-    against the registry so the graph builder can wire a "uses
-    Param of" edge to the target class without redoing import
-    chasing.
-    """
-    out: list[ParamRef] = []
-    for stmt in cls.ast_node.body:
-        info = _try_build_param_info(stmt)
-        if info is None:
-            continue
-        type_resolves_to: ResolvedClass | None = None
-        if info.type_text is not None:
-            type_resolves_to = resolve_name_in_file(
-                info.type_text, file_info, registry, project_root,
-            )
-        out.append(ParamRef(
-            name=info.name,
-            type_text=info.type_text,
-            default_text=info.default_text,
-            doc_text=info.doc_text,
-            extras=info.extras,
-            type_resolves_to=type_resolves_to,
-        ))
-    return tuple(out)
-
-
-def _try_build_param_info(stmt: ast.stmt) -> ParamInfo | None:
-    """Return :class:`ParamInfo` for a class-level Param assignment,
-    or ``None`` for any other statement shape.
-
-    Mirrors the per-statement classification in
-    :func:`scadwright.lsp.analyze._block_from_classdef`'s loop —
-    just the Param branch, since the graph extractor doesn't care
-    about ``equations`` here.
-    """
-    if isinstance(stmt, ast.Assign):
-        if (
-            len(stmt.targets) == 1
-            and isinstance(stmt.targets[0], ast.Name)
-            and _is_param_call(stmt.value)
-        ):
-            return _build_param_info(
-                stmt.targets[0].id, stmt.value, stmt,
-            )
-    elif isinstance(stmt, ast.AnnAssign):
-        if (
-            isinstance(stmt.target, ast.Name)
-            and stmt.value is not None
-            and _is_param_call(stmt.value)
-        ):
-            return _build_param_info(
-                stmt.target.id, stmt.value, stmt,
-            )
-    return None
-
-
-# =============================================================================
-# Equations attribute-read extraction
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class AttributeRead:
-    """One ``b.attr`` access where ``b`` is a Param of the source class.
-
-    ``base_name`` is the Param name (e.g., ``"spec"``); ``attr`` is
-    the attribute being read (``"outer_d"``). ``target`` is the
-    :class:`ResolvedClass` of ``b``'s type when it resolves to a
-    project-local class; ``None`` when the Param's type isn't a
-    project class (primitive Params like ``Param(float)``, or
-    Params with no positional argument).
-
-    Reads are deduplicated by ``(base_name, attr)`` pair, so a
-    Param read in three equations contributes one ``AttributeRead``.
-    """
-    base_name: str
-    attr: str
-    target: ResolvedClass | None
-
-
-def extract_equations_attribute_reads(
-    cls: ResolvedClass,
-    file_info: FileInfo,
-    params: tuple[ParamRef, ...],
-) -> tuple[AttributeRead, ...]:
-    """Find every ``b.attr`` read in ``cls``'s equations where ``b``
-    is a Param of ``cls``.
-
-    Walks every equation, constraint, and adjustment AST on the
-    class. Reads on non-Param bases are skipped — those are either
-    typos (the LSP's undeclared-attribute warning catches them) or
-    references to names the graph builder doesn't model. Reads on
-    primitive-typed Params are kept with ``target=None`` so the
-    builder can choose whether to surface them.
-
-    Returns ``()`` when the class has no equations block, no
-    Params, fails parser validation, or when the equations parser
-    can't be loaded (sympy isn't installed). The empty result
-    keeps the surrounding graph build robust on real projects
-    where one bad block shouldn't drop the class from the graph,
-    and on base installs without the ``[equations]`` extra where
-    a graph-only workflow shouldn't crash.
-    """
-    if not params:
-        return ()
-    block = _block_from_classdef(cls.ast_node, file_info.source)
-    if block is None:
-        return ()
-    eq_lines: list[str] = []
-    for host in block.hosts:
-        for line in _split_logical_lines(host.raw_text):
-            eq_lines.append(line.cleaned)
-    if not eq_lines:
-        return ()
-    try:
-        equations, constraints, _, _, adjustments = parse_equations_unified(
-            eq_lines, class_name=block.class_name,
-        )
-    except (ValidationError, ImportError):
-        return ()
-
-    param_targets: dict[str, ResolvedClass | None] = {
-        p.name: p.type_resolves_to for p in params
-    }
-    seen: set[tuple[str, str]] = set()
-    out: list[AttributeRead] = []
-    for node in _iter_walked_nodes(equations, constraints, adjustments):
-        for sub in ast.walk(node):
-            if not isinstance(sub, ast.Attribute):
-                continue
-            base = sub.value
-            if not isinstance(base, ast.Name):
-                continue
-            if base.id not in param_targets:
-                continue
-            key = (base.id, sub.attr)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(AttributeRead(
-                base_name=base.id,
-                attr=sub.attr,
-                target=param_targets[base.id],
-            ))
-    return tuple(out)
-
-
-def _iter_walked_nodes(equations, constraints, adjustments):
-    """Yield every AST node carried by parsed equations / constraints
-    / adjustments, in source order. The caller walks each via
-    ``ast.walk`` for further inspection.
-    """
-    for eq in equations:
-        yield eq.lhs
-        yield eq.rhs
-    for c in constraints:
-        yield c.expr
-    for adj in adjustments:
-        yield adj.rhs
-
-
-# =============================================================================
-# build() body attribute-read extraction
-# =============================================================================
-
-
-def extract_build_attribute_reads(
-    cls: ResolvedClass,
-    params: tuple[ParamRef, ...],
-) -> tuple[AttributeRead, ...]:
-    """Find every ``self.x.y`` read in ``cls``'s ``build`` method
-    where ``x`` is a Param of ``cls``.
-
-    Walks the method body via ``ast.walk`` and matches the two-deep
-    pattern ``Attribute(value=Attribute(value=Name("self"), attr=x),
-    attr=y)``. Bare ``self.x`` reads (own-Param uses) aren't
-    recorded — they're not cross-Component edges. Deeper chains
-    like ``self.x.y.z`` record ``(x, y)`` and stop, matching the
-    equations extractor's same-shape behavior.
-
-    Returns ``()`` for classes with no ``build`` method or no
-    Params.
-    """
-    if not params:
-        return ()
-    method = _find_build_method(cls.ast_node)
-    if method is None:
-        return ()
-    param_targets: dict[str, ResolvedClass | None] = {
-        p.name: p.type_resolves_to for p in params
-    }
-    seen: set[tuple[str, str]] = set()
-    out: list[AttributeRead] = []
-    for sub in ast.walk(method):
-        if not isinstance(sub, ast.Attribute):
-            continue
-        outer_value = sub.value
-        if not isinstance(outer_value, ast.Attribute):
-            continue
-        if not isinstance(outer_value.value, ast.Name):
-            continue
-        if outer_value.value.id != "self":
-            continue
-        x = outer_value.attr
-        if x not in param_targets:
-            continue
-        key = (x, sub.attr)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(AttributeRead(
-            base_name=x,
-            attr=sub.attr,
-            target=param_targets[x],
-        ))
-    return tuple(out)
-
-
-def _find_build_method(class_node: ast.ClassDef) -> ast.FunctionDef | None:
-    """Return the class's ``build`` method (or ``None``).
-
-    Both regular and async ``build`` methods match — though async
-    Components aren't standard practice, the static walker stays
-    indifferent to it.
-    """
-    for stmt in class_node.body:
-        if (
-            isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and stmt.name == "build"
-        ):
-            return stmt
-    return None
+__all__ = [
+    "AttributeRead",
+    "CompositionRef",
+    "ParamRef",
+    "VariantInfo",
+    "extract_build_attribute_reads",
+    "extract_build_instantiations",
+    "extract_class_attr_components",
+    "extract_equations_attribute_reads",
+    "extract_params",
+    "extract_variants",
+]
 
 
 # =============================================================================

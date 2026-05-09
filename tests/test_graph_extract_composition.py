@@ -15,8 +15,8 @@ from scadwright.graph.extract import (
     CompositionRef,
     extract_build_instantiations,
 )
-from scadwright.graph.registry import build_class_registry
-from scadwright.graph.walk import walk_project
+from scadwright.project_index.registry import build_class_registry
+from scadwright.project_index.walk import walk_project
 
 
 def _setup(tmp_path: Path, class_name: str):
@@ -306,7 +306,7 @@ def test_self_attribute_call_not_a_contains(tmp_path: Path) -> None:
 
 
 def test_composition_ref_immutable() -> None:
-    from scadwright.graph.registry import ResolvedClass
+    from scadwright.project_index.registry import ResolvedClass
     import ast
 
     rc = ResolvedClass(

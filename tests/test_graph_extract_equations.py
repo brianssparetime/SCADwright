@@ -15,8 +15,8 @@ from scadwright.graph.extract import (
     extract_equations_attribute_reads,
     extract_params,
 )
-from scadwright.graph.registry import build_class_registry
-from scadwright.graph.walk import walk_project
+from scadwright.project_index.registry import build_class_registry
+from scadwright.project_index.walk import walk_project
 
 
 def _setup(tmp_path: Path, class_name: str):
