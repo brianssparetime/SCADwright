@@ -369,6 +369,211 @@ def test_heuristic_uniform_pre_translate():
     )
 
 
+# --- Cumulative-offset math, end-to-end ---
+
+
+import math
+import re
+
+
+def _glyph_translates_3d(scad):
+    """Extract the per-glyph outer Translate ``(x, y, z)`` triples from emitted
+    SCAD. Each per-glyph block starts with ``translate([x, y, z]) { multmatrix(...)``;
+    we anchor on that pattern so we don't pick up the inner 2D pre-translate."""
+    pat = re.compile(
+        r"translate\(\[(-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?)\]\)"
+        r"\s*\{\s*multmatrix",
+    )
+    return [(float(x), float(y), float(z)) for x, y, z in pat.findall(scad)]
+
+
+class TestCumulativeOffsetMath:
+    """End-to-end checks that cumulative per-glyph offsets land glyphs at the
+    expected 3D positions on a cylinder (heuristic mode → known per-glyph advance)."""
+
+    def test_circumferential_three_chars_centered_on_meridian(self):
+        # "ABC" on a cylinder(h=20, r=10), default meridian +x, halign=center.
+        # Heuristic advance = 0.6 * 4 = 2.4mm per char; total = 7.2mm.
+        # Glyph centers in mm: [-2.4, 0, +2.4]; theta_off = mm/radius = ±0.24, 0.
+        # raised relief=0.4 → d = r - eps = 10 - 0.01 = 9.99.
+        # axis_origin = (0, 0, 10). So 3D positions are
+        # (9.99 cos θ, 9.99 sin θ, 10) for θ in {-0.24, 0, +0.24}.
+        scad = _emit(
+            cylinder(h=20, r=10).add_text(
+                label="ABC", relief=0.4, on="outer_wall", font_size=4,
+            )
+        )
+        positions = _glyph_translates_3d(scad)
+        assert len(positions) == 3, positions
+        positions.sort(key=lambda p: p[1])  # sort by y (the meridian-tangent axis)
+        x_a, x_b, x_c = (9.99 * math.cos(0.24), 9.99, 9.99 * math.cos(0.24))
+        y_a, y_b, y_c = (-9.99 * math.sin(0.24), 0.0, +9.99 * math.sin(0.24))
+        assert positions[0] == pytest.approx((x_a, y_a, 10.0), abs=0.005)
+        assert positions[1] == pytest.approx((x_b, y_b, 10.0), abs=0.005)
+        assert positions[2] == pytest.approx((x_c, y_c, 10.0), abs=0.005)
+
+    def test_axial_three_chars_centered_on_mid_wall(self):
+        # text_dir="axial" → glyphs stack along z, all at the same theta.
+        # Heuristic axial step = 0.6 * 4 = 2.4mm. Centers at [-2.4, 0, +2.4]
+        # (in axial mm); sign = -1.0 for default flip=False (top-to-bottom).
+        # So char 0 sits at z = 2.4 + axis_origin.z (top), char 2 at z = -2.4 + ...
+        scad = _emit(
+            cylinder(h=20, r=10).add_text(
+                label="ABC", relief=0.4, on="outer_wall", font_size=4,
+                text_dir="axial",
+            )
+        )
+        positions = _glyph_translates_3d(scad)
+        assert len(positions) == 3, positions
+        # All three glyphs at the +x meridian (x ≈ 9.99, y ≈ 0).
+        for p in positions:
+            assert p[0] == pytest.approx(9.99, abs=0.005), p
+            assert p[1] == pytest.approx(0.0, abs=0.005), p
+        # z ordering: char 0 at top (z=12.4), char 1 at z=10, char 2 at z=7.6.
+        zs = sorted(p[2] for p in positions)
+        assert zs == pytest.approx([7.6, 10.0, 12.4], abs=0.005)
+
+
+@pytest.mark.freetype
+class TestAxialModeUsesProportionalAdvances:
+    """text_dir="axial" with real font metrics: per-glyph axial spacing is
+    proportional, not uniform."""
+
+    def test_iWi_axial_offsets_reflect_real_advances(self, bundled_font_path):
+        # "iWi" on a cylinder with axial layout. Liberation Sans 2.00.1 advances
+        # at size=4: i ~ 0.889mm, W ~ 3.775mm. Centers (halign=center) are
+        # [-(W/2 + i/2), 0, +(W/2 + i/2)] = [-2.332, 0, +2.332] in axial mm,
+        # times sign=-1 → z offsets [+2.332, 0, -2.332] from line center (z=10).
+        scad = _emit(
+            cylinder(h=20, r=10).add_text(
+                label="iWi", relief=0.4, on="outer_wall", font_size=4,
+                text_dir="axial", font=bundled_font_path,
+            )
+        )
+        positions = _glyph_translates_3d(scad)
+        assert len(positions) == 3
+        zs = sorted(p[2] for p in positions)
+        # Step between adjacent z is (W + i)/2 ≈ 2.332mm — much smaller than
+        # the heuristic 2.4mm per glyph and much different from a uniform
+        # 0.6*4=2.4mm step. The exact font metrics tie this to Liberation Sans.
+        step_lo = zs[1] - zs[0]
+        step_hi = zs[2] - zs[1]
+        assert step_lo == pytest.approx(step_hi, abs=0.01), (
+            f"i-W-i is symmetric, expected equal steps, got {zs}"
+        )
+        assert step_lo == pytest.approx(2.332, abs=0.05), (
+            f"expected step ≈ 2.332mm (advance midpoint of i+W), got {step_lo}"
+        )
+
+
+@pytest.mark.freetype
+class TestConicalAxialCumulativeRadius:
+    """text_dir="axial" on a conical wall: each glyph's local radius is looked
+    up via compute_geom_at(at_z + cumulative_advance_so_far), so per-glyph
+    radial position varies along the cone."""
+
+    def test_cone_axial_per_glyph_radius_tracks_cumulative_at_z(self, bundled_font_path):
+        # Tapered cylinder: r1=10 at bottom, r2=4 at top, h=20. r_mid=7,
+        # slope = (4-10)/20 = -0.3. So local radius at at_z is 7 + at_z*-0.3.
+        # With "iWi" axial centered, char positions at_z = +2.332, 0, -2.332
+        # (sign=-1 default flip=False; char 0 at top, char 2 at bottom).
+        # Local radius: top char = 7 - 0.7 = 6.3; mid = 7; bottom = 7.7.
+        # Each glyph's translate.x ≈ local_radius - eps (since axis_origin.x=0,
+        # radial=(1,0,0), eps=0.01).
+        scad = _emit(
+            cylinder(h=20, r1=10, r2=4).add_text(
+                label="iWi", relief=0.4, on="outer_wall", font_size=4,
+                text_dir="axial", font=bundled_font_path,
+            )
+        )
+        positions = _glyph_translates_3d(scad)
+        assert len(positions) == 3
+        # Sort by z descending (top first).
+        positions.sort(key=lambda p: -p[2])
+        top, mid, bot = positions
+        # Top char at z ≈ 12.332 (axis_origin.z=10 + 2.332).
+        # Local radius at top = 7 + 2.332 * -0.3 = 6.300.
+        assert top[2] == pytest.approx(12.332, abs=0.05)
+        assert top[0] == pytest.approx(6.30 - 0.01, abs=0.05)
+        # Mid at z=10, radius=7.
+        assert mid[2] == pytest.approx(10.0, abs=0.05)
+        assert mid[0] == pytest.approx(7.0 - 0.01, abs=0.05)
+        # Bottom at z ≈ 7.668, radius = 7 + (-2.332)*-0.3 = 7.700.
+        assert bot[2] == pytest.approx(7.668, abs=0.05)
+        assert bot[0] == pytest.approx(7.70 - 0.01, abs=0.05)
+
+
+@pytest.mark.freetype
+class TestRimArcCumulativeOffsets:
+    """Rim-arc placement uses cumulative-advance angular offsets so glyph
+    centers land at theta = (cum + advance/2 - total/2) / path_radius."""
+
+    def test_rim_arc_iWi_glyph_angles_proportional(self, bundled_font_path):
+        # cylinder(h=10, r=15).top — rim arc. Default at_radial = max(15-4, 2) = 11.
+        # "iWi" with halign=center. theta(glyph_n) = center_mm[n] / 11.
+        # Glyph 3D position on the rim: ≈ (11 cos θ, 11 sin θ, 10 + ε) where
+        # the rim normal lifts by ±eps.
+        scad = _emit(
+            cylinder(h=10, r=15).add_text(
+                label="iWi", relief=0.4, on="top", font_size=4,
+                font=bundled_font_path,
+            )
+        )
+        positions = _glyph_translates_3d(scad)
+        assert len(positions) == 3
+        # All on the +z face. For raised relief the extrusion BASE is shifted
+        # by -eps (into the host) so the extrusion overlaps cleanly through
+        # the rim plane; visible relief extends above z=10.
+        for p in positions:
+            assert p[2] == pytest.approx(9.99, abs=0.005), p
+        # Compute each glyph's theta from atan2(y, x) and verify symmetry +
+        # proportional steps. i-W spacing should equal W-i spacing (palindrome).
+        thetas = sorted(math.atan2(p[1], p[0]) for p in positions)
+        step_lo = thetas[1] - thetas[0]
+        step_hi = thetas[2] - thetas[1]
+        assert step_lo == pytest.approx(step_hi, abs=1e-4), (
+            f"iWi is a palindrome, expected equal angular steps, got {thetas}"
+        )
+        # Step magnitude: theta_step = (i_advance + W_advance) / 2 / path_radius.
+        # Liberation Sans at size=4: i=0.889mm, W=3.775mm; step ≈ 2.332/11 ≈ 0.2120 rad.
+        assert step_lo == pytest.approx(0.2120, abs=0.005), (
+            f"expected step ≈ 0.212 rad, got {step_lo}"
+        )
+
+
+# --- Overflow check still uses the heuristic ---
+
+
+@pytest.mark.freetype
+class TestOverflowCheckIgnoresMetrics:
+    """``_check_overflow_block`` and ``_check_overflow`` are best-effort
+    estimators on planar dispatch and don't consult ``get_advances``. Even
+    with real metrics active, the warning fires (or doesn't) based on the
+    heuristic estimate."""
+
+    def test_iiii_warns_under_heuristic_even_when_real_is_smaller(
+        self, bundled_font_path, caplog,
+    ):
+        # 4 narrow ``i`` glyphs at size=2: heuristic estimate = 4 * 0.6 * 2 = 4.8mm,
+        # real Liberation Sans width ≈ 4 * 0.444 = 1.78mm. On a 4mm-wide face,
+        # heuristic would warn; real metrics wouldn't. We assert the warning fires
+        # — proving the overflow check is heuristic-driven, even though we passed
+        # an absolute font path that would otherwise enable proportional spacing
+        # for the curved-wall code path (planar uses one whole-line text() call,
+        # so this only proves overflow checks aren't reaching for metrics).
+        with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
+            _emit(
+                cube([4, 10, 2], center="xy").add_text(
+                    label="iiii", relief=0.3, on="top", font_size=2,
+                    font=bundled_font_path,
+                )
+            )
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("overflows face" in m for m in msgs), (
+            f"expected heuristic-based overflow warning, got {msgs}"
+        )
+
+
 @pytest.mark.freetype
 class TestProportionalSpacingIntegration:
     """End-to-end: real font metrics drive non-uniform glyph spacing on curved hosts."""
