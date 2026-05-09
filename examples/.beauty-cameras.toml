@@ -1,0 +1,20 @@
+# Per-example beauty-shot camera settings.
+#
+# OpenSCAD's --camera flag takes tx,ty,tz,rx,ry,rz,d (translate, rotate,
+# distance). Use with --viewall so the distance auto-fits the model.
+#
+# Render with:
+#   openscad -o out.png \
+#       --camera=$camera --imgsize=$imgsize --viewall --autocenter \
+#       --colorscheme=$colorscheme -D "\$fn=$fn" $scad
+
+[rocket]
+scad = "rocket.scad"
+camera = "4,0,28,77,0,141,200"
+imgsize = "900,1300"
+viewall = true
+colorscheme = "Metallic"
+fn = 96
+# Frames the full rocket (nose to plate). Both engravings on
+# meridian-45 read clearly; the helicoid stand and all four
+# mount holes are visible.

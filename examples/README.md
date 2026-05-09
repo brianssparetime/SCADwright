@@ -20,6 +20,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | A `Lid` that reads values off a `Box` (the `Box` is a parameter on the `Lid`). `build()` written as a series of `yield` lines. `add_text()` labels the lid. |
 | Complex | [`electronics-case.py`](electronics-case.py) | `namedtuple` specs for the PCB and its ports. Three custom transforms. Separate variants for print vs. display. |
 | Complex | [`lens-housing.py`](lens-housing.py) | A helper that turns each lens element into a record with precomputed fields. A conditional that picks between two body shapes. A `halve()` section view in the print variant. |
+| Complex | [`rocket.py`](rocket.py) | A wide cross-section of the shape library: `Helix` with a custom `almond_profile`, `Barrel`, `Ogive`, fins via `polygon` + `minkowski(sphere)`, M2 counterbores stamped in a 2x2 array, curved-meridian `add_text` engravings. 59 lines vs. ~340 of equivalent OpenSCAD. |
 
 ---
 
@@ -172,6 +173,27 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 *Left: display variant, housing with clip-on hood floated above it. Right: print variant, housing halved and splayed for a section view alongside the inverted hood.*
 
 **Reference:** [the equations block](../docs/components.md#parameters-equations) · [halve()](../docs/composition_helpers.md#halve) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes)
+
+---
+
+## 8. [`rocket.py`](rocket.py)
+
+A 3D-printable model rocket on a coiled-spring stand: parabolic ogive nose, bulged body, three parabolic-swept fins with rounded edges, a flared nozzle, a tapered helicoid stem with an almond cross-section, and a filleted M2-counterbored baseplate. The body carries a horizontal `SCADwright` wordmark and an axial multi-line punchline, both engraved on a curved meridian. **59 lines of scadwright vs. ~340 of equivalent OpenSCAD** — most of the savings come from the helicoid (which OpenSCAD has to hand-roll as a polyhedron from explicit points and faces) and the engravings (which OpenSCAD has to position one glyph at a time).
+
+This is a flat script — no Components, no Design class — built from shape-library parts and the composition helpers earlier examples introduced. The one new surface is passing a custom 2D profile (`almond_profile(...)`) to a swept Component (`Helix`).
+
+- `Helix(wire_profile=almond_profile(...), r=8, r_end=4, ...)` sweeps a custom 2D cross-section along a tapered helical path. `overhang=chord_r` extends the swept tube into the adjoining solids so the joints close cleanly, no manual `fuse=True` needed.
+- `Barrel` is used twice — once for the body's convex bulge, once for the nozzle's outward flare (the latter halved with `.halve(z=1)` to keep just the upper bell).
+- `Ogive(kind="parabolic", fn=64).attach(body, on="top")` stacks the nose on the body, no z-offset math.
+- Fins: `polygon → linear_extrude → minkowski(sphere)` for the rounded blank, `attach(body, on="outer_wall", at="lside", fuse=True)` to seat one fin flush, and `.rotate_copy(angle=120, n=3, axis=[0, 0, 1])` for the 3-fold pattern.
+- Nested `linear_copy(...)` stamps a 2x2 array of M2 counterbores at the plate corners; `.through(plate_solid, axis="z")` flushes the cuts.
+- `add_text(meridian=45, ...)` engraves text along a meridian on the body's curved outer wall — once horizontally for the wordmark (raised relief), then chained again with `text_dir="axial"` and `rotate_glyphs=True` for the multi-line punchline (recessed relief).
+
+![Rocket](images/Rocket.png)
+
+*Full rocket: parabolic nose, bulged body with engraved labels, three fins, flared nozzle, helicoid stem, and M2-counterbored baseplate.*
+
+**Reference:** [shape library](../docs/shapes/README.md) · [Helix](../docs/shapes/curves.md) · [Barrel](../docs/shapes/tubes_and_shells.md) · [counterbore_for_screw](../docs/shapes/fillets.md) · [linear_copy / rotate_copy](../docs/composition_helpers.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [add_text() on curved meridians](../docs/add_text.md) · [halve()](../docs/composition_helpers.md#halve)
 
 ---
 
