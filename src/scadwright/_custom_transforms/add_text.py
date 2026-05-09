@@ -451,6 +451,9 @@ def _place_wrapped(
     valign,
     line_spacing,
     text_orient,
+    text_dir,
+    rotate_glyphs,
+    flip,
     text_kwargs,
     loc,
 ):
@@ -462,8 +465,15 @@ def _place_wrapped(
     stay vertical along the axis (``"axial"``, default — most legible)
     or tilt with the cone's slant (``"slant"`` — surface-conforming).
 
-    Multi-line: lines are stacked along the cylinder/cone axis (line 0 at
-    higher axial position).
+    ``text_dir`` chooses how the line lays on the surface — ``"circumferential"``
+    (default, line wraps around the axis) or ``"axial"`` (line runs along
+    the surface axis, glyphs at successive at_z values). ``rotate_glyphs``
+    rotates each glyph 90° in the surface tangent plane; ``flip`` rotates
+    the layout (line direction + glyph orientation) 180°.
+
+    Multi-line: with text_dir="circumferential", lines are stacked along
+    the axis (line 0 at higher axial position). text_dir="axial" with
+    multi-line is rejected upstream.
     """
     if not any(line for line in lines):
         raise ValidationError("add_text: label is empty.")
@@ -556,6 +566,34 @@ def _place_wrapped(
     slant_outward_component = slope / slant_norm
     slant_axial_component = 1.0 / slant_norm
 
+    # Closure that returns (radius, slant_outward, slant_axial) at any at_z.
+    # Used by axial-line text where each glyph sits at a different at_z and
+    # therefore (on conical/meridional surfaces) at a different local
+    # radius. Cylindrical: constant. Conical: linear in at_z. Meridional:
+    # arc-based via ``_meridian_arc_at``.
+    if is_conical:
+        def compute_geom_at(at_z_local):
+            return (r_mid + at_z_local * slope,
+                    slant_outward_component,
+                    slant_axial_component)
+    elif is_meridional:
+        from scadwright.ast.placement import _meridian_arc_at as _arc_at
+        def compute_geom_at(at_z_local):
+            return _arc_at(at_z_local, meridian_r, mid_r_param, meridian_s_param)
+    else:  # cylindrical
+        def compute_geom_at(at_z_local):
+            return r_mid, 0.0, 1.0
+
+    # Length of the curved wall along the axis (cylindrical/conical) or arc
+    # (meridional). Used by ``_emit_wrap_line`` for axial-extent overflow
+    # warnings; ``None`` when the anchor doesn't carry it.
+    if is_meridional:
+        surface_length = merid_length
+    elif is_conical:
+        surface_length = anchor.surface_param("length")
+    else:
+        surface_length = anchor.surface_param("length")
+
     # Per-line axial offsets. Single-line collapses to [0.0] so behavior
     # is identical to the previous single-string path.
     if len(lines) == 1:
@@ -563,14 +601,35 @@ def _place_wrapped(
     else:
         line_y_offsets = _line_y_offsets(len(lines), font_size, line_spacing, valign)
 
+    # Multi-line block overflow check for axial mode: total circumferential
+    # span (n-1)*line_spacing*font_size must be < 2π * line_radius.
+    if text_dir == "axial" and len(lines) > 1:
+        center_radius, _, _ = compute_geom_at(base_axial_offset)
+        block_circum_extent = (len(lines) - 1) * line_spacing * font_size
+        if block_circum_extent >= 2 * math.pi * center_radius:
+            loc_str = f" (at {loc})" if loc else ""
+            _log.warning(
+                "add_text: %d axial-line block spans %.1f mm circumferentially, "
+                "wrapping past the cylinder at radius %.2f mm — lines will overlap%s",
+                len(lines), block_circum_extent, center_radius, loc_str,
+            )
+
     label_repr = "\n".join(lines)
     glyph_nodes = []
     for line_idx, (line, line_y) in enumerate(zip(lines, line_y_offsets)):
         if not line:
             continue
-        line_at_z = base_axial_offset + line_y
 
-        # Per-line local radius and slant components.
+        # In circumferential mode, line_y is an axial offset (lines stack
+        # along the axis). In axial mode, line_y is a tangent-mm offset
+        # (lines stack circumferentially) and gets converted to an angular
+        # offset using the line-center radius.
+        if text_dir == "axial":
+            line_at_z = base_axial_offset
+        else:
+            line_at_z = base_axial_offset + line_y
+
+        # Per-line local radius and slant components — at the line center.
         if is_conical:
             line_radius = r_mid + line_at_z * slope
             line_slant_outward = slant_outward_component
@@ -616,6 +675,13 @@ def _place_wrapped(
                 anchor.kind, line_radius, line_at_z, line_idx, font_size, loc_str,
             )
 
+        # Per-line meridian: in axial mode, lines stack circumferentially
+        # so line_y becomes an angular offset (radians = mm-of-arc / radius).
+        if text_dir == "axial":
+            line_meridian_rad = base_meridian_rad + line_y / line_radius
+        else:
+            line_meridian_rad = base_meridian_rad
+
         glyph_nodes.extend(_emit_wrap_line(
             line=line,
             line_radius=line_radius,
@@ -625,7 +691,7 @@ def _place_wrapped(
             eps=eps,
             abs_relief=abs_relief,
             raised=raised,
-            base_meridian_rad=base_meridian_rad,
+            base_meridian_rad=line_meridian_rad,
             halign=halign, valign=valign,
             axis=axis,
             anchor_normal=anchor.normal,
@@ -633,8 +699,13 @@ def _place_wrapped(
             s_outward=s_outward,
             is_conical=is_curved_axially,  # "use slant orientation"
             text_orient=text_orient,
+            text_dir=text_dir,
+            rotate_glyphs=rotate_glyphs,
+            flip=flip,
             slant_outward_component=line_slant_outward,
             slant_axial_component=line_slant_axial,
+            compute_geom_at=compute_geom_at,
+            surface_length=surface_length,
             text_kwargs=text_kwargs,
             label_repr=label_repr,
             loc=loc,
@@ -652,37 +723,111 @@ def _emit_wrap_line(
     base_meridian_rad, halign, valign,
     axis, anchor_normal, axis_origin, s_outward,
     is_conical, text_orient,
+    text_dir, rotate_glyphs, flip,
     slant_outward_component, slant_axial_component,
+    compute_geom_at, surface_length,
     text_kwargs, label_repr, loc,
 ):
-    """Emit per-glyph nodes for one line wrapped around a cylindrical or
-    conical surface at a given axial position. Returns a list of placed
-    glyph nodes (caller assembles them into a union or difference).
+    """Emit per-glyph nodes for one line wrapped around a cylindrical, conical,
+    or meridional surface. Returns a list of placed glyph nodes (caller
+    assembles them into a union or difference).
+
+    ``text_dir`` chooses whether the line advances around the axis
+    (``"circumferential"``) or along it (``"axial"``). On axial mode with a
+    curved-axially surface, the per-glyph radius and slant components are
+    recomputed via ``compute_geom_at`` (which closes over the surface kind
+    and its parameters in the caller).
+
+    ``rotate_glyphs`` and ``flip`` together select one of 4 in-tangent-
+    plane glyph orientations:
+
+        rg=F, flip=F → glyph right=+e1, up=+e2  (default)
+        rg=F, flip=T → glyph right=-e1, up=-e2  (180°)
+        rg=T, flip=F → glyph right=-e2, up=+e1  (90° CCW)
+        rg=T, flip=T → glyph right=+e2, up=-e1  (90° CW)
+
+    where (e1, e2) = (surface tangent, surface "up" direction). The "up"
+    direction is the surface axis in the simple case and the slant axis
+    when text_orient="slant" on a conical or meridional wall.
     """
     n_chars = len(line)
-
     advance_mm = 0.6 * font_size * text_kwargs.get("spacing", 1.0)
-    arc_step = advance_mm / line_radius
 
-    total_arc_rad = n_chars * arc_step
-    if total_arc_rad > 2 * math.pi:
-        loc_str = f" (at {loc})" if loc else ""
-        _log.warning(
-            "add_text: line %r wraps %.0f%% of the surface at radius "
-            "%.2f mm — glyphs will overlap%s",
-            line, 100 * total_arc_rad / (2 * math.pi), line_radius, loc_str,
-        )
-
-    if halign == "left":
-        offsets = [(i + 0.5) * arc_step for i in range(n_chars)]
-    elif halign == "right":
-        offsets = [-(n_chars - i - 0.5) * arc_step for i in range(n_chars)]
-    else:
-        offsets = [(i - (n_chars - 1) / 2.0) * arc_step for i in range(n_chars)]
+    # Per-char offset list and overflow check, branching on text_dir.
+    if text_dir == "circumferential":
+        # Step is angular (radians around axis).
+        arc_step = advance_mm / line_radius
+        total_arc_rad = n_chars * arc_step
+        if total_arc_rad > 2 * math.pi:
+            loc_str = f" (at {loc})" if loc else ""
+            _log.warning(
+                "add_text: line %r wraps %.0f%% of the surface at radius "
+                "%.2f mm — glyphs will overlap%s",
+                line, 100 * total_arc_rad / (2 * math.pi), line_radius, loc_str,
+            )
+        sign = -1.0 if flip else 1.0
+        if halign == "left":
+            scalar_offsets = [(i + 0.5) * arc_step * sign for i in range(n_chars)]
+        elif halign == "right":
+            scalar_offsets = [-(n_chars - i - 0.5) * arc_step * sign for i in range(n_chars)]
+        else:
+            scalar_offsets = [(i - (n_chars - 1) / 2.0) * arc_step * sign for i in range(n_chars)]
+        char_advances = [(o, 0.0) for o in scalar_offsets]
+    else:  # text_dir == "axial"
+        # Step is axial (mm along axis or slant). On slanted surfaces with
+        # text_orient="slant", scale by the line-center slant_axial_component
+        # so spacing measures arc-length along the slant (gives uniform
+        # visual spacing on a tapered surface).
+        if (is_conical or anchor_normal is None) and text_orient == "slant":
+            axial_step = advance_mm * slant_axial_component
+        else:
+            axial_step = advance_mm
+        # Default axial direction: -axis (top-to-bottom on a vertical
+        # cylinder, char 0 at the top). flip negates.
+        sign = 1.0 if flip else -1.0
+        if halign == "left":
+            scalar_offsets = [(i + 0.5) * axial_step * sign for i in range(n_chars)]
+        elif halign == "right":
+            scalar_offsets = [-(n_chars - i - 0.5) * axial_step * sign for i in range(n_chars)]
+        else:
+            scalar_offsets = [(i - (n_chars - 1) / 2.0) * axial_step * sign for i in range(n_chars)]
+        char_advances = [(0.0, o) for o in scalar_offsets]
+        # Axial-extent overflow check: warn if the total axial extent
+        # plus the line center's offset pushes any glyph past the wall.
+        if surface_length is not None:
+            char_at_zs = [line_at_z + o for o in scalar_offsets]
+            half_len = surface_length / 2.0
+            min_at_z = min(char_at_zs) - font_size / 2.0
+            max_at_z = max(char_at_zs) + font_size / 2.0
+            if min_at_z < -half_len or max_at_z > half_len:
+                loc_str = f" (at {loc})" if loc else ""
+                _log.warning(
+                    "add_text: line %r axial extent [%.2f, %.2f] exceeds "
+                    "wall extent [%.2f, %.2f]%s",
+                    line, min_at_z, max_at_z, -half_len, half_len, loc_str,
+                )
 
     out = []
-    for char, offset_from_meridian in zip(line, offsets):
-        theta = base_meridian_rad + offset_from_meridian
+    for char, (theta_off, at_z_off) in zip(line, char_advances):
+        theta = base_meridian_rad + theta_off
+        char_at_z = line_at_z + at_z_off
+
+        # Per-glyph geometry. For text_dir="circumferential", every glyph
+        # on a line shares (line_radius, line_slant_*) — passed in. For
+        # text_dir="axial" with curved-axially surfaces, recompute per glyph.
+        if text_dir == "axial" and is_conical:
+            char_radius, char_slant_o, char_slant_a = compute_geom_at(char_at_z)
+            if char_radius <= 0:
+                raise ValidationError(
+                    f"add_text: surface radius at at_z={char_at_z:.3f} "
+                    f"(char {char!r}) is {char_radius:.3f} (wall pinches "
+                    f"to the axis or beyond cone tip)."
+                )
+        else:
+            char_radius = line_radius
+            char_slant_o = slant_outward_component
+            char_slant_a = slant_axial_component
+
         radial = _rotate_around_axis(anchor_normal, theta, axis)
         outward_at_theta = (
             s_outward * radial[0],
@@ -697,20 +842,36 @@ def _emit_wrap_line(
 
         if is_conical and text_orient == "slant":
             slant = (
-                slant_outward_component * outward_at_theta[0] + slant_axial_component * axis[0],
-                slant_outward_component * outward_at_theta[1] + slant_axial_component * axis[1],
-                slant_outward_component * outward_at_theta[2] + slant_axial_component * axis[2],
+                char_slant_o * outward_at_theta[0] + char_slant_a * axis[0],
+                char_slant_o * outward_at_theta[1] + char_slant_a * axis[1],
+                char_slant_o * outward_at_theta[2] + char_slant_a * axis[2],
             )
             surface_normal = (
                 tangent[1] * slant[2] - tangent[2] * slant[1],
                 tangent[2] * slant[0] - tangent[0] * slant[2],
                 tangent[0] * slant[1] - tangent[1] * slant[0],
             )
-            up_dir = slant
+            e2 = slant
             extrude_dir = surface_normal
         else:
-            up_dir = axis
+            e2 = axis
             extrude_dir = radial
+
+        e1 = tangent
+
+        # 8-combo orientation: (rotate_glyphs, flip) → (g_right, g_up).
+        # g_right gets glyph local +X; g_up gets glyph local +Y.
+        if not rotate_glyphs and not flip:
+            g_right, g_up = e1, e2
+        elif not rotate_glyphs and flip:
+            g_right = (-e1[0], -e1[1], -e1[2])
+            g_up = (-e2[0], -e2[1], -e2[2])
+        elif rotate_glyphs and not flip:
+            g_right = (-e2[0], -e2[1], -e2[2])
+            g_up = e1
+        else:  # rotate_glyphs and flip
+            g_right = e2
+            g_up = (-e1[0], -e1[1], -e1[2])
 
         glyph_2d = _text_factory(
             char,
@@ -728,16 +889,16 @@ def _emit_wrap_line(
         )
         extruded = linear_extrude(glyph_2d, height=extrude_h)
         oriented = MultMatrix(
-            matrix=_orient_glyph_matrix(tangent, up_dir, extrude_dir),
+            matrix=_orient_glyph_matrix(g_right, g_up, extrude_dir),
             child=extruded,
             source_location=loc,
         )
 
-        d = s_outward * line_radius - eps - (abs_relief if not raised else 0.0)
+        d = s_outward * char_radius - eps - (abs_relief if not raised else 0.0)
         glyph_pos = (
-            axis_origin[0] + d * radial[0] + line_at_z * axis[0],
-            axis_origin[1] + d * radial[1] + line_at_z * axis[1],
-            axis_origin[2] + d * radial[2] + line_at_z * axis[2],
+            axis_origin[0] + d * radial[0] + char_at_z * axis[0],
+            axis_origin[1] + d * radial[1] + char_at_z * axis[1],
+            axis_origin[2] + d * radial[2] + char_at_z * axis[2],
         )
         out.append(Translate(v=glyph_pos, child=oriented, source_location=loc))
     return out
@@ -968,6 +1129,9 @@ def add_text(
     at_radial=None,
     text_curvature=None,
     text_orient="axial",
+    text_dir="circumferential",
+    rotate_glyphs=False,
+    flip=False,
     font=None,
     halign="center",
     valign="center",
@@ -1055,6 +1219,48 @@ def add_text(
             f"add_text: text_curvature must be 'arc', 'flat', or None "
             f"(default), got {text_curvature!r}."
         )
+    if text_dir not in ("circumferential", "axial"):
+        raise ValidationError(
+            f"add_text: text_dir must be 'circumferential' or 'axial', "
+            f"got {text_dir!r}."
+        )
+    if not isinstance(rotate_glyphs, bool):
+        raise ValidationError(
+            f"add_text: rotate_glyphs must be a bool, got {type(rotate_glyphs).__name__}."
+        )
+    if not isinstance(flip, bool):
+        raise ValidationError(
+            f"add_text: flip must be a bool, got {type(flip).__name__}."
+        )
+
+    # text_dir / rotate_glyphs / flip apply only to curved walls
+    # (cylindrical / conical / meridional). On planar surfaces — flat
+    # faces or rim anchors — pass them and they'd silently no-op, which
+    # is the worst kind of failure mode. Reject with a clear error.
+    if placement_anchor.kind not in ("cylindrical", "conical", "meridional"):
+        if text_dir == "axial":
+            raise ValidationError(
+                f"add_text: text_dir='axial' requires a cylindrical, conical, "
+                f"or meridional anchor (a curved wall with an axis to follow); "
+                f"got kind={placement_anchor.kind!r}. On a planar surface, "
+                f"rotate the host instead."
+            )
+        if rotate_glyphs:
+            raise ValidationError(
+                f"add_text: rotate_glyphs=True applies only to curved walls "
+                f"(cylindrical / conical / meridional); got "
+                f"kind={placement_anchor.kind!r}. On a planar surface, "
+                f"rotate the host with .rotate([0, 0, 90]) instead. On a rim, "
+                f"this combination isn't supported yet."
+            )
+        if flip:
+            raise ValidationError(
+                f"add_text: flip=True applies only to curved walls "
+                f"(cylindrical / conical / meridional); got "
+                f"kind={placement_anchor.kind!r}. On a planar or rim anchor, "
+                f"flip the host with .mirror() or use the existing halign / "
+                f"meridian kwargs to reverse reading order."
+            )
 
     # 2. Dispatch by surface kind.
     if placement_anchor.kind == "planar":
@@ -1150,6 +1356,7 @@ def add_text(
             meridian, at_z,
             halign, valign, line_spacing,
             text_orient,
+            text_dir, rotate_glyphs, flip,
             text_kwargs, loc,
         )
 

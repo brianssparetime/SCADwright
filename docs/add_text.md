@@ -137,6 +137,49 @@ Axial offset from the wall's midpoint, in mm. Default `0` (mid-wall). Positive m
 
 A label longer than the cylinder's circumference still works, but you get a warning that it wraps all the way around and glyphs will overlap.
 
+### Text direction and glyph rotation
+
+By default, the line of text wraps around the cylinder's axis (circumferentially) with letters upright. Three kwargs together select any of 8 layouts:
+
+- `text_dir=` — `"circumferential"` (default, line wraps around the axis) or `"axial"` (line runs along the axis, glyphs stack at successive `at_z` values).
+- `rotate_glyphs=` — `False` (default) or `True`. When True, each glyph is rotated 90° in the surface tangent plane.
+- `flip=` — `False` (default) or `True`. When True, the layout is rotated 180° (line direction reverses and glyphs flip upside-down).
+
+| `text_dir` | `rotate_glyphs` | `flip` | Result |
+|---|---|---|---|
+| `"circumferential"` | `False` | `False` | Default: letters upright, line wraps around |
+| `"circumferential"` | `False` | `True` | Letters upside-down, line wraps the other way |
+| `"circumferential"` | `True` | `False` | Letters lying on their backs, line wraps around |
+| `"circumferential"` | `True` | `True` | Letters lying on their backs, line wraps other way |
+| `"axial"` | `False` | `False` | Letters upright, line runs top-to-bottom along the axis |
+| `"axial"` | `False` | `True` | Letters upside-down, line runs bottom-to-top |
+| `"axial"` | `True` | `False` | Letters rotated 90° CCW, line runs top-to-bottom (the wine-bottle label case) |
+| `"axial"` | `True` | `True` | Letters rotated 90° CW, line runs bottom-to-top |
+
+```python
+# Wine-bottle vertical label on a barrel — read by laying the bottle on its side.
+barrel.add_text(label="MERLOT", relief=-0.4, on="outer_wall", font_size=5,
+                text_dir="axial", rotate_glyphs=True)
+
+# Vertical column of upright letters along the axis (matches the multi-line trick of "M\nE\nR\nL\nO\nT").
+cyl.add_text(label="UP", relief=0.4, on="outer_wall", font_size=4,
+             text_dir="axial")
+```
+
+`text_dir="axial"` requires a curved-wall anchor (cylindrical, conical, or meridional) — there's no axis to follow on a flat face. On a planar surface, rotate the host instead.
+
+Multi-line works in both directions but the stacking axis swaps:
+
+- `text_dir="circumferential"` (default): lines stack along the surface axis (line 0 at higher z).
+- `text_dir="axial"`: lines stack circumferentially (line 0 at the smaller meridian, lines spread around the cylinder per `line_spacing`). The block warns if its total circumferential extent wraps past the cylinder.
+
+`halign` and `valign` semantics shift with `text_dir="axial"`:
+
+- `halign` controls per-character placement *within a line* — `"center"` centers chars around the line's `at_z`, `"left"` puts char 0 at `at_z` extending in the line direction (default top-to-bottom), `"right"` puts char N-1 at `at_z`.
+- `valign` controls block placement perpendicular to the line direction (i.e., circumferentially). `"center"` centers the block on `meridian`. `"top"` puts line 0 at `meridian` extending toward larger meridian; `"bottom"` and `"baseline"` put line N-1 at `meridian`. The "top"/"bottom" labels are mismatched to the actual circumferential layout — read them as "first-line edge" / "last-line edge."
+
+`text_dir`, `rotate_glyphs`, and `flip` only apply to curved walls. Passing them on a planar or rim anchor raises a clear error (the existing planar/rim placement is rotation-aware via the host's transform — use `.rotate()` / `.mirror()` on the host instead).
+
 ## Disk rims (cylinder/Tube/Funnel top and bottom)
 
 The flat top and bottom faces of `cylinder()`, `Tube`, and `Funnel` are circular rims. By default, text on a rim wraps along the circle:

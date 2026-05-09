@@ -223,6 +223,8 @@ cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)           
 cyl.add_text(label="ON",    relief=0.4, on="outer_wall", font_size=4, meridian="front")
 cyl.add_text(label="LOT",   relief=-0.3, on="outer_wall", font_size=3, at_z=-7)    # 7mm below mid-wall
 cyl.add_text(label="37",    relief=0.4, on="outer_wall", font_size=3, meridian=37) # numeric degrees CCW
+cyl.add_text(label="WINE",  relief=-0.4, on="outer_wall", font_size=5,
+             text_dir="axial", rotate_glyphs=True)                                  # vertical label, letters tilted 90°
 
 # Conical (Funnel and tapered cylinder primitives):
 funnel.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4)            # axial glyphs (default)
