@@ -85,6 +85,7 @@ env/
 # these are produced by `vsce package`, `npm install`, or running the
 # extension under VSCode's test runner — none of them belong in the repo).
 vscode/node_modules/
+vscode/package-lock.json
 vscode/*.vsix
 vscode/.vscode-test/
 vscode/out/
