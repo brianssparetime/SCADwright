@@ -26,7 +26,7 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
  - [automated tests](#16-you-know-if-a-part-has-changed)
  - parts [know their own bounding box](#9-parts-know-their-bounds-without-needing-to-render-allowing-print-bed-tests-and-overlap-tests) without rendering — print-bed checks, overlap tests
  - `$fn` is [managed automatically](#14-resolution-fn-is-managed-for-you-but-easily-overridable), but easy to override
- - [manufacturing fudges](#15-manufacturing-specific-fudges-are-easy-to-add-track-and-keep-separate-from-design-considerations) (clearances, slop) tracked separately from design dimensions
+ - [manufacturing fudges](#15-manufacturing-specific-fudges-are-easy-to-add-track-and-keep-separate-from-design-considerations) (extra clearances, material variance) are tunable, without interfering with finished-part design dimensions
 
  and more.
 
