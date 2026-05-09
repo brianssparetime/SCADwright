@@ -1,6 +1,6 @@
 """A 3D-printable rocket on a coiled-spring stand — scadwright brag.
 
-Total: ~45 lines of code in scadwright; ~325 in equivalent OpenSCAD.
+Total: ~57 lines of code in scadwright; ~340 in equivalent OpenSCAD.
 
 By component (scadwright / openscad):
 
@@ -12,9 +12,10 @@ By component (scadwright / openscad):
 - Base plate (filleted cube):               ~3  / ~10
 - Bolt-holes (M2 counterbores from ISO
   spec + 2x2 linear_copy + through()):      ~7  / ~25
-- Engraving (curved-meridian add_text):     ~4  / ~50
+- Engravings (two curved-meridian add_text
+  calls — SCAD-1 + two-line punchline):     ~9  / ~70
 
-Average: 7-8x reduction.
+Average: 6x reduction.
 
 Showcases:
 
@@ -106,10 +107,19 @@ fin = fin_blank.attach(
 ).left(fin_fillet)
 fins = fin.rotate_copy(angle=120, n=3, axis=[0, 0, 1])
 
-# Engraved label wraps around the cylinder.
+# Engraved labels: SCADwright wraps the +X meridian; on the opposite
+# side the two-line punchline runs axially (text_dir="axial",
+# rotate_glyphs=True — the wine-bottle case), lines stacking
+# circumferentially via \n.
 labeled_body = body.add_text(
-    label="SCAD-1", on="outer_wall", meridian=0,
+    label="SCADwright", on="outer_wall", meridian=0,
     font_size=4, spacing=1.6, relief=-0.4,
+).add_text(
+    label="Can your SCAD do\nthis in ~50 lines?",
+    on="outer_wall", meridian=180,
+    text_dir="axial", rotate_glyphs=True,
+    font_size=3, line_spacing=1.5, relief=-0.4,
+    spacing=1.4
 )
 
 rocket = union(labeled_body, nose, stand, fins, nozzle)
