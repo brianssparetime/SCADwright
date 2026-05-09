@@ -225,15 +225,16 @@ def _resolve_font_path(font: str | None) -> str | None:
         return None
 
     # Treat as an OpenSCAD font-pattern string (`"Family"` or
-    # `"Family:style=Bold"`). System-font indexing isn't implemented yet —
-    # warn the user how to opt in.
+    # `"Family:style=Bold"`). Currently only absolute paths resolve;
+    # named-font lookup needs a fontconfig-style index that scadwright
+    # doesn't ship. OpenSCAD itself will still render the label in the
+    # requested font — only the per-glyph spacing falls back to heuristic.
     _warn_once(
         font, "name-resolution-unsupported",
-        f"add_text: font name {font!r} cannot be resolved by scadwright "
-        f"(name-based system font lookup isn't implemented). Pass an "
-        f"absolute .ttf path for proportional spacing, or accept the "
-        f"heuristic for this font. OpenSCAD will still render the label "
-        f"in the requested font.",
+        f"add_text: scadwright can only resolve fonts by absolute path; "
+        f"{font!r} falls back to the 0.6*size heuristic for spacing. "
+        f"For proportional spacing pass an absolute .ttf/.otf path; the "
+        f"label still renders in the requested font.",
     )
     return None
 

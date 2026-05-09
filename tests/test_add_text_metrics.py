@@ -196,7 +196,7 @@ class TestRealMetrics:
             )
         assert adv[0] == _HEURISTIC_AVG_ADVANCE * 4.0
         msgs = [r.getMessage() for r in caplog.records]
-        assert any("name-based system font lookup" in m for m in msgs), msgs
+        assert any("resolve fonts by absolute path" in m for m in msgs), msgs
 
     def test_font_name_warns_once_per_font(self, caplog):
         with caplog.at_level(logging.WARNING, logger="scadwright.add_text.metrics"):
@@ -205,7 +205,7 @@ class TestRealMetrics:
             get_advances(("C",), font="Other Family", size=4.0, spacing=1.0)
             get_advances(("D",), font="Other Family", size=4.0, spacing=1.0)
         msgs = [r.getMessage() for r in caplog.records]
-        name_warnings = [m for m in msgs if "name-based system font lookup" in m]
+        name_warnings = [m for m in msgs if "resolve fonts by absolute path" in m]
         assert len(name_warnings) == 2, f"expected one warning per font, got {msgs}"
 
 

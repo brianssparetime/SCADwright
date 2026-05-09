@@ -338,7 +338,7 @@ pip install scadwright[curved-text]
 
 That pulls in `freetype-py` and queries the font for per-glyph advance widths at emit time. Output is still pure SCAD — the metrics drive *placement*; OpenSCAD still rasterizes the glyphs.
 
-`font=None` resolves Liberation Sans Regular from known install locations (the OpenSCAD app bundle on macOS / Windows; system locations on Linux). Absolute font paths are loaded directly. OpenSCAD-style font name patterns like `"DejaVu Sans:style=Bold"` aren't yet resolved by scadwright — those fall back to the heuristic with a one-time warning suggesting an absolute path. OpenSCAD will still render the label in the requested font; only the *spacing* uses the heuristic.
+`font=None` resolves Liberation Sans Regular from known install locations (the OpenSCAD app bundle on macOS / Windows; system locations on Linux). Absolute font paths are loaded directly. **Named-font lookup is not implemented**: passing `"DejaVu Sans"` or `"DejaVu Sans:style=Bold"` falls back to the heuristic (with a one-time warning) because scadwright doesn't ship a fontconfig-style index. Pass an absolute `.ttf` / `.otf` path for proportional spacing with a non-default font. OpenSCAD itself still renders the label in the requested font — the fallback only affects the per-glyph *placement* math.
 
 `valign="center"` is rejected on curved walls and rim arcs because per-glyph centering on different bbox heights produces visible vertical jitter (a tall `t`, an `i` whose ink starts above zero, and a `g` with a descender all sit at different visual heights). Default `"baseline"` aligns every glyph to a common baseline; use `"top"` or `"bottom"` for block-level alignment in multi-line labels.
 
