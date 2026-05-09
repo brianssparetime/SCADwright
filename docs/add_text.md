@@ -282,9 +282,9 @@ Baseline-to-baseline distance, expressed as a multiple of `font_size`. Default `
 
 For a multi-line label, `valign` positions the *whole block* on the face:
 
-- `"center"` — block center on the face center / wall mid / rim default radius. Default on flat planar faces; rejected on curved walls and rim arcs.
+- `"center"` (default) — block center on the face center / wall mid / rim default radius.
 - `"top"` — top of line 0 sits at the face anchor.
-- `"bottom"` / `"baseline"` — bottom of the last line sits at the face anchor. Default on curved walls and rim arcs.
+- `"bottom"` / `"baseline"` — bottom of the last line sits at the face anchor.
 
 `halign=` is applied per-line as supplied.
 
@@ -340,7 +340,20 @@ That pulls in `freetype-py` and queries the font for per-glyph advance widths at
 
 `font=None` resolves Liberation Sans Regular from known install locations (the OpenSCAD app bundle on macOS / Windows; system locations on Linux). Absolute font paths are loaded directly. **Named-font lookup is not implemented**: passing `"DejaVu Sans"` or `"DejaVu Sans:style=Bold"` falls back to the heuristic (with a one-time warning) because scadwright doesn't ship a fontconfig-style index. Pass an absolute `.ttf` / `.otf` path for proportional spacing with a non-default font. OpenSCAD itself still renders the label in the requested font — the fallback only affects the per-glyph *placement* math.
 
-`valign="center"` is rejected on curved walls and rim arcs because per-glyph centering on different bbox heights produces visible vertical jitter (a tall `t`, an `i` whose ink starts above zero, and a `g` with a descender all sit at different visual heights). Default `"baseline"` aligns every glyph to a common baseline; use `"top"` or `"bottom"` for block-level alignment in multi-line labels.
+Per-glyph `text()` calls on curved walls and rim arcs always emit with `valign="baseline"` regardless of the user's `valign` kwarg. Mixed-height glyphs (a tall `t`, an `i` whose ink starts above zero, a `g` with a descender) all share a baseline this way; per-glyph "center" alignment would jitter them at different visual heights. The user's `valign` still governs *block* placement on multi-line labels.
+
+### Calibration override
+
+The default per-glyph advance widths match OpenSCAD's flat `text()` rendering for typical Latin fonts (the empirical `1.5 × ascender / units_per_EM` factor). If you hit a font where the default packs glyphs too tightly or too loosely, scope an override:
+
+```python
+import scadwright as sw
+
+with sw.text_advance_calibration(1.6):
+    plate.add_text(label="…", on="outer_wall", font_size=4, …)
+```
+
+Pass `1.0` to revert to bare em-relative scaling (about 26% tighter than OpenSCAD's natural layout). The override stacks with `add_text(spacing=…)` multiplicatively. Has no effect when `freetype-py` isn't installed (the heuristic fallback uses a flat `0.6 * font_size * spacing` per glyph).
 
 ## Other `text()` options
 
@@ -376,7 +389,7 @@ plate.add_text(
 | `line_spacing` | multi-line only | Baseline-to-baseline distance as a multiple of `font_size`. Default `1.2`. |
 | `font` | no | Font family/style. |
 | `halign` | no | `"left" \| "center" \| "right"` (default `"center"`). |
-| `valign` | no | `"top" \| "center" \| "baseline" \| "bottom"`. Default is `"center"` on flat planar surfaces and `"baseline"` on curved walls and rim arcs. Passing `"center"` on a curved wall or rim arc raises an error — see "Glyph spacing on curved walls" below. |
+| `valign` | no | `"top" \| "center" \| "baseline" \| "bottom"` (default `"center"`). On planar faces this controls per-text vertical alignment. On curved walls and rim arcs the per-glyph `text()` is always emitted with `valign="baseline"` (per-glyph centering would jitter on mixed-height glyphs); the user's `valign` only governs *block* placement on multi-line labels there. |
 | `spacing` | no | Glyph-advance multiplier (default `1.0`). |
 | `direction` | no | `"ltr" \| "rtl" \| "ttb" \| "btt"`. |
 | `language`, `script` | no | Same as on the 2D `text()` factory. |

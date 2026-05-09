@@ -91,14 +91,16 @@ class TestRealMetrics:
         assert adv[0] < adv[1] * 0.5, f"expected i << W, got {adv}"
 
     def test_advances_match_known_values(self, bundled_font_path):
-        # Sanity-check a few specific values against Liberation Sans 2.00.1.
-        # These ride on a stable bundled font; if the font ever changes,
-        # the numbers update with it.
+        # Sanity-check a specific value against Liberation Sans 2.00.1.
+        # The default calibration (1.5 × ascender / EM) makes our advances
+        # match OpenSCAD's flat text() rendering: at size=4, OpenSCAD
+        # measured i.advance = 1.205 mm (verified against STL bbox of
+        # ``text("ii") - text("i")``). If the font ever changes, the
+        # numbers update with it.
         adv = get_advances(
             ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
         )
-        # 'i' in Liberation Sans 2.00.1 is 455 / 2048 EM × 4 mm ≈ 0.889 mm.
-        assert adv[0] == pytest.approx(0.889, abs=0.01)
+        assert adv[0] == pytest.approx(1.205, abs=0.01)
 
     def test_size_scales_real_advance(self, bundled_font_path):
         a4 = get_advances(("M",), font=bundled_font_path, size=4.0, spacing=1.0)
@@ -224,85 +226,92 @@ def _emit(node):
 
 
 class TestValignDispatch:
-    """``valign`` resolution and rejection at the dispatch level."""
+    """``valign`` resolution at the dispatch level.
 
-    def test_curved_default_is_baseline(self):
-        # Default valign on a cylindrical wall should resolve to "baseline".
-        # The OpenSCAD ``text()`` default is also baseline, so no halign/valign
-        # arg appears at all in the emitted text() call.
+    Default is ``"center"`` everywhere (planar and curved). On curved walls
+    and rim arcs per-glyph emit is always ``halign="left"`` /
+    ``valign="baseline"``, so the user's ``valign`` only governs *block*
+    placement on multi-line labels; on single-line it has no effect (the
+    line stacks at offset 0). All four valign values are accepted on every
+    host kind.
+    """
+
+    def test_curved_per_glyph_emit_is_left_baseline(self):
+        # Regardless of user's valign, per-glyph emit on curved hosts uses
+        # halign="left" + valign="baseline" — both OpenSCAD defaults, elided
+        # in the emitter. The user's valign at most governs block placement
+        # for multi-line; per-glyph emit is fixed.
+        for vk in (None, "center", "top", "bottom", "baseline"):
+            kwargs = {"valign": vk} if vk is not None else {}
+            scad = _emit(
+                cylinder(h=20, r=10).add_text(
+                    label="X", relief=0.4, on="outer_wall", font_size=4,
+                    **kwargs,
+                )
+            )
+            assert 'valign="center"' not in scad, (vk, scad)
+            assert 'halign="center"' not in scad, (vk, scad)
+            assert 'text("X", size=4)' in scad, (vk, scad)
+
+    def test_curved_explicit_valign_center_accepted(self):
+        # No rejection — block-level center is sensible for multi-line and
+        # the per-glyph emit is forced baseline anyway.
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="X", relief=0.4, on="outer_wall", font_size=4,
+                valign="center",
             )
         )
-        # No explicit valign in the per-glyph text() call (baseline is the
-        # OpenSCAD default and the emitter omits it).
-        assert 'valign="center"' not in scad
-        assert 'valign="baseline"' not in scad
-        # And halign="left" is also the default, so it's omitted too.
-        assert 'halign="center"' not in scad
-        assert 'text("X", size=4)' in scad
+        assert 'text("X"' in scad
 
-    def test_curved_explicit_valign_center_rejected(self):
-        # add_text is a custom transform — validation happens at emit time
-        # when the body actually expands, not at call time.
-        node = cylinder(h=20, r=10).add_text(
-            label="X", relief=0.4, on="outer_wall", font_size=4,
-            valign="center",
-        )
-        with pytest.raises(ValidationError, match="valign='center' is not supported"):
-            _emit(node)
-
-    def test_conical_explicit_valign_center_rejected(self):
-        node = cylinder(h=20, r1=10, r2=4).add_text(
-            label="X", relief=0.4, on="outer_wall", font_size=4,
-            valign="center",
-        )
-        with pytest.raises(ValidationError, match="valign='center' is not supported"):
-            _emit(node)
-
-    def test_inner_wall_explicit_valign_center_rejected(self):
-        node = Tube(h=30, od=24, thk=2).add_text(
-            label="X", relief=0.4, on="inner_wall", font_size=4,
-            valign="center",
-        )
-        with pytest.raises(ValidationError, match="valign='center' is not supported"):
-            _emit(node)
-
-    def test_rim_arc_explicit_valign_center_rejected(self):
-        # A cylinder top with default text_curvature is a rim arc.
-        node = cylinder(h=10, r=15).add_text(
-            label="X", relief=0.4, on="top", font_size=4,
-            valign="center",
-        )
-        with pytest.raises(ValidationError, match="valign='center' is not supported"):
-            _emit(node)
-
-    def test_planar_default_valign_unchanged_center(self):
-        # A flat planar face still defaults to valign="center" because the
-        # whole label emits as one text() call, where "center" works.
+    def test_conical_explicit_valign_center_accepted(self):
         scad = _emit(
-            cube([20, 20, 4], center="xy").add_text(
-                label="X", relief=0.4, on="top", font_size=4,
+            cylinder(h=20, r1=10, r2=4).add_text(
+                label="X", relief=0.4, on="outer_wall", font_size=4,
+                valign="center",
             )
         )
-        # Single-line planar emit forwards the resolved valign into text();
-        # OpenSCAD's text() default is "baseline", so "center" appears.
-        assert 'valign="center"' in scad
+        assert 'text("X"' in scad
 
-    def test_planar_explicit_valign_center_accepted(self):
-        # Planar still allows explicit "center" — validation only fires on curved/rim.
+    def test_inner_wall_explicit_valign_center_accepted(self):
         scad = _emit(
-            cube([20, 20, 4], center="xy").add_text(
+            Tube(h=30, od=24, thk=2).add_text(
+                label="X", relief=0.4, on="inner_wall", font_size=4,
+                valign="center",
+            )
+        )
+        assert 'text("X"' in scad
+
+    def test_rim_arc_explicit_valign_center_accepted(self):
+        scad = _emit(
+            cylinder(h=10, r=15).add_text(
                 label="X", relief=0.4, on="top", font_size=4,
                 valign="center",
             )
         )
+        assert 'text("X"' in scad
+
+    def test_planar_default_is_center(self):
+        # A flat planar face emits one whole-line text() with valign="center".
+        scad = _emit(
+            cube([20, 20, 4], center="xy").add_text(
+                label="X", relief=0.4, on="top", font_size=4,
+            )
+        )
         assert 'valign="center"' in scad
+
+    def test_planar_explicit_valign_top_overrides_default(self):
+        scad = _emit(
+            cube([20, 20, 4], center="xy").add_text(
+                label="X", relief=0.4, on="top", font_size=4,
+                valign="top",
+            )
+        )
+        assert 'valign="top"' in scad
 
     def test_rim_arc_flat_curvature_default_center(self):
         # text_curvature="flat" on a rim takes the planar (whole-line) path,
-        # so valign default reverts to "center".
+        # which forwards valign into the single text() call.
         scad = _emit(
             cylinder(h=10, r=15).add_text(
                 label="X", relief=0.4, on="top", font_size=4,
@@ -311,15 +320,23 @@ class TestValignDispatch:
         )
         assert 'valign="center"' in scad
 
-    def test_rim_arc_flat_curvature_explicit_center_accepted(self):
-        # And explicit valign="center" on flat-curvature rim is accepted.
+    def test_curved_multiline_center_centers_block(self):
+        # valign="center" on a multi-line curved label centers the block
+        # axially around at_z=0 — line 0 above, line 1 below by equal amounts.
         scad = _emit(
-            cylinder(h=10, r=15).add_text(
-                label="X", relief=0.4, on="top", font_size=4,
-                text_curvature="flat", valign="center",
+            cylinder(h=40, r=10).add_text(
+                label="A\nB", relief=0.4, on="outer_wall", font_size=4,
+                valign="center",
             )
         )
-        assert 'valign="center"' in scad
+        positions = _glyph_translates_3d(scad)
+        # Two glyphs (one per line). Their z-coords should be symmetric
+        # around the cylinder's mid-wall (z=20) since the cylinder bottom
+        # is at z=0 by default.
+        assert len(positions) == 2
+        zs = sorted(p[2] for p in positions)
+        center = (zs[0] + zs[1]) / 2.0
+        assert center == pytest.approx(20.0, abs=0.05)
 
 
 class TestPerGlyphEmission:
@@ -440,10 +457,12 @@ class TestAxialModeUsesProportionalAdvances:
     proportional, not uniform."""
 
     def test_iWi_axial_offsets_reflect_real_advances(self, bundled_font_path):
-        # "iWi" on a cylinder with axial layout. Liberation Sans 2.00.1 advances
-        # at size=4: i ~ 0.889mm, W ~ 3.775mm. Centers (halign=center) are
-        # [-(W/2 + i/2), 0, +(W/2 + i/2)] = [-2.332, 0, +2.332] in axial mm,
-        # times sign=-1 → z offsets [+2.332, 0, -2.332] from line center (z=10).
+        # "iWi" on a cylinder with axial layout. Liberation Sans 2.00.1
+        # advances at size=4 with default calibration: i ≈ 1.21mm, W ≈ 5.13mm
+        # (matches OpenSCAD's flat text() rendering). Centers (halign=center)
+        # are [-(W/2 + i/2), 0, +(W/2 + i/2)] = [-3.17, 0, +3.17] in axial
+        # mm, times sign=-1 → z offsets [+3.17, 0, -3.17] from line centre
+        # (z=10). Step between adjacent glyphs is (i + W) / 2 ≈ 3.17mm.
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
@@ -453,16 +472,13 @@ class TestAxialModeUsesProportionalAdvances:
         positions = _glyph_translates_3d(scad)
         assert len(positions) == 3
         zs = sorted(p[2] for p in positions)
-        # Step between adjacent z is (W + i)/2 ≈ 2.332mm — much smaller than
-        # the heuristic 2.4mm per glyph and much different from a uniform
-        # 0.6*4=2.4mm step. The exact font metrics tie this to Liberation Sans.
         step_lo = zs[1] - zs[0]
         step_hi = zs[2] - zs[1]
         assert step_lo == pytest.approx(step_hi, abs=0.01), (
             f"i-W-i is symmetric, expected equal steps, got {zs}"
         )
-        assert step_lo == pytest.approx(2.332, abs=0.05), (
-            f"expected step ≈ 2.332mm (advance midpoint of i+W), got {step_lo}"
+        assert step_lo == pytest.approx(3.167, abs=0.05), (
+            f"expected step ≈ 3.17mm (advance midpoint of i+W), got {step_lo}"
         )
 
 
@@ -475,11 +491,10 @@ class TestConicalAxialCumulativeRadius:
     def test_cone_axial_per_glyph_radius_tracks_cumulative_at_z(self, bundled_font_path):
         # Tapered cylinder: r1=10 at bottom, r2=4 at top, h=20. r_mid=7,
         # slope = (4-10)/20 = -0.3. So local radius at at_z is 7 + at_z*-0.3.
-        # With "iWi" axial centered, char positions at_z = +2.332, 0, -2.332
-        # (sign=-1 default flip=False; char 0 at top, char 2 at bottom).
-        # Local radius: top char = 7 - 0.7 = 6.3; mid = 7; bottom = 7.7.
-        # Each glyph's translate.x ≈ local_radius - eps (since axis_origin.x=0,
-        # radial=(1,0,0), eps=0.01).
+        # With "iWi" axial centered (default calibration matches OpenSCAD),
+        # char positions at_z = +3.167, 0, -3.167 (sign=-1 default flip=False;
+        # char 0 at top, char 2 at bottom). Local radius: top = 7 - 0.95 = 6.05;
+        # mid = 7; bottom = 7.95. Each glyph's translate.x ≈ local_radius - eps.
         scad = _emit(
             cylinder(h=20, r1=10, r2=4).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
@@ -491,16 +506,15 @@ class TestConicalAxialCumulativeRadius:
         # Sort by z descending (top first).
         positions.sort(key=lambda p: -p[2])
         top, mid, bot = positions
-        # Top char at z ≈ 12.332 (axis_origin.z=10 + 2.332).
-        # Local radius at top = 7 + 2.332 * -0.3 = 6.300.
-        assert top[2] == pytest.approx(12.332, abs=0.05)
-        assert top[0] == pytest.approx(6.30 - 0.01, abs=0.05)
+        # Top char at z ≈ 13.167. Local radius = 7 + 3.167 × -0.3 ≈ 6.05.
+        assert top[2] == pytest.approx(13.167, abs=0.05)
+        assert top[0] == pytest.approx(6.05 - 0.01, abs=0.05)
         # Mid at z=10, radius=7.
         assert mid[2] == pytest.approx(10.0, abs=0.05)
         assert mid[0] == pytest.approx(7.0 - 0.01, abs=0.05)
-        # Bottom at z ≈ 7.668, radius = 7 + (-2.332)*-0.3 = 7.700.
-        assert bot[2] == pytest.approx(7.668, abs=0.05)
-        assert bot[0] == pytest.approx(7.70 - 0.01, abs=0.05)
+        # Bottom at z ≈ 6.833, radius = 7 + (-3.167)*-0.3 ≈ 7.95.
+        assert bot[2] == pytest.approx(6.833, abs=0.05)
+        assert bot[0] == pytest.approx(7.95 - 0.01, abs=0.05)
 
 
 @pytest.mark.freetype
@@ -535,9 +549,10 @@ class TestRimArcCumulativeOffsets:
             f"iWi is a palindrome, expected equal angular steps, got {thetas}"
         )
         # Step magnitude: theta_step = (i_advance + W_advance) / 2 / path_radius.
-        # Liberation Sans at size=4: i=0.889mm, W=3.775mm; step ≈ 2.332/11 ≈ 0.2120 rad.
-        assert step_lo == pytest.approx(0.2120, abs=0.005), (
-            f"expected step ≈ 0.212 rad, got {step_lo}"
+        # Liberation Sans at size=4 with default calibration: i ≈ 1.21mm,
+        # W ≈ 5.13mm; step ≈ 3.167/11 ≈ 0.288 rad.
+        assert step_lo == pytest.approx(0.288, abs=0.005), (
+            f"expected step ≈ 0.288 rad, got {step_lo}"
         )
 
 
@@ -587,13 +602,101 @@ class TestProportionalSpacingIntegration:
                 font=bundled_font_path,
             )
         )
-        # Liberation Sans 2.00.1 advances at size=4: i ~ 0.889mm, W ~ 3.775mm.
-        # Pre-translate per glyph is -advance/2 in the 2D frame. Don't assert
-        # exact byte values (that would tie the test to a specific float-format
-        # of the rendering), but both must be present and distinct.
+        # Liberation Sans at size=4 with default calibration: i ≈ 1.21mm,
+        # W ≈ 5.13mm. Pre-translate per glyph is -advance/2 in the 2D
+        # frame. Don't assert exact byte values (that would tie the test to
+        # a specific float-format of the rendering); both must be present
+        # and distinct.
         import re
         translates = re.findall(r"translate\(\[(-?\d+\.\d+), 0, 0\]\)", scad)
         vals = sorted({float(t) for t in translates if float(t) < 0})
         assert len(vals) >= 2, (
             f"expected distinct per-glyph 2D pre-translates, got {translates}"
         )
+
+
+@pytest.mark.freetype
+class TestAdvanceCalibration:
+    """``text_advance_calibration`` context manager scales advance widths."""
+
+    def test_default_matches_openscad(self, bundled_font_path):
+        # No calibration override: advances match OpenSCAD's flat layout
+        # for Liberation Sans (verified empirically).
+        adv = get_advances(
+            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+        )
+        assert adv[0] == pytest.approx(1.205, abs=0.01)
+
+    def test_override_below_one_packs_tighter(self, bundled_font_path):
+        from scadwright import text_advance_calibration
+
+        with text_advance_calibration(1.0):
+            # 1.0 reverts to bare em-relative scaling (no OpenSCAD-matching
+            # 1.5 multiplier), giving ~26% tighter advances.
+            adv = get_advances(
+                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            )
+        assert adv[0] == pytest.approx(0.804, abs=0.01)
+
+    def test_override_above_default_loosens(self, bundled_font_path):
+        from scadwright import text_advance_calibration
+
+        with text_advance_calibration(3.0):
+            # 2× the default 1.5 factor → 2× the default advance.
+            adv = get_advances(
+                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            )
+        # Default is 1.205; doubling the calibration doubles the advance.
+        assert adv[0] == pytest.approx(2.41, abs=0.02)
+
+    def test_override_resets_after_block(self, bundled_font_path):
+        from scadwright import text_advance_calibration
+
+        before = get_advances(
+            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+        )
+        with text_advance_calibration(1.0):
+            pass
+        after = get_advances(
+            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+        )
+        assert before == after
+
+    def test_override_nests(self, bundled_font_path):
+        from scadwright import text_advance_calibration
+
+        outer = []
+        inner = []
+        with text_advance_calibration(1.0):
+            outer.append(get_advances(
+                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            )[0])
+            with text_advance_calibration(3.0):
+                inner.append(get_advances(
+                    ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+                )[0])
+            outer.append(get_advances(
+                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            )[0])
+        assert outer[0] == outer[1]  # restored on exit of inner
+        assert inner[0] != outer[0]
+
+
+def test_text_advance_calibration_rejects_non_positive():
+    from scadwright import text_advance_calibration
+    with pytest.raises(ValueError, match="positive"):
+        with text_advance_calibration(0):
+            pass
+    with pytest.raises(ValueError, match="positive"):
+        with text_advance_calibration(-1.5):
+            pass
+
+
+def test_text_advance_calibration_no_effect_on_heuristic():
+    # The calibration is for the freetype path; heuristic stays at 0.6 * size.
+    from scadwright import text_advance_calibration
+
+    base = get_advances(("X",), font=None, size=4.0, spacing=1.0)
+    with text_advance_calibration(2.0):
+        scaled = get_advances(("X",), font=None, size=4.0, spacing=1.0)
+    assert base == scaled

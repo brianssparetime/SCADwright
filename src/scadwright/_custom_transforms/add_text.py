@@ -1354,33 +1354,17 @@ def add_text(
                 f"meridian kwargs to reverse reading order."
             )
 
-    # Resolve `valign`. Curved walls and rim arcs emit one ``text()`` per
-    # glyph, where ``valign="center"`` centers each glyph's bbox on the
-    # baseline — but a tall ``t``, an ``i`` whose ink starts above zero,
-    # and a ``g`` with a descender all have different bbox heights, so
-    # per-glyph centering produces visible vertical jitter. The right
-    # answer is per-glyph baseline alignment. Reject explicit "center" on
-    # those hosts, and resolve the unset default to "baseline" there.
-    # Flat planar dispatch emits one whole-line ``text()`` so its
-    # ``valign="center"`` keeps working correctly — that path's default
-    # stays "center".
-    if placement_anchor.kind in ("cylindrical", "conical", "meridional"):
-        is_per_glyph = True
-    elif placement_anchor.kind == "planar":
-        _, is_per_glyph = _resolve_planar_curvature(placement_anchor, text_curvature)
-    else:
-        is_per_glyph = False
+    # `valign` resolution. Per-glyph emit on curved walls / rim arcs is
+    # always baseline-aligned (mixing per-glyph "center" with proportional
+    # font heights produced visible vertical jitter — a tall ``t``, an
+    # ``i`` whose ink starts above zero, and a ``g`` with a descender all
+    # sit at different visual heights when each glyph is centered on its
+    # own bbox). The user's `valign` controls *block* placement only on
+    # multi-line labels; on single-line the line stacks at offset 0 and
+    # the kwarg has no effect. Default is "center" (block centered on the
+    # face anchor) regardless of host kind — same convention as planar.
     if valign is _UNSET:
-        valign = "baseline" if is_per_glyph else "center"
-    elif is_per_glyph and valign == "center":
-        raise ValidationError(
-            "add_text: valign='center' is not supported on cylindrical, "
-            "conical, meridional, or rim-arc placements. Per-glyph "
-            "centering produces uneven baselines because each glyph's "
-            "bbox is sized to its own ink (a 't' is tall, an 'i' starts "
-            "above zero, a 'g' has a descender). Use 'baseline' "
-            "(default), 'top', or 'bottom'."
-        )
+        valign = "center"
 
     # 2. Dispatch by surface kind.
     if placement_anchor.kind == "planar":

@@ -113,13 +113,13 @@ fins = fin.rotate_copy(angle=120, n=3, axis=[0, 0, 1])
 # circumferentially via \n.
 labeled_body = body.add_text(
     label="SCADwright", on="outer_wall", meridian=0,
-    font_size=4, spacing=1.6, relief=-0.4,
+    font_size=4, spacing=1.2, relief=-0.4,
 ).add_text(
     label="Can your SCAD do\nthis in ~50 lines?",
     on="outer_wall", meridian=180,
     text_dir="axial", rotate_glyphs=True,
     font_size=3, line_spacing=1.5, relief=-0.4,
-    spacing=1.4
+    spacing=1.0,
 )
 
 rocket = union(labeled_body, nose, stand, fins, nozzle)

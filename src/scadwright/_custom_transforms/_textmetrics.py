@@ -36,6 +36,7 @@ from collections import OrderedDict
 from typing import Any
 
 from scadwright._logging import get_logger
+from scadwright.api.text_calibration import current_calibration
 
 
 _log = get_logger("scadwright.add_text.metrics")
@@ -100,6 +101,11 @@ def get_advances(
 
     font_key = _font_key_for_warnings(font)
     em = face.units_per_EM
+    # OpenSCAD's text(size=N) renders such that per-glyph advance is
+    # roughly (advance_units / EM) × size × calibration × ascender / EM.
+    # The calibration factor (default 1.5) is read each call so callers
+    # can override it via ``with text_advance_calibration(...)``.
+    per_font_factor = current_calibration() * face.ascender / em
     out: list[float] = []
     with _LOCK:
         for ch in chars:
@@ -123,7 +129,7 @@ def get_advances(
                 _CACHE[cache_key] = cached
             else:
                 _CACHE.move_to_end(cache_key)
-            out.append(cached * size * spacing)
+            out.append(cached * size * spacing * per_font_factor)
     return out
 
 
@@ -296,11 +302,13 @@ def _font_key_for_warnings(font: str | None) -> str:
 
 
 def _advance_em(face: Any, char: str) -> float:
-    """Read the advance for ``char`` from ``face`` in EM units (unitless).
+    """Read the advance for ``char`` from ``face`` as ``advance_units / EM``.
 
     Uses ``FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING`` so metrics come back in
     raw font units; division by ``units_per_EM`` yields the unitless value.
-    Multiplied by ``size * spacing`` at lookup time gives advance in mm.
+    The caller multiplies by ``size × spacing × per_font_factor`` (where
+    ``per_font_factor = calibration × ascender / EM``, default 1.5 ×
+    ascender / EM) to get advance in mm matching OpenSCAD's flat text().
 
     For chars the font lacks (``glyph_index == 0``), freetype loads the
     ``.notdef`` glyph and returns its advance — same behaviour OpenSCAD's
