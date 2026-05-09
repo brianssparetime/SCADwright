@@ -39,7 +39,9 @@ If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build1
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
 
-<a href="examples/rocket.py"><img src="examples/images/Rocket.png" alt="Rocket" width="320"></a>
+<p align="center">
+  <a href="examples/rocket.py"><img src="examples/images/Rocket.png" alt="Rocket" width="416"></a>
+</p>
 
 *Less than 60 lines of SCADwright gives you: parabolic ogive nose, bulged body, three parabolic-swept fins with rounded edges, a flared nozzle, a tapered helicoid stem with an almond cross-section, a filleted M2-counterbored baseplate, and correctly spaced text (both raised and engraved) on a doubly curved surface.*
 
@@ -168,9 +170,7 @@ OpenSCAD has no built-in module library, only primitives.
 
 SCADwright offers a [shape library](docs/shapes/) with 50+ ready-made Components across geometric, mechanical, fastener, gear, and print-oriented categories.  These eliminate sub-tasks, so you don't have to roll your own tubes, rounded rectangles, screw holes, or look up M3 bolt head diameters, hex profiles, and clearance hole sizes each time. Did I mention gears?
 
-<p align="center">
-  <img src="docs/shapes/images/hero.png" alt="Shape library" width="130%">
-</p>
+![Shape library](docs/shapes/images/hero.png)
 
 ```python
 from scadwright.shapes import Tube, SpurGear, Bolt, HexNut, HoneycombPanel, Bearing
