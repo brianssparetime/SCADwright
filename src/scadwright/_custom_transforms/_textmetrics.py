@@ -161,9 +161,8 @@ def _resolve_face(font: str | None) -> Any:
     if ft is None:
         _warn_once(
             font_key, "freetype-missing",
-            "add_text: freetype-py is not installed; per-glyph spacing on "
-            "curved walls will use the 0.6*size heuristic. Install "
-            "scadwright[curved-text] for proportional spacing.",
+            "add_text: install scadwright[curved-text] for proportional "
+            "glyph spacing on curved walls; falling back to 0.6*size heuristic.",
         )
         with _LOCK:
             _FACE_CACHE[font_key] = None

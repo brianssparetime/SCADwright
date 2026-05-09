@@ -66,7 +66,7 @@ class TestHeuristicFallback:
             get_advances(("B",), font=None, size=4.0, spacing=1.0)
             get_advances(("C", "D"), font=None, size=4.0, spacing=1.0)
         msgs = [r.getMessage() for r in caplog.records]
-        missing = [m for m in msgs if "freetype-py is not installed" in m]
+        missing = [m for m in msgs if "scadwright[curved-text]" in m]
         assert len(missing) == 1, f"expected one missing-freetype warning, got {msgs}"
 
 

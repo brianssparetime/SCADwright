@@ -257,10 +257,10 @@ options (`font`, `halign`, `valign`, etc.) pass through.
 `valign` defaults to `"center"` on flat planar faces and `"baseline"` on
 curved walls and rim arcs (where per-glyph centering produces uneven
 baselines and is rejected). Curved walls and rim arcs emit one `text()`
-per glyph for surface-following layout, so per-glyph spacing follows a
+per glyph for surface-following layout, so per-glyph spacing uses a
 `0.6 * font_size` heuristic by default. Install
-`pip install scadwright[curved-text]` to use real font metrics via
-freetype-py for proportional spacing.
+`pip install scadwright[curved-text]` for real font metrics via
+freetype-py and proportional spacing.
 
 ## Preview modifiers &nbsp; &nbsp;[→ full](transformations.md#preview-modifiers)
 
