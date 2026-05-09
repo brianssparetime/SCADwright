@@ -36,6 +36,8 @@ The server only runs the analyzer on files whose URI ends with
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from lsprotocol import types as lsp
 from pygls.lsp.server import LanguageServer
@@ -70,7 +72,7 @@ from scadwright.lsp.hover import (
 from scadwright.lsp.positions import CursorInBlock, find_cursor_in_block
 from scadwright.lsp.rename import (
     TextEdit as ScTextEdit,
-    build_rename_edits,
+    build_workspace_rename_edits,
 )
 from scadwright.lsp.symbols import (
     DocumentSymbol as ScDocumentSymbol,
@@ -191,12 +193,19 @@ def _to_lsp_text_edit(edit: ScTextEdit) -> lsp.TextEdit:
 
 
 def _to_lsp_workspace_edit(
-    edits: list[ScTextEdit], uri: str,
+    edits_by_uri: dict[str, list[ScTextEdit]],
 ) -> lsp.WorkspaceEdit:
-    """Bundle a list of internal TextEdits keyed by document URI
-    into an LSP WorkspaceEdit."""
+    """Bundle per-URI TextEdit lists into an LSP WorkspaceEdit.
+
+    Files with empty edit lists are kept (LSP clients ignore them);
+    callers are free to prune beforehand if they prefer a tight
+    payload.
+    """
     return lsp.WorkspaceEdit(
-        changes={uri: [_to_lsp_text_edit(e) for e in edits]},
+        changes={
+            uri: [_to_lsp_text_edit(e) for e in edits]
+            for uri, edits in edits_by_uri.items()
+        },
     )
 
 
@@ -443,6 +452,7 @@ def _rename_for(
     file_col: int,
     new_name: str,
     uri: str,
+    project_root: Path | None = None,
 ) -> lsp.WorkspaceEdit | None:
     """Compute the LSP WorkspaceEdit for a rename request.
 
@@ -450,6 +460,12 @@ def _rename_for(
     not in any equations block, on a curated/type-tag name, or on
     a name the LSP doesn't own. The client interprets ``None`` as
     "rename not available here".
+
+    When ``project_root`` is supplied, the rename extends across
+    every project file that holds a ``Param`` of the source class
+    and references the target attribute. Without a project root
+    the rename stays same-file (the editor passes ``None`` when no
+    workspace folder applies).
     """
     located = _locate_cursor(source, file_line, file_col)
     if located is None:
@@ -457,10 +473,73 @@ def _rename_for(
     word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
     if word is None:
         return None
-    edits = build_rename_edits(located.block, word, new_name)
-    if edits is None:
+    file_path = _uri_to_path(uri)
+    if file_path is None:
         return None
-    return _to_lsp_workspace_edit(edits, uri)
+    edits_by_path = build_workspace_rename_edits(
+        located.block, file_path, word, new_name, project_root,
+    )
+    if edits_by_path is None:
+        return None
+    edits_by_uri = {
+        _path_to_uri(path): edits
+        for path, edits in edits_by_path.items()
+    }
+    return _to_lsp_workspace_edit(edits_by_uri)
+
+
+def _uri_to_path(uri: str) -> Path | None:
+    """Convert a ``file://`` URI to an absolute :class:`Path`, or
+    ``None`` for non-file schemes (e.g., the editor's untitled
+    documents). Cross-file rename can't apply to non-file URIs.
+    """
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        return None
+    return Path(unquote(parsed.path))
+
+
+def _path_to_uri(path: Path) -> str:
+    """Convert an absolute path back into a ``file://`` URI for
+    the LSP WorkspaceEdit's ``changes`` map.
+    """
+    return path.as_uri()
+
+
+def _workspace_root_for(
+    ls: LanguageServer, uri: str,
+) -> Path | None:
+    """Resolve the workspace folder containing ``uri``, or ``None``
+    when the editor opened the file outside any workspace folder
+    (single-file mode). Cross-file rename uses the returned path as
+    the project root; same-file rename is the fallback when this
+    returns ``None``.
+
+    Multi-root workspaces: the longest matching folder wins, so a
+    nested project takes precedence over its parent.
+    """
+    file_path = _uri_to_path(uri)
+    if file_path is None:
+        return None
+    best: Path | None = None
+    best_len = -1
+    folders = getattr(ls.workspace, "folders", None) or {}
+    for folder in folders.values():
+        folder_uri = getattr(folder, "uri", None)
+        if folder_uri is None:
+            continue
+        folder_path = _uri_to_path(folder_uri)
+        if folder_path is None:
+            continue
+        try:
+            file_path.relative_to(folder_path)
+        except ValueError:
+            continue
+        length = len(str(folder_path))
+        if length > best_len:
+            best = folder_path
+            best_len = length
+    return best
 
 
 def build_server() -> LanguageServer:
@@ -582,6 +661,7 @@ def build_server() -> LanguageServer:
             params.position.character,
             params.new_name,
             uri,
+            project_root=_workspace_root_for(ls, uri),
         )
 
     return server

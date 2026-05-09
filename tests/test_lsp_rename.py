@@ -1,10 +1,12 @@
-"""Tests for the same-file rename refactoring helper.
+"""Tests for the rename refactoring helpers.
 
-Covers Param-target rename (assignment + every reference),
-auto-declared-target rename, multi-occurrence on a single line,
-adjustment LHS handling, refusal cases (curated names, type-tag
-names, invalid new names, parse failures), and the position
-ranges of emitted edits.
+Covers same-file Param-target rename (assignment + every
+reference), auto-declared-target rename, multi-occurrence on a
+single line, adjustment LHS handling, refusal cases (curated
+names, type-tag names, invalid new names, parse failures), and
+the position ranges of emitted edits. The cross-file path
+(``build_workspace_rename_edits``) is exercised at the bottom of
+the file with synthetic project layouts under tmp_path.
 """
 
 from __future__ import annotations
@@ -342,3 +344,198 @@ def test_rename_target_across_multiple_hosts_in_same_class() -> None:
     assert len(edits) == 3
     # Edits on three distinct file lines.
     assert {e.start_line for e in edits} == {1, 3, 4}
+
+
+# =============================================================================
+# Cross-file rename via build_workspace_rename_edits
+# =============================================================================
+
+
+def _write(tmp_path, name, content):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def _block_in(file_path, class_name):
+    """Find an EquationsBlock by class name in a project file."""
+    blocks = find_equations_blocks(file_path.read_text())
+    for b in blocks:
+        if b.class_name == class_name:
+            return b
+    raise AssertionError(f"no equations block for class {class_name}")
+
+
+def test_workspace_rename_includes_same_file_edits(tmp_path) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    f = _write(tmp_path, "main.py", (
+        "from scadwright import Component, Param\n"
+        "class Cam(Component):\n"
+        "    width = Param(float)\n"
+        '    equations = "x = width"\n'
+    ))
+    block = _block_in(f, "Cam")
+    out = build_workspace_rename_edits(block, f, "width", "ww", tmp_path)
+    assert out is not None
+    assert f in out
+    assert len(out[f]) >= 2  # Param + reference
+
+
+def test_workspace_rename_picks_up_cross_file_equations_reference(
+    tmp_path,
+) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d * 2"\n'
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        '    equations = "y = spec.outer_d + 1"\n'
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    # Same-file edits in spec.py.
+    assert spec_file in out
+    # Cross-file edits in holder.py.
+    assert holder_file in out
+    holder_edits = out[holder_file]
+    assert len(holder_edits) == 1
+    edit = holder_edits[0]
+    assert edit.new_text == "outer_diameter"
+    # The edit replaces just the attr part; the file substring at
+    # that range must be the old attr name.
+    holder_lines = holder_file.read_text().splitlines()
+    line = holder_lines[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_picks_up_cross_file_build_reference(
+    tmp_path,
+) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d * 2"\n'
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        "    def build(self):\n"
+        "        return self.spec.outer_d\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert holder_file in out
+    holder_edits = out[holder_file]
+    # The self.spec.outer_d reference should produce one edit.
+    assert any(e.new_text == "outer_diameter" for e in holder_edits)
+    # Verify the edit lands on the actual attr range.
+    edit = holder_edits[0]
+    line = holder_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_ignores_unrelated_classes(tmp_path) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+    ))
+    # Another file has a class with same Param name but unrelated type.
+    other_file = _write(tmp_path, "other.py", (
+        "from scadwright import Spec, Param\n"
+        "class OtherSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "y = outer_d"\n'
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    # OtherSpec.outer_d is a different attribute on a different class;
+    # cross-file rename must not touch it.
+    assert other_file not in out
+
+
+def test_workspace_rename_no_project_root_is_same_file_only(
+    tmp_path,
+) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d * 2"\n'
+    ))
+    _write(tmp_path, "holder.py", (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        '    equations = "y = spec.outer_d + 1"\n'
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", project_root=None,
+    )
+    assert out is not None
+    # Without a project root, only the source file gets edits.
+    assert list(out.keys()) == [spec_file]
+
+
+def test_workspace_rename_param_local_name_is_same_file_only(
+    tmp_path,
+) -> None:
+    # Renaming a Component's OWN Param's local name (the name on
+    # the LHS of `name = Param(...)`) is not a cross-file change —
+    # other Components don't refer to it as <other>.<this_local>.
+    # The source-class itself is the only file that sees that name.
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    width = Param(float)\n"
+        '    equations = "x = width"\n'
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        '    equations = "y = spec.width + 1"\n'
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "width", "ww", tmp_path,
+    )
+    # Renaming the source class's Param `width` to `ww` should also
+    # update the cross-file `spec.width` in holder.py — that's the
+    # whole point of cross-file rename.
+    assert out is not None
+    assert holder_file in out

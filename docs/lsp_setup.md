@@ -7,7 +7,7 @@ SCADwright bundles a language server that surfaces six editor features for `equa
 - **Hover** on any name in an equations block: curated functions show signatures and brief descriptions; `Param`-declared names show their type, default, and `doc=` text; auto-declared targets show the equation line where they were first introduced.
 - **Goto-definition** on any name in an equations block: jumps to the `name = Param(...)` assignment for declared Params, or to the equation line that first introduces an auto-declared bare-Name target.
 - **Document symbols** for each Component class with an equations block: the outline view shows one entry per class with its declared Params nested underneath, so the file structure of a parametric model is scannable from the sidebar.
-- **Rename refactoring** on any renameable name inside an equations block: updates the `Param` assignment if applicable plus every reference inside the same class's equations strings, in one workspace edit.
+- **Rename refactoring** on any renameable name inside an equations block: updates the `Param` assignment if applicable, every reference inside the same class's equations strings, AND cross-file references of the form `<param_name>.<old_name>` (in equations) or `self.<param_name>.<old_name>` (in `build()` bodies) in any other Component holding a `Param` of the source class. Single workspace edit, same-file-only when the editor hasn't supplied a workspace folder.
 
 The server is the same code path the runtime uses, just invoked statically. No user code is imported — the analyzer parses the source via `ast.parse` and walks for `equations = ...` assignments.
 
@@ -220,13 +220,14 @@ Triggering rename (`F2` in many editors, `<leader>rn` in some Vim setups) on a n
 
 - The `name = Param(...)` (or `name: T = Param(...)`) assignment line, if the target is a declared Param. Just the name token is replaced; the rest of the assignment statement stays put.
 - Every occurrence of the name inside any of the surrounding class's equation, rule, and adjustment lines — including the LHS of an adjustment.
+- Cross-file: every other Component or Spec in the project that holds a `Param` whose type resolves to the source class. References of the form `<param_name>.<old_name>` (in equations strings) or `self.<param_name>.<old_name>` (in `build()` method bodies) are rewritten in place. The editor's workspace folders define the project scope; rename degrades to same-file when the editor hasn't supplied any.
 
 Curated names (`sin`, `pi`, ...) and inline type-tag names (`bool`, `int`, ...) are refused — the LSP doesn't own those identifiers. Renaming to a name that would collide with the curated namespace is also refused. If the equations block fails validation, rename is refused too: any edits we emit could be misaligned against an unparseable text.
 
 ## Limitations
 
 - Only `equations` blocks are analyzed. Errors elsewhere in the file are not surfaced by `scadwright lsp` — your editor's regular Python server (Pyright, Pylance, ruff-lsp, etc.) handles those.
-- Cross-file features (attribute completion across imported Component classes, rename across multiple files) are not implemented. Same-file only.
+- Cross-file attribute completion (typing `b.` to see B's Params) is same-file only — cross-file Param-type inference requires walking the project, similar to rename's cross-file pass, but isn't implemented yet.
 - The LSP does not evaluate the iterative resolver, so runtime-only errors (`cannot solve…`, `equation violated`, supplied-vs-missing kwargs) only appear when the script actually runs.
 
 ## Troubleshooting
