@@ -123,12 +123,14 @@ def _resolve_anchor_defs(instance):
             if hasattr(adef, "resolve_surface_params")
             else {}
         )
-        instance._anchors[name] = _Anchor(
+        a = _Anchor(
             position=pos,
             normal=normal,
             kind=getattr(adef, "kind", "planar"),
             **surface_kwargs,
         )
+        a._validate_geometry()
+        instance._anchors[name] = a
 
 
 def _make_param_init(cls, params: dict[str, Param]):

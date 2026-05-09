@@ -59,6 +59,10 @@ INSCRIPTION_MARGIN = 1e-3
 # Tolerance for "point inside bbox" (cutter overlap on Difference anchor
 # propagation).
 POINT_IN_BBOX_TOL = 1e-6
+# Tolerance for per-kind geometric self-consistency checks on Anchor
+# declarations (normal perpendicular to axis, position on sphere
+# surface, etc.). See ``Anchor._validate_geometry``.
+ANCHOR_GEOMETRY_TOL = 1e-3
 
 
 # --- User-tunable values -----------------------------------------------------

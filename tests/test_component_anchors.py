@@ -140,15 +140,16 @@ def test_unknown_custom_anchor_on_component_raises():
 
 
 def test_anchor_bad_expression_raises():
-    class Bad(Component):
-        x = Param(float, default=1)
-        oops = anchor(at="x, undefined_var, 0", normal=(0, 0, 1))
+    """Unknown name in anchor at= fires at class-definition time
+    (Component.__init_subclass__ validates expressions against
+    _spec_value_names), pointing at the offending name."""
+    with pytest.raises(ValidationError, match="undefined_var"):
+        class Bad(Component):  # noqa: F841 — the class statement raises
+            x = Param(float, default=1)
+            oops = anchor(at="x, undefined_var, 0", normal=(0, 0, 1))
 
-        def build(self):
-            return cube(1)
-
-    with pytest.raises(ValidationError, match="cannot evaluate"):
-        Bad()
+            def build(self):
+                return cube(1)
 
 
 # --- string-expression normal= ---
@@ -193,6 +194,9 @@ def test_anchor_normal_string_with_conditional():
 
 
 def test_anchor_normal_string_wrong_arity_raises():
+    """Wrong number of comma-separated expressions in normal= fires at
+    instance time — the class-load AST validator only checks names, not
+    the comma split, since `1, 0` is a valid 2-tuple expression."""
     class C(Component):
         equations = ["w > 0"]
         oops = anchor(at="0, 0, 0", normal="1, 0")  # only 2
@@ -203,13 +207,12 @@ def test_anchor_normal_string_wrong_arity_raises():
 
 
 def test_anchor_normal_string_undefined_name_raises():
-    class C(Component):
-        equations = ["w > 0"]
-        oops = anchor(at="0, 0, 0", normal="0, 0, missing_param")
-        def build(self): return cube([1, 1, 1])
-
-    with pytest.raises(ValidationError, match="cannot evaluate normal="):
-        C(w=2)
+    """Unknown name in anchor normal= also fires at class-definition time."""
+    with pytest.raises(ValidationError, match="missing_param"):
+        class C(Component):  # noqa: F841
+            equations = ["w > 0"]
+            oops = anchor(at="0, 0, 0", normal="0, 0, missing_param")
+            def build(self): return cube([1, 1, 1])
 
 
 # --- shape library anchors ---

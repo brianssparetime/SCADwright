@@ -266,15 +266,13 @@ def test_attach_custom_anchor_on_primitive_errors_with_guidance():
 
 
 def test_anchor_at_expr_unknown_symbol():
-    """anchor(at=...) referencing an undeclared name fails with the
-    offending name in the message."""
-    class C(Component):
-        equations = ["w, h > 0"]
-        bad = anchor(at="w/2, nonexistent, 0", normal=(0, 0, 1))
-        def build(self): return cube([1, 1, 1])
-
+    """anchor(at=...) referencing an undeclared name fails at class-
+    definition time with the offending name in the message."""
     with pytest.raises(ValidationError) as exc_info:
-        C(w=10, h=5)
+        class C(Component):  # noqa: F841 — the class statement raises
+            equations = ["w, h > 0"]
+            bad = anchor(at="w/2, nonexistent, 0", normal=(0, 0, 1))
+            def build(self): return cube([1, 1, 1])
     msg = str(exc_info.value)
     assert "bad" in msg
     assert "nonexistent" in msg

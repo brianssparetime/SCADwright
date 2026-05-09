@@ -162,6 +162,13 @@ class Component(Node):
         _register_equations(cls, params)
         cls.__params__ = params
         cls.__anchor_defs__ = _collect_anchor_defs(cls)
+        # Validate anchor string expressions against the names the
+        # runtime eval namespace will contain — every declared Param
+        # plus any equation-derived symbol. Catches typos at class-
+        # definition time instead of at instance construction.
+        _valid_anchor_names = getattr(cls, "_spec_value_names", frozenset())
+        for _anchor_name, _adef in cls.__anchor_defs__.items():
+            _adef._validate_expressions(_valid_anchor_names)
         # Generate __init__ only if the subclass didn't define one, and
         # it has either Params or anchor defs that need wiring. The
         # factory is imported lazily here because _init_factory itself
@@ -213,12 +220,14 @@ class Component(Node):
         """
         from scadwright.anchor import Anchor
 
-        self._anchors[name] = Anchor(
+        a = Anchor(
             position=(float(position[0]), float(position[1]), float(position[2])),
             normal=(float(normal[0]), float(normal[1]), float(normal[2])),
             kind=kind,
             **surface_kwargs,
         )
+        a._validate_geometry()
+        self._anchors[name] = a
 
     def adjustments_for(self, name: str) -> list:
         """Return the adjustments applied to ``name`` in source order.

@@ -233,6 +233,7 @@ class Node(
             kind=kind,
             **surface_kwargs,
         )
+        a._validate_geometry()
         return WithAnchor(
             child=self,
             anchor_name=str(name),

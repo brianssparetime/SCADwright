@@ -139,7 +139,21 @@ mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
 - **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
 - **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
 
-**Trust contract.** The framework can't verify that a Component-declared anchor is on the shape's surface, or that the declared `kind` matches the surface type at that position. If an author declares `kind="cylindrical"` on an anchor that's actually 50mm out in space, the bridge difference produces wrong geometry without an error — this is the same trust boundary that already governs all anchor-driven operations. The bridge mechanism's failure mode on lying anchors is louder than Phase 1/2's (visible chunks of host material in unexpected places), but the contract is unchanged.
+**Trust contract.** The framework can't verify that a Component-declared anchor lies on the actual rendered geometry of the Component's `build()` output — that would require evaluating the CSG tree. If an author declares an anchor with internally-consistent geometry that nevertheless doesn't match the rendered shape (e.g., `kind="cylindrical"` with `radius=5` on a Component that builds a `cylinder(r=10)`), the framework happily uses the declared values and the bridge produces wrong geometry without an error.
+
+What the framework *can* check, and does at user-input boundaries (Component class-scope `anchor()`, runtime `Component.anchor()`, `Node.with_anchor()`):
+
+| Kind | Checks |
+|---|---|
+| `cylindrical` | `normal` is unit and perpendicular to `axis`; `radius` and `length` positive. |
+| `conical` | `normal` is unit and perpendicular to `axis`; `r1`, `r2` non-negative (not both zero); `length` positive. |
+| `spherical` | `position` lies at distance `radius` from `axis_origin`; `normal` is the radial direction (or its negation for `inner=True`); `radius` positive. |
+| `meridional` | Required-fields presence only — full arc-evaluation consistency isn't checked. |
+| `planar` | No curved-surface checks. |
+
+These catch the most common author errors (typos in `at=` expressions that put the anchor far off the surface; declaring `kind="cylindrical"` with a normal that doesn't point radially). They don't catch declarations that are internally consistent but lie about the rendered geometry — that's the trust boundary.
+
+After spatial transforms (`transform_anchors`), the geometric checks are *not* re-run: a non-uniform scale on a sphere produces an internally inconsistent anchor by design (we don't model ellipsoids), and that's an accepted internal artifact, not an author error.
 
 ### When neither extension path applies
 
@@ -282,6 +296,8 @@ sensor = cube([8, 8, 4]).attach(Bracket(w=20, thk=3, depth=15), on="mount_face")
 Custom anchors with the same name as a standard face (e.g. `"top"`) override the bbox-derived default. This lets a Component define a semantically meaningful "top" that differs from its bounding box top.
 
 The `at=` string supports ternary expressions evaluated against instance attributes, so conditional positions don't need any special machinery: `anchor(at="0 if n_shape else h", normal=(0, 0, 1))`. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal is a framework-internal escape hatch (library Components only; not a user-facing pattern).
+
+**Class-load validation.** Anchor `at=`, string-form `normal=`, and string values inside `surface_params={...}` are AST-checked when the Component class is defined. Every name referenced must resolve to a declared `Param` or an equation-derived symbol — typos surface at module-import time with an error naming the anchor and the offending name, instead of at downstream user instantiation. The runtime `eval` is unchanged; this just moves the check forward.
 
 ## One-off anchors on any node: `with_anchor()`
 

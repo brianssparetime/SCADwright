@@ -125,6 +125,83 @@ class AnchorDef:
                 resolved[key] = val
         return resolved
 
+    def _validate_expressions(self, valid_names) -> None:
+        """Parse every string-expression field (``at``, ``normal``,
+        ``surface_params`` values) and verify that every Load-context
+        ``Name`` resolves to a declared Param or an equation-derived
+        symbol from ``valid_names``.
+
+        Catches typos in anchor expressions at class-definition time
+        instead of at instance construction. Doesn't remove the
+        runtime ``eval`` (values still resolve dynamically against the
+        instance's attribute namespace), but moves typo-detection
+        forward so an author error fires when the module imports
+        rather than when a downstream user instantiates the Component.
+
+        ``valid_names`` is the set of names the runtime eval namespace
+        will contain (the Component's ``_spec_value_names`` —
+        equivalent to ``set(params) | equation-derived | adjustment-LHS``).
+        """
+        if isinstance(self.at, str):
+            _validate_str_expr(self.at, valid_names, self._name, "at")
+        if isinstance(self.normal, str):
+            _validate_str_expr(self.normal, valid_names, self._name, "normal")
+        spec = self._surface_params_spec
+        if spec:
+            items = spec.items() if isinstance(spec, dict) else spec
+            for key, val in items:
+                if isinstance(val, str):
+                    _validate_str_expr(
+                        val, valid_names, self._name,
+                        f"surface_params[{key!r}]",
+                    )
+
+
+def _validate_str_expr(
+    expr: str, valid_names, anchor_name: str, role: str,
+) -> None:
+    """Parse ``expr`` as a Python expression and verify every Load-context
+    ``Name`` resolves against ``valid_names``.
+
+    Constants, operators, conditionals (``a if c else b``), and tuple
+    displays (``"x, y, z"``) are all fine — only unresolved Names raise.
+    Comprehensions are not parsed for scope (the comprehension-bound
+    target name would false-positive); anchor expressions don't
+    typically use them. Function calls (``abs(x)``, ``min(...)``) require
+    the function name to be in ``valid_names``; since the runtime eval
+    runs with ``__builtins__: {}``, builtin calls would fail at runtime
+    anyway, so the class-load check is consistent.
+
+    Raises ``ValidationError`` on syntax errors or unresolved names.
+    """
+    import ast
+
+    from scadwright.errors import ValidationError
+
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ValidationError(
+            f"anchor {anchor_name!r}: {role}= has a syntax error in "
+            f"{expr!r}: {exc.msg}"
+        ) from exc
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id not in valid_names:
+                names_list = sorted(valid_names)
+                names_preview = (
+                    str(names_list) if len(names_list) <= 12
+                    else f"{names_list[:12]} ... ({len(names_list)} total)"
+                )
+                raise ValidationError(
+                    f"anchor {anchor_name!r}: {role}= references unknown "
+                    f"name {node.id!r} in expression {expr!r}. The "
+                    f"runtime eval namespace contains only declared "
+                    f"Params and equation-derived names. Available: "
+                    f"{names_preview}."
+                )
+
 
 def anchor(at, normal, *, kind: str = "planar", surface_params=None):
     """Declare a named anchor at class scope.

@@ -92,6 +92,144 @@ class Anchor:
                 f"to work."
             )
 
+    def _validate_geometry(self) -> None:
+        """Per-kind geometric self-consistency check.
+
+        Catches obvious declaration errors at user-input boundaries —
+        Component class-scope ``anchor()`` declarations, runtime
+        ``Component.anchor(...)``, and ``Node.with_anchor(...)``.
+        Specifically:
+
+        - **Cylindrical / conical**: normal must be a unit vector
+          perpendicular to ``axis`` (radial direction); ``radius`` /
+          ``r1`` / ``r2`` / ``length`` must be positive (with
+          ``r1 == r2 == 0`` rejected on cones).
+        - **Spherical**: ``position`` must lie at distance ``radius``
+          from ``axis_origin``; ``normal`` must be the radial direction
+          (or its negation for ``inner=True``); ``radius`` positive.
+
+        **Not** called from internal Anchor constructors that may
+        intentionally produce inconsistent values — most importantly,
+        ``transform_anchors`` after a non-uniform scale on a sphere
+        produces "radius" that doesn't match the position-to-axis_origin
+        distance (we don't model the resulting ellipsoid; the radial
+        scale is approximated). The check is for *author* errors at
+        declaration time, not for runtime transform artifacts.
+
+        **Not** validated:
+
+        - **Meridional**: arc-evaluation math is more complex and
+          rarely declared by hand. Only the required-fields presence
+          check (in ``__post_init__``) applies.
+        - **Whether the declared anchor lies on the actual rendered
+          geometry of a Component's ``build()`` output**. That's part
+          of the trust contract; see ``docs/anchors.md``.
+
+        Raises ``ValidationError`` on failure.
+        """
+        import math as _math
+        from scadwright.api.tolerances import ANCHOR_GEOMETRY_TOL
+        from scadwright.errors import ValidationError
+
+        def _len(v):
+            return _math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+
+        def _dot(a, b):
+            return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+        if self.kind == "planar":
+            return  # bare planar faces have nothing curved to verify
+
+        # Normal must be a unit vector for any non-planar kind.
+        if abs(_len(self.normal) - 1.0) > ANCHOR_GEOMETRY_TOL:
+            raise ValidationError(
+                f"Anchor(kind={self.kind!r}): normal {self.normal} is not a "
+                f"unit vector (length={_len(self.normal):.4f})."
+            )
+
+        if self.kind in ("cylindrical", "conical"):
+            if abs(_len(self.axis) - 1.0) > ANCHOR_GEOMETRY_TOL:
+                raise ValidationError(
+                    f"Anchor(kind={self.kind!r}): axis {self.axis} is not a "
+                    f"unit vector (length={_len(self.axis):.4f})."
+                )
+            if abs(_dot(self.normal, self.axis)) > ANCHOR_GEOMETRY_TOL:
+                raise ValidationError(
+                    f"Anchor(kind={self.kind!r}): normal {self.normal} is "
+                    f"not perpendicular to axis {self.axis} (dot product = "
+                    f"{_dot(self.normal, self.axis):.4f}). The wall normal "
+                    f"is the radial direction — perpendicular to the "
+                    f"central axis."
+                )
+            if self.length <= 0:
+                raise ValidationError(
+                    f"Anchor(kind={self.kind!r}): length must be positive, "
+                    f"got {self.length}."
+                )
+            if self.kind == "cylindrical":
+                if self.radius <= 0:
+                    raise ValidationError(
+                        f"Anchor(kind='cylindrical'): radius must be "
+                        f"positive, got {self.radius}."
+                    )
+            else:
+                if self.r1 < 0 or self.r2 < 0:
+                    raise ValidationError(
+                        f"Anchor(kind='conical'): r1={self.r1}, r2="
+                        f"{self.r2} — both must be non-negative."
+                    )
+                if self.r1 == 0 and self.r2 == 0:
+                    raise ValidationError(
+                        "Anchor(kind='conical'): r1 and r2 are both zero "
+                        "(degenerate point cone)."
+                    )
+
+        elif self.kind == "spherical":
+            if self.radius <= 0:
+                raise ValidationError(
+                    f"Anchor(kind='spherical'): radius must be positive, "
+                    f"got {self.radius}."
+                )
+            if abs(_len(self.axis) - 1.0) > ANCHOR_GEOMETRY_TOL:
+                raise ValidationError(
+                    f"Anchor(kind='spherical'): axis {self.axis} is not a "
+                    f"unit vector (length={_len(self.axis):.4f})."
+                )
+            offset = (
+                self.position[0] - self.axis_origin[0],
+                self.position[1] - self.axis_origin[1],
+                self.position[2] - self.axis_origin[2],
+            )
+            offset_len = _len(offset)
+            if abs(offset_len - self.radius) > ANCHOR_GEOMETRY_TOL:
+                raise ValidationError(
+                    f"Anchor(kind='spherical'): distance from axis_origin "
+                    f"{self.axis_origin} to position {self.position} is "
+                    f"{offset_len:.4f}, doesn't match declared radius="
+                    f"{self.radius}. The position must lie on the sphere's "
+                    f"surface."
+                )
+            expected = (
+                offset[0] / offset_len,
+                offset[1] / offset_len,
+                offset[2] / offset_len,
+            )
+            if self.inner:
+                expected = (-expected[0], -expected[1], -expected[2])
+            d = _dot(self.normal, expected)
+            if d < 1.0 - ANCHOR_GEOMETRY_TOL:
+                raise ValidationError(
+                    f"Anchor(kind='spherical', inner={self.inner}): normal "
+                    f"{self.normal} doesn't match the expected "
+                    f"{'inward' if self.inner else 'outward'} radial "
+                    f"direction {expected} from axis_origin to position. "
+                    f"The normal at a point on a sphere is the radial "
+                    f"direction (or its negation for inner walls)."
+                )
+
+        # meridional: only required-fields check applies (in __post_init__);
+        # arc-evaluation math is deferred.
+
 
 def _point_in_bbox(p, bb, tol: float | None = None) -> bool:
     """Whether ``p`` lies inside (or on, within ``tol``) the bbox ``bb``.
