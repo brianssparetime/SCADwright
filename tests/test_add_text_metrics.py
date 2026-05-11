@@ -430,10 +430,12 @@ class TestCumulativeOffsetMath:
         assert positions[2] == pytest.approx((x_c, y_c, 10.0), abs=0.005)
 
     def test_axial_three_chars_centered_on_mid_wall(self):
-        # text_dir="axial" → glyphs stack along z, all at the same theta.
-        # Heuristic axial step = 0.6 * 4 = 2.4mm. Centers at [-2.4, 0, +2.4]
-        # (in axial mm); sign = -1.0 for default flip=False (top-to-bottom).
-        # So char 0 sits at z = 2.4 + axis_origin.z (top), char 2 at z = -2.4 + ...
+        # text_dir="axial" + rotate_glyphs=False: the glyph's font_size
+        # dimension lies along the line direction (axis), so the line slot
+        # is font_size (4mm) — uniform spacing, NOT proportional advance —
+        # otherwise letters would overlap in the axial direction.
+        # Centers at [-4, 0, +4] in axial mm; sign=-1.0 (default top-to-bottom),
+        # so char 0 sits at z = 4 + 10 = 14 (top), char 2 at z = -4 + 10 = 6.
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="ABC", relief=0.4, on="outer_wall", font_size=4,
@@ -446,27 +448,30 @@ class TestCumulativeOffsetMath:
         for p in positions:
             assert p[0] == pytest.approx(9.99, abs=0.005), p
             assert p[1] == pytest.approx(0.0, abs=0.005), p
-        # z ordering: char 0 at top (z=12.4), char 1 at z=10, char 2 at z=7.6.
+        # z ordering: char 0 at top (z=14), char 1 at z=10, char 2 at z=6.
         zs = sorted(p[2] for p in positions)
-        assert zs == pytest.approx([7.6, 10.0, 12.4], abs=0.005)
+        assert zs == pytest.approx([6.0, 10.0, 14.0], abs=0.005)
 
 
 @pytest.mark.freetype
 class TestAxialModeUsesProportionalAdvances:
-    """text_dir="axial" with real font metrics: per-glyph axial spacing is
-    proportional, not uniform."""
+    """text_dir="axial" + rotate_glyphs=True (wine-bottle): the glyph's
+    advance dimension maps along the line direction, so proportional per-
+    glyph advances drive spacing. (Without rotate_glyphs, the glyph's
+    font_size dimension is along the line, and the slot is uniform
+    font_size to prevent letters from overlapping axially.)"""
 
-    def test_iWi_axial_offsets_reflect_real_advances(self, bundled_font_path):
-        # "iWi" on a cylinder with axial layout. Liberation Sans 2.00.1
-        # advances at size=4 with default calibration: i ≈ 1.21mm, W ≈ 5.13mm
-        # (matches OpenSCAD's flat text() rendering). Centers (halign=center)
-        # are [-(W/2 + i/2), 0, +(W/2 + i/2)] = [-3.17, 0, +3.17] in axial
-        # mm, times sign=-1 → z offsets [+3.17, 0, -3.17] from line centre
-        # (z=10). Step between adjacent glyphs is (i + W) / 2 ≈ 3.17mm.
+    def test_iWi_wine_bottle_offsets_reflect_real_advances(self, bundled_font_path):
+        # "iWi" wine-bottle on a cylinder. Liberation Sans at size=4 with
+        # default calibration: i ≈ 1.21mm, W ≈ 5.13mm (matches OpenSCAD's
+        # flat text() rendering). Centers (halign=center) are
+        # [-(W/2 + i/2), 0, +(W/2 + i/2)] = [-3.17, 0, +3.17] in axial mm,
+        # times sign=+1 (wine-bottle reads bottom-up by convention) — step
+        # between adjacent glyphs is (i + W) / 2 ≈ 3.17mm.
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
-                text_dir="axial", font=bundled_font_path,
+                text_dir="axial", rotate_glyphs=True, font=bundled_font_path,
             )
         )
         positions = _glyph_translates_3d(scad)
@@ -491,14 +496,15 @@ class TestConicalAxialCumulativeRadius:
     def test_cone_axial_per_glyph_radius_tracks_cumulative_at_z(self, bundled_font_path):
         # Tapered cylinder: r1=10 at bottom, r2=4 at top, h=20. r_mid=7,
         # slope = (4-10)/20 = -0.3. So local radius at at_z is 7 + at_z*-0.3.
-        # With "iWi" axial centered (default calibration matches OpenSCAD),
-        # char positions at_z = +3.167, 0, -3.167 (sign=-1 default flip=False;
-        # char 0 at top, char 2 at bottom). Local radius: top = 7 - 0.95 = 6.05;
-        # mid = 7; bottom = 7.95. Each glyph's translate.x ≈ local_radius - eps.
+        # Wine-bottle "iWi" (rotate_glyphs=True) lets advance drive axial
+        # spacing — with default calibration matching OpenSCAD, char
+        # positions at_z = +3.167, 0, -3.167 (char 0 at top, char 2 at
+        # bottom). Local radius: top = 7 - 0.95 = 6.05; mid = 7; bottom =
+        # 7.95. Each glyph's translate.x ≈ local_radius - eps.
         scad = _emit(
             cylinder(h=20, r1=10, r2=4).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
-                text_dir="axial", font=bundled_font_path,
+                text_dir="axial", rotate_glyphs=True, font=bundled_font_path,
             )
         )
         positions = _glyph_translates_3d(scad)

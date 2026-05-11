@@ -118,21 +118,28 @@ def test_circumferential_flip():
 
 def test_circumferential_rotate_glyphs():
     """text_dir=circumferential, rg=True, flip=False.
-    g_right = -axis, g_up = +tangent. Letters lying on backs."""
+
+    On a circumferential line, rotate_glyphs gets an extra 180° rotation
+    compared to the axial+rg case so that ``flip`` reverses only the wrap
+    direction (not the letter orientation). Result: g_right = +axis,
+    g_up = -tangent. Letters lying on their backs with tops pointing
+    against the wrap direction (the natural curved-label convention)."""
     hub = cylinder(**HUB_KW)
     g_right, g_up, out = _orient_columns(hub, rotate_glyphs=True)
-    assert g_right == pytest.approx((0.0, 0.0, -1.0), abs=1e-9)
-    assert g_up == pytest.approx((0.0, 1.0, 0.0), abs=1e-9)
+    assert g_right == pytest.approx((0.0, 0.0, 1.0), abs=1e-9)
+    assert g_up == pytest.approx((0.0, -1.0, 0.0), abs=1e-9)
     assert out == pytest.approx((1.0, 0.0, 0.0), abs=1e-9)
 
 
 def test_circumferential_rotate_glyphs_flip():
     """text_dir=circumferential, rg=True, flip=True.
-    g_right = +axis, g_up = -tangent. Letters lying on backs (other way)."""
+
+    Same letter orientation as the no-flip variant; only the wrap direction
+    reverses. g_right = -axis, g_up = +tangent."""
     hub = cylinder(**HUB_KW)
     g_right, g_up, out = _orient_columns(hub, rotate_glyphs=True, flip=True)
-    assert g_right == pytest.approx((0.0, 0.0, 1.0), abs=1e-9)
-    assert g_up == pytest.approx((0.0, -1.0, 0.0), abs=1e-9)
+    assert g_right == pytest.approx((0.0, 0.0, -1.0), abs=1e-9)
+    assert g_up == pytest.approx((0.0, 1.0, 0.0), abs=1e-9)
     assert out == pytest.approx((1.0, 0.0, 0.0), abs=1e-9)
 
 

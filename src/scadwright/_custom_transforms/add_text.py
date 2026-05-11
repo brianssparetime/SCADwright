@@ -795,13 +795,21 @@ def _emit_wrap_line(
     matters most for short labels where evaluating at the left edge
     leaves the whole glyph noticeably rotated.
     """
-    if rotate_glyphs:
-        # Rotated glyphs occupy ``font_size`` of arc along the line
-        # direction (the glyph's height maps to the line tangent under the
-        # 90° rotation), so proportional per-glyph advances would let
-        # adjacent letters overlap. Use uniform ``font_size`` slots — the
-        # canonical wine-bottle / vertical layout. ``spacing`` multiplies
-        # the slot the same way it scales proportional advances elsewhere.
+    # The glyph's ``font_size`` (height) dimension lies along the LINE
+    # direction whenever ``(text_dir == "axial") XOR rotate_glyphs``:
+    #
+    #   - axial + rg=F: glyph's +Y → axis (line is axial) → height along line
+    #   - axial + rg=T: glyph's +Y → tangent (perp to axial line) → advance along line
+    #   - circ + rg=F:  glyph's +Y → axis (perp to tangent line) → advance along line
+    #   - circ + rg=T:  glyph's +Y → tangent (line is tangent) → height along line
+    #
+    # In the "height along line" cases the line slot must be ``font_size``
+    # (the canonical wine-bottle / vertical layout) — proportional advances
+    # are smaller than font_size for typical Latin glyphs and would let
+    # adjacent letters overlap in line direction. In the "advance along
+    # line" cases, proportional advances give the natural Latin layout.
+    height_along_line = (text_dir == "axial") != rotate_glyphs
+    if height_along_line:
         slot = font_size * text_kwargs.get("spacing", 1.0)
         advances_mm = [slot] * len(line)
     else:
@@ -947,15 +955,29 @@ def _emit_wrap_line(
 
         # 8-combo orientation: (rotate_glyphs, flip) → (g_right, g_up).
         # g_right gets glyph local +X; g_up gets glyph local +Y.
-        if not rotate_glyphs and not flip:
+        #
+        # For circumferential + rg=True, an extra 180° rotation in the
+        # tangent plane is applied to both flip variants (i.e., no-flip
+        # and flip use what would otherwise be each other's orientation
+        # matrix). The orientation that reads naturally for axial+rg=T
+        # (wine-bottle, line runs top-to-bottom, letter tops to the right)
+        # would put letter tops in the WRAP direction on a circumferential
+        # line — which reads backwards relative to typical curved-label
+        # conventions where letter tops point AGAINST the wrap. The 180°
+        # rotation here means: in circumferential mode, ``flip`` only
+        # reverses the wrap direction (via ``sign`` on the offsets), it
+        # doesn't co-rotate the glyphs.
+        rg_swap = rotate_glyphs and text_dir == "circumferential"
+        eff_flip = (not flip) if rg_swap else flip
+        if not rotate_glyphs and not eff_flip:
             g_right, g_up = e1, e2
-        elif not rotate_glyphs and flip:
+        elif not rotate_glyphs and eff_flip:
             g_right = (-e1[0], -e1[1], -e1[2])
             g_up = (-e2[0], -e2[1], -e2[2])
-        elif rotate_glyphs and not flip:
+        elif rotate_glyphs and not eff_flip:
             g_right = (-e2[0], -e2[1], -e2[2])
             g_up = e1
-        else:  # rotate_glyphs and flip
+        else:  # rotate_glyphs and eff_flip
             g_right = e2
             g_up = (-e1[0], -e1[1], -e1[2])
 
