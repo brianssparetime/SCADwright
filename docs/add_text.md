@@ -156,6 +156,10 @@ By default, the line of text wraps around the cylinder's axis (circumferentially
 | `"axial"` | `True` | `False` | Letters rotated 90° CCW, line runs top-to-bottom (the wine-bottle label case) |
 | `"axial"` | `True` | `True` | Letters rotated 90° CW, line runs bottom-to-top |
 
+![Eight text orientations on curved hosts](images/add_text_orientations.png)
+
+*"TEXT" engraved on cylinder, tapered cone, and barrel hosts under each of the eight `text_dir` / `rotate_glyphs` / `flip` combinations. Row 1: `text_dir="circumferential"` (line wraps around the host). Row 2: `text_dir="axial"` (line runs along the host's axis). Rendering script: [`tools/render_text_orientations.py`](../tools/render_text_orientations.py).*
+
 ```python
 # Wine-bottle vertical label on a barrel — read by laying the bottle on its side.
 barrel.add_text(label="MERLOT", relief=-0.4, on="outer_wall", font_size=5,
