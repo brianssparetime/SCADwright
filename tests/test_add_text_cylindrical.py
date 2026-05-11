@@ -23,9 +23,9 @@ def test_cylinder_has_outer_wall_anchor():
     assert "outer_wall" in anchors
     a = anchors["outer_wall"]
     assert a.kind == "cylindrical"
-    assert a.surface_param("radius") == 5.0
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
-    assert a.surface_param("length") == 20.0
+    assert a.radius == 5.0
+    assert a.axis == (0.0, 0.0, 1.0)
+    assert a.length == 20.0
     # Reference point at +X meridian, mid-wall.
     assert a.position == pytest.approx((5.0, 0.0, 10.0))
     assert a.normal == pytest.approx((1.0, 0.0, 0.0))
@@ -55,9 +55,9 @@ def test_tube_has_outer_wall_anchor():
     assert "outer_wall" in anchors
     a = anchors["outer_wall"]
     assert a.kind == "cylindrical"
-    assert a.surface_param("radius") == pytest.approx(5.0)
-    assert a.surface_param("axis") == (0.0, 0.0, 1.0)
-    assert a.surface_param("length") == pytest.approx(20.0)
+    assert a.radius == pytest.approx(5.0)
+    assert a.axis == (0.0, 0.0, 1.0)
+    assert a.length == pytest.approx(20.0)
 
 
 # --- Cylindrical surface params survive transforms ---
@@ -66,15 +66,15 @@ def test_tube_has_outer_wall_anchor():
 def test_uniform_scale_scales_radius_and_length():
     c = cylinder(h=20, r=5).scale(2)
     a = get_node_anchors(c)["outer_wall"]
-    assert a.surface_param("radius") == pytest.approx(10.0)
-    assert a.surface_param("length") == pytest.approx(40.0)
+    assert a.radius == pytest.approx(10.0)
+    assert a.length == pytest.approx(40.0)
 
 
 def test_translate_preserves_radius_and_length():
     c = cylinder(h=20, r=5).translate([10, 0, 0])
     a = get_node_anchors(c)["outer_wall"]
-    assert a.surface_param("radius") == pytest.approx(5.0)
-    assert a.surface_param("length") == pytest.approx(20.0)
+    assert a.radius == pytest.approx(5.0)
+    assert a.length == pytest.approx(20.0)
     # Position translated; surface params unchanged.
     assert a.position == pytest.approx((15.0, 0.0, 10.0))
 
@@ -83,12 +83,12 @@ def test_rotate_rotates_axis():
     c = cylinder(h=20, r=5).rotate([90, 0, 0])
     a = get_node_anchors(c)["outer_wall"]
     # After rotating 90° around +X, the cylinder's +Z axis points to -Y.
-    ax = a.surface_param("axis")
+    ax = a.axis
     assert ax[0] == pytest.approx(0.0, abs=1e-9)
     assert ax[1] == pytest.approx(-1.0, abs=1e-9)
     assert ax[2] == pytest.approx(0.0, abs=1e-9)
     # Radius unchanged.
-    assert a.surface_param("radius") == pytest.approx(5.0)
+    assert a.radius == pytest.approx(5.0)
 
 
 # --- Cylindrical add_text smoke tests ---

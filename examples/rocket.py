@@ -84,7 +84,7 @@ fin_blank = minkowski(
     sphere(r=edge_r, fn=16),
 ).rotate([90, 0, 0])
 fins = fin_blank.attach(
-    body, on="outer_wall", at="lside", fuse=True,
+    body, on="outer_wall", using_anchor="lside",
     at_z=bbox(fin_blank).size[2]/2 - barrel_h/2 - nozzle_h,
 ).left(fin_fillet).rotate_copy(angle=120, n=3, axis=[0, 0, 1])
 

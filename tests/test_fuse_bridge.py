@@ -1,4 +1,4 @@
-"""Tests for Phase 3 curved-surface fuse via the bridge mechanism.
+"""Tests for curved-surface fuse via the bridge mechanism.
 
 Bridge construction: when attach(fuse=True) targets a convex-outer
 curved on-anchor (cylindrical/conical/spherical), the framework builds
@@ -56,8 +56,8 @@ def test_bridge_on_cylinder_od_places_peg_tangent_then_fills_gap():
 
 
 def test_bridge_on_sphere_outer_returns_union_with_difference():
-    """Sphere bbox-derived anchors are kind='spherical' (Phase 3 prereq).
-    Attaching to a sphere with fuse=True builds a bridge."""
+    """Sphere bbox-derived anchors are kind='spherical', so attaching
+    to a sphere with fuse=True dispatches through the bridge."""
     ball = sphere(r=10)
     peg = cube([2, 2, 5])
     result = peg.attach(ball, on="top", orient=True, fuse=True)
@@ -81,15 +81,29 @@ def test_bridge_on_cone_outer_wall():
 # --- Concave inner: bridge bypassed ---
 
 
-def test_concave_inner_wall_bypasses_bridge():
+def test_concave_inner_wall_with_fuse_raises():
     """Concave inner walls (Tube.inner_wall has surface_params['inner']=True)
-    naturally inscribe peg corners into wall material. Bridge is skipped;
-    the call falls through to legacy shift, no Difference in the tree."""
+    aren't a bridge case (the peg's corners naturally inscribe into wall
+    material as tangent contact) and aren't planar+planar. fuse=True
+    raises with workaround pointers; bond='shift' is the recovery path
+    when the user actually wants the bilateral overlap."""
+    from scadwright.errors import ValidationError
+
     pipe = Tube(od=20, id=10, h=20)
     peg = cube([2, 2, 5])
-    result = peg.attach(pipe, on="inner_wall", angle=0, orient=True, fuse=True)
-    # Result is a Translate (legacy shift), not a Union with Difference.
+    with pytest.raises(ValidationError, match="no applicable bond"):
+        peg.attach(pipe, on="inner_wall", angle=0, orient=True, fuse=True)
+
+
+def test_concave_inner_wall_with_bond_shift():
+    """bond='shift' is the recovery path for concave inner walls."""
     from scadwright.ast.transforms import Translate as _Translate
+
+    pipe = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5])
+    result = peg.attach(
+        pipe, on="inner_wall", angle=0, orient=True, bond="shift",
+    )
     assert isinstance(result, _Translate)
 
 
@@ -124,7 +138,7 @@ def test_fuse_function_bridges_when_a_is_curved_host():
     # hub.outer_wall normal +X. But fuse() doesn't auto-orient. Use a
     # peg whose normal already opposes by construction.
     # Use peg.lside (normal -X) on hub.outer_wall (normal +X). Coaxial.
-    result = fuse(hub, peg, at="outer_wall", on="lside")
+    result = fuse(hub, peg, using_anchor="outer_wall", on="lside")
     # a=hub is curved (outer_wall, kind=cylindrical), b=peg is planar
     # (lside). Symmetric branch fires.
     from scadwright.ast.csg import Difference
@@ -138,7 +152,7 @@ def test_oblique_fuse_on_curved_host_raises():
     peg = cube([2, 2, 5])
     with pytest.raises(ValidationError, match="coaxial normals"):
         # Without orient/manual rotation, peg normal doesn't oppose host.
-        fuse(peg, hub, on="outer_wall", at="bottom")
+        fuse(peg, hub, on="outer_wall", using_anchor="bottom")
 
 
 # --- Inscription depth math ---
@@ -163,7 +177,9 @@ def test_inscription_depth_formula():
         position=(0.0, 0.0, 0.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("axis", (0.0, 0.0, 1.0)), ("radius", 10.0)),
+        axis=(0.0, 0.0, 1.0),
+        radius=10.0,
+        length=20.0,
     )
     r = _peg_max_radial_extent(peg, peg_anchor)
     assert r == pytest.approx(math.sqrt(2))
@@ -182,7 +198,9 @@ def test_inscription_depth_fits_huge_peg():
         position=(0.0, 0.0, 0.0),
         normal=(1.0, 0.0, 0.0),
         kind="cylindrical",
-        surface_params=(("radius", 5.0),),
+        axis=(0.0, 0.0, 1.0),
+        radius=5.0,
+        length=20.0,
     )
     d = _inscription_depth(host_anchor, peg_max_radial=20.0)
     assert d == 5.0
@@ -211,15 +229,16 @@ def test_coaxial_normals_floating_point_tolerance():
 
 
 def test_sphere_bbox_anchors_are_spherical():
-    """Phase 3 prereq: Sphere's bbox-derived anchors carry kind='spherical'
-    so curved-host fuse dispatches via bridge instead of trying the planar
-    path (which Phase 2 used to raise on)."""
+    """Sphere's bbox-derived anchors carry kind='spherical' so curved-host
+    fuse dispatches via the bridge rather than the planar cross-section
+    path. (Cross-section on a sphere bbox-anchor would raise — the bbox
+    face center is a tangent point, not a planar contact region.)"""
     from scadwright.anchor import get_node_anchors
     s = sphere(r=7)
     anchors = get_node_anchors(s)
     for name in ("top", "bottom", "lside", "rside", "front", "back"):
         assert anchors[name].kind == "spherical", f"{name} anchor"
-        assert anchors[name].surface_param("radius") == 7.0
+        assert anchors[name].radius == 7.0
 
 
 # --- disable_eps_fuse() opt-out applies to bridge too ---

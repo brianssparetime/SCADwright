@@ -41,6 +41,11 @@ from scadwright.api.clearances import DEFAULT_CLEARANCES, Clearances, clearances
 from scadwright.api.fuse_mode import disable_eps_fuse, fuse_enabled
 from scadwright.api.resolution import resolution
 from scadwright.api.text_calibration import text_advance_calibration
+from scadwright.api.tolerances import (
+    coincidence_tol,
+    default_eps,
+    tolerances,
+)
 from scadwright.api.variant import Variant, current_variant, register_variants, variant
 from scadwright.emit import emit, emit_str
 from scadwright.render import render
@@ -87,6 +92,9 @@ __all__ = [
     "text_advance_calibration",
     "disable_eps_fuse",
     "fuse_enabled",
+    "tolerances",
+    "default_eps",
+    "coincidence_tol",
     "clearances",
     "Clearances",
     "DEFAULT_CLEARANCES",

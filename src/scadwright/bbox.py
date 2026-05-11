@@ -478,6 +478,7 @@ class BBoxVisitor(Visitor):
 
     def visit_Color(self, n): return self.visit(n.child)
     def visit_ForceRender(self, n): return self.visit(n.child)
+    def visit_WithAnchor(self, n): return self.visit(n.child)
 
     def visit_PreviewModifier(self, n):
         if n.mode == "disable":

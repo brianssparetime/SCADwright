@@ -1,4 +1,4 @@
-"""Behavioral tests for Phase 1 of fuse: local extension at the
+"""Behavioral tests for planar-contact local extension at the
 attach(fuse=True) and standalone fuse(...) APIs.
 
 These exercise the user-facing entry points; the per-shape unit tests
@@ -17,10 +17,10 @@ from scadwright.shapes import Tube
 
 
 def test_attach_fuse_preserves_far_face_cube_on_cube():
-    """The headline Phase 1 improvement: pylon.top stays at the
-    declared z=12, not 11.99 as the old shift produced. Bottom is
-    extended into the floor by eps; everything above the contact face
-    is exactly where the user put it."""
+    """Local extension preserves the far face exactly: pylon.top stays
+    at the declared z=12, not 11.99 as a bilateral shift would produce.
+    Bottom is extended into the floor by eps; everything above the
+    contact face is exactly where the user put it."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10]).attach(floor, fuse=True)
     bb = bbox(pylon)
@@ -32,7 +32,7 @@ def test_attach_fuse_preserves_far_face_pendant():
     """Pendant attached at top: the bottom face stays at z=10 (declared);
     the top face extends into the ceiling."""
     ceiling = cube([40, 40, 2]).up(20)
-    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", at="top", fuse=True)
+    pendant = cube([5, 5, 10]).attach(ceiling, on="bottom", using_anchor="top", fuse=True)
     bb = bbox(pendant)
     assert bb.min[2] == pytest.approx(10.0)   # PRESERVED (was 10.01 with shift)
     assert bb.max[2] == pytest.approx(20.01)  # extended into ceiling
@@ -77,8 +77,8 @@ def test_attach_fuse_with_orient_uses_local_extension():
     """
     wall = cube([2, 40, 40])
     peg = cube([5, 5, 10])
-    no_fuse = peg.attach(wall, on="rside", at="bottom", orient=True)
-    with_fuse = peg.attach(wall, on="rside", at="bottom", orient=True, fuse=True)
+    no_fuse = peg.attach(wall, on="rside", using_anchor="bottom", orient=True)
+    with_fuse = peg.attach(wall, on="rside", using_anchor="bottom", orient=True, fuse=True)
     nb = bbox(no_fuse)
     fb = bbox(with_fuse)
     # X range unchanged: local extension does not shift along wall normal.
@@ -92,9 +92,9 @@ def test_attach_fuse_with_orient_uses_local_extension():
 
 def test_attach_fuse_on_cylindrical_wall_raises_oblique():
     """attach(fuse=True) on a curved host without coaxial normals (no
-    orient=True, no manual alignment) is oblique — Phase 3 raises rather
-    than silently shifting in a direction that doesn't match the surface
-    geometry."""
+    orient=True, no manual alignment) is oblique — the bridge raises
+    rather than silently shifting in a direction that doesn't match
+    the surface geometry."""
     from scadwright.errors import ValidationError
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
@@ -117,17 +117,24 @@ def test_attach_fuse_on_cylindrical_wall_with_orient_bridges():
     assert any(isinstance(c, Difference) for c in result.children)
 
 
-def test_attach_fuse_on_sphere_to_planar_floor_falls_back_to_shift():
-    """Sphere's bbox-derived anchors are now kind='spherical'. With a
-    planar floor (kind='planar'), neither side qualifies for planar
-    extension, so attach falls through to the legacy shift. No raise."""
+def test_attach_fuse_on_sphere_to_planar_floor_raises():
+    """Sphere's bbox-derived anchors are kind='spherical', but the floor
+    is planar. Neither bond='overlap' (needs planar+planar) nor
+    bond='bridge' (needs convex-outer curved host on the *other* side)
+    applies, so fuse=True raises with workaround pointers."""
+    from scadwright.errors import ValidationError
+
     floor = cube([40, 40, 2])
-    # Should not raise.
-    result = sphere(r=5).attach(floor, fuse=True)
-    # Sphere's bbox bottom is at z=-r=-5; floor's top is at z=2; sphere
-    # gets translated so its bottom meets floor top with eps offset.
+    with pytest.raises(ValidationError, match="no applicable bond"):
+        sphere(r=5).attach(floor, fuse=True)
+
+
+def test_attach_fuse_on_sphere_to_planar_floor_with_bond_shift():
+    """bond='shift' is the recovery path: sphere on floor, bilateral shift."""
+    floor = cube([40, 40, 2])
+    result = sphere(r=5).attach(floor, bond="shift")
     bb = bbox(result)
-    # Sphere top should be at z = floor_top + 2r - eps = 2 + 10 - 0.01.
+    # Sphere top at z = floor_top + 2r - eps = 2 + 10 - 0.01.
     assert bb.max[2] == pytest.approx(11.99)
 
 
@@ -140,7 +147,7 @@ def test_fuse_function_basic():
     as one call."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10])
-    result = fuse(pylon, floor, on="top", at="bottom")
+    result = fuse(pylon, floor, on="top", using_anchor="bottom")
     bb = bbox(result)
     # Result includes both shapes; bbox covers floor (z=0..2) and pylon
     # (extended bottom z=1.99, preserved top z=12). Union bbox z range
@@ -157,7 +164,7 @@ def test_fuse_function_uses_either_side():
     # Cube does. Either order should work via either-side selection.
     plate = cube([20, 20, 3])
     pillar = Tube(od=10, id=6, h=15)
-    result = fuse(pillar, plate, on="top", at="bottom")
+    result = fuse(pillar, plate, on="top", using_anchor="bottom")
     # pillar.fuse_extend → None (Tube). plate.fuse_extend → extended cube.
     # pillar translates onto plate's top at z=3 (the original plate top
     # anchor position). Plate top extended into pillar by eps (to z=3.01).
@@ -176,7 +183,7 @@ def test_fuse_function_prefers_wrapper_free_side():
     """
     lower = cube([10, 10, 5])    # b: fuse on its top face (+Z) → no wrapper.
     upper = cube([10, 10, 5])    # a: fuse on its bottom face (−Z) → Translate wrapper.
-    result = fuse(upper, lower, on="top", at="bottom")
+    result = fuse(upper, lower, on="top", using_anchor="bottom")
     bb = bbox(result)
     # Lower spans z=0..5, extended top to z=5.01. Upper spans z=5..10
     # (preserved). Combined bbox: 0..10.
@@ -206,7 +213,7 @@ def test_fuse_function_two_spheres_bridges():
     from scadwright.ast.csg import Difference, Union
     s1 = sphere(r=5)
     s2 = sphere(r=5).up(10)
-    result = fuse(s1, s2, on="bottom", at="top")
+    result = fuse(s1, s2, on="bottom", using_anchor="top")
     assert isinstance(result, Union)
     # union(placed_a, b, bridge) — bridge is a Difference.
     assert any(isinstance(c, Difference) for c in result.children)

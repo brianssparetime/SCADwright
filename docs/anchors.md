@@ -31,19 +31,19 @@ plate = cube([40, 40, 2])
 peg   = cube([10, 10, 5]).attach(plate)    # bottom of peg on top of plate
 ```
 
-`attach()` defaults to `on="top"` (the anchor on the other shape) and `at="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
+`attach()` defaults to `on="top"` (the anchor on the other shape) and `using_anchor="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
 
 ## Choosing faces
 
-Use `on` and `at` to pick which anchors to align:
+Use `on=` and `using_anchor=` to pick which anchors to align:
 
 ```python
-peg.attach(plate, on="bottom", at="top")       # peg underneath plate
-peg.attach(plate, on="rside", at="lside")      # peg to the right of plate
-peg.attach(plate, on="top", at="top")           # align top faces (peg hangs down)
+peg.attach(plate, on="bottom", using_anchor="top")       # peg underneath plate
+peg.attach(plate, on="rside", using_anchor="lside")      # peg to the right of plate
+peg.attach(plate, on="top", using_anchor="top")           # align top faces (peg hangs down)
 ```
 
-`on` names the anchor on the parent (the thing being attached to); `at` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. `at` is context-sensitive — see [`at=` across the API](#at-across-the-api) below.
+`on` names the anchor on the parent (the thing being attached to); `using_anchor` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. See [Naming convention: on= / using_anchor= / at=](#naming-convention-on-using_anchor-at) below for the full split.
 
 Chain a translate for offset placement:
 
@@ -56,7 +56,7 @@ peg.attach(plate).right(10)           # on top, shifted 10 in +X
 By default, `attach()` only translates. Pass `orient=True` to also rotate self so the two anchors' normals oppose each other (faces touching):
 
 ```python
-peg.attach(plate, on="rside", at="bottom", orient=True)
+peg.attach(plate, on="rside", using_anchor="bottom", orient=True)
 ```
 
 This rotates the peg so its bottom normal faces in the -X direction (opposing the plate's rside +X normal), then translates it into position.
@@ -118,7 +118,7 @@ When `attach(fuse=True)`'s on-anchor is a curved-surface kind (`cylindrical`, `c
 The bridge solves two problems with one piece:
 
 - **Inscription mounting (Duty B).** A peg attached tangent to a curved surface visually appears to be balanced on a thin contact line. The bridge fills the small inscription gap so the peg looks merged into the surface — what users almost always intend when mounting a feature on a cylinder, sphere, or cone.
-- **Manifold-clean union (Duty A).** The bridge extends `eps` past the peg's near-face on the peg side, providing the small overlap that keeps F5 preview clean — same purpose as Phase 1/2's planar eps but here built into the bridge geometry.
+- **Manifold-clean union (Duty A).** The bridge extends `eps` past the peg's near-face on the peg side, providing the small overlap that keeps F5 preview clean — same purpose as the planar-extension eps, but here built into the bridge geometry.
 
 ```python
 peg = cube([2, 2, 5])
@@ -128,16 +128,32 @@ mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
 # flat near-face and the cylinder's curved surface at angle=30.
 ```
 
+**Peg-anchor validation.** Like the planar cross-section path, the bridge dispatch validates the peg's at-anchor against the peg's bbox before building the prism: the anchor must lie on the peg's outermost face along its normal direction, and the peg must have non-zero extent in at least two axes. Failures raise a clear `ValidationError` rather than silently producing an empty bridge. The check unwraps `Translate` / `Rotate` / `Mirror` so a peg rotated by `orient=True` is validated against its underlying primitive's local frame.
+
 **Coaxial requirement.** The bridge dispatch requires the peg's at-anchor normal to be anti-parallel to the host's on-anchor normal (within tolerance). Without `orient=True` or manual peg alignment, the call raises `ValidationError("requires coaxial normals")` rather than silently producing geometry that doesn't match user intent.
 
 **Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. The dispatch falls through to the legacy shift instead.
 
-**Inherited limitations from the cross-section primitive** (same as Phase 2):
+**Inherited limitations from the cross-section primitive** (same set as the planar cross-section path):
 
 - **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
 - **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
 
-**Trust contract.** The framework can't verify that a Component-declared anchor is on the shape's surface, or that the declared `kind` matches the surface type at that position. If an author declares `kind="cylindrical"` on an anchor that's actually 50mm out in space, the bridge difference produces wrong geometry without an error — this is the same trust boundary that already governs all anchor-driven operations. The bridge mechanism's failure mode on lying anchors is louder than Phase 1/2's (visible chunks of host material in unexpected places), but the contract is unchanged.
+**Trust contract.** The framework can't verify that a Component-declared anchor lies on the actual rendered geometry of the Component's `build()` output — that would require evaluating the CSG tree. If an author declares an anchor with internally-consistent geometry that nevertheless doesn't match the rendered shape (e.g., `kind="cylindrical"` with `radius=5` on a Component that builds a `cylinder(r=10)`), the framework happily uses the declared values and the bridge produces wrong geometry without an error.
+
+What the framework *can* check, and does at user-input boundaries (Component class-scope `anchor()`, framework-internal `Component._set_anchor()`, `Node.with_anchor()`):
+
+| Kind | Checks |
+|---|---|
+| `cylindrical` | `normal` is unit and perpendicular to `axis`; `radius` and `length` positive. |
+| `conical` | `normal` is unit and perpendicular to `axis`; `r1`, `r2` non-negative (not both zero); `length` positive. |
+| `spherical` | `position` lies at distance `radius` from `axis_origin`; `normal` is the radial direction (or its negation for `inner=True`); `radius` positive. |
+| `meridional` | Required-fields presence only — full arc-evaluation consistency isn't checked. |
+| `planar` | No curved-surface checks. |
+
+These catch the most common author errors (typos in `at=` expressions that put the anchor far off the surface; declaring `kind="cylindrical"` with a normal that doesn't point radially). They don't catch declarations that are internally consistent but lie about the rendered geometry — that's the trust boundary.
+
+After spatial transforms (`transform_anchors`), the geometric checks are *not* re-run: a non-uniform scale on a sphere produces an internally inconsistent anchor by design (we don't model ellipsoids), and that's an accepted internal artifact, not an author error.
 
 ### When neither extension path applies
 
@@ -149,7 +165,7 @@ The shift moves the entire shape, so the opposite face also drifts by `eps`. Coi
 
 `attach()` returns `self` translated to land on `other`. When `fuse=True`, the framework tries to locally extend `self` along the contact face. It does **not** try to extend `other` — `other` isn't part of the returned value, so an extension on `other` would be invisible to downstream operations.
 
-For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., at=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
+For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., using_anchor=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
 
 ### Disabling fuse in a scope: `disable_eps_fuse()`
 
@@ -229,6 +245,25 @@ On a conical wall, `at_z=` also adjusts the position radially so the new anchor 
 
 Other shapes — `cube()`, `RectTube`, `RingGear`, `Bearing`, `RoundedBox`, etc. — only carry the six bbox-derived planar anchors. Their outer surfaces aren't simple cylinders (rectangular, toothed, balls-and-races), so a single `angle=` rotation around an axis doesn't have a meaningful target. Use bbox-derived faces, or attach to a raw `cylinder()` if you need angular placement.
 
+## Polar / azimuth placement on spherical surfaces
+
+`sphere()` publishes the six bbox-tangent anchors (all kind `"spherical"`) plus a `surface` anchor for arbitrary polar / azimuth placement:
+
+```python
+ball = sphere(r=10)
+
+peg.attach(ball, on="surface", polar=30, angle=45)   # 30° from +Z axis, 45° azimuth
+peg.attach(ball, on="surface", angle=90)             # equator wrap (polar defaults to 90)
+peg.attach(ball, on="surface", polar=0)              # north pole
+peg.attach(ball, on="surface", polar=180)            # south pole
+```
+
+`polar=` is degrees from the north-pole direction (range [0, 180]). `angle=` is the azimuth, degrees CCW from the +X meridian. If only `angle=` is supplied, `polar` defaults to 90 (equator). If only `polar=` is supplied, `angle` defaults to 0 (the +X meridian).
+
+`at_z=` and `radius=` are not valid on spherical anchors — sphere placement uses the `polar` / `angle` pair.
+
+The polar/azimuth math uses the host's local frame, so a sphere that has been translated, rotated, or scaled tracks correctly: `sphere(r=5).rotate([0, 90, 0])` rotates the north pole to point along +X, and `polar=0` lands at the rotated pole.
+
 ## Custom anchors on Components
 
 Declare anchors at class scope with the `anchor()` descriptor, alongside equations:
@@ -262,6 +297,25 @@ Custom anchors with the same name as a standard face (e.g. `"top"`) override the
 
 The `at=` string supports ternary expressions evaluated against instance attributes, so conditional positions don't need any special machinery: `anchor(at="0 if n_shape else h", normal=(0, 0, 1))`. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal is a framework-internal escape hatch (library Components only; not a user-facing pattern).
 
+**Class-load validation.** Anchor `at=`, string-form `normal=`, and string values inside `surface_params={...}` are AST-checked when the Component class is defined. Every name referenced must resolve to a declared `Param` or an equation-derived symbol — typos surface at module-import time with an error naming the anchor and the offending name, instead of at downstream user instantiation. The runtime `eval` is unchanged; this just moves the check forward.
+
+## One-off anchors on any node: `with_anchor()`
+
+When you want a named point on a primitive (or any other Node) without writing a Component, use the chained `with_anchor()` method:
+
+```python
+peg = (
+    cube([5, 5, 10])
+    .with_anchor("base", at=(2.5, 2.5, 0), normal=(0, 0, -1))
+)
+
+placed = peg.attach(plate, on="top", using_anchor="base")
+```
+
+`at=` and `normal=` are 3-tuples in the wrapped node's local frame. Spatial transforms applied after `with_anchor()` propagate to the anchor's position and normal exactly the same way Component custom anchors propagate. Custom anchors with the same name as a bbox-derived face override the default. Boolean operations drop them, like all custom anchors.
+
+`with_anchor()` is the lightweight escape hatch for "I want one named point on this shape" — for a parametric family with multiple anchors, write a Component.
+
 ## Anchor propagation
 
 Anchors (including custom ones) propagate through transforms:
@@ -272,7 +326,12 @@ sensor = cube([8, 8, 4]).attach(bracket, on="mount_face")
 # mount_face position is correctly shifted by both transforms
 ```
 
-Boolean operations (union, difference, intersection) drop custom anchors. Only the standard bbox-derived faces survive, because a boolean combination creates new geometry whose custom attachment points are no longer meaningful.
+Boolean operations follow these rules for custom anchors:
+
+- **`union` and `intersection`** drop all custom anchors. The semantic ambiguity is real — there's no clear "this anchor still means the same thing" rule when two shapes are combined.
+- **`difference`** propagates custom anchors from the first child (the thing being subtracted from), with one defensive check: any custom anchor whose position falls inside a cutter's bounding box is dropped, since the cutter may have removed material at the anchor's face. The 80% case — drilling a hole through a bracket far from `mount_face` — keeps `mount_face`. The breaking case — drilling through `mount_face` itself — drops it, and the next `attach()` to that name raises a clear missing-anchor error rather than silently producing wrong-looking output.
+
+Bbox-derived face anchors (`top`, `bottom`, etc.) always survive booleans — they're tied to the result's conservative bbox, not to specific geometry.
 
 Non-spatial wrappers (`.color()`, `.highlight()`, etc.) pass anchors through unchanged.
 
@@ -325,15 +384,14 @@ Shape-library Components ship with useful custom anchors:
 | `Bolt`         | `tip`             | Bottom of the shaft             |
 | `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
 
-## `at=` across the API
+## Naming convention: `on=` / `using_anchor=` / `at=`
 
-`at=` answers "where on the placed/moved thing?" Its form varies with the call:
+The three kwargs that show up across the anchor-aware APIs:
 
-| Call | `at=` form | Meaning |
+| Kwarg | Type | Meaning |
 |---|---|---|
-| `attach(other, on=..., at=...)` | string | anchor name on self (the thing being moved) |
-| `add_text(on=..., at=(u, v))` | 2-tuple in mm | offset in the chosen face's tangent plane |
-| `add_text(at=(x, y, z), normal=...)` | 3-tuple in mm | ad-hoc 3D position (no `on=`) |
-| `anchor(at=..., normal=...)` (declaration) | 3-tuple or string-expr | the anchor's position |
+| `on=` | string (anchor name) | The anchor on the **other** shape — the host being attached/decorated. |
+| `using_anchor=` | string (anchor name) | The anchor on **self** — the moving shape (only on `attach()` and `fuse()`). |
+| `at=` | tuple or string-expr (position) | A 3D position or in-face 2D offset (used by `anchor()` declarations, `add_text()`, `with_anchor()`). |
 
-The asymmetry is deliberate: `attach` moves an existing shape (which has its own anchors), so `at=` selects one. `add_text` stamps a generated 2D feature onto a host (no self-anchors), so `at=` is the placement offset within the chosen face. Anchor *declarations* use `at=` for the anchor's position itself.
+The split keeps anchor-name kwargs distinct from position kwargs: `on=` and `using_anchor=` always select named anchors; `at=` is always a coordinate.

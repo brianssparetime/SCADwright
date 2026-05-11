@@ -86,7 +86,7 @@ def test_fuse_function_inside_disable_is_exact_contact():
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10])
     with disable_eps_fuse():
-        result = fuse(pylon, floor, on="top", at="bottom")
+        result = fuse(pylon, floor, on="top", using_anchor="bottom")
     bb = bbox(result)
     # Floor: z=0..2. Pylon: bottom at z=2 (exact contact), top at z=12.
     assert bb.min[2] == pytest.approx(0.0)
@@ -101,7 +101,7 @@ def test_fuse_function_outside_disable_extends_normally():
     extension as usual."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10])
-    result = fuse(pylon, floor, on="top", at="bottom")
+    result = fuse(pylon, floor, on="top", using_anchor="bottom")
     bb = bbox(result)
     # Floor extends top by eps to 2.01 (the simpler-side selection
     # picks floor's top because the alternative would need a Translate).
@@ -115,10 +115,10 @@ def test_disable_eps_fuse_preserves_orient():
     """orient=True still rotates self correctly inside disable_eps_fuse()."""
     wall = cube([2, 40, 40])
     peg = cube([5, 5, 10])
-    no_disable = peg.attach(wall, on="rside", at="bottom", orient=True)
+    no_disable = peg.attach(wall, on="rside", using_anchor="bottom", orient=True)
     with disable_eps_fuse():
         with_disable = peg.attach(
-            wall, on="rside", at="bottom", orient=True, fuse=True,
+            wall, on="rside", using_anchor="bottom", orient=True, fuse=True,
         )
     # Same placement: only the eps adjustment is suppressed, and there
     # was no eps to start with on the no-disable orient call.
