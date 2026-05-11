@@ -118,7 +118,7 @@ When `attach(fuse=True)`'s on-anchor is a curved-surface kind (`cylindrical`, `c
 The bridge solves two problems with one piece:
 
 - **Inscription mounting (Duty B).** A peg attached tangent to a curved surface visually appears to be balanced on a thin contact line. The bridge fills the small inscription gap so the peg looks merged into the surface — what users almost always intend when mounting a feature on a cylinder, sphere, or cone.
-- **Manifold-clean union (Duty A).** The bridge extends `eps` past the peg's near-face on the peg side, providing the small overlap that keeps F5 preview clean — same purpose as Phase 1/2's planar eps but here built into the bridge geometry.
+- **Manifold-clean union (Duty A).** The bridge extends `eps` past the peg's near-face on the peg side, providing the small overlap that keeps F5 preview clean — same purpose as the planar-extension eps, but here built into the bridge geometry.
 
 ```python
 peg = cube([2, 2, 5])
@@ -134,14 +134,14 @@ mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
 
 **Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. The dispatch falls through to the legacy shift instead.
 
-**Inherited limitations from the cross-section primitive** (same as Phase 2):
+**Inherited limitations from the cross-section primitive** (same set as the planar cross-section path):
 
 - **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
 - **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
 
 **Trust contract.** The framework can't verify that a Component-declared anchor lies on the actual rendered geometry of the Component's `build()` output — that would require evaluating the CSG tree. If an author declares an anchor with internally-consistent geometry that nevertheless doesn't match the rendered shape (e.g., `kind="cylindrical"` with `radius=5` on a Component that builds a `cylinder(r=10)`), the framework happily uses the declared values and the bridge produces wrong geometry without an error.
 
-What the framework *can* check, and does at user-input boundaries (Component class-scope `anchor()`, runtime `Component.anchor()`, `Node.with_anchor()`):
+What the framework *can* check, and does at user-input boundaries (Component class-scope `anchor()`, framework-internal `Component._set_anchor()`, `Node.with_anchor()`):
 
 | Kind | Checks |
 |---|---|

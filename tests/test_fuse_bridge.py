@@ -1,4 +1,4 @@
-"""Tests for Phase 3 curved-surface fuse via the bridge mechanism.
+"""Tests for curved-surface fuse via the bridge mechanism.
 
 Bridge construction: when attach(fuse=True) targets a convex-outer
 curved on-anchor (cylindrical/conical/spherical), the framework builds
@@ -56,8 +56,8 @@ def test_bridge_on_cylinder_od_places_peg_tangent_then_fills_gap():
 
 
 def test_bridge_on_sphere_outer_returns_union_with_difference():
-    """Sphere bbox-derived anchors are kind='spherical' (Phase 3 prereq).
-    Attaching to a sphere with fuse=True builds a bridge."""
+    """Sphere bbox-derived anchors are kind='spherical', so attaching
+    to a sphere with fuse=True dispatches through the bridge."""
     ball = sphere(r=10)
     peg = cube([2, 2, 5])
     result = peg.attach(ball, on="top", orient=True, fuse=True)
@@ -229,9 +229,10 @@ def test_coaxial_normals_floating_point_tolerance():
 
 
 def test_sphere_bbox_anchors_are_spherical():
-    """Phase 3 prereq: Sphere's bbox-derived anchors carry kind='spherical'
-    so curved-host fuse dispatches via bridge instead of trying the planar
-    path (which Phase 2 used to raise on)."""
+    """Sphere's bbox-derived anchors carry kind='spherical' so curved-host
+    fuse dispatches via the bridge rather than the planar cross-section
+    path. (Cross-section on a sphere bbox-anchor would raise — the bbox
+    face center is a tangent point, not a planar contact region.)"""
     from scadwright.anchor import get_node_anchors
     s = sphere(r=7)
     anchors = get_node_anchors(s)

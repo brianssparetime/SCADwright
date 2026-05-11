@@ -94,7 +94,7 @@ def test_class_scope_anchor_no_params():
 
 
 def test_setup_anchor_overrides_class_scope():
-    """self.anchor() in setup() overrides a class-scope anchor of the same name."""
+    """self._set_anchor() in setup() overrides a class-scope anchor of the same name."""
 
     class Both(Component):
         h = Param(float, default=10)
@@ -102,7 +102,7 @@ def test_setup_anchor_overrides_class_scope():
         mount = anchor(at=(0, 0, 5), normal=(0, 0, 1))
 
         def setup(self):
-            self.anchor("mount", position=(0, 0, self.h), normal=(0, 0, 1))
+            self._set_anchor("mount", position=(0, 0, self.h), normal=(0, 0, 1))
 
         def build(self):
             return cube([10, 10, self.h])

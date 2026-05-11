@@ -106,8 +106,8 @@ class Component(Node):
         # tree_hash cache, populated by sc.tree_hash() on first call.
         self._tree_hash_cache = None
         # Custom anchors: populated from class-scope anchor() defs during
-        # __init__. Also mutable at runtime via self.anchor(...) as a final
-        # escape hatch for Components that can't express an anchor declaratively.
+        # __init__. Framework-internal code can override via
+        # self._set_anchor(...) for cases that resist declarative form.
         self._anchors: dict = {}
         # Freeze flag: set to True after __init__ for equation-using Components.
         self._frozen = False
@@ -195,7 +195,7 @@ class Component(Node):
         bb = _bbox(self._built_tree)
         return bb.center
 
-    def anchor(
+    def _set_anchor(
         self,
         name: str,
         position: tuple,
@@ -204,19 +204,18 @@ class Component(Node):
         kind: str = "planar",
         **surface_kwargs,
     ) -> None:
-        """Declare a named anchor on this Component at runtime.
+        """Framework-internal: set or override a named anchor at runtime.
 
-        Prefer the class-scope ``anchor()`` descriptor — both ``at=`` and
-        ``normal=`` accept string expressions, which cover conditional
-        positions and conditional normals. This method is the imperative
-        escape hatch for Components that genuinely can't express an anchor
-        declaratively.
+        For Component authors: prefer the class-scope ``anchor()``
+        descriptor (``at=`` and ``normal=`` accept string expressions
+        evaluated against instance attrs; ``surface_params={...}``
+        carries curved-surface metadata). For one-off named points on
+        a non-Component node, use ``Node.with_anchor()``.
 
-        ``kind`` and the curved-surface kwargs (``axis``, ``radius``,
-        ``r1``/``r2``, ``length``, ``rim_radius``, ``axis_origin``,
-        ``meridian_zero``, ``inner``, etc.) carry surface-type metadata
-        for decoration transforms (see ``docs/add_text.md``). The default
-        ``kind="planar"`` covers every flat face.
+        This method exists for framework-internal cases that genuinely
+        can't be expressed declaratively. The same per-kind geometric
+        self-consistency check that runs on declarative anchors fires
+        here.
         """
         from scadwright.anchor import Anchor
 
@@ -314,9 +313,9 @@ class Component(Node):
     def get_anchors(self) -> dict:
         """Return this Component's anchors: bbox-derived defaults merged with custom.
 
-        Class-scope ``anchor()`` declarations and any runtime
-        ``self.anchor(...)`` calls override the bbox-derived defaults when
-        they share a name.
+        Class-scope ``anchor()`` declarations and any framework-internal
+        ``self._set_anchor(...)`` calls override the bbox-derived defaults
+        when they share a name.
         """
         from scadwright.anchor import anchors_from_bbox
         from scadwright.bbox import bbox as _bbox

@@ -1,6 +1,6 @@
 """Tests for ``Anchor._validate_geometry`` — per-kind self-consistency
 checks that fire at user-input boundaries (Component class-scope
-``anchor()``, ``Component.anchor(...)``, ``Node.with_anchor(...)``).
+``anchor()``, ``Component._set_anchor(...)``, ``Node.with_anchor(...)``).
 
 Coverage matches the principle: catch what we can cheaply and reliably
 (cylindrical/conical/spherical declarations); document the gap for what
@@ -304,7 +304,9 @@ def test_component_class_scope_valid_anchor_passes():
     GoodCylinderShape(h=10, r=5)  # no raise
 
 
-def test_component_runtime_anchor_validates():
+def test_component_runtime_set_anchor_validates():
+    """Framework-internal Component._set_anchor() runs the same per-kind
+    geometric check as the declarative path."""
     class Foo(Component):
         equations = "size > 0"
 
@@ -313,7 +315,7 @@ def test_component_runtime_anchor_validates():
 
     f = Foo(size=10)
     with pytest.raises(ValidationError, match="not perpendicular"):
-        f.anchor(
+        f._set_anchor(
             "wall",
             position=(5, 0, 5),
             normal=(0, 0, 1),  # wrong

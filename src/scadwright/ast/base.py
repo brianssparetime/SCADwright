@@ -611,16 +611,16 @@ class Node(
         axis: str | None = None,
         eps: float | None = None,
     ) -> "Node":
-        """Extend self through coincident faces of ``parent`` by ``eps``.
+        """Extend the cutter through coincident faces of ``parent`` by ``eps``.
 
         Use on cutters before passing them to ``difference()`` to eliminate
         manual epsilon overlap::
 
             part = difference(box, cylinder(h=20, r=3).through(box))
 
-        The cutter is extended through any face of ``parent`` that it
-        touches (within floating-point tolerance) on the cut axis. Faces
-        that aren't coincident are left alone.
+        Extends the cutter through any face of ``parent`` that it touches
+        (within floating-point tolerance) on the cut axis. Faces that
+        aren't coincident are left alone.
 
         ``axis`` is auto-detected (the axis where the cutter most closely
         spans the parent). Pass ``axis="x"``/``"y"``/``"z"`` to override

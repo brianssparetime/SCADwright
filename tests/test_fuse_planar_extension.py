@@ -1,4 +1,4 @@
-"""Behavioral tests for Phase 1 of fuse: local extension at the
+"""Behavioral tests for planar-contact local extension at the
 attach(fuse=True) and standalone fuse(...) APIs.
 
 These exercise the user-facing entry points; the per-shape unit tests
@@ -17,10 +17,10 @@ from scadwright.shapes import Tube
 
 
 def test_attach_fuse_preserves_far_face_cube_on_cube():
-    """The headline Phase 1 improvement: pylon.top stays at the
-    declared z=12, not 11.99 as the old shift produced. Bottom is
-    extended into the floor by eps; everything above the contact face
-    is exactly where the user put it."""
+    """Local extension preserves the far face exactly: pylon.top stays
+    at the declared z=12, not 11.99 as a bilateral shift would produce.
+    Bottom is extended into the floor by eps; everything above the
+    contact face is exactly where the user put it."""
     floor = cube([40, 40, 2])
     pylon = cube([5, 5, 10]).attach(floor, fuse=True)
     bb = bbox(pylon)
@@ -92,9 +92,9 @@ def test_attach_fuse_with_orient_uses_local_extension():
 
 def test_attach_fuse_on_cylindrical_wall_raises_oblique():
     """attach(fuse=True) on a curved host without coaxial normals (no
-    orient=True, no manual alignment) is oblique — Phase 3 raises rather
-    than silently shifting in a direction that doesn't match the surface
-    geometry."""
+    orient=True, no manual alignment) is oblique — the bridge raises
+    rather than silently shifting in a direction that doesn't match
+    the surface geometry."""
     from scadwright.errors import ValidationError
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])

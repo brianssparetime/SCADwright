@@ -1,4 +1,4 @@
-"""Tests for the cross-section fuse path (Phase 2 of better-fuse).
+"""Tests for the cross-section fuse path.
 
 Cross-section is the fallback for planar fuses on shapes without a
 parametric extension lever — rotate_extrude end-caps, Polyhedra, CSG
@@ -152,9 +152,9 @@ def test_cylinder_cone_apex_bottom_cross_section_raises():
 
 
 def test_sphere_anchors_are_spherical():
-    """Sphere's bbox-derived anchors carry kind='spherical' with the
-    radius in surface_params. The Phase 2 cross_section path is bypassed
-    for sphere; the curved-host bridge dispatch handles it instead."""
+    """Sphere's bbox-derived anchors carry kind='spherical' so the
+    cross-section path is bypassed; the curved-host bridge dispatch
+    handles sphere attachments."""
     from scadwright.anchor import get_node_anchors
     s = sphere(r=5)
     anchors = get_node_anchors(s)

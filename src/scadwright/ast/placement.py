@@ -78,11 +78,14 @@ def _detect_through_axis(self_bb, parent_bb, explicit_axis: str | None, loc) -> 
 
 
 def _extend_through_faces(self, self_bb, parent_bb, ax: int, eps: float, loc):
-    """Wrap ``self`` in the Scale+Translate that extends it across whichever
-    of its ``ax``-faces are coincident with ``parent``'s. Returns ``self``
-    unchanged when no face matches (the call site's no-op contract).
-    Raises ValidationError if the cutter doesn't overlap the parent on
-    the cut axis at all.
+    """Wrap the cutter in the Scale+Translate that extends it across
+    whichever of its ``ax``-faces are coincident with the parent's.
+    Returns the cutter unchanged when no face matches (the call site's
+    no-op contract). Raises ``ValidationError`` if the cutter doesn't
+    overlap the parent on the cut axis at all.
+
+    The ``self`` parameter is the cutter (named ``self`` to match the
+    chained-method call convention from ``Node.through``).
     """
     from scadwright.api.tolerances import AXIS_LEN_DEGEN_TOL, coincidence_tol
     from scadwright.ast.transforms import Scale, Translate
