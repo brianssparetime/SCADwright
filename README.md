@@ -26,7 +26,7 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
  - [automated tests](#16-you-know-if-a-part-has-changed)
  - parts [know their own bounding box](#9-parts-know-their-bounds-without-needing-to-render-allowing-print-bed-tests-and-overlap-tests) without rendering — print-bed checks, overlap tests
  - `$fn` is [managed automatically](#14-resolution-fn-is-managed-for-you-but-easily-overridable), but easy to override
- - [manufacturing fudges](#15-manufacturing-specific-fudges-are-easy-to-add-track-and-keep-separate-from-design-considerations) (extra clearances, material variance) are tunable, without interfering with finished-part design dimensions
+ - [manufacturing fudges](#15-manufacturing-specific-fudges-are-easy-to-add-track-and-keep-separate-from-design-considerations) (extra clearances, material variance) are tunable, without interfering with finished-part design dimensions (or parts that reference them)
 
  and more.
 
@@ -73,7 +73,7 @@ b = Bracket(width=80, height=5)
 print(b.width)               # readable; no geometry built yet
 ```
 
-### 2. Define a component once, call it with any set of sufficient arguments, the framework handles the rest by solving equations, and no boilerplate to achieve this.  Components are as nice to use as they are to write.
+### 2. Define a component once, call it with any set of sufficient arguments, the framework handles the rest by solving equations; no boilerplate.  Components are as nice to use as they are to write.
 
 Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od = id + 2*thk`. 
 
@@ -318,6 +318,8 @@ assert_fits_in(my_widget, [200, 200, 50])  # fits on the print bed?
 assert_no_collision(box, lid)              # parts don't overlap?
 ```
 
+Note:  bboxes have limitations - it's the smallest cube that fits your part.  But it's a hell of a lot better than nothing, and going further verges into rewriting OpenSCAD.
+
 ### 10. Centering Components is easy and straightforward
 
 In OpenSCAD, `center=true` works on primitives but not on modules. If your module builds a shape at the origin and you want it centered, you compute the offset yourself. Every module that needs centering reinvents the same translate-by-half-size logic.
@@ -360,6 +362,13 @@ from scadwright.primitives import cube
 
 cube([-5, 10, 10])
 # ValidationError: cube size[0] must be non-negative, got -5.0 (at widget.py:42)
+```
+
+Component equation errors name the equation that failed and the values that didn't line up — so an over-specified or inconsistent call doesn't make you re-read the equations block to find which line broke:
+
+```python
+Tube(h=10, id=8, thk=1, od=11)        # over-specified AND inconsistent: 8 + 2*1 ≠ 11
+# ValidationError: Tube.equations[0]: equation violated: `od - id = 2*thk` (lhs=3.0, rhs=2.0)
 ```
 
 
@@ -594,7 +603,11 @@ Three optional extras layer in deeper functionality:
 
 ## Editor integration
 
-Any editor with an LSP client gets inline support for `equations = """..."""` blocks: red squiggles for every error the resolver would raise, completion for the curated math/builtins namespace and the surrounding class's declarations, hover with declared types and defaults, goto-definition, document symbols, and project-wide rename that updates cross-file references atomically. 
+If you try hard enough to eliminate boiler plate, sooner or later you wind up with a DSL (design-specific language) (or you reinvent a worse form of LISP).  While it's tempting to embrace that in an ecstatic frenzy of ascetic pursuit, the hangover is a total lack of IDE support for your weird syntax.  The world, it seems, does not appreciate beauty.
+
+So I wrote us a Language Server Protocol (LSP).
+
+Any editor with an LSP client gets full inline support for `equations = """..."""` blocks: red squiggles for every error the resolver would raise, completion for the curated math/builtins namespace and the surrounding class's declarations, hover with declared types and defaults, goto-definition, document symbols, and project-wide rename that updates cross-file references atomically. 
 
 Install with `pip install 'scadwright[lsp]'`, then point your editor at `scadwright lsp`. Configs for Vim, Neovim, Helix, Emacs (eglot / lsp-mode), Sublime, Zed, VSCode, and PyCharm Pro live in [`docs/lsp_setup.md`](docs/lsp_setup.md).
 
@@ -627,13 +640,13 @@ If you're developing with Claude Code, install the [OpenSCAD MCP server](https:/
 
 ## Is this AI generated slop?
 
-I've been working on the specification for this for years, long before AI was a thing.
+I've been working on the specification for this for years, long before vibe-coding was a thing.
 
-Is there AI generated code in here?  Yes.  It's 2026.  
+Is there AI generated code in here?  Yes.  It's 2026 and I have a job.  Sometimes a life too.  
 
-Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands, of incremental iterations, and a fair amount of hand-coding and human-writing (including this bit right here).
+Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands, of incremental iterations, and a fair amount of hand-coding and human-writing (including this whole page here).
 
-Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intuitive and naively simple, and working through hard trade-offs in detail through examples.  I've been writing code longer than Python has been a language (and I've been writing serious code longer than Python has been a serious language) - I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
+Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intuitive and naively simple, and working through hard framework trade-offs, in detail through examples.  I've been writing code longer than Python has been a language (and I've been writing serious code longer than Python has been a serious language) - I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
 
 In parallel, I'm actually using this framework for my current 3d printing projects: the [Bronica S2 lens housing](/examples/lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) both leverage this 
 framework and motivated its completion.
