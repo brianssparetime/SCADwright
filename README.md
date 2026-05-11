@@ -40,7 +40,8 @@ SCADwright calls OpenSCAD only at render time. The Python side requires `sympy` 
 
 If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build123d, or other Python+CAD tools, see [How is SCADwright different?](docs/how_is_scadwright_different.md) for a side-by-side.
 
-The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action. 
+The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action, but there's also [full documentation](docs/README.md) and [examples projects](examples/README.md).
+
 
 ## A picture is worth 250+ lines of OpenSCAD
 
