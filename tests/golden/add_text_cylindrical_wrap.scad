@@ -7,7 +7,7 @@ union() {
     translate([-1.19592, -9.91816, 10]) {
         multmatrix([[0.992809, 0, -0.119712, 0], [-0.119712, 0, -0.992809, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                translate([-1.2, 0, 0]) {
+                translate([-1.2, -2, 0]) {
                     text("B", size=4);
                 }
             }
@@ -17,7 +17,7 @@ union() {
     translate([1.19592, -9.91816, 10]) {
         multmatrix([[0.992809, 0, 0.119712, 0], [0.119712, 0, -0.992809, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) {
             linear_extrude(height=0.41, center=false) {
-                translate([-1.2, 0, 0]) {
+                translate([-1.2, -2, 0]) {
                     text("R", size=4);
                 }
             }

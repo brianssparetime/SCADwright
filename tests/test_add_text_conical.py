@@ -86,15 +86,20 @@ def test_conical_default_orient_is_axial():
     assert scad_axial_default == scad_axial_explicit
 
 
-def test_conical_slant_differs_from_axial():
-    """text_orient='slant' produces a different transform than axial."""
+def test_conical_axial_and_slant_agree():
+    """On curved-axially hosts (cones, barrels) text_orient is a no-op —
+    the glyph plane is always the surface tangent plane and the extrusion
+    is along the surface normal. Anything else gives a misaligned cut on a
+    slanted wall (the glyph "floats in air" where the wall has receded, or
+    stays buried inside where it has bulged). The kwarg is kept for
+    backward-compat but has no visible effect here."""
     axial = emit_str(cylinder(h=20, r1=10, r2=5).add_text(
         label="X", relief=0.4, on="outer_wall", font_size=4, text_orient="axial",
     ))
     slant = emit_str(cylinder(h=20, r1=10, r2=5).add_text(
         label="X", relief=0.4, on="outer_wall", font_size=4, text_orient="slant",
     ))
-    assert axial != slant
+    assert axial == slant
 
 
 def test_text_orient_invalid_rejected():

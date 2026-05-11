@@ -59,11 +59,11 @@ OPENSCAD = "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
 
 def _make_host(kind):
     if kind == "cyl":
-        return cylinder(h=HOST_H, r=8)
+        return cylinder(h=HOST_H, r=11)
     if kind == "cone":
-        return cylinder(h=HOST_H, r1=10, r2=5)
+        return cylinder(h=HOST_H, r1=13, r2=8)
     if kind == "barrel":
-        return Barrel(h=HOST_H, end_r=8, bulge=2)
+        return Barrel(h=HOST_H, end_r=10, bulge=2)
     raise ValueError(kind)
 
 
@@ -72,7 +72,7 @@ def _emit_combo_scad(td, rg, fl, kind, out_path: Path) -> None:
     with resolution(fn=96):
         labeled = host.add_text(
             label="TEXT", on="outer_wall", meridian=0,
-            font_size=5, relief=-0.6,
+            font_size=4, relief=-0.5,
             text_dir=td, rotate_glyphs=rg, flip=fl,
         )
     scad_render(labeled, out_path)
@@ -83,12 +83,13 @@ def _openscad_render(scad_path: Path, png_path: Path) -> None:
     # the text engraved on the +X meridian. Vector form is `eye, center`.
     # Camera: eye on +X at fixed distance, target at the host's mid-height.
     # Fixed distance (no --viewall) keeps the host the same size across all
-    # 8 cells so the engraving sizes match.
+    # 8 cells so engraving scales match. Distance picked so the widest host
+    # (cone r1=13) still fits in the square cell with a bit of margin.
     cmd = [
         OPENSCAD,
         "--imgsize", f"{CELL_W},{CELL_H}",
         "--colorscheme", "Metallic",
-        "--camera", f"60,0,{HOST_H/2},0,0,{HOST_H/2}",
+        "--camera", f"90,0,{HOST_H/2},0,0,{HOST_H/2}",
         "--projection", "perspective",
         "-o", str(png_path),
         str(scad_path),

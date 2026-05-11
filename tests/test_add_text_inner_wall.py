@@ -146,7 +146,11 @@ def test_inner_inset_is_difference():
     assert isinstance(expanded, Difference)
 
 
-def test_funnel_inner_axial_vs_slant_differs():
+def test_funnel_inner_axial_and_slant_agree():
+    """text_orient is a no-op on a Funnel's inner wall — see the matching
+    test in test_add_text_conical.py for the rationale (curved-axially
+    hosts always use the surface tangent plane; "axial" can't carve cleanly
+    on a slanted wall regardless of host kind)."""
     f = Funnel(h=20, bot_od=20, top_od=10, thk=2)
     axial = emit_str(f.add_text(
         label="X", relief=0.4, on="inner_wall", font_size=2,
@@ -156,7 +160,7 @@ def test_funnel_inner_axial_vs_slant_differs():
         label="X", relief=0.4, on="inner_wall", font_size=2,
         text_orient="slant",
     ))
-    assert axial != slant
+    assert axial == slant
 
 
 # --- Pathway B ---

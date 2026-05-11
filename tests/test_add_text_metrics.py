@@ -353,9 +353,9 @@ class TestPerGlyphEmission:
         )
         assert 'halign="center"' not in scad
         assert 'valign="center"' not in scad
-        # Advance midpoint pre-centering: heuristic mode → advance=0.6*4=2.4,
-        # half=1.2, applied as a 2D translate before linear_extrude.
-        assert "translate([-1.2, 0, 0])" in scad
+        # 2D pre-centering: heuristic mode → advance=0.6*4=2.4, half=1.2 in x;
+        # font_size=4, half=2 in y. Centers each glyph on its placement origin.
+        assert "translate([-1.2, -2, 0])" in scad
 
     def test_per_glyph_emit_on_rim_arc(self):
         scad = _emit(
@@ -365,24 +365,24 @@ class TestPerGlyphEmission:
         )
         assert 'halign="center"' not in scad
         assert 'valign="center"' not in scad
-        assert "translate([-1.2, 0, 0])" in scad
+        assert "translate([-1.2, -2, 0])" in scad
 
 
 def test_heuristic_uniform_pre_translate():
     """In heuristic mode (no freetype marker → autouse fixture disables it)
-    every glyph gets the same -advance/2 pre-translate."""
+    every glyph gets the same -advance/2 pre-translate in x."""
     scad = _emit(
         cylinder(h=20, r=10).add_text(
             label="iW", relief=0.4, on="outer_wall", font_size=4,
         )
     )
     import re
-    translates = re.findall(r"translate\(\[(-?\d+\.\d+), 0, 0\]\)", scad)
-    vals = {float(t) for t in translates if float(t) < 0}
-    # Heuristic: every glyph gets the same pre-translate of -0.6 * size / 2
-    # = -1.2 at size=4.
-    assert vals == {-1.2}, (
-        f"expected uniform -1.2 pre-translate, got {translates}"
+    # Format is `translate([-X, -Y, 0])` where -Y = -font_size/2.
+    translates = re.findall(r"translate\(\[(-?\d+\.\d+), -?\d+\.?\d*, 0\]\)", scad)
+    xs = {float(t) for t in translates if float(t) < 0}
+    # Heuristic: every glyph gets the same x of -0.6 * size / 2 = -1.2 at size=4.
+    assert xs == {-1.2}, (
+        f"expected uniform -1.2 x pre-translate, got {translates}"
     )
 
 
@@ -608,7 +608,7 @@ class TestProportionalSpacingIntegration:
         # a specific float-format of the rendering); both must be present
         # and distinct.
         import re
-        translates = re.findall(r"translate\(\[(-?\d+\.\d+), 0, 0\]\)", scad)
+        translates = re.findall(r"translate\(\[(-?\d+\.\d+), -?\d+\.?\d*, 0\]\)", scad)
         vals = sorted({float(t) for t in translates if float(t) < 0})
         assert len(vals) >= 2, (
             f"expected distinct per-glyph 2D pre-translates, got {translates}"

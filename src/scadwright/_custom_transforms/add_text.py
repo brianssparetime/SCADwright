@@ -600,8 +600,15 @@ def _place_wrapped(
                     slant_axial_component)
     elif is_meridional:
         from scadwright.ast.placement import _meridian_arc_at as _arc_at
+        # ``_meridian_arc_at`` returns surface-NORMAL components (the
+        # function name in placement.py is "_meridian_arc_at" but its
+        # docstring explicitly says "surface's outward unit normal"). We
+        # want SLANT (the surface tangent in the (radial, axial) frame
+        # pointing in the +z direction along the wall): rotate the
+        # normal 90° CCW in the (outward, axial) plane to get slant.
         def compute_geom_at(at_z_local):
-            return _arc_at(at_z_local, meridian_r, mid_r_param, meridian_s_param)
+            r, n_o, n_a = _arc_at(at_z_local, meridian_r, mid_r_param, meridian_s_param)
+            return r, -n_a, n_o
     else:  # cylindrical
         def compute_geom_at(at_z_local):
             return r_mid, 0.0, 1.0
@@ -670,9 +677,14 @@ def _place_wrapped(
                     f"[-{merid_length/2}, {merid_length/2}]."
                 )
             try:
-                line_radius, line_slant_outward, line_slant_axial = (
+                # See compute_geom_at: _meridian_arc_at returns surface
+                # NORMAL components, but downstream wants SLANT. Rotate
+                # 90° CCW in (outward, axial) frame: (n_o, n_a) → (-n_a, n_o).
+                line_radius, _norm_o, _norm_a = (
                     _meridian_arc_at(line_at_z, meridian_r, mid_r_param, meridian_s_param)
                 )
+                line_slant_outward = -_norm_a
+                line_slant_axial = _norm_o
             except ValueError as exc:
                 raise ValidationError(f"add_text: {exc}") from exc
             if line_radius <= 0:
@@ -783,12 +795,22 @@ def _emit_wrap_line(
     matters most for short labels where evaluating at the left edge
     leaves the whole glyph noticeably rotated.
     """
-    advances_mm = get_advances(
-        tuple(line),
-        font=text_kwargs.get("font"),
-        size=font_size,
-        spacing=text_kwargs.get("spacing", 1.0),
-    )
+    if rotate_glyphs:
+        # Rotated glyphs occupy ``font_size`` of arc along the line
+        # direction (the glyph's height maps to the line tangent under the
+        # 90° rotation), so proportional per-glyph advances would let
+        # adjacent letters overlap. Use uniform ``font_size`` slots — the
+        # canonical wine-bottle / vertical layout. ``spacing`` multiplies
+        # the slot the same way it scales proportional advances elsewhere.
+        slot = font_size * text_kwargs.get("spacing", 1.0)
+        advances_mm = [slot] * len(line)
+    else:
+        advances_mm = get_advances(
+            tuple(line),
+            font=text_kwargs.get("font"),
+            size=font_size,
+            spacing=text_kwargs.get("spacing", 1.0),
+        )
 
     # Per-char offset list and overflow check, branching on text_dir.
     if text_dir == "circumferential":
@@ -892,19 +914,31 @@ def _emit_wrap_line(
             axis[0] * radial[1] - axis[1] * radial[0],
         )
 
-        if is_conical and text_orient == "slant":
+        # On curved-axially hosts (cones, meridional barrels) the glyph
+        # plane MUST be the surface's tangent plane and the extrusion MUST
+        # follow the surface normal — both per glyph (since the slant
+        # components vary along the host). Otherwise a tall glyph spans
+        # axial range where the wall radius differs, and the prism either
+        # floats in air (where the wall has receded) or stays buried inside
+        # (where it has bulged), giving the "letters not fully carving in"
+        # symptom. text_orient="axial" (legacy: keep letters vertical
+        # relative to the world axis) can't produce a clean engraving on
+        # any host with non-zero slope, so we silently use the slant
+        # orientation regardless on those hosts. On cylinders, axis already
+        # lies in the tangent plane, so the slant path degenerates to the
+        # axial path automatically.
+        if is_conical:
             slant = (
                 char_slant_o * outward_at_theta[0] + char_slant_a * axis[0],
                 char_slant_o * outward_at_theta[1] + char_slant_a * axis[1],
                 char_slant_o * outward_at_theta[2] + char_slant_a * axis[2],
             )
-            surface_normal = (
+            extrude_dir = (
                 tangent[1] * slant[2] - tangent[2] * slant[1],
                 tangent[2] * slant[0] - tangent[0] * slant[2],
                 tangent[0] * slant[1] - tangent[1] * slant[0],
             )
             e2 = slant
-            extrude_dir = surface_normal
         else:
             e2 = axis
             extrude_dir = radial
@@ -947,8 +981,16 @@ def _emit_wrap_line(
             fa=text_kwargs.get("fa"),
             fs=text_kwargs.get("fs"),
         )
+        # Pre-translate centers each glyph in BOTH 2D dimensions around its
+        # placement origin: x by -advance/2 (so the advance midpoint sits on
+        # the placement point) and y by -font_size/2 (so the line of glyphs
+        # sits centered on the surface ring/column rather than sitting above
+        # it from a baseline-at-anchor offset). Without the y shift, the
+        # font_size dimension extends entirely in +y from the placement,
+        # which on rotate_glyphs hosts pushes the glyph's far edge past the
+        # surface's visible arc and clips the tops/bottoms of letters.
         glyph_2d_centered = Translate(
-            v=(-glyph_advance_mm / 2.0, 0.0, 0.0),
+            v=(-glyph_advance_mm / 2.0, -font_size / 2.0, 0.0),
             child=glyph_2d,
             source_location=loc,
         )
@@ -1171,8 +1213,16 @@ def _emit_rim_line(
             fa=text_kwargs.get("fa"),
             fs=text_kwargs.get("fs"),
         )
+        # Pre-translate centers each glyph in BOTH 2D dimensions around its
+        # placement origin: x by -advance/2 (so the advance midpoint sits on
+        # the placement point) and y by -font_size/2 (so the line of glyphs
+        # sits centered on the surface ring/column rather than sitting above
+        # it from a baseline-at-anchor offset). Without the y shift, the
+        # font_size dimension extends entirely in +y from the placement,
+        # which on rotate_glyphs hosts pushes the glyph's far edge past the
+        # surface's visible arc and clips the tops/bottoms of letters.
         glyph_2d_centered = Translate(
-            v=(-glyph_advance_mm / 2.0, 0.0, 0.0),
+            v=(-glyph_advance_mm / 2.0, -font_size / 2.0, 0.0),
             child=glyph_2d,
             source_location=loc,
         )
