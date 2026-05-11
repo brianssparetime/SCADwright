@@ -43,15 +43,11 @@ If you're already committed to OpenSCAD as your end-to-end environment and want 
 
 ## CadQuery
 
-[CadQuery](https://github.com/CadQuery/cadquery) is a Python library that drives OpenCASCADE — a full B-Rep (boundary representation) CAD kernel. It's the closest open-source analogue to commercial parametric CAD like SolidWorks or Onshape.
+[CadQuery](https://github.com/CadQuery/cadquery) is a Python library on the OpenCASCADE B-Rep CAD kernel — the closest open-source analogue to commercial parametric CAD like SolidWorks or Onshape. B-Rep represents curved surfaces exactly and supports STEP/IGES export; SCADwright (via OpenSCAD) is CSG with curves tessellated to a mesh at render time.
 
-**How SCADwright differs:**
+**Pick CadQuery when** parts will be machined (CNC, lathe, mill), need surface continuity for mechanical mating (gear teeth, bearing races, machined fits), exchange with traditional CAD/CAM via STEP / IGES, or feed into FEA simulation. CadQuery's exact-surface representation is necessary for all of these.
 
-- **Different geometry model.** CadQuery works in B-Rep — exact curved surfaces, real fillets, true revolves, fillets that actually compute curvature. SCADwright (and OpenSCAD) work in CSG with mesh approximation: a "fillet" is a small minkowski sweep, a circle is an N-gon. CSG is faster and simpler; B-Rep is more accurate and supports operations that mesh CSG can't (true blends, exact-radius fillets, draft analysis).
-- **Different output.** CadQuery exports STEP, IGES, BREP — formats that downstream CAD/CAM tools accept natively. SCADwright exports `.scad` (which OpenSCAD can render to STL).
-- **Different feel.** CadQuery's "fluent API" works in 3D sketch planes, edge selectors, and feature trees; SCADwright stays close to OpenSCAD's primitives + transforms + CSG model.
-
-If you need precise mechanical engineering output (manufacturing-grade fillets, surface continuity, exports for traditional CAD pipelines), CadQuery is the better fit. SCADwright is for the OpenSCAD use case: 3D-printable parts, programmatic mesh CSG, fast iteration, simple geometry model.
+**Pick SCADwright when** you're making 3D-printable parts where the STL mesh is the deliverable. SCADwright is simpler to install, faster to iterate against, and emits readable `.scad` you can diff and share. The Component model — parts that publish their dimensions back to callers — is the main edge over both CadQuery's parametric scripts and plain OpenSCAD.
 
 ## Build123d
 

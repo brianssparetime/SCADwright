@@ -133,7 +133,7 @@ class BatteryHolder(Component):
     """
 ```
 
-Equations also handle optional inputs. Prefix a name with `?` to declare it optional; rules and equations that reference it auto-skip when it's not set. The `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` helpers cover the common XOR/OR validation shapes in one line each.
+Equations also handle optional inputs. Prefix a name with `?` to mark it optional; arithmetic that bottoms out on an unset value silently skips, while the `exactly_one` / `at_least_one` / `at_most_one` / `all_or_none` helpers and `?` inside conditionals enforce or branch on presence explicitly.
 
 ```python
 class FilletedBracket(Component):
