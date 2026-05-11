@@ -836,6 +836,14 @@ def _emit_wrap_line(
         # by -advance/2 so that midpoint coincides with the placement origin.
         # halign decides how the cumulative line spans relative to base_meridian.
         sign = -1.0 if flip else 1.0
+        # On inner walls the reader is INSIDE the host looking outward, so
+        # world +Y is the reader's LEFT (vs. the reader's RIGHT for outer
+        # walls). The glyph orientation is already mirrored correctly via
+        # the inward-pointing radial, but the LINE direction also needs to
+        # reverse — otherwise char 0 ends up on the reader's right and the
+        # text reads right-to-left from the reader's perspective.
+        if s_outward < 0:
+            sign = -sign
         cum = [0.0]
         for a in advances_mm[:-1]:
             cum.append(cum[-1] + a)
