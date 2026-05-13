@@ -138,12 +138,15 @@ def test_bridge_without_orient_raises_on_non_coaxial():
         peg.attach(hub, on="outer_wall", angle=0, bridge=True)
 
 
-def test_bridge_on_inner_wall_raises():
+def test_bridge_on_inner_wall_clips_to_bore():
+    """bridge=True on an inner wall clips the peg to the bore via
+    intersection. The peg's near-face curves to match the inner surface."""
+    from scadwright.ast.csg import Intersection
     from scadwright.shapes import Tube
     tube = Tube(od=20, id=10, h=15)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="inner"):
-        peg.attach(tube, on="inner_wall", angle=0, orient=True, bridge=True)
+    placed = peg.attach(tube, on="inner_wall", angle=0, orient=True, bridge=True)
+    assert isinstance(placed, Intersection)
 
 
 def test_bridge_on_sphere_with_polar():
@@ -331,16 +334,13 @@ def test_fuse_true_error_names_paths():
     assert "disable_eps_fuse" in msg
 
 
-def test_fuse_function_smart_cascade_raises():
-    """Standalone fuse() also raises in the no-applicable case.
-
-    Two Tube inner_wall anchors: both kind='cylindrical' with
-    surface_params['inner']=True. Bridge requires convex-outer; overlap
-    requires planar+planar. Neither fits.
-    """
+def test_fuse_function_smart_cascade_redirects_to_bridge():
+    """Standalone fuse() raises when the host is curved (inner or outer)
+    and the caller didn't pass bridge=True. The error message points at
+    bridge=True rather than silently shifting."""
     from scadwright.shapes import Tube
 
     a = Tube(od=20, id=10, h=15)
     b = Tube(od=30, id=12, h=20)
-    with pytest.raises(ValidationError, match="no applicable eps mechanism"):
+    with pytest.raises(ValidationError, match="bridge=True"):
         fuse(a, b, on="inner_wall", using_anchor="inner_wall")

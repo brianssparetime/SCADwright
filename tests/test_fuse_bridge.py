@@ -139,24 +139,26 @@ def test_fuse_true_on_curved_host_raises_with_bridge_hint():
         peg.attach(hub, on="outer_wall", angle=0, orient=True, fuse=True)
 
 
-# --- Concave inner: bridge not applicable ---
+# --- Concave inner: bridge clips peg to bore ---
 
 
-def test_concave_inner_wall_with_bridge_raises():
-    """bridge=True on a concave inner wall raises — the bridge is for
-    convex-outer hosts."""
+def test_concave_inner_wall_with_bridge_clips_to_bore():
+    """bridge=True on a concave inner wall intersects the placed peg
+    with the host's bore primitive. Peg's near-face curves to match the
+    inner cylindrical surface."""
+    from scadwright.ast.csg import Intersection
     pipe = Tube(od=20, id=10, h=20)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="inner"):
-        peg.attach(pipe, on="inner_wall", angle=0, orient=True, bridge=True)
+    result = peg.attach(pipe, on="inner_wall", angle=0, orient=True, bridge=True)
+    assert isinstance(result, Intersection)
 
 
-def test_concave_inner_wall_with_fuse_raises():
-    """fuse=True on a concave inner wall raises (no planar contact, no
-    bridge case). bond='shift' is the recovery path."""
+def test_concave_inner_wall_with_fuse_redirects_to_bridge():
+    """fuse=True on a concave inner wall raises (no planar contact),
+    and the message points at bridge=True."""
     pipe = Tube(od=20, id=10, h=20)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="no applicable eps mechanism"):
+    with pytest.raises(ValidationError, match="bridge=True"):
         peg.attach(pipe, on="inner_wall", angle=0, orient=True, fuse=True)
 
 
@@ -313,3 +315,188 @@ def test_disable_eps_fuse_keeps_bridge_drops_overlap():
     h_inside = _find_prism_extrude_height(result_inside)
     h_outside = _find_prism_extrude_height(result_outside)
     assert h_outside - h_inside == pytest.approx(0.01, abs=1e-9)
+
+
+# --- Inner bridge: bore-intersection path ---
+
+
+def _find_inner_bore_cyl(result):
+    """Walk an inner-bridge result (Intersection of placed_peg + bore-as-
+    MultMatrix-wrapped-cylinder) to locate the bore Cylinder. The bore
+    is the largest-radius cylinder in the tree.
+    """
+    from scadwright.ast.primitives import Cylinder
+
+    found = []
+
+    def walk(n):
+        if isinstance(n, Cylinder):
+            found.append(n)
+            return
+        for attr in ("child", "children"):
+            v = getattr(n, attr, None)
+            if v is None:
+                continue
+            if isinstance(v, tuple):
+                for c in v:
+                    walk(c)
+            else:
+                walk(v)
+
+    walk(result)
+    found.sort(key=lambda c: max(c.r1, c.r2), reverse=True)
+    return found[0] if found else None
+
+
+def test_inner_bridge_on_tube_returns_intersection():
+    """Tube inner_wall + bridge=True → intersection(placed_peg, bore_cyl)."""
+    from scadwright.ast.csg import Intersection
+    tube = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5])
+    result = peg.attach(
+        tube, on="inner_wall", angle=0, orient=True, bridge=True,
+    )
+    assert isinstance(result, Intersection)
+
+
+def test_inner_bridge_on_tube_bore_radius_matches_inner_radius():
+    """Without fuse=True, the bore radius equals the host's inner radius
+    exactly (peg's curved end-face flush with bore surface)."""
+    tube = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5])
+    result = peg.attach(
+        tube, on="inner_wall", angle=0, orient=True, bridge=True,
+    )
+    bore = _find_inner_bore_cyl(result)
+    assert bore is not None
+    assert bore.r1 == pytest.approx(5.0, abs=1e-9)
+    assert bore.r2 == pytest.approx(5.0, abs=1e-9)
+
+
+def test_inner_bridge_with_fuse_expands_bore_by_eps():
+    """bridge=True, fuse=True enlarges the bore by eps so the peg has an
+    eps slab inside the wall material (manifold-clean union with host)."""
+    tube = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5])
+    flush = peg.attach(
+        tube, on="inner_wall", angle=0, orient=True, bridge=True,
+    )
+    overlapped = peg.attach(
+        tube, on="inner_wall", angle=0, orient=True, bridge=True, fuse=True,
+    )
+    bore_flush = _find_inner_bore_cyl(flush)
+    bore_overlap = _find_inner_bore_cyl(overlapped)
+    assert bore_overlap.r1 - bore_flush.r1 == pytest.approx(0.01, abs=1e-9)
+
+
+def test_inner_bridge_on_funnel_conical_bore():
+    """Funnel inner_wall has kind='conical'. Bore is a truncated cone
+    with r1/r2 set from the host's bot_id/top_id."""
+    from scadwright.shapes import Funnel
+    funnel = Funnel(h=20, thk=2, bot_id=10, top_id=18)
+    peg = cube([2, 2, 5])
+    result = peg.attach(
+        funnel, on="inner_wall", angle=0, orient=True, bridge=True,
+    )
+    from scadwright.ast.csg import Intersection
+    assert isinstance(result, Intersection)
+    bore = _find_inner_bore_cyl(result)
+    assert bore is not None
+    # The bore is a truncated cone — r1 != r2 (Funnel has bot_id < top_id).
+    assert bore.r1 != bore.r2
+
+
+def test_inner_bridge_on_barrel_meridional():
+    """Barrel inner_wall has kind='meridional'. Bore is a rotate_extrude
+    of the inner meridian arc."""
+    from scadwright.ast.csg import Intersection
+    from scadwright.ast.extrude import RotateExtrude
+    from scadwright.shapes import Barrel
+    barrel = Barrel(h=40, end_d=20, mid_d=24, thk=2)
+    peg = cube([2, 2, 5])
+    result = peg.attach(
+        barrel, on="inner_wall", angle=0, orient=True, bridge=True,
+    )
+    assert isinstance(result, Intersection)
+
+    # The bore should contain a RotateExtrude (the revolved meridian).
+    found_rotate_extrude = []
+
+    def walk(n):
+        if isinstance(n, RotateExtrude):
+            found_rotate_extrude.append(n)
+            return
+        for attr in ("child", "children"):
+            v = getattr(n, attr, None)
+            if v is None:
+                continue
+            if isinstance(v, tuple):
+                for c in v:
+                    walk(c)
+            else:
+                walk(v)
+
+    walk(result)
+    assert found_rotate_extrude, "Expected a RotateExtrude bore inside the bridge"
+
+
+def test_inner_bridge_without_coaxial_raises():
+    """Inner-wall bridge=True requires coaxial normals (same as outer)."""
+    tube = Tube(od=20, id=10, h=15)
+    peg = cube([2, 2, 5])
+    with pytest.raises(ValidationError, match="coaxial"):
+        peg.attach(tube, on="inner_wall", angle=0, bridge=True)
+
+
+def test_inner_bridge_under_disable_eps_fuse_preserves_geometry():
+    """Under disable_eps_fuse(), the inner-bridge intersection still
+    builds. The bore radius matches host inner radius exactly (the +eps
+    radial expansion is suppressed)."""
+    from scadwright.api.fuse_mode import disable_eps_fuse
+    tube = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5])
+    with disable_eps_fuse():
+        result = peg.attach(
+            tube, on="inner_wall", angle=0, orient=True,
+            bridge=True, fuse=True,
+        )
+    bore = _find_inner_bore_cyl(result)
+    assert bore is not None
+    assert bore.r1 == pytest.approx(5.0, abs=1e-9)
+
+
+def test_inner_bridge_via_fuse_function_symmetric():
+    """boolops.fuse(peg, tube, on='inner_wall', bridge=True) dispatches
+    via the symmetric inner path. The peg is pre-rotated so its bottom
+    normal (+X after the rotation) opposes the tube's inner_wall normal
+    (-X)."""
+    from scadwright.ast.csg import Union
+    tube = Tube(od=20, id=10, h=20)
+    peg = cube([2, 2, 5]).rotate([0, -90, 0])
+    result = fuse(
+        peg, tube, on="inner_wall", using_anchor="bottom", bridge=True,
+    )
+    assert isinstance(result, Union)
+
+
+def test_inner_bridge_on_hand_declared_spherical_inner():
+    """A hand-declared spherical-inner anchor (no built-in shape produces
+    one today) dispatches via the sphere-bore branch."""
+    from scadwright.ast.csg import Intersection
+
+    # Hand-construct a hollow ball: difference of two spheres. Declare a
+    # spherical-inner anchor on the result.
+    shell = sphere(r=10).with_anchor(
+        "bore",
+        at=(8.0, 0.0, 0.0),
+        normal=(-1.0, 0.0, 0.0),
+        kind="spherical",
+        axis=(0.0, 0.0, 1.0),
+        axis_origin=(0.0, 0.0, 0.0),
+        meridian_zero=(1.0, 0.0, 0.0),
+        radius=8.0,
+        inner=True,
+    )
+    peg = cube([2, 2, 5])
+    result = peg.attach(shell, on="bore", orient=True, bridge=True)
+    assert isinstance(result, Intersection)
