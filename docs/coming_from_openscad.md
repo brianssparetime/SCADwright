@@ -420,7 +420,7 @@ Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and 
 
 See [Anchors and attachment](anchors.md) for the full reference.
 
-SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps joints. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md).
+SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) and [bridge=True](anchors.md#curved-host-attach-bridge-true).
 
 ## Text on a 3D shape
 

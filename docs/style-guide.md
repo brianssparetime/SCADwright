@@ -175,7 +175,7 @@ cyl = cylinder(r=4, h=15).attach(base_part)
 cap = SphericalCap(cap_dia=8, cap_height=5).attach(cyl)
 ```
 
-Defaults are `on="top"`, `at="bottom"` — bottom of self on top of other. Use `fuse=True` on joints to eliminate coincident-surface seams in unions.
+Defaults are `on="top"`, `at="bottom"` — bottom of self on top of other. Use `fuse=True` on planar joints to eliminate coincident-surface seams in unions. For mounting a feature on a curved surface (cylinder, cone, sphere), use `bridge=True` — it adds a structural fill that merges the peg into the curved host instead of leaving it balanced on a tangent line.
 
 ### Use `through(parent)` for cutters in `difference()`
 

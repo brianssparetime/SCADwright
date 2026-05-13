@@ -135,7 +135,7 @@ def test_cylindrical_inset_is_difference():
     assert isinstance(expanded, Difference)
 
 
-# --- meridian kwarg ---
+# --- angle kwarg ---
 
 
 @pytest.mark.parametrize("alias,expected_angle_deg", [
@@ -148,10 +148,10 @@ def test_cylindrical_inset_is_difference():
     ("-y", 270.0),
     ("front", 270.0),
 ])
-def test_meridian_string_aliases(alias, expected_angle_deg):
-    """String meridians map to the documented angles."""
+def test_angle_string_aliases(alias, expected_angle_deg):
+    """String angle aliases map to the documented angles."""
     p = cylinder(h=20, r=10).add_text(
-        label="X", relief=0.4, on="outer_wall", font_size=4, meridian=alias,
+        label="X", relief=0.4, on="outer_wall", font_size=4, angle=alias,
     )
     scad = emit_str(p)
     # Glyph should be placed at (R*cos(θ), R*sin(θ), z_mid).
@@ -164,10 +164,10 @@ def test_meridian_string_aliases(alias, expected_angle_deg):
            abs(expected_x) < 0.01  # near-zero values may format differently
 
 
-def test_meridian_numeric():
-    """Numeric meridian (degrees CCW) places glyph at that angle."""
+def test_angle_numeric():
+    """Numeric angle (degrees CCW) places glyph at that angle."""
     p = cylinder(h=20, r=10).add_text(
-        label="X", relief=0.4, on="outer_wall", font_size=4, meridian=37.5,
+        label="X", relief=0.4, on="outer_wall", font_size=4, angle=37.5,
     )
     scad = emit_str(p)
     th = math.radians(37.5)
@@ -177,20 +177,20 @@ def test_meridian_numeric():
     assert '"X"' in scad
 
 
-def test_meridian_invalid_string():
-    with pytest.raises(ValidationError, match="meridian"):
+def test_angle_invalid_string():
+    with pytest.raises(ValidationError, match="angle"):
         emit_str(cylinder(h=20, r=10).add_text(
             label="X", relief=0.4, on="outer_wall", font_size=4,
-            meridian="bogus",
+            angle="bogus",
         ))
 
 
-def test_meridian_on_flat_planar_anchor_raises():
-    """meridian doesn't apply to flat planar faces (not rims, not curved)."""
+def test_angle_on_flat_planar_anchor_raises():
+    """angle doesn't apply to flat planar faces (not rims, not curved)."""
     with pytest.raises(ValidationError, match="flat planar surface"):
         emit_str(cube([10, 10, 10]).add_text(
             label="X", relief=0.4, on="top", font_size=4,
-            meridian="+x",
+            angle="+x",
         ))
 
 
@@ -290,11 +290,11 @@ def test_chain_cylindrical_then_planar():
 
 
 def test_chain_two_cylindrical_labels():
-    """Two cylindrical labels at different meridians."""
+    """Two cylindrical labels at different angles."""
     p = (
         cylinder(h=20, r=10)
-        .add_text(label="A", relief=0.4, on="outer_wall", font_size=4, meridian="+x")
-        .add_text(label="B", relief=0.4, on="outer_wall", font_size=4, meridian="-x")
+        .add_text(label="A", relief=0.4, on="outer_wall", font_size=4, angle="+x")
+        .add_text(label="B", relief=0.4, on="outer_wall", font_size=4, angle="-x")
     )
     scad = emit_str(p)
     assert '"A"' in scad

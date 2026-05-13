@@ -412,7 +412,7 @@ def test_barrel_add_text_outer_wall_renders():
     from scadwright import bbox as _bbox
     b = Barrel(h=80, end_d=50, mid_d=64, fn=64)
     labeled = b.add_text(
-        label="SCAD-1", on="outer_wall", meridian=0,
+        label="SCAD-1", on="outer_wall", angle=0,
         font_size=4, spacing=1.6, relief=-0.4,
     )
     bb = _bbox(labeled)
@@ -424,7 +424,7 @@ def test_barrel_add_text_outer_wall_at_z_above_equator():
     b = Barrel(h=80, end_d=50, mid_d=64, fn=64)
     # Engraved label above the equator — should still render cleanly.
     labeled = b.add_text(
-        label="UPPER", on="outer_wall", meridian=0, at_z=20,
+        label="UPPER", on="outer_wall", angle=0, at_z=20,
         font_size=4, spacing=1.6, relief=-0.4,
     )
     bb = _bbox(labeled)

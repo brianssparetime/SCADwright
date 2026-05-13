@@ -1,9 +1,9 @@
-"""Tests for ``Node.attach(angle=...)`` and ``radius=`` parametric placement
+"""Tests for ``Node.attach(angle=...)`` and ``at_radial=`` parametric placement
 on cylindrical, conical, and rim-bearing planar anchors.
 
-Closes the asymmetry between ``add_text(meridian=...)`` and the generic
-``attach()`` flow — both can now consume parametric angular position
-on the same anchor surfaces.
+``attach()`` and ``add_text()`` both consume the same ``angle=`` and
+``at_radial=`` kwargs for parametric angular and radial position on
+cylindrical, conical, and rim anchor surfaces.
 """
 
 import math
@@ -89,11 +89,11 @@ def test_cylindrical_angle_with_fuse_requires_orient():
         peg.attach(hub, on="outer_wall", angle=90, fuse=True)
 
 
-def test_cylindrical_angle_rejects_radius():
+def test_cylindrical_angle_rejects_at_radial():
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="radius= is not valid on a cylindrical"):
-        peg.attach(hub, on="outer_wall", angle=30, radius=5)
+    with pytest.raises(ValidationError, match="at_radial= is not valid on a cylindrical"):
+        peg.attach(hub, on="outer_wall", angle=30, at_radial=5)
 
 
 # --- Conical anchor: slanted surface normal ---
@@ -133,11 +133,11 @@ def test_conical_angle_position_at_mid_wall_radius():
     assert cx == pytest.approx((r1 + r2) / 2.0, abs=0.01)
 
 
-def test_conical_angle_rejects_radius():
+def test_conical_angle_rejects_at_radial():
     cone = cylinder(h=10, r1=2, r2=5)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="radius= is not valid on a conical"):
-        peg.attach(cone, on="outer_wall", angle=30, radius=5)
+    with pytest.raises(ValidationError, match="at_radial= is not valid on a conical"):
+        peg.attach(cone, on="outer_wall", angle=30, at_radial=5)
 
 
 # --- Cap anchor with rim_radius ---
@@ -164,21 +164,21 @@ def test_top_angle_90_lands_on_rim_at_plus_y():
     assert cz == pytest.approx(22.5)
 
 
-def test_top_angle_with_radius_overrides_rim_radius():
+def test_top_angle_with_at_radial_overrides_rim_radius():
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    attached = peg.attach(hub, on="top", angle=0, radius=5)
+    attached = peg.attach(hub, on="top", angle=0, at_radial=5)
     cx, cy, _ = bbox(attached).center
     assert cx == pytest.approx(5.0)
     assert cy == pytest.approx(0.0, abs=1e-6)
 
 
-def test_top_angle_with_radius_zero_centers_on_cap():
-    """``radius=0`` is the legitimate "center of cap" case — same as
+def test_top_angle_with_at_radial_zero_centers_on_cap():
+    """``at_radial=0`` is the legitimate "center of cap" case — same as
     today's ``attach(hub, on="top")``."""
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    centered = peg.attach(hub, on="top", angle=0, radius=0)
+    centered = peg.attach(hub, on="top", angle=0, at_radial=0)
     default = peg.attach(hub, on="top")
     assert bbox(centered).center == pytest.approx(bbox(default).center)
 
@@ -199,11 +199,11 @@ def test_bottom_angle_lands_on_bottom_rim():
     assert cz == pytest.approx(2.5)
 
 
-def test_top_angle_rejects_negative_radius():
+def test_top_angle_rejects_negative_at_radial():
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="radius= must be non-negative"):
-        peg.attach(hub, on="top", angle=0, radius=-1)
+    with pytest.raises(ValidationError, match="at_radial= must be non-negative"):
+        peg.attach(hub, on="top", angle=0, at_radial=-1)
 
 
 def test_top_angle_alias_string():
@@ -225,11 +225,11 @@ def test_cube_top_does_not_support_angle():
         peg.attach(box, on="top", angle=30)
 
 
-def test_radius_without_angle_raises():
+def test_at_radial_without_angle_raises():
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="radius= requires angle="):
-        peg.attach(hub, on="top", radius=5)
+    with pytest.raises(ValidationError, match="at_radial= requires angle="):
+        peg.attach(hub, on="top", at_radial=5)
 
 
 def test_invalid_angle_string_raises():

@@ -74,7 +74,7 @@ b = Bracket(width=80, height=5)
 print(b.width)               # readable; no geometry built yet
 ```
 
-### 2. Define a component once, call it with any set of sufficient arguments, the framework handles the rest by solving equations; no boilerplate.  Components are as nice to use as they are to write.
+### 2. Define a component's equations once, call it with any combination of sufficient arguments, the framework handles the rest; no boilerplate.  Components are as nice to write as they are to call.
 
 Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od = id + 2*thk`. 
 
@@ -223,11 +223,11 @@ from scadwright.shapes import Tube, Funnel
 
 plate = cube([60, 30, 2], center="xy")
 plate.add_text(label="HELLO", relief=0.5,  on="top",   font_size=8)              # raised on a flat face
-plate.add_text(label="v1.0",  relief=-0.3, on="top",   font_size=4, at=(0, -8))  # inset, offset within the face
+plate.add_text(label="v1.0",  relief=-0.3, on="top",   font_size=4, offset=(0, -8))  # inset, offset within the face
 
 cyl = cylinder(h=20, r=10)
 cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4,
-             meridian="front")                                                   # wrapped around the cylinder
+             angle="front")                                                      # wrapped around the cylinder
 
 Funnel(h=30, bot_od=20, top_od=40, thk=2).add_text(
     label="0.5L", relief=0.4, on="outer_wall", font_size=4, text_orient="slant", # wraps a tapered cone

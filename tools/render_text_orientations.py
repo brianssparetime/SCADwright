@@ -71,7 +71,7 @@ def _emit_combo_scad(td, rg, fl, kind, out_path: Path) -> None:
     host = _make_host(kind)
     with resolution(fn=96):
         labeled = host.add_text(
-            label="TEXT", on="outer_wall", meridian=0,
+            label="TEXT", on="outer_wall", angle=0,
             font_size=4, relief=-0.5,
             text_dir=td, rotate_glyphs=rg, flip=fl,
         )

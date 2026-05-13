@@ -52,7 +52,7 @@ with resolution(fn=48):
         row, col = i // 4, i % 4
         host = _make_host(kind)
         labeled = host.add_text(
-            label="TEXT", on="outer_wall", meridian=0,
+            label="TEXT", on="outer_wall", angle=0,
             font_size=5, relief=-0.6,
             text_dir=td, rotate_glyphs=rg, flip=fl,
         )

@@ -86,6 +86,6 @@ Anchors:
 - `outer_wall` — `kind="meridional"`. The reference position is at the equator on the +X meridian; `attach(barrel, on="outer_wall", at_z=z, angle=θ)` lands a child *on the actual curved surface* at that axial offset (not on a cylinder approximation), with the surface normal locally tilted to the meridian's tangent plane. `at_z=0` is the equator, `at_z=±h/2` is a rim.
 - `inner_wall` — same kind, on the bore meridian (`mid_r-thk` at the equator). Only meaningful when the barrel is hollow.
 
-`add_text(on="outer_wall", meridian=θ, at_z=z)` and `add_text(on="inner_wall", ...)` wrap the label along the curved wall: per-glyph radius and tilt follow the meridian, so text sits flush whether the barrel is convex or concave.
+`add_text(on="outer_wall", angle=θ, at_z=z)` and `add_text(on="inner_wall", ...)` wrap the label along the curved wall: per-glyph radius and tilt follow the meridian, so text sits flush whether the barrel is convex or concave.
 
 A `bulge` of exactly zero degrades silently to the equivalent `cylinder` or `Tube`, so parametric sweeps that cross zero curvature don't need a special-case branch. Pinched waists where `mid_r` collapses toward zero emit a `BarrelDegeneracyWarning` (filterable via the standard `warnings` module) but still build the geometry.

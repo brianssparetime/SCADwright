@@ -296,7 +296,7 @@ def resolve_face_name(name: str) -> tuple[int, int]:
 
 
 # Friendly-string angles around a cylinder, measured CCW from +X (the
-# canonical reference meridian). Used by ``add_text(meridian=...)`` and
+# canonical reference meridian). Used by ``add_text(angle=...)`` and
 # ``Node.attach(angle=...)`` for parametric angular position on cylindrical
 # / conical / rim anchors.
 _ANGLE_ALIASES: dict[str, float] = {
@@ -322,14 +322,14 @@ def resolve_angle_to_radians(
 
     Used by every API that takes a parametric angle around a cylindrical
     or rim surface — keeps the alias vocabulary identical across
-    ``attach(angle=...)``, ``add_text(meridian=...)``, and any future
+    ``attach(angle=...)``, ``add_text(angle=...)``, and any future
     callers.
 
     ``context_name`` ("attach", "add_text", etc.) and ``param_name``
-    ("angle", "meridian", etc.) are interpolated into the error message
+    ("angle", "polar", etc.) are interpolated into the error message
     so the user knows which call rejected the input and which keyword
-    they used. ``param_name`` defaults to ``"angle"`` for newer callers;
-    pass it explicitly to preserve historical names like ``meridian``.
+    they used. ``param_name`` defaults to ``"angle"``; pass it
+    explicitly for related concepts like ``polar`` (sphere co-latitude).
     """
     import math as _math
 

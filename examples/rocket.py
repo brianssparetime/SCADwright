@@ -90,11 +90,11 @@ fins = fin_blank.attach(
 
 # Engraved labels: 
 labeled_body = body.color("gold").add_text(
-    label="SCADwright:", on="outer_wall", meridian=45,
+    label="SCADwright:", on="outer_wall", angle=45,
     font_size=2.5, spacing=1.2, relief=0.5, at_z = 16,
 ).add_text(
     label="Can your SCAD do\nthis in < 60 lines?",
-    on="outer_wall", meridian=45, text_dir="axial", rotate_glyphs=True,
+    on="outer_wall", angle=45, text_dir="axial", rotate_glyphs=True,
     font_size=2.5, line_spacing=1.5, relief=-0.5, spacing=1.0, at_z = -3,
 )
 

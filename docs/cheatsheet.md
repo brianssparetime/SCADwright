@@ -101,13 +101,13 @@ peg.attach(plate, on="rside", using_anchor="lside")  # side-by-side
 peg.attach(plate, orient=True)            # rotate to align normals
 peg.attach(hub, on="outer_wall", angle=30) # 30° meridian on a cylinder/cone/barrel wall
 peg.attach(hub, on="outer_wall", angle=30, at_z=5)  # 30° meridian, 5mm above mid-wall (curve-aware on Barrel)
-peg.attach(hub, on="top", angle=30, radius=12)  # 30° on cap, 12mm from center
+peg.attach(hub, on="top", angle=30, at_radial=12)  # 30° on cap, 12mm from center
 peg.attach(ball, on="surface", polar=30, angle=45)  # spherical: polar from +Z, angle = azimuth
 peg.with_anchor("base", at=(2.5, 2.5, 0), normal=(0, 0, -1))  # name a point on any node
 pylon.attach(floor, fuse=True)            # local extension at planar contact (Cube/Cylinder/extrude)
-peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)  # bridge fills inscription gap on cylinder/sphere/cone
+peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True)  # structural fill on cylinder/cone/sphere
+peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)  # + eps overlap on peg side
 peg.attach(plate, bond="overlap")         # explicit: planar local extension; raises on curved host
-peg.attach(hub, on="outer_wall", angle=0, orient=True, bond="bridge")  # explicit: curved-host bridge; raises on planar
 peg.attach(plate, bond="shift")           # explicit: bilateral shift; always works, opposite face drifts by eps
 fuse(pylon, floor, using_anchor="bottom", on="top")  # standalone form; symmetric side selection
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
@@ -225,12 +225,13 @@ shape.twist_copy(angle=45, count=8)                 # stacked rotated copies
 plate.add_text(label="HELLO", relief=0.5, on="top", font_size=8)   # raised
 plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)  # inset
 plate.add_text(label="SIDE",  relief=0.5, on="rside", font_size=4) # any face name
+plate.add_text(label="HI",    relief=0.5, on="top", font_size=4, offset=(5, -3))  # nudge in-face
 
 # Cylindrical (cylinder primitive and Tube ship with `outer_wall`):
-cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)              # default meridian +X
-cyl.add_text(label="ON",    relief=0.4, on="outer_wall", font_size=4, meridian="front")
+cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)              # default angle +X (meridian)
+cyl.add_text(label="ON",    relief=0.4, on="outer_wall", font_size=4, angle="front")
 cyl.add_text(label="LOT",   relief=-0.3, on="outer_wall", font_size=3, at_z=-7)    # 7mm below mid-wall
-cyl.add_text(label="37",    relief=0.4, on="outer_wall", font_size=3, meridian=37) # numeric degrees CCW
+cyl.add_text(label="37",    relief=0.4, on="outer_wall", font_size=3, angle=37)    # numeric degrees CCW
 cyl.add_text(label="WINE",  relief=-0.4, on="outer_wall", font_size=5,
              text_dir="axial", rotate_glyphs=True)                                  # vertical label, letters tilted 90°
 

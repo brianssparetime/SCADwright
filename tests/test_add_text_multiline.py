@@ -252,7 +252,7 @@ def test_funnel_outer_lines_have_different_local_radii():
     )
     scad = emit_str(p)
     glyph_translates = [t for t in _translates(scad) if len(t) == 3 and abs(t[0]) > 1]
-    # Pull out the (x) component (since meridian="+x" places at world +X).
+    # Pull out the (x) component (since angle="+x" places at world +X).
     # Top line ("HI") at higher z, smaller cone radius. Bottom line at larger.
     z_to_x = {round(t[2], 2): t[0] for t in glyph_translates}
     z_top, z_bot = max(z_to_x), min(z_to_x)

@@ -43,7 +43,7 @@ peg.attach(plate, on="rside", using_anchor="lside")      # peg to the right of p
 peg.attach(plate, on="top", using_anchor="top")           # align top faces (peg hangs down)
 ```
 
-`on` names the anchor on the parent (the thing being attached to); `using_anchor` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. See [Naming convention: on= / using_anchor= / at=](#naming-convention-on-using_anchor-at) below for the full split.
+`on` names the anchor on the parent (the thing being attached to); `using_anchor` names the anchor on self (the thing being moved). The same `on` convention is used by other surface-aware verbs like `add_text()`. See [Naming convention: on= / using_anchor= / at= / offset=](#naming-convention-on-using_anchor-at-offset) below for the full split.
 
 Chain a translate for offset placement:
 
@@ -101,7 +101,7 @@ The result preserves the user-facing dimensions of the shape exactly — only th
 
 The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases.
 
-`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they bypass the planar cross-section path entirely and dispatch through the curved-host bridge mechanism instead (next section).
+`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they aren't reachable by the planar cross-section path. Attaching to a sphere uses `bridge=True` instead (next section).
 
 Documented limitations the bbox check can't catch:
 
@@ -111,28 +111,40 @@ Documented limitations the bbox check can't catch:
 
 Workarounds for all the limitations: restructure the geometry so the fuse anchor is on a clean convex planar face, use `fuse=False` on that one attach, wrap the assembly in `disable_eps_fuse()`, or hand-craft the eps overlap.
 
-### Curved-host fuse: bridge mechanism
+### Curved-host attach: `bridge=True`
 
-When `attach(fuse=True)`'s on-anchor is a curved-surface kind (`cylindrical`, `conical`, `spherical`) on a convex-outer surface, the framework builds a **bridge** piece that fills the air gap between the peg's planar near-face and the host's curved surface. The bridge is the peg's cross-section extruded along the contact normal by the analytical inscription depth (`R - sqrt(R² - r²)` where `R` is host radius and `r` is peg's max radial extent in the tangent plane), differenced with the host. The result is `union(placed_peg, bridge)`.
+Bridging is a separate verb from fusing. Where `fuse=True` is the planar-contact eps mechanism (an aesthetic adjustment to keep OpenSCAD's preview clean), **`bridge=True` adds a structural piece of material** that fills the air gap between a peg's planar near-face and a convex-outer curved host (cylinder, cone, sphere). The bridge is part of the design — it's what makes the peg look (and print) merged into the curved surface, rather than balanced on a thin tangent line.
 
-The bridge solves two problems with one piece:
-
-- **Inscription mounting (Duty B).** A peg attached tangent to a curved surface visually appears to be balanced on a thin contact line. The bridge fills the small inscription gap so the peg looks merged into the surface — what users almost always intend when mounting a feature on a cylinder, sphere, or cone.
-- **Manifold-clean union (Duty A).** The bridge extends `eps` past the peg's near-face on the peg side, providing the small overlap that keeps F5 preview clean — same purpose as the planar-extension eps, but here built into the bridge geometry.
+Pass `bridge=True` to `attach()` for any convex-outer curved on-anchor (`kind` in `cylindrical`, `conical`, `spherical`, `inner=False`):
 
 ```python
 peg = cube([2, 2, 5])
 hub = cylinder(h=20, r=10)
-mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, fuse=True)
-# Returns union(placed_peg, bridge). Bridge fills the gap between peg's
-# flat near-face and the cylinder's curved surface at angle=30.
+mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True)
+# Returns union(placed_peg, bridge). Bridge fills the inscription gap
+# between peg's flat near-face and the cylinder's curved surface.
 ```
+
+The bridge is the peg's cross-section extruded along the contact normal by the analytical inscription depth (`R - sqrt(R² - r²)` where `R` is host radius and `r` is peg's max radial extent in the tangent plane), differenced with the host.
+
+**Add `fuse=True` for a manifold-clean peg/bridge join.** By default `bridge=True` produces a bridge prism flush with the peg's near-face. The peg and bridge share a coincident plane there, which OpenSCAD's preview classifies the same way it would any other coincident boundary. Pass `fuse=True` alongside to extend the bridge prism by `eps` past the peg's near-face on the peg side — same machinery as planar `fuse=True`, just built into the bridge:
+
+```python
+peg.attach(hub, on="outer_wall", angle=30, orient=True,
+           bridge=True, fuse=True)   # bridge + eps overlap on peg side
+```
+
+`bridge=True` and `bond=` don't combine — `bond=` controls the planar eps mechanism, `bridge=True` is the curved-host fill. Passing both raises.
+
+**`fuse=True` alone on a curved host raises.** Bare `fuse=True` is the planar eps machinery; on a curved host it can't apply, and the validator points at `bridge=True` rather than silently doing nothing useful.
 
 **Peg-anchor validation.** Like the planar cross-section path, the bridge dispatch validates the peg's at-anchor against the peg's bbox before building the prism: the anchor must lie on the peg's outermost face along its normal direction, and the peg must have non-zero extent in at least two axes. Failures raise a clear `ValidationError` rather than silently producing an empty bridge. The check unwraps `Translate` / `Rotate` / `Mirror` so a peg rotated by `orient=True` is validated against its underlying primitive's local frame.
 
 **Coaxial requirement.** The bridge dispatch requires the peg's at-anchor normal to be anti-parallel to the host's on-anchor normal (within tolerance). Without `orient=True` or manual peg alignment, the call raises `ValidationError("requires coaxial normals")` rather than silently producing geometry that doesn't match user intent.
 
-**Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. The dispatch falls through to the legacy shift instead.
+**Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. `bridge=True` on an inner wall raises. For inner-wall attachment with eps cleanup, use `bond="shift"`.
+
+**Under `disable_eps_fuse()`:** the bridge structural geometry persists, but the peg-side `-eps` slice (gated on `fuse=True`) drops. Precision builds get exact structural geometry.
 
 **Inherited limitations from the cross-section primitive** (same set as the planar cross-section path):
 
@@ -155,11 +167,13 @@ These catch the most common author errors (typos in `at=` expressions that put t
 
 After spatial transforms (`transform_anchors`), the geometric checks are *not* re-run: a non-uniform scale on a sphere produces an internally inconsistent anchor by design (we don't model ellipsoids), and that's an accepted internal artifact, not an author error.
 
-### When neither extension path applies
+### When neither path applies
 
-`fuse=True` falls back to translating `self` by `eps` along the contact normal — the legacy bilateral shift. This affects: shapes that don't qualify for planar extension (kind isn't planar on at least one side) and aren't on the convex-curved-host bridge path (e.g., concave inner walls), and shapes whose curved-host bridge mechanism couldn't compute an analytical depth (no usable radius in `surface_params`).
+`fuse=True` raises when neither planar extension nor a fall-through applies — concave inner walls, non-planar contacts that aren't curved hosts, and shapes with anchors that can't be extended cleanly. The error message names the available alternatives:
 
-The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift-based fuse, not after.
+- `bond="shift"` — bilateral translate of `self` by `eps` along the contact normal. The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift, not after.
+- `fuse=False` — exact contact, no eps.
+- `bridge=True` — only on convex-outer curved hosts.
 
 ### `attach(fuse=True)` only extends `self`
 
@@ -189,7 +203,7 @@ def normal(self):
     return self.assembly()        # all fuse=True calls get eps overlap as usual
 ```
 
-Inside the block, `attach(fuse=True)` and the standalone `fuse(...)` behave as if `fuse` were `False`: exact anchor coincidence, no parametric extension, no shift. Anchor lookup, placement, `orient=True`, `angle=`, `at_z=`, `radius=`, and `through()` composition all continue to work — only the eps geometry is suppressed.
+Inside the block, `attach(fuse=True)` and the standalone `fuse(...)` behave as if `fuse` were `False`: exact anchor coincidence, no parametric extension, no shift. Anchor lookup, placement, `orient=True`, `angle=`, `at_z=`, `at_radial=`, and `through()` composition all continue to work — only the eps geometry is suppressed.
 
 The flag is scope-bounded; nested blocks are no-ops, and exiting any block restores the prior state.
 
@@ -209,16 +223,16 @@ peg.attach(hub, on="outer_wall", angle="back")          # = angle=90
 peg.attach(hub, on="top", angle=0)                      # rim at +X
 peg.attach(hub, on="top", angle=120)                    # rim at 120°
 
-# On the cap interior to the rim — pass radius=:
-peg.attach(hub, on="top", angle=0, radius=5)            # 5 mm from cap center
-peg.attach(hub, on="top", angle=0, radius=0)            # exact cap center
+# On the cap interior to the rim — pass at_radial=:
+peg.attach(hub, on="top", angle=0, at_radial=5)         # 5 mm from cap center
+peg.attach(hub, on="top", angle=0, at_radial=0)         # exact cap center
 ```
 
 `angle=` works on three anchor surface kinds:
 
 - **Cylindrical wall** (`outer_wall` of a cylinder): `angle=` rotates the anchor's position and normal around the surface axis. The result puts self at that angular position on the wall, normal pointing radially outward.
 - **Conical wall** (`outer_wall` of a cone, where `r1 != r2`): same rotation, but the normal used for `orient=True` is the cone's *slanted* surface normal — so `peg.attach(cone, on="outer_wall", angle=0, orient=True)` aligns the peg perpendicular to the slanted wall, not the cone's central axis.
-- **Cap with rim radius** (`top` / `bottom` of a cylinder or cone): `angle=` places at angular position on the cap. Default radial position is the cap's rim radius; `radius=` overrides for placements interior to the rim.
+- **Cap with rim radius** (`top` / `bottom` of a cylinder or cone): `angle=` places at angular position on the cap. Default radial position is the cap's rim radius; `at_radial=` overrides for placements interior to the rim. Matches `add_text(at_radial=)`.
 
 For other anchor kinds (a cube's `top`, a custom Component anchor without surface metadata), `angle=` raises a clear error.
 
@@ -235,7 +249,7 @@ peg.attach(hub, on="outer_wall", angle=30, at_z=5)    # 30° meridian, 5 mm abov
 
 On a conical wall, `at_z=` also adjusts the position radially so the new anchor stays on the slanted surface. An `at_z=` that drives the local cone radius non-positive (past the cone tip) raises a clear error rather than silently producing junk geometry.
 
-`at_z=` is only valid on cylindrical and conical wall anchors. On a rim, the in-plane radial offset is `radius=` instead. On a cube face or other anchor without a surface axis, `at_z=` raises.
+`at_z=` is only valid on cylindrical and conical wall anchors. On a rim, the in-plane radial offset is `at_radial=` instead. On a cube face or other anchor without a surface axis, `at_z=` raises.
 
 ### Hosts that publish cylindrical / conical / rim anchors
 
@@ -260,7 +274,7 @@ peg.attach(ball, on="surface", polar=180)            # south pole
 
 `polar=` is degrees from the north-pole direction (range [0, 180]). `angle=` is the azimuth, degrees CCW from the +X meridian. If only `angle=` is supplied, `polar` defaults to 90 (equator). If only `polar=` is supplied, `angle` defaults to 0 (the +X meridian).
 
-`at_z=` and `radius=` are not valid on spherical anchors — sphere placement uses the `polar` / `angle` pair.
+`at_z=` and `at_radial=` are not valid on spherical anchors — sphere placement uses the `polar` / `angle` pair.
 
 The polar/azimuth math uses the host's local frame, so a sphere that has been translated, rotated, or scaled tracks correctly: `sphere(r=5).rotate([0, 90, 0])` rotates the north pole to point along +X, and `polar=0` lands at the rotated pole.
 
@@ -384,14 +398,17 @@ Shape-library Components ship with useful custom anchors:
 | `Bolt`         | `tip`             | Bottom of the shaft             |
 | `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
 
-## Naming convention: `on=` / `using_anchor=` / `at=`
+## Naming convention: `on=` / `using_anchor=` / `at=` / `offset=`
 
-The three kwargs that show up across the anchor-aware APIs:
+The four placement kwargs that show up across the anchor-aware APIs:
 
 | Kwarg | Type | Meaning |
 |---|---|---|
-| `on=` | string (anchor name) | The anchor on the **other** shape — the host being attached/decorated. |
+| `on=` | string (anchor name) or `Anchor` | The anchor on the **other** shape — the host being attached/decorated. |
 | `using_anchor=` | string (anchor name) | The anchor on **self** — the moving shape (only on `attach()` and `fuse()`). |
-| `at=` | tuple or string-expr (position) | A 3D position or in-face 2D offset (used by `anchor()` declarations, `add_text()`, `with_anchor()`). |
+| `at=` | 3-tuple or string-expr (3D coordinate) | A 3D position. Used by `anchor()` declarations, `with_anchor()`, and `add_text()`'s ad-hoc placement (paired with `normal=`). Always a coordinate — never an offset. |
+| `offset=` | 2-tuple (mm) | An in-face nudge for a named anchor (only on `add_text()`). 2D offset along the anchor's tangent plane. |
+
+The split keeps `at=` consistent: it's always a 3D coordinate in some local frame. For nudging a named anchor in its tangent plane, use `offset=`.
 
 The split keeps anchor-name kwargs distinct from position kwargs: `on=` and `using_anchor=` always select named anchors; `at=` is always a coordinate.

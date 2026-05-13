@@ -2,12 +2,14 @@
 
 OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in a boolean operation. Without it, F5 preview shows wavering, missing, or flickering surfaces — the GL renderer can't classify points on a coincident boundary. SCADwright handles this automatically so you don't have to define `eps` constants and manually adjust cutter sizes.
 
+`fuse=` is the eps mechanism for **planar** contacts. For convex-outer curved hosts (cylinder, cone, sphere), use `bridge=True` instead — that's a separate, structural verb covered in [anchors.md](anchors.md#curved-host-attach-bridge-true).
+
 ## How to reach the auto-eps mechanisms
 
 | Need | Use |
 |---|---|
-| Position a part flush against another, with overlap so `union()` is preview-clean | `part.attach(other, fuse=True)` |
-| Same, but pick the bond explicitly | `part.attach(other, bond="overlap" | "bridge" | "shift")` |
+| Position a part flush against another planar face, with overlap so `union()` is preview-clean | `part.attach(other, fuse=True)` |
+| Same, but pick the bond explicitly | `part.attach(other, bond="overlap" | "shift")` |
 | Drill a cutter through a parent shape | `cutter.through(parent)` inside `difference()` |
 | Combine two parts symmetrically with overlap (no "self" / "other" asymmetry) | `fuse(a, b, on=..., using_anchor=..., bond=..., eps=...)` from `scadwright.boolops` |
 | Disable all auto-eps inside a scope (precision builds, perf debugging) | `with disable_eps_fuse(): ...` |
@@ -16,24 +18,21 @@ OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in 
 
 ## Bonds: explicit control over how the overlap is constructed
 
-`fuse=True` runs a smart cascade that picks the right mechanism based on the contact geometry. When you want explicit control, pass `bond=` instead:
+`fuse=True` runs a planar cascade and picks `bond="overlap"` when it applies. When you want explicit control, pass `bond=` directly:
 
 | `bond=` | What it does | When it raises |
 |---|---|---|
 | `"overlap"` | Local face extension at a planar contact (parametric `fuse_extend` first, cross-section fallback). Preserves the user-facing dimensions of the extended side. | Either anchor isn't planar; cross-section is degenerate. |
-| `"bridge"` | Inscription bridge for a curved convex-outer host (cylindrical / conical / spherical). Fills the air gap between the peg's flat face and the host's curved surface. | Host isn't convex-outer curved; contact normals aren't coaxial; host has no analytical radius. |
 | `"shift"` | Bilateral translate of the moving shape by `eps` along the contact normal. The opposite face drifts by `eps`. | Never raises on geometry — always works. |
 
 ```python
 peg.attach(plate, bond="overlap")              # explicit planar extension
-peg.attach(hub, on="outer_wall", angle=0,
-           orient=True, bond="bridge")          # explicit curved-host bridge
-peg.attach(plate, bond="shift")                 # explicit bilateral shift
+peg.attach(plate, bond="shift")                # explicit bilateral shift
 ```
 
-`bond="..."` implies `fuse=True`; passing `fuse=False` with a bond raises (contradiction). `fuse=True` without a bond uses the smart cascade: `bridge` if applicable, else `overlap` if applicable, else **raises** with both reasons and a workaround pointer. The cascade does not silently fall through to `shift` — the user who actually wants the bilateral shift writes `bond="shift"` explicitly. The free function `fuse(a, b, ..., bond=...)` accepts the same vocabulary.
+`bond="..."` implies `fuse=True`; passing `fuse=False` with a bond raises (contradiction). `bond=` and `bridge=True` don't combine — `bond=` is for planar contacts, `bridge=True` is for curved hosts. `fuse=True` without a bond on a planar host falls into `bond="overlap"`; on a curved host it raises and points at `bridge=True`. The cascade does not silently fall through to `shift` — the user who actually wants the bilateral shift writes `bond="shift"` explicitly. The free function `fuse(a, b, ..., bond=...)` accepts the same vocabulary.
 
-`disable_eps_fuse()` short-circuits everything to exact contact, even explicit `bond=...` values — the scope-wide opt-out wins by design (precision builds shouldn't have eps geometry sneaking in anywhere).
+`disable_eps_fuse()` collapses any requested eps to zero in its scope. `fuse=True` becomes `False`, `bond=` is dropped, and the peg-side `-eps` slice baked into a `bridge=True` result drops too. **The bridge structural geometry itself persists** — it's design, not eps. Use this for precision builds (where the eps drift would shift fits) and for performance debugging.
 
 ## Known limits — what to do when preview still flickers
 

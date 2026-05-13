@@ -97,7 +97,7 @@ def test_tube_inner_inset_at_plus_x_meridian():
 def test_tube_inner_at_plus_y_meridian():
     """Glyph at +Y meridian: position (0, id/2 + eps, h/2)."""
     p = Tube(h=20, od=20, thk=2).add_text(
-        label="X", relief=0.4, on="inner_wall", font_size=4, meridian="+y",
+        label="X", relief=0.4, on="inner_wall", font_size=4, angle="+y",
     )
     scad = emit_str(p)
     # Some near-zero floats may format as 6.x e-16 but the y component is 8.01.

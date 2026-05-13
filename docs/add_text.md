@@ -44,11 +44,11 @@ The text is centered on the face. Use `halign=` and `valign=` to align inside th
 
 ### Named face + offset
 
-Use `at=(u, v)` (a 2-tuple, in mm) to nudge the text away from face center:
+Use `offset=(u, v)` (a 2-tuple, in mm) to nudge the text away from face center:
 
 ```python
-plate.add_text(label="HI", relief=0.5, on="top",   font_size=4, at=(5, -3))    # 5mm right, 3mm forward
-plate.add_text(label="HI", relief=0.5, on="rside", font_size=4, at=(2, 1))     # 2mm "right" (-Y), 1mm up (+Z)
+plate.add_text(label="HI", relief=0.5, on="top",   font_size=4, offset=(5, -3))    # 5mm right, 3mm forward
+plate.add_text(label="HI", relief=0.5, on="rside", font_size=4, offset=(2, 1))     # 2mm "right" (-Y), 1mm up (+Z)
 ```
 
 The `(u, v)` axes are picked per face so they read intuitively when the face is viewed from outside:
@@ -64,7 +64,9 @@ The `(u, v)` axes are picked per face so they read intuitively when the face is 
 
 Custom Component anchors and `Anchor` objects with non-axis-aligned normals get a sensible `(u, v)` frame in the face's plane.
 
-`at=(u, v)` doesn't apply to cylindrical or conical walls — those use `meridian=` and `at_z=`.
+`offset=(u, v)` doesn't apply to cylindrical or conical walls — those use `angle=` and `at_z=`.
+
+`offset=` is distinct from `at=`: `at=` is a 3-tuple coordinate for ad-hoc placement (see below), while `offset=` is a 2-tuple in-face nudge for a named anchor. The split keeps `at=` consistent with its meaning elsewhere in the library — always a 3D coordinate.
 
 ### Anchor object
 
@@ -103,25 +105,25 @@ from scadwright.primitives import cylinder
 from scadwright.shapes import Tube
 
 cyl = cylinder(h=20, r=10)
-cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)               # default meridian +X, mid-wall
-cyl.add_text(label="ON",   relief=0.4, on="outer_wall", font_size=4, meridian="front")
-cyl.add_text(label="OFF",  relief=0.4, on="outer_wall", font_size=4, meridian="back")
+cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)               # default angle +X, mid-wall
+cyl.add_text(label="ON",   relief=0.4, on="outer_wall", font_size=4, angle="front")
+cyl.add_text(label="OFF",  relief=0.4, on="outer_wall", font_size=4, angle="back")
 cyl.add_text(label="LOT",  relief=-0.3, on="outer_wall", font_size=3, at_z=-7)      # 7mm below mid-wall
 
-# Numeric meridian: tick marks at arbitrary angles.
+# Numeric angle: tick marks at arbitrary positions.
 for a in (0, 30, 60, 90, 120, 150):
     cyl = cyl.add_text(label=f"{a}", relief=0.3, on="outer_wall", font_size=2,
-                       meridian=a, at_z=8)
+                       angle=a, at_z=8)
 ```
 
-### `meridian=`
+### `angle=`
 
 The angular position around the cylinder axis. Accepts either:
 
 - A string: `"+x"` / `"+y"` / `"-x"` / `"-y"` (or the friendly aliases `"rside"` / `"back"` / `"lside"` / `"front"`). Default: `"+x"`.
 - A number: degrees CCW from `+X`.
 
-`meridian` applies on cylindrical, conical, and rim-arc placements.
+`angle` applies on cylindrical, conical, and rim-arc placements. Matches `attach(angle=...)`.
 
 ### `at_z=`
 
@@ -129,9 +131,9 @@ Axial offset from the wall's midpoint, in mm. Default `0` (mid-wall). Positive m
 
 ### `halign=` on cylindrical surfaces
 
-- `"center"` (default): label centered on the meridian.
-- `"left"`: label starts at the meridian, extending CCW.
-- `"right"`: label ends at the meridian, extending CW.
+- `"center"` (default): label centered on the angle.
+- `"left"`: label starts at the angle, extending CCW.
+- `"right"`: label ends at the angle, extending CW.
 
 ### Long labels
 
@@ -175,12 +177,12 @@ cyl.add_text(label="UP", relief=0.4, on="outer_wall", font_size=4,
 Multi-line works in both directions but the stacking axis swaps:
 
 - `text_dir="circumferential"` (default): lines stack along the surface axis (line 0 at higher z).
-- `text_dir="axial"`: lines stack circumferentially (line 0 at the smaller meridian, lines spread around the cylinder per `line_spacing`). The block warns if its total circumferential extent wraps past the cylinder.
+- `text_dir="axial"`: lines stack circumferentially (line 0 at the smaller angle, lines spread around the cylinder per `line_spacing`). The block warns if its total circumferential extent wraps past the cylinder.
 
 `halign` and `valign` semantics shift with `text_dir="axial"`:
 
 - `halign` controls per-character placement *within a line* — `"center"` centers chars around the line's `at_z`, `"left"` puts char 0 at `at_z` extending in the line direction (default top-to-bottom), `"right"` puts char N-1 at `at_z`.
-- `valign` controls block placement perpendicular to the line direction (i.e., circumferentially). `"center"` centers the block on `meridian`. `"top"` puts line 0 at `meridian` extending toward larger meridian; `"bottom"` and `"baseline"` put line N-1 at `meridian`. The "top"/"bottom" labels are mismatched to the actual circumferential layout — read them as "first-line edge" / "last-line edge."
+- `valign` controls block placement perpendicular to the line direction (i.e., circumferentially). `"center"` centers the block on `angle`. `"top"` puts line 0 at `angle` extending toward larger angles; `"bottom"` and `"baseline"` put line N-1 at `angle`. The "top"/"bottom" labels are mismatched to the actual circumferential layout — read them as "first-line edge" / "last-line edge."
 
 `text_dir`, `rotate_glyphs`, and `flip` only apply to curved walls. Passing them on a planar or rim anchor raises a clear error (the existing planar/rim placement is rotation-aware via the host's transform — use `.rotate()` / `.mirror()` on the host instead).
 
@@ -199,8 +201,8 @@ cyl.add_text(label="EDGE",  relief=0.4, on="top", font_size=2, at_radial=14)
 cyl.add_text(label="HUB",   relief=0.4, on="top", font_size=2, at_radial=4)
 
 # Rotate the label around the rim center:
-cyl.add_text(label="N",  relief=0.4, on="top", font_size=2, meridian="+y")   # north
-cyl.add_text(label="SE", relief=0.4, on="top", font_size=2, meridian=-45)    # numeric degrees CCW
+cyl.add_text(label="N",  relief=0.4, on="top", font_size=2, angle="+y")      # north
+cyl.add_text(label="SE", relief=0.4, on="top", font_size=2, angle=-45)       # numeric degrees CCW
 ```
 
 ### `text_curvature=`
@@ -217,7 +219,7 @@ The radius of the circle the text follows, in mm. Defaults to leave a small font
 
 ## Conical walls (Funnel and tapered cones)
 
-`Funnel` and any tapered `cylinder()` (where `r1 != r2`) have a conical `outer_wall` anchor. `meridian=` and `at_z=` work the same as on cylindrical walls. One extra option, `text_orient=`, controls glyph orientation.
+`Funnel` and any tapered `cylinder()` (where `r1 != r2`) have a conical `outer_wall` anchor. `angle=` and `at_z=` work the same as on cylindrical walls. One extra option, `text_orient=`, controls glyph orientation.
 
 ```python
 from scadwright.shapes import Funnel
@@ -253,7 +255,7 @@ from scadwright.shapes import Tube, Funnel
 
 # Tube — text on the inside surface, viewed from inside the hollow.
 Tube(h=30, od=24, thk=2).add_text(
-    label="LOT 7", relief=0.3, on="inner_wall", font_size=4, meridian="front",
+    label="LOT 7", relief=0.3, on="inner_wall", font_size=4, angle="front",
 )
 
 # Funnel inner wall (conical), placed below mid-wall.
@@ -262,7 +264,7 @@ Funnel(h=30, bot_od=20, top_od=40, thk=2).add_text(
 )
 ```
 
-`relief > 0` makes text protrude into the hollow (raised when viewed from inside). `relief < 0` cuts into the wall material from the inner surface. `meridian=`, `at_z=`, and `text_orient=` (conical only) work the same way as on the outer walls.
+`relief > 0` makes text protrude into the hollow (raised when viewed from inside). `relief < 0` cuts into the wall material from the inner surface. `angle=`, `at_z=`, and `text_orient=` (conical only) work the same way as on the outer walls.
 
 ## Multi-line text
 
@@ -273,7 +275,7 @@ plate.add_text(label="LINE 1\nLINE 2",  relief=0.5, on="top", font_size=8)
 plate.add_text(label="VERSION\n1.0",    relief=-0.3, on="top", font_size=4, valign="top")
 
 cyl.add_text(label="BRAND\nMODEL X",    relief=0.4, on="outer_wall", font_size=4,
-             meridian="front", line_spacing=1.4)
+             angle="front", line_spacing=1.4)
 
 cyl.add_text(label="MAX\n5L",           relief=0.4, on="top", font_size=2)   # rim arc, two rings
 ```
@@ -382,10 +384,11 @@ plate.add_text(
 | `label` | yes | The string to render. |
 | `relief` | yes | Signed depth in mm. Positive raised, negative inset. |
 | `font_size` | yes | 2D text size in mm. |
-| `on` | one of the four placement choices | Face name (str) or `Anchor` instance. |
-| `at` | with `on=` (offset) or with `normal=` (ad-hoc) | 2-tuple `(u, v)` in-face offset (mm) when paired with `on=`; or 3-tuple `(x, y, z)` ad-hoc position when paired with `normal=`. |
+| `on` | one of the placement choices | Face name (str) or `Anchor` instance. |
+| `offset` | with named `on=` (optional) | 2-tuple `(u, v)` in-face offset in mm. Nudges the named anchor along its tangent plane. |
+| `at` | with `normal=` (ad-hoc only) | 3-tuple `(x, y, z)` coordinate for ad-hoc placement. Combine with `normal=`. |
 | `normal` | with `at=` (ad-hoc only) | 3-tuple direction; combine with `at=`. |
-| `meridian` | cylindrical/conical/rim arc | String name or numeric degrees CCW. Default `"+x"`. |
+| `angle` | cylindrical/conical/rim arc | String name or numeric degrees CCW. Default `"+x"`. Same name and aliases as `attach(angle=)`. |
 | `at_z` | cylindrical/conical | Axial offset from wall midpoint. Default `0`. |
 | `at_radial` | rim arc only | Radius of the text path circle. Default leaves a font-size margin inside the rim. |
 | `text_curvature` | planar only | `None` (default — arc on rims, flat elsewhere), `"arc"`, or `"flat"`. |
@@ -402,9 +405,11 @@ plate.add_text(
 ## Things that fail
 
 - An unrecognized face name in `on=`.
-- Mixing `on=` with `at=`+`normal=` (those are different placement choices).
+- Mixing `on=` with `at=` or `normal=` (those are the ad-hoc 3D placement kwargs — use `offset=` for an in-face nudge of a named anchor).
+- `offset=` without `on=` (offset needs a named anchor).
+- `offset=` on a cylindrical, conical, or meridional wall — those use `angle=` / `at_z=`.
 - `relief = 0`.
-- `meridian` or `at_z` on a flat planar face — those are for cylindrical and conical walls.
+- `angle` or `at_z` on a flat planar face — those are for cylindrical and conical walls.
 - `text_curvature="arc"` on a face that isn't a rim.
 - `text_curvature` on a cylindrical or conical side wall — those always wrap.
 - `at_z` (or a `line_spacing` for multi-line) that puts a glyph past the cone's apex.

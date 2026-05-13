@@ -187,7 +187,7 @@ This is a flat script — no Components, no Design class — built from shape-li
 - `Ogive(kind="parabolic", fn=64).attach(body, on="top")` stacks the nose on the body, no z-offset math.
 - Fins: `polygon → linear_extrude → minkowski(sphere)` for the rounded blank, `attach(body, on="outer_wall", at="lside", fuse=True)` to seat one fin flush, and `.rotate_copy(angle=120, n=3, axis=[0, 0, 1])` for the 3-fold pattern.
 - Nested `linear_copy(...)` stamps a 2x2 array of M2 counterbores at the plate corners; `.through(plate_solid, axis="z")` flushes the cuts.
-- `add_text(meridian=45, ...)` engraves text along a meridian on the body's curved outer wall — once horizontally for the wordmark (raised relief), then chained again with `text_dir="axial"` and `rotate_glyphs=True` for the multi-line punchline (recessed relief).
+- `add_text(angle=45, ...)` engraves text along a meridian on the body's curved outer wall — once horizontally for the wordmark (raised relief), then chained again with `text_dir="axial"` and `rotate_glyphs=True` for the multi-line punchline (recessed relief).
 
 ![Rocket](images/Rocket.png)
 

@@ -312,7 +312,7 @@ def _cone_slanted_normal(r1: float, r2: float, length: float, *, inner: bool = F
     return (sign * slope_z / L, 0.0, sign * (-slope_x / L))
 
 
-def _apply_attach_angle(anchor, angle, radius, loc):
+def _apply_attach_angle(anchor, angle, at_radial, loc):
     """Return a new Anchor with position (and possibly normal) rotated
     around the surface axis to angular position ``angle``.
 
@@ -325,7 +325,7 @@ def _apply_attach_angle(anchor, angle, radius, loc):
     Behavior dispatches on ``anchor.kind``:
 
     - **cylindrical** (``outer_wall`` of a cylinder): rotate position
-      and normal around the axis line by ``angle``. ``radius=`` is
+      and normal around the axis line by ``angle``. ``at_radial=`` is
       rejected (the anchor sits on the wall surface; different radii
       would mean a different surface).
 
@@ -337,11 +337,11 @@ def _apply_attach_angle(anchor, angle, radius, loc):
       expects for surface-mounted attachments.
 
     - **planar with rim_radius** (``top``/``bottom`` of a cylinder/cone):
-      position becomes a point on the cap at radial distance ``radius``
-      (defaulting to ``rim_radius``) at angular position ``angle``,
-      rotated around the axis. Normal stays as-is (axial — perpendicular
-      to the cap face). ``radius=0`` is the legitimate "center of cap"
-      case.
+      position becomes a point on the cap at radial distance
+      ``at_radial`` (defaulting to ``rim_radius``) at angular position
+      ``angle``, rotated around the axis. Normal stays as-is (axial —
+      perpendicular to the cap face). ``at_radial=0`` is the legitimate
+      "center of cap" case.
 
     - **Anything else**: raise — the anchor doesn't expose surface
       geometry that an angular position can refer to.
@@ -367,11 +367,11 @@ def _apply_attach_angle(anchor, angle, radius, loc):
     rotation = Matrix.rotate_axis_angle(angle_deg, anchor.axis)
 
     if anchor.kind == "cylindrical":
-        if radius is not None:
+        if at_radial is not None:
             raise ValidationError(
-                "attach: radius= is not valid on a cylindrical anchor "
-                "(the wall sits at a fixed radius). Use radius= only on "
-                "cap anchors with rim_radius.",
+                "attach: at_radial= is not valid on a cylindrical anchor "
+                "(the wall sits at a fixed radius). Use at_radial= only "
+                "on cap anchors with rim_radius.",
                 source_location=loc,
             )
         origin = _axis_origin_for(anchor)
@@ -380,11 +380,11 @@ def _apply_attach_angle(anchor, angle, radius, loc):
         return replace(anchor, position=new_position, normal=new_normal)
 
     if anchor.kind == "meridional":
-        if radius is not None:
+        if at_radial is not None:
             raise ValidationError(
-                "attach: radius= is not valid on a meridional anchor "
+                "attach: at_radial= is not valid on a meridional anchor "
                 "(the wall radius is fixed by the meridian geometry). "
-                "Use radius= only on cap anchors with rim_radius.",
+                "Use at_radial= only on cap anchors with rim_radius.",
                 source_location=loc,
             )
         origin = _axis_origin_for(anchor)
@@ -410,11 +410,11 @@ def _apply_attach_angle(anchor, angle, radius, loc):
         )
 
     if anchor.kind == "conical":
-        if radius is not None:
+        if at_radial is not None:
             raise ValidationError(
-                "attach: radius= is not valid on a conical anchor "
+                "attach: at_radial= is not valid on a conical anchor "
                 "(the wall radius is fixed by the cone geometry). Use "
-                "radius= only on cap anchors with rim_radius.",
+                "at_radial= only on cap anchors with rim_radius.",
                 source_location=loc,
             )
         # Slanted surface normal at the +X meridian, then rotate.
@@ -439,10 +439,10 @@ def _apply_attach_angle(anchor, angle, radius, loc):
     # host, so a host rotated around its own axis still gets the right
     # +X-meridian reference direction.
     if anchor.kind == "planar" and anchor.rim_radius is not None:
-        r = anchor.rim_radius if radius is None else radius
+        r = anchor.rim_radius if at_radial is None else at_radial
         if r < 0:
             raise ValidationError(
-                f"attach: radius= must be non-negative, got {radius}",
+                f"attach: at_radial= must be non-negative, got {at_radial}",
                 source_location=loc,
             )
         meridian_zero = anchor.meridian_zero or (1.0, 0.0, 0.0)
@@ -478,7 +478,7 @@ def _apply_attach_at_z(anchor, at_z, loc):
     (for outward widening) rather than on the wall.
 
     Rim anchors don't have a meaningful "axial" direction perpendicular
-    to their plane in the same sense — for those, ``radius=`` already
+    to their plane in the same sense — for those, ``at_radial=`` already
     covers the in-plane radial offset.
     """
     from dataclasses import replace
@@ -489,7 +489,7 @@ def _apply_attach_at_z(anchor, at_z, loc):
             f"attach: at_z= is for cylindrical, conical, and meridional "
             f"wall anchors (it shifts along the surface axis); this "
             f"anchor is {anchor.kind!r}. For radial offset on a rim, "
-            f"use radius=.",
+            f"use at_radial=.",
             source_location=loc,
         )
 

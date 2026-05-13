@@ -163,11 +163,11 @@ def test_at_z_on_sphere_raises():
         peg.attach(ball, on="surface", polar=30, at_z=5)
 
 
-def test_radius_on_sphere_with_polar_raises():
+def test_at_radial_on_sphere_with_polar_raises():
     ball = sphere(r=10)
     peg = cube([2, 2, 5])
-    with pytest.raises(ValidationError, match="radius="):
-        peg.attach(ball, on="surface", polar=30, angle=0, radius=5)
+    with pytest.raises(ValidationError, match="at_radial="):
+        peg.attach(ball, on="surface", polar=30, angle=0, at_radial=5)
 
 
 # --- existing six bbox-tangent anchors still work ---

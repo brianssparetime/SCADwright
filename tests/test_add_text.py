@@ -149,13 +149,22 @@ def test_font_size_must_be_positive():
         ))
 
 
-def test_on_with_at_3tuple_rejected():
-    """on= with at=(x, y, z) is the old conflict; now `at=` with `on=`
-    must be a 2-tuple offset (mode 2). 3-tuple at= without on= is the
-    ad-hoc path."""
-    with pytest.raises(ValidationError, match="2-tuple"):
+def test_on_with_at_rejected():
+    """`at=` is exclusively a 3D coordinate for ad-hoc placement. Pairing
+    it with `on=` is a contradiction — the user should use `offset=` for
+    an in-face nudge of a named anchor."""
+    with pytest.raises(ValidationError, match="ad-hoc placement"):
         emit_str(cube([10, 10, 10]).add_text(
             label="X", relief=0.5, on="top", at=(1, 2, 3), font_size=4,
+        ))
+
+
+def test_on_with_at_2tuple_also_rejected():
+    """A 2-tuple `at=` with `on=` is also rejected — `at=` only takes
+    a 3-tuple (use `offset=` for the in-face nudge)."""
+    with pytest.raises(ValidationError, match="ad-hoc placement"):
+        emit_str(cube([10, 10, 10]).add_text(
+            label="X", relief=0.5, on="top", at=(1, 2), font_size=4,
         ))
 
 
@@ -330,7 +339,7 @@ def test_adhoc_on_rotated_cylinder_still_warns(caplog):
     )
 
 
-# --- Patch A: at=(u, v) offset on a named face ---
+# --- offset=(u, v) on a named face ---
 
 
 def _translate_in_scad(scad: str, count: int = 1) -> list[str]:
@@ -344,51 +353,51 @@ def _translate_in_scad(scad: str, count: int = 1) -> list[str]:
     return out
 
 
-def test_at_offset_on_top_shifts_xy():
-    """at=(u, v) on top face translates by +u in world X, +v in world Y."""
+def test_offset_on_top_shifts_xy():
+    """offset=(u, v) on top face translates by +u in world X, +v in world Y."""
     no_offset = emit_str(cube([20, 20, 5]).add_text(
         label="X", relief=0.4, on="top", font_size=4,
     ))
     with_offset = emit_str(cube([20, 20, 5]).add_text(
-        label="X", relief=0.4, on="top", font_size=4, at=(5, 3),
+        label="X", relief=0.4, on="top", font_size=4, offset=(5, 3),
     ))
     # Default position (10, 10, ~5); offset (15, 13, ~5).
     assert "[10, 10," in no_offset
     assert "[15, 13," in with_offset
 
 
-def test_at_offset_on_rside_shifts_yz():
-    """at=(u, v) on rside: u=-Y axis, v=+Z axis."""
+def test_offset_on_rside_shifts_yz():
+    """offset=(u, v) on rside: u=-Y axis, v=+Z axis."""
     scad = emit_str(cube([20, 20, 10]).add_text(
-        label="X", relief=0.4, on="rside", font_size=4, at=(2, 1),
+        label="X", relief=0.4, on="rside", font_size=4, offset=(2, 1),
     ))
-    # rside face center: (20, 10, 5). After at=(2,1) with (u=-Y, v=+Z) frame:
+    # rside face center: (20, 10, 5). After offset=(2,1) with (u=-Y, v=+Z) frame:
     # translate = (20 - eps, 10 + 2*-1, 5 + 1*1) = (19.99, 8, 6).
     assert "19.99, 8, 6" in scad
 
 
-def test_at_offset_on_front_shifts_xz():
-    """at=(u, v) on front: u=+X, v=+Z."""
+def test_offset_on_front_shifts_xz():
+    """offset=(u, v) on front: u=+X, v=+Z."""
     scad = emit_str(cube([20, 20, 10]).add_text(
-        label="X", relief=0.4, on="front", font_size=4, at=(2, 1),
+        label="X", relief=0.4, on="front", font_size=4, offset=(2, 1),
     ))
     # front face center: (10, 0, 5) with normal (0, -1, 0).
-    # at=(2, 1) → (+2 X, +1 Z). Position: (10 + 2, 0 + eps, 5 + 1) = (12, 0.01, 6).
+    # offset=(2, 1) → (+2 X, +1 Z). Position: (10 + 2, 0 + eps, 5 + 1) = (12, 0.01, 6).
     assert "12, 0.01, 6" in scad
 
 
-def test_at_offset_zero_is_noop():
-    """at=(0, 0) produces the same emit as no `at`."""
+def test_offset_zero_is_noop():
+    """offset=(0, 0) produces the same emit as no `offset`."""
     a = emit_str(cube([20, 20, 5]).add_text(
         label="X", relief=0.4, on="top", font_size=4,
     ))
     b = emit_str(cube([20, 20, 5]).add_text(
-        label="X", relief=0.4, on="top", font_size=4, at=(0, 0),
+        label="X", relief=0.4, on="top", font_size=4, offset=(0, 0),
     ))
     assert a == b
 
 
-def test_at_offset_on_custom_anchor_uses_algorithmic_frame():
+def test_offset_on_custom_anchor_uses_algorithmic_frame():
     """A Component custom anchor (not in the hardcoded face table) uses the
     deterministic fallback frame. The exact direction depends on the
     anchor's normal, but the offset must be perpendicular to it.
@@ -406,7 +415,7 @@ def test_at_offset_on_custom_anchor_uses_algorithmic_frame():
             return cube([self.w, self.w, self.w])
 
     p = WithCustom(w=10).add_text(
-        label="X", relief=0.4, on="spot", font_size=2, at=(3, 0),
+        label="X", relief=0.4, on="spot", font_size=2, offset=(3, 0),
     )
     # The placement should succeed without error; the exact offset depends
     # on the algorithmic frame, but emitted SCAD must contain the label.
@@ -414,54 +423,54 @@ def test_at_offset_on_custom_anchor_uses_algorithmic_frame():
     assert '"X"' in scad
 
 
-def test_at_3tuple_with_on_string_rejected():
-    """at=(x, y, z) only valid for ad-hoc; with on= it must be 2-tuple."""
-    with pytest.raises(ValidationError, match="2-tuple"):
+def test_offset_without_on_rejected():
+    """offset=(u, v) needs `on=` to define which face's plane."""
+    with pytest.raises(ValidationError, match="`offset=` is the in-face nudge"):
         emit_str(cube([10, 10, 10]).add_text(
-            label="X", relief=0.4, on="top", font_size=4, at=(1, 2, 3),
+            label="X", relief=0.4, font_size=4, offset=(1, 2),
         ))
 
 
-def test_at_2tuple_without_on_rejected():
-    """at=(u, v) needs `on=` to define which face's plane."""
-    with pytest.raises(ValidationError, match="ad-hoc placement requires"):
-        emit_str(cube([10, 10, 10]).add_text(
-            label="X", relief=0.4, font_size=4, at=(1, 2),
-        ))
-
-
-def test_at_offset_on_cylindrical_anchor_rejected():
-    """Curved walls use meridian/at_z, not at=(u, v)."""
+def test_offset_on_cylindrical_anchor_rejected():
+    """Curved walls use angle/at_z, not offset=(u, v)."""
     from scadwright.primitives import cylinder
 
-    with pytest.raises(ValidationError, match="meridian"):
+    with pytest.raises(ValidationError, match="angle"):
         emit_str(cylinder(h=20, r=10).add_text(
-            label="X", relief=0.4, on="outer_wall", font_size=4, at=(2, 1),
+            label="X", relief=0.4, on="outer_wall", font_size=4, offset=(2, 1),
         ))
 
 
-def test_at_offset_with_anchor_object():
-    """on=Anchor + at=(u, v): uses the algorithmic tangent frame."""
+def test_offset_with_anchor_object():
+    """on=Anchor + offset=(u, v): uses the algorithmic tangent frame."""
     from scadwright.anchor import Anchor as _Anchor
 
     a = _Anchor(position=(0, 0, 5), normal=(0, 0, 1))
     p = cube([20, 20, 5]).add_text(
-        label="X", relief=0.4, on=a, font_size=4, at=(3, 2),
+        label="X", relief=0.4, on=a, font_size=4, offset=(3, 2),
     )
     scad = emit_str(p)
     assert '"X"' in scad
 
 
-def test_at_offset_chains_through_decoration():
+def test_offset_chains_through_decoration():
     """Offset placement preserves host anchors via the decoration framework."""
     p = (
         cube([20, 20, 5])
-        .add_text(label="A", relief=0.4, on="top", font_size=4, at=(5, 0))
+        .add_text(label="A", relief=0.4, on="top", font_size=4, offset=(5, 0))
         .add_text(label="B", relief=0.4, on="rside", font_size=4)
     )
     scad = emit_str(p)
     assert '"A"' in scad
     assert '"B"' in scad
+
+
+def test_offset_must_be_2tuple():
+    """offset=(u, v, w) (3-tuple) on a named anchor is rejected."""
+    with pytest.raises(ValidationError, match="2-tuple"):
+        emit_str(cube([10, 10, 10]).add_text(
+            label="X", relief=0.4, on="top", font_size=4, offset=(1, 2, 3),
+        ))
 
 
 # --- SCAD output sanity ---

@@ -340,7 +340,7 @@ class Node(
         *,
         using_anchor: str = "bottom",
         angle: float | str | None = None,
-        radius: float | None = None,
+        at_radial: float | None = None,
         at_z: float | None = None,
         polar: float | None = None,
         orient: bool = False,
@@ -397,9 +397,9 @@ class Node(
         / ``"lside"`` / ``"front"`` / ``"+x"`` / ``"+y"`` / ``"-x"`` /
         ``"-y"``)::
 
-            peg.attach(hub, on="outer_wall", angle=30)        # 30° meridian on the wall
-            peg.attach(hub, on="top", angle=30)               # 30° on the top rim
-            peg.attach(hub, on="top", angle=30, radius=12)    # 30°, 12 mm from cap center
+            peg.attach(hub, on="outer_wall", angle=30)         # 30° meridian on the wall
+            peg.attach(hub, on="top", angle=30)                # 30° on the top rim
+            peg.attach(hub, on="top", angle=30, at_radial=12)  # 30°, 12 mm from cap center
 
         On cylindrical/conical anchors, ``angle=`` rotates the anchor's
         position and surface normal around the surface axis; on cones
@@ -407,8 +407,8 @@ class Node(
         radial reference that ``add_text`` consumes). On planar cap
         anchors that carry rim_radius (``top``/``bottom`` of a cylinder
         or cone), ``angle=`` places the attachment at angular position
-        on the cap; ``radius=`` overrides the default rim radius for
-        placements interior to the rim. Other anchor kinds reject
+        on the cap; ``at_radial=`` overrides the default (the rim radius)
+        for placements interior to the rim. Other anchor kinds reject
         ``angle=`` with a clear error.
 
         For axial placement along a cylindrical or conical wall, pass
@@ -435,7 +435,7 @@ class Node(
             peg.attach(ball, on="surface", polar=0)         # north pole
 
         ``polar=`` is only valid on spherical anchors. ``at_z=`` and
-        ``radius=`` raise on spherical anchors — sphere placement uses
+        ``at_radial=`` raise on spherical anchors — sphere placement uses
         the polar/angle pair.
 
         For explicit control over the auto-eps mechanism, pass ``bond=``
@@ -466,10 +466,10 @@ class Node(
             from scadwright.api.tolerances import default_eps
             eps = default_eps()
 
-        if angle is None and radius is not None:
+        if angle is None and at_radial is not None:
             from scadwright.errors import ValidationError
             raise ValidationError(
-                "attach: radius= requires angle=. Pass both for angular "
+                "attach: at_radial= requires angle=. Pass both for angular "
                 "placement on a cap anchor.",
                 source_location=loc,
             )
@@ -490,10 +490,10 @@ class Node(
                     "polar= and angle= to select a point on the sphere.",
                     source_location=loc,
                 )
-            if radius is not None:
+            if at_radial is not None:
                 from scadwright.errors import ValidationError
                 raise ValidationError(
-                    "attach: radius= is not valid on spherical anchors; use "
+                    "attach: at_radial= is not valid on spherical anchors; use "
                     "polar= and angle= to select a point on the sphere.",
                     source_location=loc,
                 )
@@ -510,7 +510,7 @@ class Node(
             other_anchor = _apply_attach_at_z(other_anchor, at_z, loc)
         if angle is not None:
             from scadwright.ast.placement import _apply_attach_angle
-            other_anchor = _apply_attach_angle(other_anchor, angle, radius, loc)
+            other_anchor = _apply_attach_angle(other_anchor, angle, at_radial, loc)
         self_anchor = _resolve_attach_anchor(self, using_anchor, "self", loc)
 
         # Validate bond/fuse pair. Explicit bond= implies fuse=True;

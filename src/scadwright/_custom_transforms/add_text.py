@@ -82,7 +82,7 @@ def _line_y_offsets(n: int, font_size: float, line_spacing: float, valign: str) 
 
 # Per-face (u, v) tangent frames for the 12 standard bbox names. ``u`` is the
 # "right" direction and ``v`` is "up" when the face is viewed from outside
-# the host. ``at=(u, v)`` on a named face translates by ``u * u_axis +
+# the host. ``offset=(u, v)`` on a named face translates by ``u * u_axis +
 # v * v_axis``. Picked so axis-aligned faces feel natural; arbitrary
 # normals fall back to the algorithmic frame below.
 _FACE_TANGENT_FRAMES: dict[str, tuple[tuple[float, float, float], tuple[float, float, float]]] = {
@@ -144,21 +144,27 @@ def _face_tangent_frame(face_name, normal):
 # --- Placement resolution ---
 
 
-def _resolve_placement(host, on, at, normal, loc):
+def _resolve_placement(host, on, at, normal, offset, loc):
     """Resolve user-supplied placement kwargs into ``(Anchor, face_dims_or_None)``.
 
-    Three modes are supported, disambiguated by the kwarg combination:
+    Three modes, disambiguated by which kwargs were supplied:
 
-    1. **Named only** — ``on=`` is a string or Anchor; ``at``/``normal`` are
-       absent. Text sits at the face's reference position.
-    2. **Named + offset within face** — ``on=`` is a string or Anchor;
-       ``at`` is a 2-tuple ``(u, v)`` in mm. The Anchor's position is
+    1. **Named only** — ``on=`` is a string or Anchor; ``offset``/``at``/
+       ``normal`` are absent. Text sits at the face's reference position.
+    2. **Named + in-face offset** — ``on=`` is a string or Anchor;
+       ``offset`` is a 2-tuple ``(u, v)`` in mm. The Anchor's position is
        translated by ``u * u_axis + v * v_axis`` in the face's tangent
        plane. Only valid on planar anchors; cylindrical/conical anchors
-       use ``meridian=``/``at_z=`` instead.
+       use ``angle=`` / ``at_z=`` instead.
     3. **Ad-hoc** — ``on=`` is None; ``at`` is a 3-tuple ``(x, y, z)``
-       and ``normal`` a 3-tuple direction. Treated as a planar anchor at
-       that position.
+       coordinate and ``normal`` is a 3-tuple direction. Treated as a
+       planar anchor at that position.
+
+    ``at`` and ``offset`` are deliberately distinct kwargs: ``at`` is
+    always a 3D coordinate (paired with ``normal=`` for ad-hoc), and
+    ``offset`` is always a 2D in-face nudge (paired with named ``on=``).
+    The split keeps ``at`` consistent with its meaning elsewhere in the
+    library (`anchor()`, `with_anchor()`) — always a coordinate.
 
     ``face_dims`` is a ``(u_extent, v_extent)`` tuple in mm describing the
     face's in-plane extent — used for overflow detection. Returned only
@@ -168,15 +174,38 @@ def _resolve_placement(host, on, at, normal, loc):
     has_on = on is not None
     has_at = at is not None
     has_normal = normal is not None
+    has_offset = offset is not None
 
-    # Validate basic combinations.
+    # Mutually-exclusive kwarg combinations.
+    if has_on and has_at:
+        raise ValidationError(
+            "add_text: `at=` is the 3D coordinate for ad-hoc placement "
+            "(used with `normal=`); it cannot be combined with `on=`. "
+            "To nudge a named anchor within its face plane, pass "
+            "`offset=(u, v)` instead."
+        )
     if has_on and has_normal:
         raise ValidationError(
             "add_text: `normal=` is for ad-hoc placement and cannot be "
-            "combined with `on=`. To use a named face with an in-plane "
-            "offset, pass `at=(u, v)` (a 2-tuple)."
+            "combined with `on=`. To nudge a named anchor within its face "
+            "plane, pass `offset=(u, v)`."
+        )
+    if has_offset and not has_on:
+        raise ValidationError(
+            "add_text: `offset=` is the in-face nudge for a named anchor; "
+            "pass `on=` with it. For ad-hoc 3D placement, use `at=` + "
+            "`normal=`."
+        )
+    if has_offset and (has_at or has_normal):
+        # Defensive: the has_on checks above already cover offset+on combinations
+        # via the on= path. This catches offset alone with at/normal but no on.
+        raise ValidationError(
+            "add_text: `offset=` is for named-anchor in-face placement; it "
+            "cannot be combined with `at=` / `normal=` (those are the "
+            "ad-hoc 3D path)."
         )
     if not has_on:
+        # Ad-hoc path: need both at and normal.
         if has_at and not has_normal:
             raise ValidationError(
                 "add_text: ad-hoc placement requires both `at=` and `normal=`."
@@ -189,14 +218,15 @@ def _resolve_placement(host, on, at, normal, loc):
         if not has_at:
             raise ValidationError(
                 "add_text: must specify a placement — pass `on=` "
-                "(a face name or an Anchor) or `at=` + `normal=`."
+                "(a face name or an Anchor), or `at=` + `normal=` for "
+                "ad-hoc 3D placement."
             )
         # Ad-hoc: at + normal both given. Warn if the host actually carries
         # curved-surface anchors — the user probably wants the wrap path.
         _warn_if_host_is_curved(host, loc)
         return _adhoc_anchor(at, normal), None
 
-    # Named placement (with or without 2D offset).
+    # Named placement (with or without in-face offset).
     if isinstance(on, str):
         anchors = get_node_anchors(host)
         if on not in anchors:
@@ -217,9 +247,8 @@ def _resolve_placement(host, on, at, normal, loc):
             f"got {type(on).__name__}."
         )
 
-    # Apply 2D in-face offset if `at=` was given.
-    if has_at:
-        anchor = _apply_face_offset(anchor, anchor_name, at)
+    if has_offset:
+        anchor = _apply_face_offset(anchor, anchor_name, offset)
 
     return anchor, face_dims
 
@@ -247,23 +276,24 @@ def _resolve_planar_curvature(placement_anchor, text_curvature):
     return is_rim, is_rim  # default: arc on rim, flat elsewhere
 
 
-def _apply_face_offset(anchor, face_name, at):
-    """Translate the anchor's position by an ``(u, v)`` offset in the face's
-    tangent plane. Validates the kwarg shape and rejects on curved surfaces.
+def _apply_face_offset(anchor, face_name, offset):
+    """Translate the anchor's position by an ``(u, v)`` in-face offset in
+    the face's tangent plane. Validates the kwarg shape and rejects on
+    curved surfaces.
     """
     if anchor.kind != "planar":
         raise ValidationError(
-            f"add_text: `at=` 2D offset is for flat faces; this anchor is "
-            f"{anchor.kind!r}. Use `meridian=` for the angular position "
+            f"add_text: `offset=` is for flat faces; this anchor is "
+            f"{anchor.kind!r}. Use `angle=` for the angular position "
             f"and `at_z=` for the axial offset on curved surfaces."
         )
-    if not (hasattr(at, "__len__") and len(at) == 2):
+    if not (hasattr(offset, "__len__") and len(offset) == 2):
         raise ValidationError(
-            f"add_text: `at=` with `on=` must be a 2-tuple (u, v) — the "
-            f"in-face offset in mm. For ad-hoc 3D placement, drop `on=` "
-            f"and pass `at=(x, y, z)` + `normal=`. Got {at!r}."
+            f"add_text: `offset=` must be a 2-tuple (u, v) — the in-face "
+            f"offset in mm. For ad-hoc 3D placement, drop `on=` and pass "
+            f"`at=(x, y, z)` + `normal=`. Got {offset!r}."
         )
-    u, v = float(at[0]), float(at[1])
+    u, v = float(offset[0]), float(offset[1])
     u_axis, v_axis = _face_tangent_frame(face_name, anchor.normal)
     new_position = (
         anchor.position[0] + u * u_axis[0] + v * v_axis[0],
@@ -425,17 +455,14 @@ def _rotate_z_to(child, target_normal, loc):
 # --- Cylindrical placement helpers ---
 
 
-def _resolve_meridian(meridian) -> float:
+def _resolve_angle(angle) -> float:
     """Convert a string face name or numeric degrees CCW to radians.
 
-    Thin alias for ``resolve_angle_to_radians`` with the historical
-    ``param_name="meridian"`` so error messages stay backward-compatible
-    for ``add_text`` users.
+    Thin alias for ``resolve_angle_to_radians`` with the ``add_text``
+    context name interpolated into error messages.
     """
     from scadwright.anchor import resolve_angle_to_radians
-    return resolve_angle_to_radians(
-        meridian, context_name="add_text", param_name="meridian",
-    )
+    return resolve_angle_to_radians(angle, context_name="add_text")
 
 
 def _rotate_around_axis(vec, angle_rad, axis):
@@ -471,7 +498,7 @@ def _place_wrapped(
     lines,
     font_size,
     relief,
-    meridian,
+    angle,
     at_z,
     halign,
     valign,
@@ -554,7 +581,7 @@ def _place_wrapped(
         meridian_r = mid_r_param = meridian_s_param = None
         merid_length = None
 
-    base_meridian_rad = _resolve_meridian(meridian) if meridian is not None else 0.0
+    base_angle_rad = _resolve_angle(angle) if angle is not None else 0.0
     base_axial_offset = float(at_z) if at_z is not None else 0.0
 
     raised = relief > 0
@@ -707,12 +734,12 @@ def _place_wrapped(
                 anchor.kind, line_radius, line_at_z, line_idx, font_size, loc_str,
             )
 
-        # Per-line meridian: in axial mode, lines stack circumferentially
+        # Per-line angle: in axial mode, lines stack circumferentially
         # so line_y becomes an angular offset (radians = mm-of-arc / radius).
         if text_dir == "axial":
-            line_meridian_rad = base_meridian_rad + line_y / line_radius
+            line_angle_rad = base_angle_rad + line_y / line_radius
         else:
-            line_meridian_rad = base_meridian_rad
+            line_angle_rad = base_angle_rad
 
         glyph_nodes.extend(_emit_wrap_line(
             line=line,
@@ -723,7 +750,7 @@ def _place_wrapped(
             eps=eps,
             abs_relief=abs_relief,
             raised=raised,
-            base_meridian_rad=line_meridian_rad,
+            base_angle_rad=line_angle_rad,
             halign=halign,
             axis=axis,
             anchor_normal=anchor.normal,
@@ -752,7 +779,7 @@ def _emit_wrap_line(
     *,
     line, line_radius, line_at_z,
     font_size, extrude_h, eps, abs_relief, raised,
-    base_meridian_rad, halign,
+    base_angle_rad, halign,
     axis, anchor_normal, axis_origin, s_outward,
     is_conical, text_orient,
     text_dir, rotate_glyphs, flip,
@@ -786,7 +813,7 @@ def _emit_wrap_line(
     pre-translated by ``-advance/2`` along local 2D-x so each glyph's
     advance midpoint sits at the placement origin. The caller's halign
     drives where that line of advance midpoints sits relative to
-    ``base_meridian_rad`` (or ``line_at_z`` in axial mode); the caller's
+    ``base_angle_rad`` (or ``line_at_z`` in axial mode); the caller's
     valign was applied at the line-stacking stage (see ``_line_y_offsets``)
     and doesn't reach here.
 
@@ -831,10 +858,10 @@ def _emit_wrap_line(
                 "%.2f mm — glyphs will overlap%s",
                 line, 100 * total_arc_rad / (2 * math.pi), line_radius, loc_str,
             )
-        # Per-glyph CENTER position (mm, from base_meridian). Each glyph's
+        # Per-glyph CENTER position (mm, from base angle). Each glyph's
         # advance midpoint sits here; the per-glyph 2D shape is shifted
         # by -advance/2 so that midpoint coincides with the placement origin.
-        # halign decides how the cumulative line spans relative to base_meridian.
+        # halign decides how the cumulative line spans relative to base angle.
         sign = -1.0 if flip else 1.0
         # On inner walls the reader is INSIDE the host looking outward, so
         # world +Y is the reader's LEFT (vs. the reader's RIGHT for outer
@@ -899,7 +926,7 @@ def _emit_wrap_line(
 
     out = []
     for char, glyph_advance_mm, (theta_off, at_z_off) in zip(line, advances_mm, char_advances):
-        theta = base_meridian_rad + theta_off
+        theta = base_angle_rad + theta_off
         char_at_z = line_at_z + at_z_off
 
         # Per-glyph geometry. For text_dir="circumferential", every glyph
@@ -1047,7 +1074,7 @@ def _place_on_rim(
     lines,
     font_size,
     relief,
-    meridian,
+    angle,
     at_radial,
     halign,
     valign,
@@ -1098,7 +1125,7 @@ def _place_on_rim(
                 path_radius, rim_radius, loc_str,
             )
 
-    # Prefer meridian_zero / axis from the anchor so meridian=N follows
+    # Prefer meridian_zero / axis from the anchor so angle=N follows
     # the cylinder's local frame (transforms with the host), consistent
     # with attach(rim, angle=N). Fall back to deriving from face_normal
     # for ad-hoc rim Anchors that lack the curved-surface metadata.
@@ -1109,7 +1136,7 @@ def _place_on_rim(
         rotation_axis = face_normal
     else:
         u_axis = meridian_zero
-    base_meridian_rad = _resolve_meridian(meridian) if meridian is not None else 0.0
+    base_angle_rad = _resolve_angle(angle) if angle is not None else 0.0
 
     raised = relief > 0
     abs_relief = abs(relief)
@@ -1152,7 +1179,7 @@ def _place_on_rim(
             extrude_h=extrude_h,
             eps=eps,
             raised=raised,
-            base_meridian_rad=base_meridian_rad,
+            base_angle_rad=base_angle_rad,
             halign=halign,
             face_normal=face_normal,
             rim_center=rim_center,
@@ -1172,7 +1199,7 @@ def _emit_rim_line(
     *,
     line, line_path_radius,
     font_size, extrude_h, eps, raised,
-    base_meridian_rad, halign,
+    base_angle_rad, halign,
     face_normal, rim_center, u_axis, rotation_axis,
     text_kwargs, label_repr, loc,
 ):
@@ -1208,7 +1235,7 @@ def _emit_rim_line(
     cum = [0.0]
     for a in advances_mm[:-1]:
         cum.append(cum[-1] + a)
-    # Per-glyph CENTER position (mm, from base_meridian along the arc).
+    # Per-glyph CENTER position (mm, from base angle along the arc).
     # See ``_emit_wrap_line`` for the rationale: orient each glyph at its
     # advance midpoint and pre-translate the 2D shape by -advance/2.
     if halign == "left":
@@ -1220,8 +1247,8 @@ def _emit_rim_line(
     offsets = [m / line_path_radius for m in centers_mm]
 
     out = []
-    for char, glyph_advance_mm, offset_from_meridian in zip(line, advances_mm, offsets):
-        theta = base_meridian_rad + offset_from_meridian
+    for char, glyph_advance_mm, theta_off in zip(line, advances_mm, offsets):
+        theta = base_angle_rad + theta_off
         radial = _rotate_around_axis(u_axis, theta, rotation_axis)
         tangent = (
             face_normal[1] * radial[2] - face_normal[2] * radial[1],
@@ -1286,7 +1313,8 @@ def add_text(
     on=None,
     at=None,
     normal=None,
-    meridian=None,
+    offset=None,
+    angle=None,
     at_z=None,
     at_radial=None,
     text_curvature=None,
@@ -1309,13 +1337,16 @@ def add_text(
     """Add raised or inset text to a host shape's surface.
 
     ``relief`` is signed: positive raises the text outward by that
-    distance, negative cuts it that deep into the host. The ``on=``,
-    ``at=``, and ``normal=`` kwargs choose the placement. ``meridian=``
-    and ``at_z=`` apply only on cylindrical and conical surfaces (the
-    angular position around the axis and the axial offset from
-    mid-wall). ``text_orient=`` controls glyph orientation on conical
-    surfaces (``"axial"`` keeps glyphs vertical; ``"slant"`` tilts them
-    with the cone). See ``docs/add_text.md`` for the full reference.
+    distance, negative cuts it that deep into the host. Placement is
+    chosen by one of three kwarg combinations: ``on=`` for a named
+    anchor (optionally with ``offset=(u, v)`` to nudge in the face's
+    tangent plane), or ``at=(x, y, z)`` + ``normal=(x, y, z)`` for
+    ad-hoc 3D placement. ``angle=`` and ``at_z=`` apply only on
+    cylindrical and conical surfaces (the angular position around the
+    axis and the axial offset from mid-wall). ``text_orient=`` controls
+    glyph orientation on conical surfaces (``"axial"`` keeps glyphs
+    vertical; ``"slant"`` tilts them with the cone). See
+    ``docs/add_text.md`` for the full reference.
     """
     if not isinstance(label, str):
         raise ValidationError(
@@ -1369,7 +1400,7 @@ def add_text(
     loc = SourceLocation.from_caller()
 
     # 1. Resolve placement into (Anchor, face_dims_or_None).
-    placement_anchor, face_dims = _resolve_placement(node, on, at, normal, loc)
+    placement_anchor, face_dims = _resolve_placement(node, on, at, normal, offset, loc)
 
     # Validate text_orient and text_curvature kwargs.
     if text_orient not in ("axial", "slant"):
@@ -1421,7 +1452,7 @@ def add_text(
                 f"(cylindrical / conical / meridional); got "
                 f"kind={placement_anchor.kind!r}. On a planar or rim anchor, "
                 f"flip the host with .mirror() or use the existing halign / "
-                f"meridian kwargs to reverse reading order."
+                f"angle kwargs to reverse reading order."
             )
 
     # `valign` resolution. Per-glyph emit on curved walls / rim arcs is
@@ -1450,11 +1481,11 @@ def add_text(
                 "conical wall and does not apply to planar surfaces. "
                 "On a rim, use `at_radial` for the path-circle radius."
             )
-        # meridian only makes sense on the arc path (rotates the label
+        # angle only makes sense on the arc path (rotates the label
         # around the rim center); reject it on flat planar.
-        if meridian is not None and not use_arc:
+        if angle is not None and not use_arc:
             raise ValidationError(
-                "add_text: `meridian` applies on rim arc text and on "
+                "add_text: `angle` applies on rim arc text and on "
                 "cylindrical/conical walls; this is a flat planar surface."
             )
 
@@ -1477,7 +1508,7 @@ def add_text(
             return _place_on_rim(
                 node, placement_anchor,
                 lines, font_size, relief,
-                meridian, at_radial,
+                angle, at_radial,
                 halign, valign, line_spacing,
                 text_kwargs, loc,
             )
@@ -1514,7 +1545,7 @@ def add_text(
         return _place_wrapped(
             node, placement_anchor,
             lines, font_size, relief,
-            meridian, at_z,
+            angle, at_z,
             halign, valign, line_spacing,
             text_orient,
             text_dir, rotate_glyphs, flip,

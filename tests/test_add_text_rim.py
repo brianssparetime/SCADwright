@@ -197,16 +197,16 @@ def test_funnel_top_uses_top_od():
     assert '"O"' in scad
 
 
-# --- meridian on rim ---
+# --- angle on rim ---
 
 
-def test_meridian_rotates_rim_label():
-    """Two different meridians produce different placements."""
+def test_angle_rotates_rim_label():
+    """Two different angles produce different placements."""
     a = emit_str(cylinder(h=10, r=10).add_text(
-        label="X", relief=0.4, on="top", font_size=2, meridian="+x",
+        label="X", relief=0.4, on="top", font_size=2, angle="+x",
     ))
     b = emit_str(cylinder(h=10, r=10).add_text(
-        label="X", relief=0.4, on="top", font_size=2, meridian="+y",
+        label="X", relief=0.4, on="top", font_size=2, angle="+y",
     ))
     assert a != b
 

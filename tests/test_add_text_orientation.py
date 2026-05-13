@@ -76,7 +76,7 @@ def _glyph_positions(node):
 # --- The 8 combinations on a vertical cylinder ---
 #
 # Cylinder along +Z, outer_wall anchor at angle=0 (+X meridian). For a
-# single character at meridian=0, at_z=0:
+# single character at angle=0, at_z=0:
 #   tangent (e1) = +Y
 #   axis    (e2) = +Z
 #   radial  (out) = +X (outward from cylinder material).
@@ -250,7 +250,7 @@ def test_axial_on_planar_raises():
 def test_axial_multiline_stacks_circumferentially():
     """Axial-mode multi-line: each line runs along the axis at its own
     meridian. Lines stack around the cylinder rather than along it.
-    Two lines at meridian=0 (default) → line 0 at one theta, line 1 at
+    Two lines at angle=0 (default) → line 0 at one theta, line 1 at
     a different theta but same axial range."""
     hub = cylinder(h=40, r=10)
     result = hub.add_text(
