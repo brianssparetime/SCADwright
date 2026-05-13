@@ -179,55 +179,9 @@ Shape-library Components ship with useful custom anchors:
 
 ## Manifold-clean unions: `fuse=True`
 
-When two solids meet at exactly-coincident planar faces, OpenSCAD's preview can show wavering or missing surfaces — the renderer can't classify points on a coincident boundary. The fix is a tiny overlap.
+For clean unions at planar contacts, `attach(fuse=True)` adds a small overlap at the contact face. The full mechanism — Tier 1 parametric extension, Tier 2 cross-section fallback, `bond=` for explicit control, the standalone `fuse(a, b, ...)`, `disable_eps_fuse()`, `through()`, and known limits — lives in [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
 
-Pass `fuse=True` to `attach()` to add that overlap:
-
-```python
-pylon = cube([5, 5, 10]).attach(floor, fuse=True)
-```
-
-`attach(fuse=True)`, the standalone `fuse(a, b, ...)`, `bond="overlap"`/`"shift"`, `disable_eps_fuse()`, and `through()` are documented together in [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md). The sections below describe the planar-extension mechanism, the cross-section fallback, and the trust contract — they live here because they're consequences of how anchors are declared.
-
-### When local extension applies
-
-Local extension activates only when **both** anchors have `kind="planar"` AND the side being extended is a shape the framework knows how to extend parametrically. Specifically:
-
-- `Cube` (any of the six bbox face anchors).
-- `Cylinder` planar caps (`top`, `bottom`).
-- `linear_extrude` end-cap anchors (`top`, `bottom`).
-
-These rules also apply through `Translate`, `Rotate`, and `Mirror` wrappers — `Cube.up(5).rotate([0, 90, 0])` still qualifies because the framework recurses through transforms to find the underlying primitive.
-
-When local extension applies:
-
-- `pylon.attach(floor, fuse=True)` — pylon's bottom extends into floor by eps; pylon's top stays exactly at the user-specified `z=10`.
-- `Counterbore(...).through(plate)` — the cutter's outer dimensions are preserved exactly, so `through()`'s coincidence detection on the plate's faces still works.
-
-### Cross-section extension for non-parametric shapes
-
-For planar anchors on shapes without a parametric extension lever — `rotate_extrude` end-caps, `Polyhedron` faces, results of `difference()` / `union()` / `intersection()`, custom Components without intrinsic extension — the framework falls back to a generic cross-section construction:
-
-1. Aligns the anchor plane to z=0 with normal +Z.
-2. Takes `projection(cut=True)` to extract the 2D cross-section.
-3. `linear_extrude`s the cross-section by `eps`.
-4. Inverse-aligns and unions the slab into the shape.
-
-The result preserves the user-facing dimensions of the shape exactly — only the contact face moves by `eps`. The cost is one CGAL evaluation per fuse; for assemblies where this matters, use `disable_eps_fuse()` to opt out.
-
-The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases.
-
-`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they aren't reachable by the planar cross-section path. Attaching to a sphere uses `bridge=True` instead (next section).
-
-Documented limitations the bbox check can't catch:
-
-- **Non-convex shapes with empty cross-sections.** A torus tangent point, two separated parts whose union bbox includes the gap, an anchor placed where a `difference()` removed all the material at that plane. Bbox check passes but the cross-section is empty; the fuse silently becomes a no-op (geometrically the same as `fuse=False`).
-
-- **Polyhedra with degenerate end caps at the bbox extreme.** A path_extrude'd helix or other polyhedron whose top/bottom face lies exactly at the bbox max or min along the normal can cause OpenSCAD's CGAL to fail at render time with an opaque "given mesh is not closed" / "Projection() failed" error. The scadwright build succeeds but the rendered output is broken.
-
-Workarounds for all the limitations: restructure the geometry so the fuse anchor is on a clean convex planar face, use `fuse=False` on that one attach, wrap the assembly in `disable_eps_fuse()`, or hand-craft the eps overlap.
-
-### Curved-host attach: `bridge=True`
+## Curved-host attach: `bridge=True`
 
 Bridging is a separate verb from fusing. Where `fuse=True` is the planar-contact eps mechanism (an aesthetic adjustment to keep OpenSCAD's preview clean), **`bridge=True` adds a structural piece of material** that fills the air gap between a peg's planar near-face and a convex-outer curved host (cylinder, cone, sphere). The bridge is part of the design — it's what makes the peg look (and print) merged into the curved surface, rather than balanced on a thin tangent line.
 
@@ -254,7 +208,7 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True,
 
 **`fuse=True` alone on a curved host raises.** Bare `fuse=True` is the planar eps machinery; on a curved host it can't apply, and the validator points at `bridge=True` rather than silently doing nothing useful.
 
-**Peg-anchor validation.** Like the planar cross-section path, the bridge dispatch validates the peg's at-anchor against the peg's bbox before building the prism: the anchor must lie on the peg's outermost face along its normal direction, and the peg must have non-zero extent in at least two axes. Failures raise a clear `ValidationError` rather than silently producing an empty bridge. The check unwraps `Translate` / `Rotate` / `Mirror` so a peg rotated by `orient=True` is validated against its underlying primitive's local frame.
+**Peg-anchor validation.** Like the [planar cross-section path](auto-eps_fuse_and_through.md#tier-2-cross-section-fallback), the bridge dispatch validates the peg's at-anchor against the peg's bbox before building the prism: the anchor must lie on the peg's outermost face along its normal direction, and the peg must have non-zero extent in at least two axes. Failures raise a clear `ValidationError` rather than silently producing an empty bridge. The check unwraps `Translate` / `Rotate` / `Mirror` so a peg rotated by `orient=True` is validated against its underlying primitive's local frame.
 
 **Coaxial requirement.** The bridge dispatch requires the peg's at-anchor normal to be anti-parallel to the host's on-anchor normal (within tolerance). Without `orient=True` or manual peg alignment, the call raises `ValidationError("requires coaxial normals")` rather than silently producing geometry that doesn't match user intent.
 
@@ -262,47 +216,8 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True,
 
 **Under `disable_eps_fuse()`:** the bridge structural geometry persists, but the peg-side `-eps` slice (gated on `fuse=True`) drops. Precision builds get exact structural geometry.
 
-**Inherited limitations from the cross-section primitive** (same set as the planar cross-section path):
+**Inherited limitations from the cross-section primitive** (same set as items 1 and 2 of [Known limits](auto-eps_fuse_and_through.md#known-limits-and-recovery-paths) on the planar path):
 
 - **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
 - **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
 
-### When neither path applies
-
-`fuse=True` raises when neither planar extension nor a fall-through applies — concave inner walls, non-planar contacts that aren't curved hosts, and shapes with anchors that can't be extended cleanly. The error message names the available alternatives:
-
-- `bond="shift"` — bilateral translate of `self` by `eps` along the contact normal. The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift, not after.
-- `fuse=False` — exact contact, no eps.
-- `bridge=True` — only on convex-outer curved hosts.
-
-### `attach(fuse=True)` only extends `self`
-
-`attach()` returns `self` translated to land on `other`. When `fuse=True`, the framework tries to locally extend `self` along the contact face. It does **not** try to extend `other` — `other` isn't part of the returned value, so an extension on `other` would be invisible to downstream operations.
-
-For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., using_anchor=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
-
-### Disabling fuse in a scope: `disable_eps_fuse()`
-
-Two cases need a way to turn fuse-mechanism eps adjustments off without rewriting individual call sites:
-
-- **Precision builds.** Final dimensions or anchor positions need to match the source declarations exactly — no eps sneaking in anywhere.
-- **Performance debugging.** Many fuses in a complex assembly add up; disabling the entire mechanism in a sub-tree lets you compare frame rates or isolate a slow path.
-
-Wrap the affected block in `with disable_eps_fuse():`:
-
-```python
-from scadwright import disable_eps_fuse
-
-@variant
-def precise(self):
-    with disable_eps_fuse():
-        return self.assembly()    # all fuse=True calls become exact contacts
-
-@variant
-def normal(self):
-    return self.assembly()        # all fuse=True calls get eps overlap as usual
-```
-
-Inside the block, `attach(fuse=True)` and the standalone `fuse(...)` behave as if `fuse` were `False`: exact anchor coincidence, no parametric extension, no shift. Anchor lookup, placement, `orient=True`, `angle=`, `at_z=`, `at_radial=`, and `through()` composition all continue to work — only the eps geometry is suppressed.
-
-The flag is scope-bounded; nested blocks are no-ops, and exiting any block restores the prior state.

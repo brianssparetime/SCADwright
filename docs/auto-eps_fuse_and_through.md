@@ -4,7 +4,7 @@ OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in 
 
 `fuse=` is the eps mechanism for **planar** contacts. For convex-outer curved hosts (cylinder, cone, sphere), use `bridge=True` instead — that's a separate, structural verb covered in [anchors.md](anchors.md#curved-host-attach-bridge-true).
 
-## How to reach the auto-eps mechanisms
+## Quick reference
 
 | Need | Use |
 |---|---|
@@ -16,9 +16,63 @@ OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in 
 | Override the default `eps` value across a scope (precision / unit-conversion / tight-tolerance models) | `with tolerances(eps=0.001): ...` |
 | Override `through()`'s coincident-face matching tolerance | `with tolerances(coincidence=1e-5): ...` |
 
-## Bonds: explicit control over how the overlap is constructed
+## `attach(fuse=True)` — joints in `union()`
 
-`fuse=True` runs a planar cascade and picks `bond="overlap"` when it applies. When you want explicit control, pass `bond=` directly:
+When two parts sit flush against each other (e.g. a pylon on a floor), `fuse=True` on `attach()` adds a small overlap (default 0.01 mm, override with `eps=`) at the contact face, eliminating the coincident-surface seam:
+
+```python
+from scadwright.boolops import union
+from scadwright.primitives import cube
+from scadwright.shapes import Tube
+
+floor = cube([40, 40, 2])
+pylon = Tube(od=7, id=3, h=8).attach(floor, fuse=True)
+part = union(floor, pylon)
+```
+
+The overlap is added in one of two ways, depending on whether the framework can extend the contact face parametrically. Either way, the user-facing dimensions of the extended side stay exact — only the contact face moves by `eps`.
+
+### Tier 1: parametric extension
+
+Local extension activates only when **both** anchors have `kind="planar"` AND the side being extended is a shape the framework knows how to extend parametrically:
+
+- `Cube` (any of the six bbox face anchors).
+- `Cylinder` planar caps (`top`, `bottom`).
+- `linear_extrude` end-cap anchors (`top`, `bottom`).
+
+These rules also apply through `Translate`, `Rotate`, and `Mirror` wrappers — `cube(...).up(5).rotate([0, 90, 0])` still qualifies because the framework recurses through transforms to find the underlying primitive.
+
+When Tier 1 applies:
+
+- `pylon.attach(floor, fuse=True)` — pylon's bottom extends into floor by eps; pylon's top stays exactly at the user-specified `z=10`.
+- `Counterbore(...).through(plate)` — the cutter's outer dimensions are preserved exactly, so `through()`'s coincidence detection on the plate's faces still works.
+
+### Tier 2: cross-section fallback
+
+For planar anchors on shapes without a parametric extension lever — `rotate_extrude` end-caps, `Polyhedron` faces, results of `difference()` / `union()` / `intersection()`, custom Components without intrinsic extension — the framework falls back to a generic cross-section construction:
+
+1. Aligns the anchor plane to z=0 with normal +Z.
+2. Takes `projection(cut=True)` to extract the 2D cross-section.
+3. `linear_extrude`s the cross-section by `eps`.
+4. Inverse-aligns and unions the slab into the shape.
+
+The result preserves the user-facing dimensions of the shape exactly — only the contact face moves by `eps`. The cost is one CGAL evaluation per fuse; for assemblies where this matters, use `disable_eps_fuse()` to opt out.
+
+The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases.
+
+`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they aren't reachable by this path. Attach to a sphere with [`bridge=True`](anchors.md#curved-host-attach-bridge-true).
+
+### When neither tier applies
+
+`fuse=True` raises when the contact isn't planar-planar and the cascade can't fall through — concave inner walls, non-planar contacts that aren't convex-outer curved hosts, shapes with anchors that can't be extended cleanly. The error message names the available alternatives:
+
+- `bond="shift"` — bilateral translate of `self` by `eps` along the contact normal. The shift moves the entire shape, so the opposite face also drifts by `eps`. Coincidence-sensitive operations like `through()` should run *before* a shift, not after.
+- `fuse=False` — exact contact, no eps.
+- `bridge=True` — only on convex-outer curved hosts.
+
+### `bond=` for explicit control
+
+`fuse=True` runs the Tier-1 / Tier-2 cascade and picks `bond="overlap"` when it applies. Pass `bond=` directly when you want explicit control:
 
 | `bond=` | What it does | When it raises |
 |---|---|---|
@@ -30,39 +84,15 @@ peg.attach(plate, bond="overlap")              # explicit planar extension
 peg.attach(plate, bond="shift")                # explicit bilateral shift
 ```
 
-`bond="..."` implies `fuse=True`; passing `fuse=False` with a bond raises (contradiction). `bond=` and `bridge=True` don't combine — `bond=` is for planar contacts, `bridge=True` is for curved hosts. `fuse=True` without a bond on a planar host falls into `bond="overlap"`; on a curved host it raises and points at `bridge=True`. The cascade does not silently fall through to `shift` — the user who actually wants the bilateral shift writes `bond="shift"` explicitly. The free function `fuse(a, b, ..., bond=...)` accepts the same vocabulary.
+`bond="..."` implies `fuse=True`; passing `fuse=False` with a bond raises (contradiction). `bond=` and `bridge=True` don't combine — `bond=` is for planar contacts, `bridge=True` is for curved hosts. `fuse=True` without a bond on a planar host falls into `bond="overlap"`; on a curved host it raises and points at `bridge=True`. The cascade does not silently fall through to `shift` — the user who actually wants the bilateral shift writes `bond="shift"` explicitly. The standalone `fuse(a, b, ..., bond=...)` accepts the same vocabulary.
 
-`disable_eps_fuse()` collapses any requested eps to zero in its scope. `fuse=True` becomes `False`, `bond=` is dropped, and the peg-side `-eps` slice baked into a `bridge=True` result drops too. **The bridge structural geometry itself persists** — it's design, not eps. Use this for precision builds (where the eps drift would shift fits) and for performance debugging.
+### `attach()` only extends `self` — use `fuse(a, b, ...)` for symmetric cases
 
-## Known limits — what to do when preview still flickers
+`attach()` returns `self` translated to land on `other`. When `fuse=True`, the framework tries to locally extend `self` along the contact face. It does **not** try to extend `other` — `other` isn't part of the returned value, so an extension on `other` would be invisible to downstream operations.
 
-Auto-eps works for the common cases. There are three patterns where it can silently fail to fix the preview artifact:
+For symmetric side selection — try one side, fall back to the other if the first doesn't qualify — use the standalone `fuse(a, b, on=..., using_anchor=..., eps=0.01)` function in `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
 
-1. **Non-convex peg or host with empty cross-section at the contact face.** A torus tangent point, two separated parts whose union bbox includes the gap, an anchor placed where a `difference()` removed all the material at that plane. The framework's bbox-projection check passes, but the actual cross-section is empty — only OpenSCAD's CGAL evaluator can detect this, and we don't pay that cost at build time. The fuse becomes a no-op; you see the same artifact as `fuse=False`.
-
-2. **Polyhedron with degenerate end caps at the bbox extreme.** A `path_extrude`'d helix or other polyhedron whose top/bottom face lies exactly at the bbox max or min along the normal can cause CGAL to fail at *render* time with an opaque "given mesh is not closed" / "Projection() failed" error. The build succeeds; the rendered output is broken.
-
-3. **Concave-inner curved surfaces (cylinder bore, hollow-sphere inside) with a peg larger than the wall thickness.** The peg's corners would punch through the outer wall. The framework can't see the wall thickness and doesn't try; the result is visible chunks of peg material outside the host.
-
-If you hit any of these, the recovery paths in priority order:
-
-- **Restructure the geometry** so the fuse anchor is on a clean convex planar face. Often the cleanest fix.
-- **Use `fuse=False` on that one attach** — exact contact, no auto-eps, but no silent failure either.
-- **Wrap the assembly in `disable_eps_fuse()`** — scope-wide opt-out, useful when you're debugging or when many fuses in an assembly are all having trouble.
-- **Hand-craft the eps overlap inside the affected shape's `build()`** — last resort.
-
-```python
-from scadwright import disable_eps_fuse
-
-with disable_eps_fuse():
-    return self.assembly()    # all fuse=True calls become exact contacts
-```
-
-`disable_eps_fuse()` is also useful for **precision builds** (where any eps would shift fits or measured-on-bed geometry by 0.01mm) and **performance debugging** (where you want to compare frame rates with/without the eps machinery active).
-
----
-
-## `through(parent)` -- for cutters in `difference()`
+## `through(parent)` — cutters in `difference()`
 
 Extends a cutter through any face of `parent` that it touches, adding a small overlap so `difference()` produces a clean cut:
 
@@ -141,21 +171,47 @@ With `axis=None` and a rotated cutter that has no world-axis coincidence, `throu
 
 Anisotropic Scale, Mirror, or other non-rotation transforms in the cutter's stack raise — the local-axis path requires a pure rotation. Apply scale to the underlying primitive's parameters instead.
 
-## `attach(fuse=True)` -- for joints in `union()`
+## Scope controls
 
-When two parts sit flush against each other (e.g. a pylon on a floor), `fuse=True` on `attach()` pushes self slightly into the contact face, eliminating the coincident-surface seam:
+### `disable_eps_fuse()`
 
-```python
-from scadwright.boolops import union
-from scadwright.shapes import Tube
+Two cases need a way to turn fuse-mechanism eps adjustments off without rewriting individual call sites:
 
-floor = cube([40, 40, 2])
-pylon = Tube(od=7, id=3, h=8).attach(floor, fuse=True)
-part = union(floor, pylon)
-```
+- **Precision builds.** Final dimensions or anchor positions need to match the source declarations exactly — no eps sneaking in anywhere.
+- **Performance debugging.** Many fuses in a complex assembly add up; disabling the entire mechanism in a sub-tree lets you compare frame rates or isolate a slow path.
 
-The pylon overlaps the floor by 0.01 at the contact face. Override with `eps=`:
+Wrap the affected block in `with disable_eps_fuse():`:
 
 ```python
-Tube(od=7, id=3, h=8).attach(floor, fuse=True, eps=0.05)
+from scadwright import disable_eps_fuse
+
+@variant
+def precise(self):
+    with disable_eps_fuse():
+        return self.assembly()    # all fuse=True calls become exact contacts
+
+@variant
+def normal(self):
+    return self.assembly()        # all fuse=True calls get eps overlap as usual
 ```
+
+Inside the block, `attach(fuse=True)` and the standalone `fuse(...)` behave as if `fuse` were `False`: exact anchor coincidence, no parametric extension, no shift. `bond=` is dropped. The peg-side `-eps` slice baked into a `bridge=True` result drops too — but **the bridge structural geometry itself persists**, because it's design geometry, not eps. Anchor lookup, placement, `orient=True`, `angle=`, `at_z=`, `at_radial=`, and `through()` composition all continue to work — only the eps geometry is suppressed.
+
+The flag is scope-bounded; nested blocks compose, and exiting any block restores the prior state.
+
+## Known limits and recovery paths
+
+Auto-eps works for the common cases. There are three patterns where it can silently fail to fix the preview artifact:
+
+1. **Non-convex peg or host with empty cross-section at the contact face.** A torus tangent point, two separated parts whose union bbox includes the gap, an anchor placed where a `difference()` removed all the material at that plane. The framework's bbox-projection check passes, but the actual cross-section is empty — only OpenSCAD's CGAL evaluator can detect this, and we don't pay that cost at build time. The fuse becomes a no-op; you see the same artifact as `fuse=False`.
+
+2. **Polyhedron with degenerate end caps at the bbox extreme.** A `path_extrude`'d helix or other polyhedron whose top/bottom face lies exactly at the bbox max or min along the normal can cause CGAL to fail at *render* time with an opaque "given mesh is not closed" / "Projection() failed" error. The build succeeds; the rendered output is broken.
+
+3. **Concave-inner curved surfaces (cylinder bore, hollow-sphere inside) with a peg larger than the wall thickness.** The peg's corners would punch through the outer wall. The framework can't see the wall thickness and doesn't try; the result is visible chunks of peg material outside the host.
+
+If you hit any of these, the recovery paths in priority order:
+
+- **Restructure the geometry** so the fuse anchor is on a clean convex planar face. Often the cleanest fix.
+- **Use `fuse=False` on that one attach** — exact contact, no auto-eps, but no silent failure either.
+- **Wrap the assembly in `disable_eps_fuse()`** — scope-wide opt-out, useful when you're debugging or when many fuses in an assembly are all having trouble.
+- **Hand-craft the eps overlap inside the affected shape's `build()`** — last resort.
