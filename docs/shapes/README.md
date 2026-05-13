@@ -79,8 +79,7 @@ One line per shape; click the name to jump to the full entry.
 - [`Wedge`](polyhedra.md#wedgebase_w-base_h-thk-fillet0) — right-triangular prism; also the standard rib / gusset shape
 - [`Tetrahedron`, `Octahedron`, `Dodecahedron`, `Icosahedron`](polyhedra.md#platonic-solids) — platonic solids inscribed in radius `r`
 - [`Torus`](polyhedra.md#torusmajor_r-minor_r) — full or partial torus (quarter-toroid elbow via `angle=90`)
-- [`Dome`](polyhedra.md#domer) — hemisphere with optional wall thickness
-- [`SphericalCap`](polyhedra.md#sphericalcapany-two-of-six-params) — portion of a sphere sliced off by a plane
+- [`Dome`](polyhedra.md#domeany-two-of-sphere_r-cap_height-cap_dia-cap_r) — portion of a sphere sliced off by a plane (any equation-solved pair; hemisphere is the `sphere_r == cap_height` case)
 - [`Ogive`](polyhedra.md#ogivebase_r-length-kindtangent) — pointed nose cone (tangent / parabolic / elliptical meridian)
 - [`Paraboloid`](polyhedra.md#paraboloidradius-depth-focal_length) — solid bowl / parabolic dish (vertex on the ground, rim opening upward)
 - [`Ellipsoid`](polyhedra.md#ellipsoida-b-c) — sphere with three independent semi-axes (centered on origin)

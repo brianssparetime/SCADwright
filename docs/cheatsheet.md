@@ -534,8 +534,8 @@ Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=15)    # rect frustum (+ shif
 Wedge(base_w=10, base_h=6, thk=20)                # triangular-prism ramp/rib (+ fillet=)
 Torus(major_r=20, minor_r=5)                      # donut (partial with angle=)
 Elbow(id=8, od=12, bend_radius=20)                # hollow pipe bend (default 90°)
-Dome(r=15, thk=2)                                 # hollow hemisphere
-SphericalCap(sphere_r=20, cap_height=8)           # equation-solved cap
+Dome(sphere_r=15, cap_height=15)                  # hemisphere (special case)
+Dome(sphere_r=20, cap_height=8)                   # shallow spherical cap; anchors: base, surface
 Ogive(base_r=10, length=18)                       # tangent ogive (kind="parabolic"/"elliptical" too)
 Paraboloid(radius=10, depth=8)                    # parabolic dish / bowl (rim faces +z)
 Ellipsoid(a=10, b=8, c=6)                         # ovoid / egg (centered on origin; dx/dy/dz too)
@@ -585,7 +585,7 @@ PressFitPeg(shaft_d=3, shaft_h=6, flange_d=6, flange_h=1.5, lead_in=0.5)
 rounded_rect(20, 10, r=2)                         # rounded rectangle
 regular_polygon(sides=6, r=5)                     # n-gon
 Arc(r=10, angles=(0, 90), width=2)                # ring segment
-CircularSegment(circle_r=10, height=4)            # 2D segment (chord-cut disc; 2D analog of SphericalCap)
+CircularSegment(circle_r=10, height=4)            # 2D segment (chord-cut disc; 2D analog of Dome)
 RoundedSlot(length=20, width=4)                   # capsule/stadium
 Teardrop(r=3)                                     # FDM horizontal-hole profile
 Keyhole(r_big=5, r_slot=2, slot_length=10)        # wall-mount keyhole

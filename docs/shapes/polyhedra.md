@@ -1,12 +1,12 @@
 # Polyhedra and basic 3D shapes
 
-Prisms, pyramids, Platonic solids, torus, dome, and spherical cap.
+Prisms, pyramids, Platonic solids, torus, and dome.
 
 ```python
 from scadwright.shapes import (
     Prism, Pyramid, Prismoid, Wedge,
     Tetrahedron, Octahedron, Dodecahedron, Icosahedron,
-    Torus, Dome, SphericalCap, Capsule, PieSlice,
+    Torus, Dome, Capsule, PieSlice,
 )
 ```
 
@@ -92,31 +92,34 @@ Torus(major_r=20, minor_r=5, angle=180) # half ring
 
 *`Torus(major_r=20, minor_r=5)` — a donut lying flat in the XY plane.*
 
-## `Dome(r)`
+## `Dome(any two of: sphere_r, cap_height, cap_dia, cap_r)`
 
-Hemisphere with flat face on z=0. Optional `thk` for a hollow shell.
-
-```python
-Dome(r=15)                              # solid hemisphere
-Dome(r=15, thk=2)                       # hollow dome, 2mm wall
-```
-
-![Dome](images/dome.png)
-
-*`Dome(r=15, thk=2)` — a hollow hemispherical shell with a 2 mm wall.*
-
-## `SphericalCap(any two of six params)`
-
-A portion of a sphere sliced by a plane. Flat face on z=0, dome rising in +z. Four parameters linked by two equations -- specify any two and the solver fills in the rest.
+A portion of a sphere sliced by a plane. Flat face on z=0, curved surface rising in +z (apex at z=`cap_height`). Four parameters linked by two equations — supply any consistent pair and the solver fills in the rest. Solid only.
 
 ```python
-SphericalCap(sphere_r=20, cap_height=8)
-SphericalCap(cap_dia=30, cap_height=5)
+Dome(sphere_r=15, cap_height=15)        # hemisphere
+Dome(cap_dia=30, cap_height=15)         # same hemisphere, diameter form
+Dome(sphere_r=20, cap_height=8)         # shallow cap
+Dome(cap_dia=30, cap_height=5)
 ```
 
 Parameters: `cap_height`, `cap_dia`, `cap_r`, `sphere_r`. You can read all four off the instance once it's built.
 
-See [examples/convex-caliper.py](../examples/convex-caliper.py) for a worked example that defines this Component inline to demonstrate the equation solver.
+For a hollow shell, build it from two domes:
+
+```python
+outer = Dome(sphere_r=15, cap_height=15)
+inner = Dome(sphere_r=13, cap_height=13)
+shell = difference(outer, inner)
+```
+
+Anchors: `base` (flat z=0 face, `rim_radius=cap_r`) and `surface` (`kind=spherical`, sphere center at `z = cap_height − sphere_r`, reach with `polar=`/`angle=`). Polar angles past the cap's rim land in empty space — the framework doesn't clamp.
+
+![Dome](images/dome.png)
+
+*`Dome(sphere_r=15, cap_height=15)` — a hemisphere (the special case where the cap's apex sits on the sphere's equator).*
+
+See [examples/convex-caliper.py](../examples/convex-caliper.py) for a worked example using `Dome` as a feeler tip.
 
 ## `Ogive(base_r, length, kind="tangent")`
 
