@@ -715,56 +715,93 @@ def _orient_child_to_normal(child, self_normal, target_normal, loc):
 # =============================================================================
 
 
-_VALID_BOND_VALUES = ("overlap", "bridge", "shift")
+_VALID_BOND_VALUES = ("overlap", "shift")
 
 
-def _validate_bond_and_fuse(bond, fuse, loc):
-    """Validate the (bond, fuse) kwarg pair on ``Node.attach``.
+def _bond_bridge_migration_error(bond, context, loc):
+    """Raise the migration-hint error when bond='bridge' shows up."""
+    from scadwright.errors import ValidationError
 
-    The ``fuse`` kwarg uses ``None`` as its sentinel default, so the
-    validator can distinguish "user didn't pass anything" (treat
-    ``bond=`` as implying ``fuse=True``) from "user explicitly passed
-    ``fuse=False``" (contradicts an explicit bond).
+    raise ValidationError(
+        f"{context}: bond='bridge' has been replaced by the bridge=True "
+        f"kwarg. Pass bridge=True (optionally with fuse=True for the "
+        f"eps overlap on the peg side) instead of bond='bridge'.",
+        source_location=loc,
+    )
 
-    - ``bond=None``, ``fuse=None``: no fuse semantics (default behavior).
-    - ``bond=None``, ``fuse=True``: smart cascade.
-    - ``bond=None``, ``fuse=False``: no fuse (explicit, same effect as
-      the default).
-    - ``bond="..."``, ``fuse=None``: implies ``fuse=True``.
-    - ``bond="..."``, ``fuse=True``: redundant but allowed.
-    - ``bond="..."``, ``fuse=False``: raises (contradiction).
-    - Anything else for ``bond`` raises with the valid set.
 
-    Returns the effective ``(bond, fuse_bool)`` pair.
+def _validate_attach_eps_bridge_kwargs(bond, fuse, bridge, loc):
+    """Validate the (bond, fuse, bridge) kwarg combo on ``Node.attach``.
+
+    ``fuse`` uses ``None`` as its sentinel default so the validator can
+    distinguish "user didn't pass anything" from "user explicitly passed
+    ``fuse=False``".
+
+    Rules:
+
+    - ``bond='bridge'``: removed. Raise with a migration hint pointing at
+      the ``bridge=True`` kwarg.
+    - ``bond='...'`` + ``bridge=True``: raise. ``bond=`` controls the
+      planar eps mechanism; ``bridge=True`` is the curved-host structural
+      fill. They don't combine.
+    - ``bond='...'`` + ``fuse=False``: raise (today's contradiction).
+    - ``bond=None``, ``fuse=None``, ``bridge=False``: default placement.
+    - ``bond=None``, ``fuse=True``, ``bridge=False``: planar eps cascade.
+    - ``bond='...'``, ``fuse=None|True``, ``bridge=False``: explicit bond.
+    - ``bridge=True``: bridge dispatch. ``fuse=`` (truthy) adds the eps
+      overlap to the bridge prism's peg side; ``fuse=False/None`` produces
+      a flush bridge (no peg-side overlap).
+    - Any other ``bond`` value: raise with the valid set.
+
+    Returns the effective ``(bond, fuse_bool, bridge_bool)`` triple.
     """
     from scadwright.errors import ValidationError
 
-    if bond is None:
-        # Default fuse to False when user didn't specify (sentinel = None).
-        return None, bool(fuse) if fuse is not None else False
-    if bond not in _VALID_BOND_VALUES:
+    bridge_bool = bool(bridge)
+
+    if bond == "bridge":
+        _bond_bridge_migration_error(bond, "attach", loc)
+
+    if bond is not None and bond not in _VALID_BOND_VALUES:
         raise ValidationError(
             f"attach: bond= must be one of "
             f"{list(_VALID_BOND_VALUES)} or None; got {bond!r}.",
             source_location=loc,
         )
-    if fuse is False:
+
+    if bond is not None and bridge_bool:
+        raise ValidationError(
+            f"attach: bond={bond!r} controls the planar eps mechanism and "
+            f"doesn't combine with bridge=True (the curved-host structural "
+            f"fill). Pass one or the other, not both.",
+            source_location=loc,
+        )
+
+    if bond is not None and fuse is False:
         raise ValidationError(
             f"attach: fuse=False contradicts bond={bond!r}. Pass either "
             f"bond= (which implies fuse=True) or fuse=False without a bond, "
             f"not both.",
             source_location=loc,
         )
-    return bond, True
+
+    if bond is None:
+        fuse_bool = bool(fuse) if fuse is not None else False
+        return None, fuse_bool, bridge_bool
+
+    return bond, True, bridge_bool
 
 
 def _validate_bond_value(bond, loc, *, context: str = "fuse"):
     """Validate ``bond`` for ``boolops.fuse`` (no separate ``fuse`` kwarg).
 
-    Returns the validated bond (None or one of the three values).
+    Returns the validated bond (``None`` or one of ``_VALID_BOND_VALUES``).
+    Raises the migration-hint error on ``bond='bridge'``.
     """
     from scadwright.errors import ValidationError
 
+    if bond == "bridge":
+        _bond_bridge_migration_error(bond, context, loc)
     if bond is None or bond in _VALID_BOND_VALUES:
         return bond
     raise ValidationError(
@@ -822,7 +859,7 @@ def _dispatch_overlap(working_self, working_self_anchor, other_anchor, eps, loc)
         raise ValidationError(
             f"bond='overlap' requires a planar contact face on self (the "
             f"at-anchor); got kind={working_self_anchor.kind!r}. For curved "
-            f"hosts, use bond='bridge'. For non-planar contacts that can't "
+            f"hosts, use bridge=True. For non-planar contacts that can't "
             f"be extended, use bond='shift' to accept the bilateral drift, "
             f"or fuse=False for exact contact.",
             source_location=loc,
@@ -831,7 +868,7 @@ def _dispatch_overlap(working_self, working_self_anchor, other_anchor, eps, loc)
         raise ValidationError(
             f"bond='overlap' requires a planar contact face on other (the "
             f"on-anchor); got kind={other_anchor.kind!r}. For curved hosts, "
-            f"use bond='bridge'.",
+            f"use bridge=True.",
             source_location=loc,
         )
 
@@ -846,12 +883,18 @@ def _dispatch_overlap(working_self, working_self_anchor, other_anchor, eps, loc)
     )
 
 
-def _dispatch_bridge(working_self, bridge_self_anchor, other, other_anchor, eps, loc):
-    """Curved-host inscription bridge. Strict — preconditions raise.
+def _dispatch_bridge(
+    working_self, bridge_self_anchor, other, other_anchor, eps, loc,
+    *, eps_overlap: bool,
+):
+    """Curved-host structural bridge. Strict — preconditions raise.
 
     Builds a prism of the peg's cross-section, subtracted with the host,
     placed in the inscription gap between the peg's planar near-face and
     the host's curved surface. Returns ``union(placed_peg, bridge)``.
+    ``eps_overlap`` controls whether the prism extends ``eps`` past the
+    peg's near-face on the peg side (manifold-clean union with the peg)
+    or sits flush with it.
     """
     from scadwright.ast._fuse_bridge import build_curved_bridge, coaxial_normals
     from scadwright.boolops import union as _union
@@ -859,22 +902,22 @@ def _dispatch_bridge(working_self, bridge_self_anchor, other, other_anchor, eps,
 
     if other_anchor.kind not in ("cylindrical", "conical", "spherical"):
         raise ValidationError(
-            f"bond='bridge' requires a curved on-anchor (kind 'cylindrical', "
+            f"bridge=True requires a curved on-anchor (kind 'cylindrical', "
             f"'conical', or 'spherical'); got kind={other_anchor.kind!r}. "
-            f"For planar-planar fuses, use bond='overlap'.",
+            f"For planar contacts, use fuse=True instead.",
             source_location=loc,
         )
     if other_anchor.inner:
         raise ValidationError(
-            f"bond='bridge' is for convex-outer curved hosts; the on-anchor "
+            f"bridge=True is for convex-outer curved hosts; the on-anchor "
             f"on {type(other).__name__} is marked inner. The peg's corners "
             f"naturally inscribe into inner-wall material — use bond='shift' "
-            f"or fuse=False.",
+            f"or omit bridge=/fuse= for exact contact.",
             source_location=loc,
         )
     if not coaxial_normals(bridge_self_anchor.normal, other_anchor.normal):
         raise ValidationError(
-            f"bond='bridge' on a {other_anchor.kind} host requires coaxial "
+            f"bridge=True on a {other_anchor.kind} host requires coaxial "
             f"normals (peg at-anchor anti-parallel to host on-anchor). Got "
             f"peg normal {bridge_self_anchor.normal}, host normal "
             f"{other_anchor.normal}. Pass orient=True, or align the peg "
@@ -887,11 +930,11 @@ def _dispatch_bridge(working_self, bridge_self_anchor, other, other_anchor, eps,
     )
     bridge = build_curved_bridge(
         working_self, bridge_self_anchor, other, other_anchor,
-        unfused_shift, eps,
+        unfused_shift, eps, eps_overlap=eps_overlap,
     )
     if bridge is None:
         raise ValidationError(
-            f"bond='bridge': host on-anchor (kind={other_anchor.kind!r}) "
+            f"bridge=True: host on-anchor (kind={other_anchor.kind!r}) "
             f"doesn't carry a usable radius in surface_params, so the "
             f"analytical inscription depth can't be computed. Check the "
             f"host's anchor declaration, or use bond='shift' / fuse=False.",
@@ -906,33 +949,37 @@ def _dispatch_bridge(working_self, bridge_self_anchor, other, other_anchor, eps,
 
 
 def _dispatch_smart_cascade_attach(
-    working_self, working_self_anchor, bridge_self_anchor,
+    working_self, working_self_anchor,
     other, other_anchor, eps, loc,
 ):
-    """Smart cascade for ``Node.attach(fuse=True)``.
+    """Smart cascade for ``Node.attach(fuse=True)`` (planar paths only).
 
-    Try bridge if applicable, then overlap if applicable, otherwise
-    raise — no silent fall-through to bilateral shift. The user who
-    actually wants the shift writes ``bond='shift'`` explicitly.
+    Try overlap if applicable, otherwise raise. Bridge is no longer part
+    of the cascade — curved hosts opt in via ``bridge=True``. The user
+    who wants the bilateral shift writes ``bond='shift'`` explicitly.
     """
     from scadwright.errors import ValidationError
 
-    if _can_dispatch_bridge(other_anchor):
-        return _dispatch_bridge(
-            working_self, bridge_self_anchor, other, other_anchor, eps, loc,
-        )
     if _can_dispatch_overlap(working_self_anchor, other_anchor):
         return _dispatch_overlap(
             working_self, working_self_anchor, other_anchor, eps, loc,
         )
+    if _can_dispatch_bridge(other_anchor):
+        raise ValidationError(
+            f"fuse=True is for planar contact eps; this on-anchor is "
+            f"kind={other_anchor.kind!r} (a convex-outer curved host). "
+            f"For a designed-in fill that merges the peg into the curved "
+            f"surface, pass bridge=True (optionally bridge=True, fuse=True "
+            f"to include the eps overlap on the peg side). For a tangent "
+            f"touch with no fill, omit fuse= and bridge=.",
+            source_location=loc,
+        )
     raise ValidationError(
-        f"fuse=True: no applicable bond for this attach.\n"
+        f"fuse=True: no applicable eps mechanism for this attach.\n"
         f"  bond='overlap' needs planar+planar contact (got "
         f"self.kind={working_self_anchor.kind!r}, "
         f"other.kind={other_anchor.kind!r}).\n"
-        f"  bond='bridge' needs a convex-outer curved host with a "
-        f"radius (got kind={other_anchor.kind!r}, "
-        f"inner={other_anchor.inner}).\n"
+        f"  For curved-outer hosts, pass bridge=True instead.\n"
         f"To accept the bilateral shift (the entire shape moves by eps "
         f"along the contact normal), pass bond='shift'. For exact "
         f"contact, fuse=False. To skip auto-eps in a whole scope, wrap "
@@ -1039,7 +1086,7 @@ def _dispatch_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc):
         raise ValidationError(
             f"bond='overlap' requires planar contact face on both sides; "
             f"got a.kind={a_anchor.kind!r}, b.kind={b_anchor.kind!r}. "
-            f"For curved hosts, use bond='bridge'.",
+            f"For curved hosts, use bridge=True.",
             source_location=loc,
         )
 
@@ -1078,14 +1125,17 @@ def _dispatch_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc):
     )
 
 
-def _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc):
-    """Symmetric bridge for ``boolops.fuse``.
+def _dispatch_bridge_symmetric(
+    a, a_anchor, b, b_anchor, eps, loc, *, eps_overlap: bool,
+):
+    """Symmetric bridge for ``boolops.fuse(..., bridge=True)``.
 
     Convention: ``a`` is the side that moves (per ``fuse()``'s
     signature), ``b`` stays put. If ``b``'s anchor is the curved host,
     standard case: bridge between placed-a and b. If ``a``'s anchor is
     the curved host, ``b`` is the peg sitting at its original position,
-    and ``a`` (translated) carries the curved surface.
+    and ``a`` (translated) carries the curved surface. ``eps_overlap``
+    controls whether the bridge prism includes the peg-side overlap.
     """
     from scadwright.ast._fuse_bridge import build_curved_bridge, coaxial_normals
     from scadwright.ast.transforms import Translate
@@ -1099,10 +1149,10 @@ def _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc):
 
     if not (a_curved or b_curved):
         raise ValidationError(
-            f"bond='bridge' requires a curved on-anchor on either a or b "
+            f"bridge=True requires a curved on-anchor on either a or b "
             f"(kind 'cylindrical', 'conical', or 'spherical'); got "
             f"a.kind={a_anchor.kind!r}, b.kind={b_anchor.kind!r}. For "
-            f"planar-planar fuses, use bond='overlap'.",
+            f"planar contacts, use bond='overlap' / fuse=True instead.",
             source_location=loc,
         )
 
@@ -1110,17 +1160,20 @@ def _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc):
         # Standard convention: b is host, a is peg.
         if not coaxial_normals(a_anchor.normal, b_anchor.normal):
             raise ValidationError(
-                f"bond='bridge' on a {b_anchor.kind} host (b) requires "
+                f"bridge=True on a {b_anchor.kind} host (b) requires "
                 f"coaxial normals (a's at-anchor anti-parallel to b's "
                 f"on-anchor). Got a normal {a_anchor.normal}, b normal "
                 f"{b_anchor.normal}.",
                 source_location=loc,
             )
         unfused_shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
-        bridge = build_curved_bridge(a, a_anchor, b, b_anchor, unfused_shift, eps)
+        bridge = build_curved_bridge(
+            a, a_anchor, b, b_anchor, unfused_shift, eps,
+            eps_overlap=eps_overlap,
+        )
         if bridge is None:
             raise ValidationError(
-                f"bond='bridge': host (b, kind={b_anchor.kind!r}) doesn't "
+                f"bridge=True: host (b, kind={b_anchor.kind!r}) doesn't "
                 f"carry a usable radius in surface_params — analytical "
                 f"inscription depth can't be computed.",
                 source_location=loc,
@@ -1134,7 +1187,7 @@ def _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc):
         # peg=b stays at its original position.
         if not coaxial_normals(b_anchor.normal, a_anchor.normal):
             raise ValidationError(
-                f"bond='bridge' on a {a_anchor.kind} host (a) requires "
+                f"bridge=True on a {a_anchor.kind} host (a) requires "
                 f"coaxial normals (b's on-anchor anti-parallel to a's "
                 f"at-anchor). Got a normal {a_anchor.normal}, b normal "
                 f"{b_anchor.normal}.",
@@ -1144,10 +1197,11 @@ def _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc):
         placed_a = Translate(v=unfused_shift, child=a, source_location=loc)
         bridge = build_curved_bridge(
             b, b_anchor, placed_a, a_anchor, (0.0, 0.0, 0.0), eps,
+            eps_overlap=eps_overlap,
         )
         if bridge is None:
             raise ValidationError(
-                f"bond='bridge': host (a, kind={a_anchor.kind!r}) doesn't "
+                f"bridge=True: host (a, kind={a_anchor.kind!r}) doesn't "
                 f"carry a usable radius in surface_params — analytical "
                 f"inscription depth can't be computed.",
                 source_location=loc,
@@ -1156,37 +1210,42 @@ def _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc):
 
     # Both sides are inner curved (or some other degenerate combo).
     raise ValidationError(
-        f"bond='bridge' is for convex-outer curved hosts; both anchors "
+        f"bridge=True is for convex-outer curved hosts; both anchors "
         f"are concave-inner (a.inner={a_inner}, b.inner={b_inner}). "
         f"The peg's corners naturally inscribe into inner-wall material — "
-        f"use bond='shift' or fuse=False.",
+        f"use bond='shift' or omit bridge=/fuse= for exact contact.",
         source_location=loc,
     )
 
 
 def _dispatch_smart_cascade_fuse(a, a_anchor, b, b_anchor, eps, loc):
-    """Smart cascade for ``boolops.fuse(a, b)``.
+    """Smart cascade for ``boolops.fuse(a, b)`` (planar paths only).
 
-    Try bridge if either side is a convex-outer curved host, then
-    overlap if planar+planar, otherwise raise — no silent fall-through
-    to bilateral shift on ``a``. The user who actually wants the shift
-    writes ``bond='shift'`` explicitly.
+    Try overlap if planar+planar, otherwise raise. Bridge is no longer
+    in the cascade — callers opt in via ``bridge=True``.
     """
     from scadwright.errors import ValidationError
-
-    if _can_dispatch_bridge(b_anchor) or _can_dispatch_bridge(a_anchor):
-        return _dispatch_bridge_symmetric(a, a_anchor, b, b_anchor, eps, loc)
 
     if _can_dispatch_overlap(a_anchor, b_anchor):
         return _dispatch_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc)
 
+    if _can_dispatch_bridge(b_anchor) or _can_dispatch_bridge(a_anchor):
+        raise ValidationError(
+            f"fuse: one side is a convex-outer curved host "
+            f"(a.kind={a_anchor.kind!r}, b.kind={b_anchor.kind!r}). "
+            f"For a designed-in fill that merges the peg into the curved "
+            f"surface, pass bridge=True (optionally with fuse=True for "
+            f"the eps overlap). Bare fuse= no longer auto-bridges.",
+            source_location=loc,
+        )
+
     a_inner = a_anchor.inner
     b_inner = b_anchor.inner
     raise ValidationError(
-        f"fuse: no applicable bond for this combination.\n"
+        f"fuse: no applicable eps mechanism for this combination.\n"
         f"  bond='overlap' needs planar+planar contact (got "
         f"a.kind={a_anchor.kind!r}, b.kind={b_anchor.kind!r}).\n"
-        f"  bond='bridge' needs a convex-outer curved host on either "
+        f"  bridge=True needs a convex-outer curved host on either "
         f"a or b (got a.kind={a_anchor.kind!r}/inner={a_inner}, "
         f"b.kind={b_anchor.kind!r}/inner={b_inner}).\n"
         f"To accept the bilateral shift (a moves by eps along b's "

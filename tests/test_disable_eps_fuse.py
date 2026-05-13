@@ -156,3 +156,34 @@ def test_disable_eps_fuse_doesnt_affect_fuse_false():
         inside = pylon.attach(floor, fuse=False)
     outside = pylon.attach(floor, fuse=False)
     assert bbox(inside) == bbox(outside)
+
+
+def test_disable_eps_fuse_preserves_bridge_geometry():
+    """bridge=True is structural, not eps. Under disable scope, the
+    bridge still builds (the peg-side eps slice drops, but the
+    inscription fill itself persists)."""
+    from scadwright.ast.csg import Difference, Union
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5])
+    with disable_eps_fuse():
+        result = peg.attach(
+            hub, on="outer_wall", angle=0, orient=True,
+            bridge=True, fuse=True,
+        )
+    assert isinstance(result, Union)
+    assert any(isinstance(c, Difference) for c in result.children)
+
+
+def test_disable_eps_fuse_preserves_boolops_fuse_bridge():
+    """Symmetric path: boolops.fuse(..., bridge=True) under disable scope
+    also still builds the bridge structural fill (peg-side eps slice
+    drops, since eps_overlap collapses to False)."""
+    from scadwright.ast.csg import Difference, Union
+    hub = cylinder(h=20, r=10)
+    peg = cube([2, 2, 5]).rotate([0, 90, 0])
+    with disable_eps_fuse():
+        result = fuse(
+            peg, hub, on="outer_wall", using_anchor="bottom", bridge=True,
+        )
+    assert isinstance(result, Union)
+    assert any(isinstance(c, Difference) for c in result.children)

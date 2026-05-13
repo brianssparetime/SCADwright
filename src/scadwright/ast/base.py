@@ -344,8 +344,9 @@ class Node(
         at_z: float | None = None,
         polar: float | None = None,
         orient: bool = False,
-        fuse=None,        # sentinel-default; see _validate_bond_and_fuse
+        fuse=None,        # sentinel-default; see _validate_attach_eps_bridge_kwargs
         bond: str | None = None,
+        bridge: bool = False,
         eps: float | None = None,    # default from scadwright.tolerances.default_eps()
     ) -> "Node":
         """Position self so its ``using_anchor`` anchor touches ``other``'s
@@ -362,24 +363,36 @@ class Node(
         two anchors' normals oppose each other (faces touching).
 
         Pass ``fuse=True`` to add a small overlap (``eps``, default
-        0.01 mm) at the contact face, eliminating coincident-surface
+        0.01 mm) at a planar contact face, eliminating coincident-surface
         artifacts in unions::
 
             pylon = Tube(od=7, id=3, h=8).attach(floor, fuse=True)
 
-        For planar-to-planar fuses where ``self`` is a ``Cube``, a
+        For planar-to-planar attachments where ``self`` is a ``Cube``, a
         ``Cylinder`` planar cap, or a ``linear_extrude`` end-face
         (possibly wrapped in ``Translate`` / ``Rotate`` / ``Mirror``),
         the framework extends only the contact face by ``eps`` and
         leaves the opposite face at its declared position. Downstream
         operations that depend on exact coincidence (``through()``,
         further ``attach`` chains using the result's anchors) see
-        the user-facing dimensions exactly. For curved convex-outer
-        hosts, ``fuse=True`` builds an inscription bridge. For
-        combinations where neither bond fits (concave-inner walls,
-        polyhedron pegs against meridional surfaces, etc.), the call
-        raises rather than silently shifting — pass ``bond="shift"``
-        if the bilateral translate is what you actually want.
+        the user-facing dimensions exactly. ``fuse=True`` on a
+        convex-outer curved host raises — curved hosts use ``bridge=True``
+        instead.
+
+        Pass ``bridge=True`` to attach to a convex-outer curved surface
+        (cylinder, cone, sphere) with a designed-in fill that merges the
+        peg into the surface::
+
+            peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True)
+
+        The bridge is the peg's cross-section extruded by the analytical
+        inscription depth, differenced with the host — a structural piece
+        of material that fills the air gap between the peg's flat near-face
+        and the curved surface. ``bridge=True`` alone produces a bridge
+        flush with the peg's near-face; ``bridge=True, fuse=True`` adds an
+        ``eps`` overlap on the peg side for a manifold-clean union with
+        the peg. ``bridge=True`` on a planar host or concave-inner wall
+        raises.
 
         ``attach()`` only attempts local extension on ``self``;
         ``other`` isn't part of the returned value, so extending it
@@ -438,23 +451,19 @@ class Node(
         ``at_radial=`` raise on spherical anchors — sphere placement uses
         the polar/angle pair.
 
-        For explicit control over the auto-eps mechanism, pass ``bond=``
+        For explicit control over the planar eps mechanism, pass ``bond=``
         instead of (or alongside) ``fuse=True``:
 
         - ``bond="overlap"`` — local face extension at a planar contact.
           Raises on curved hosts or non-planar contact.
-        - ``bond="bridge"`` — inscription bridge for a curved convex-outer
-          host. Raises on planar / inner / non-coaxial contact.
         - ``bond="shift"`` — bilateral shift by ``eps`` along the contact
           normal. Always succeeds; the entire shape moves by eps.
 
         ``bond="..."`` implies ``fuse=True``; passing ``fuse=False`` with
-        a bond raises. ``fuse=True`` without a bond uses the smart
-        cascade: try ``bridge`` if applicable, then ``overlap`` if
-        applicable, otherwise raise with a workaround pointer. The
-        cascade does not silently fall through to ``shift``; the user
-        who actually wants the bilateral shift writes ``bond="shift"``
-        explicitly.
+        a bond raises. ``bond=`` and ``bridge=True`` don't combine — bond
+        is for planar contacts; bridge is for curved hosts. ``fuse=True``
+        without a bond tries ``overlap``; on a curved host it raises and
+        points at ``bridge=True``.
         """
         from scadwright.anchor import anchors_from_bbox
         from scadwright.bbox import bbox as _bbox
@@ -513,21 +522,24 @@ class Node(
             other_anchor = _apply_attach_angle(other_anchor, angle, at_radial, loc)
         self_anchor = _resolve_attach_anchor(self, using_anchor, "self", loc)
 
-        # Validate bond/fuse pair. Explicit bond= implies fuse=True;
-        # fuse=False with a bond is a contradiction.
+        # Validate bond / fuse / bridge combination. bond='bridge' is
+        # removed (use bridge=True); bond+bridge is a contradiction;
+        # fuse=False+bond is a contradiction.
         from scadwright.ast.placement import (
             _dispatch_bridge,
             _dispatch_overlap,
             _dispatch_smart_cascade_attach,
             _shift_translate,
-            _validate_bond_and_fuse,
+            _validate_attach_eps_bridge_kwargs,
         )
-        bond, fuse = _validate_bond_and_fuse(bond, fuse, loc)
+        bond, fuse, bridge = _validate_attach_eps_bridge_kwargs(
+            bond, fuse, bridge, loc,
+        )
 
         # Build working_self / working_self_anchor / bridge_self_anchor.
         # working_self_anchor is what bond='overlap' and bond='shift' use
         # (axis-aligned bbox face after orient rotation). bridge_self_anchor
-        # is what bond='bridge' uses (the actual rotated anchor — needed
+        # is what bridge=True uses (the actual rotated anchor — needed
         # for the coaxial check).
         if not orient:
             working_self = self
@@ -564,33 +576,35 @@ class Node(
                     self_anchor, position=new_pos, normal=new_norm,
                 )
 
-        # disable_eps_fuse() short-circuits everything to exact contact.
-        # Even explicit bond= values collapse here — the scope-wide
-        # opt-out wins by design (precision builds).
+        # disable_eps_fuse() collapses any requested eps to zero: fuse
+        # becomes False (so bond= no longer offsets), and bridge's
+        # peg-side -eps slice drops. Bridge geometry itself persists —
+        # it's structural, not eps.
         from scadwright.api.fuse_mode import fuse_enabled
-        if not fuse_enabled():
-            return _shift_translate(
-                working_self, working_self_anchor, other_anchor,
-                with_eps=False, eps=eps, loc=loc,
+        eps_enabled = fuse_enabled()
+        if not eps_enabled:
+            fuse = False
+            bond = None
+
+        # Bridge wins when requested; the eps overlap on the peg side is
+        # gated on fuse= (and disable_eps_fuse() above).
+        if bridge:
+            return _dispatch_bridge(
+                working_self, bridge_self_anchor, other, other_anchor,
+                eps, loc, eps_overlap=fuse,
             )
 
-        # fuse=False (and no bond=, since the validator would have
-        # raised on the contradiction): exact contact, no eps.
+        # fuse=False, bond=None: exact contact, no eps geometry.
         if not fuse:
             return _shift_translate(
                 working_self, working_self_anchor, other_anchor,
                 with_eps=False, eps=eps, loc=loc,
             )
 
-        # Explicit bond dispatch.
+        # Explicit bond dispatch (planar paths only).
         if bond == "overlap":
             return _dispatch_overlap(
                 working_self, working_self_anchor, other_anchor, eps, loc,
-            )
-        if bond == "bridge":
-            return _dispatch_bridge(
-                working_self, bridge_self_anchor, other, other_anchor,
-                eps, loc,
             )
         if bond == "shift":
             return _shift_translate(
@@ -598,9 +612,9 @@ class Node(
                 with_eps=True, eps=eps, loc=loc,
             )
 
-        # bond=None and fuse=True: smart cascade.
+        # bond=None and fuse=True: smart cascade (overlap or raise).
         return _dispatch_smart_cascade_attach(
-            working_self, working_self_anchor, bridge_self_anchor,
+            working_self, working_self_anchor,
             other, other_anchor, eps, loc,
         )
 

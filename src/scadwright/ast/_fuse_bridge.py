@@ -93,8 +93,11 @@ def _inscription_depth(host_on_anchor, peg_max_radial: float) -> float | None:
     return float(radius - math.sqrt(radius * radius - peg_max_radial * peg_max_radial))
 
 
-def build_curved_bridge(peg, peg_at_anchor, host, host_on_anchor, shift, eps):
-    """Build the bridge for a convex-outer curved-surface fuse.
+def build_curved_bridge(
+    peg, peg_at_anchor, host, host_on_anchor, shift, eps,
+    *, eps_overlap: bool,
+):
+    """Build the bridge for a convex-outer curved-surface attach.
 
     Args:
         peg: the shape being attached (``self`` in attach).
@@ -104,25 +107,30 @@ def build_curved_bridge(peg, peg_at_anchor, host, host_on_anchor, shift, eps):
             ``angle=`` / ``at_z=`` adjustments).
         shift: the translation that places peg's at-anchor on host's
             on-anchor (output of ``_shift_for_anchors``, no fuse offset).
-        eps: overlap thickness for Duty-A manifold cleanup.
+        eps: overlap thickness for the peg-side slice when
+            ``eps_overlap`` is true.
+        eps_overlap: when true, the prism extends ``eps`` past the peg's
+            near-face on the peg side, giving a manifold-clean union
+            between peg and bridge. When false, the prism is flush with
+            the peg's near-face and peg and bridge share a coincident
+            plane (the user has opted out of eps geometry, either via
+            ``fuse=False`` or ``disable_eps_fuse()``).
 
     Returns a Node (the bridge geometry in world frame) suitable for
     ``union`` with the placed peg. Returns ``None`` if the host's
-    surface_params don't carry a usable radius — caller should fall
-    through to the legacy shift.
+    surface_params don't carry a usable radius.
 
     The bridge is ``prism - host`` where ``prism`` is the peg's
-    cross-section extruded along ``-on_anchor.normal`` from ``-eps`` (peg
-    side, providing Duty-A overlap with the placed peg) to
+    cross-section extruded along ``-on_anchor.normal`` from either
+    ``-eps`` (with overlap) or ``0`` (flush) on the peg side, to
     ``inscription_depth`` (host side, just past the inscription gap).
 
     Validates the peg's at-anchor against the peg's bbox before building
     the prism — a peg whose at-anchor isn't on the outermost face, or a
     peg with degenerate bbox extent, would produce an empty or wrong-
-    sided projection and silently no-op the fuse. Catches what we can
-    statically; non-convex pegs whose cross-section happens to be empty
-    despite a sane bbox are still a documented limitation (CGAL evaluates
-    that at render time).
+    sided projection and silently no-op. Non-convex pegs whose cross-
+    section happens to be empty despite a sane bbox are still a
+    documented limitation (CGAL evaluates that at render time).
     """
     from scadwright.ast._fuse_cross_section import (
         align_anchor_to_z_up,
@@ -132,19 +140,17 @@ def build_curved_bridge(peg, peg_at_anchor, host, host_on_anchor, shift, eps):
     from scadwright.boolops import difference as _difference
 
     validate_planar_anchor_for_cross_section(
-        peg, peg_at_anchor, context="bridge fuse",
+        peg, peg_at_anchor, context="bridge",
     )
 
     peg_max_radial = _peg_max_radial_extent(peg, peg_at_anchor)
     depth = _inscription_depth(host_on_anchor, peg_max_radial)
     if depth is None:
         return None
-    # Tiny margin past analytical inscription guards against numerical
-    # error around the host surface; the surplus is inside host material
-    # and gets subtracted, so it doesn't change the visible bridge.
     from scadwright.api.tolerances import INSCRIPTION_MARGIN
     depth_total = depth + INSCRIPTION_MARGIN
-    prism_height = depth_total + eps
+    peg_side = eps if eps_overlap else 0.0
+    prism_height = depth_total + peg_side
 
     m = align_anchor_to_z_up(peg_at_anchor)
     m_inv = m.invert()
@@ -155,15 +161,16 @@ def build_curved_bridge(peg, peg_at_anchor, host, host_on_anchor, shift, eps):
         .projection(cut=True)
         .linear_extrude(height=prism_height)
     )
-    # Translate down by eps in aligned frame so the prism spans
-    # z=-eps..z=depth_total: the negative slice is the peg-side overlap;
-    # the positive slice is the inscription gap (the part of which is in
-    # air, after subtraction with host, becomes the bridge).
-    prism_aligned = Translate(
-        v=(0.0, 0.0, -eps),
-        child=prism_aligned,
-        source_location=loc,
-    )
+    if eps_overlap:
+        # Shift the prism down by eps in aligned frame so it spans
+        # z=-eps..z=depth_total — the negative slice overlaps the peg,
+        # the positive slice fills the inscription gap. Without overlap,
+        # the prism already spans z=0..z=depth_total (flush peg side).
+        prism_aligned = Translate(
+            v=(0.0, 0.0, -peg_side),
+            child=prism_aligned,
+            source_location=loc,
+        )
     prism_local = MultMatrix(matrix=m_inv, child=prism_aligned, source_location=loc)
     prism_world = Translate(v=shift, child=prism_local, source_location=loc)
 

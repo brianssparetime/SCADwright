@@ -90,42 +90,38 @@ def test_attach_fuse_with_orient_uses_local_extension():
     assert fb.max[2] == pytest.approx(nb.max[2])
 
 
-def test_attach_fuse_on_cylindrical_wall_raises_oblique():
-    """attach(fuse=True) on a curved host without coaxial normals (no
-    orient=True, no manual alignment) is oblique — the bridge raises
-    rather than silently shifting in a direction that doesn't match
-    the surface geometry."""
+def test_attach_bridge_on_cylindrical_wall_raises_oblique():
+    """attach(bridge=True) on a curved host without coaxial normals raises
+    rather than silently producing geometry that doesn't match the
+    surface."""
     from scadwright.errors import ValidationError
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
     with pytest.raises(ValidationError, match="coaxial normals"):
-        peg.attach(hub, on="outer_wall", angle=90, fuse=True)
+        peg.attach(hub, on="outer_wall", angle=90, bridge=True)
 
 
-def test_attach_fuse_on_cylindrical_wall_with_orient_bridges():
-    """With orient=True, peg's at-normal opposes host's on-normal so the
-    bridge dispatch fires. Result: union(placed_peg, bridge) where the
-    bridge fills the inscription gap between peg's flat face and the
-    cylinder's curved surface."""
+def test_attach_bridge_on_cylindrical_wall_with_orient():
+    """With orient=True and bridge=True, peg's at-normal opposes host's
+    on-normal so the bridge dispatch fires. Result: union(placed_peg,
+    bridge) where the bridge fills the inscription gap between peg's
+    flat face and the cylinder's curved surface."""
     from scadwright.ast.csg import Difference, Union
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    result = peg.attach(hub, on="outer_wall", angle=90, orient=True, fuse=True)
-    # Result is union(placed_peg, bridge_difference). Top-level Union.
+    result = peg.attach(hub, on="outer_wall", angle=90, orient=True, bridge=True)
     assert isinstance(result, Union)
-    # One of the children should be a Difference (the bridge = prism - host).
     assert any(isinstance(c, Difference) for c in result.children)
 
 
 def test_attach_fuse_on_sphere_to_planar_floor_raises():
     """Sphere's bbox-derived anchors are kind='spherical', but the floor
-    is planar. Neither bond='overlap' (needs planar+planar) nor
-    bond='bridge' (needs convex-outer curved host on the *other* side)
-    applies, so fuse=True raises with workaround pointers."""
+    is planar. bond='overlap' needs planar+planar; bridge=True needs a
+    curved *host*. fuse=True raises with workaround pointers."""
     from scadwright.errors import ValidationError
 
     floor = cube([40, 40, 2])
-    with pytest.raises(ValidationError, match="no applicable bond"):
+    with pytest.raises(ValidationError, match="no applicable eps mechanism"):
         sphere(r=5).attach(floor, fuse=True)
 
 
@@ -207,13 +203,12 @@ def test_fuse_function_prefers_wrapper_free_side():
 
 
 def test_fuse_function_two_spheres_bridges():
-    """Two spheres tangent: b's anchor is kind='spherical' so the bridge
-    dispatch fires from a (peg) into b (host). Bridge = prism - b. Returns
-    union(placed_a, b, bridge)."""
+    """Two spheres tangent: b's anchor is kind='spherical' so bridge=True
+    drives the bridge dispatch from a (peg) into b (host). Bridge = prism
+    - b. Returns union(placed_a, b, bridge)."""
     from scadwright.ast.csg import Difference, Union
     s1 = sphere(r=5)
     s2 = sphere(r=5).up(10)
-    result = fuse(s1, s2, on="bottom", using_anchor="top")
+    result = fuse(s1, s2, on="bottom", using_anchor="top", bridge=True)
     assert isinstance(result, Union)
-    # union(placed_a, b, bridge) — bridge is a Difference.
     assert any(isinstance(c, Difference) for c in result.children)

@@ -29,10 +29,10 @@ def test_bridge_raises_on_off_face_peg_anchor():
         radius=10.0,
         length=20.0,
     )
-    with pytest.raises(ValidationError, match="bridge fuse.*outermost face"):
+    with pytest.raises(ValidationError, match="bridge.*outermost face"):
         build_curved_bridge(
             peg, bad_anchor, host, host_anchor,
-            shift=(0.0, 0.0, 0.0), eps=0.01,
+            shift=(0.0, 0.0, 0.0), eps=0.01, eps_overlap=True,
         )
 
 
@@ -56,10 +56,10 @@ def test_bridge_raises_on_degenerate_peg_bbox():
     # check a more degenerate case: a line.
     peg_line = cube([4, 0, 0])
     line_anchor = Anchor(position=(2.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))
-    with pytest.raises(ValidationError, match="bridge fuse.*near-zero extent"):
+    with pytest.raises(ValidationError, match="bridge.*near-zero extent"):
         build_curved_bridge(
             peg_line, line_anchor, host, host_anchor,
-            shift=(0.0, 0.0, 0.0), eps=0.01,
+            shift=(0.0, 0.0, 0.0), eps=0.01, eps_overlap=True,
         )
 
 
@@ -82,17 +82,17 @@ def test_bridge_passes_on_legitimate_peg():
     )
     bridge = build_curved_bridge(
         peg, bottom_anchor, host, host_anchor,
-        shift=(0.0, 0.0, 0.0), eps=0.01,
+        shift=(0.0, 0.0, 0.0), eps=0.01, eps_overlap=True,
     )
     assert bridge is not None
 
 
 def test_bridge_passes_through_attach_chain():
-    """End-to-end: a normal cube on a cylinder via attach(fuse=True)
+    """End-to-end: a normal cube on a cylinder via attach(bridge=True)
     still works after the validation was added."""
     hub = cylinder(h=20, r=10)
     peg = cube([2, 2, 5])
-    placed = peg.attach(hub, on="outer_wall", angle=0, orient=True, fuse=True)
+    placed = peg.attach(hub, on="outer_wall", angle=0, orient=True, bridge=True)
     assert placed is not None
 
 
@@ -102,6 +102,6 @@ def test_bridge_passes_on_sphere_host_with_polar():
     ball = sphere(r=10)
     peg = cube([2, 2, 5])
     placed = peg.attach(
-        ball, on="surface", polar=90, angle=0, orient=True, fuse=True,
+        ball, on="surface", polar=90, angle=0, orient=True, bridge=True,
     )
     assert placed is not None
