@@ -169,7 +169,7 @@ Auto-eps handles the common cases. Three patterns can still fail to fix the prev
 
 2. **Polyhedron with a degenerate cap at the bounding-box extreme.** A `path_extrude`'d helix or other polyhedron whose top or bottom face sits exactly at the bbox extreme can cause OpenSCAD's CGAL renderer to fail at render time with an opaque `"given mesh is not closed"` or `"Projection() failed"` error. The SCADwright build succeeds; the render doesn't.
 
-3. **Peg larger than a tube's wall thickness.** When you attach a peg to a hollow cylinder's inner wall, the peg's corners can punch through the outer wall. The framework can't see the wall thickness and doesn't try; the result is chunks of peg material sticking out the back of the host.
+3. **Peg larger than a tube's wall thickness.** When you attach a peg to a hollow cylinder's inner wall *without* `bridge=True`, the peg's corners can punch through the outer wall. The framework can't see the wall thickness and doesn't try; the result is chunks of peg material sticking out the back of the host. Pass `bridge=True` on the inner-wall attach to clip the peg to the bore — the corners get curved away to match the bore radius, so they never reach the outer surface.
 
 Recovery options, in priority order:
 

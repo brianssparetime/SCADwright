@@ -142,9 +142,14 @@ By default the bridge sits flush against the peg, which means the peg-and-bridge
 peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)
 ```
 
-`bridge=True` only works on the outside of a curved host. On a tube's inner wall, the peg's corners already sink into the wall material, so there's no gap to fill. For a clean union on an inner wall, pass `bond="shift"` instead.
+`bridge=True` also works on the *inside* of a curved host (tube, funnel, hollow barrel) — but the operation is the inverse. On the outside there's a small air gap to fill; on the inside the peg's flat face would intrude into the wall material, so `bridge=True` *clips* the peg to the bore so its near-face curves to match the inner surface. Same call shape:
 
-See [Advanced notes](#advanced-notes) for how the bridge is built, what it checks before building, and the limitations to watch for.
+```python
+tube = Tube(od=20, id=10, h=20)
+boss = peg.attach(tube, on="inner_wall", angle=0, orient=True, bridge=True)
+```
+
+See [Advanced notes](#advanced-notes) for how the bridge is built (outer adds material, inner removes material), what it checks before building, and the limitations to watch for.
 
 ## Advanced notes
 
@@ -205,12 +210,25 @@ After a transform like `scale()`, the geometric checks aren't re-run. A non-unif
 
 ### How `bridge=True` builds the fill
 
-`bridge=True` does these steps internally:
+`bridge=True` has two paths, dispatched on whether the host on-anchor is convex-outer (e.g., `cylinder.outer_wall`) or concave-inner (`Tube.inner_wall`, `Funnel.inner_wall`, hollow `Barrel.inner_wall`):
+
+**Outer path — add material.** Steps:
 
 1. Takes the peg's cross-section in the plane facing the host.
 2. Extrudes it along the contact normal by an inscription depth of `R - sqrt(R² - r²)`, where `R` is the host's radius at the contact point and `r` is the peg's largest extent in the tangent plane.
 3. Subtracts the host from that prism, leaving exactly the gap-filling shape between peg and host.
 4. Unions the result with the placed peg.
+
+Result tree: `union(placed_peg, difference(prism, host))`.
+
+**Inner path — remove material.** Steps:
+
+1. Builds a primitive matching the host's bore: a cylinder (for `cylindrical`), a truncated cone (for `conical`), or a revolved meridian (for `meridional`). Radius is enlarged by `eps` when `fuse=True`.
+2. Intersects the placed peg with that bore primitive.
+
+Result tree: `intersection(placed_peg, bore_extended)`. The host itself doesn't appear in the returned tree — the bore is built from the anchor's surface parameters alone; you union the host in at the caller site as usual.
+
+The asymmetry — outer adds, inner removes — reflects the geometric inversion. The user-facing intent ("peg merges into the curved surface") is identical, which is why the kwarg stays single.
 
 Before building, SCADwright checks that the peg's at-anchor lies on the peg's outermost face along its normal direction, and that the peg has non-zero extent in at least two axes. Otherwise the bridge would be empty or wrong-shaped, so you get a clear error instead.
 

@@ -105,8 +105,9 @@ peg.attach(hub, on="top", angle=30, at_radial=12)  # 30° on cap, 12mm from cent
 peg.attach(ball, on="surface", polar=30, angle=45)  # spherical: polar from +Z, angle = azimuth
 peg.with_anchor("base", at=(2.5, 2.5, 0), normal=(0, 0, -1))  # name a point on any node
 pylon.attach(floor, fuse=True)            # local extension at planar contact (Cube/Cylinder/extrude)
-peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True)  # structural fill on cylinder/cone/sphere
+peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True)  # structural fill on cylinder/cone/sphere/barrel
 peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)  # + eps overlap on peg side
+peg.attach(tube, on="inner_wall", angle=30, orient=True, bridge=True)  # inner case: clip peg to bore (Tube/Funnel/hollow Barrel)
 peg.attach(plate, bond="overlap")         # explicit: planar local extension; raises on curved host
 peg.attach(plate, bond="shift")           # explicit: bilateral shift; always works, opposite face drifts by eps
 fuse(pylon, floor, using_anchor="bottom", on="top")  # standalone form; symmetric side selection
