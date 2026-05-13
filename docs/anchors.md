@@ -95,7 +95,7 @@ These shape-library Components come with named anchors beyond the six standard f
 | `Bolt`         | `tip`             | Bottom of the shaft             |
 | `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
 
-Cylinders, cones, spheres, and rims also carry richer anchors that let you place things at a specific angle around an axis (like `angle=30`), at a specific axial position, or at a specific point on a sphere. See [Attaching shapes](attach.md#parametric-placement-on-rotational-surfaces) for which options work where, and the list of library shapes that have these anchors.
+Cylinders, cones, spheres, and rims also carry richer anchors that let you place things at a specific angle around an axis (like `angle=30`), at a specific axial position, or at a specific point on a sphere. See [Attaching shapes](attach.md#placement-on-cylinders-cones-and-spheres) for which options work where, and the list of library shapes that have these anchors.
 
 ## How transforms and booleans affect anchors
 
