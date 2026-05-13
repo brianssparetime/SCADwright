@@ -225,7 +225,7 @@ These cases either fail silently or fail at render time:
 - **Non-convex pegs with an empty cross-section at the contact face.** A torus tangent point, two separated parts, or a peg with a `difference()` hole at the contact plane all fall in this bucket. The bridge ends up empty, and `bridge=True` becomes a no-op (same as if you'd passed `fuse=False`).
 - **Polyhedron pegs with a degenerate cap exactly at the contact face.** OpenSCAD's CGAL renderer may fail with `"given mesh is not closed"` / `"Projection() failed"`. The build succeeds; rendering doesn't. Pass `fuse=False` on that one call as a workaround. The rocket fin in `examples/rocket.py` shows the pattern (it adds a manual `.left(fin_fillet)` to dodge the issue).
 
-Both limitations also apply to the planar `fuse=True` cross-section path; see [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md#known-limits-and-recovery-paths) for the full list of cases where auto-eps can silently fail.
+Both limitations also apply to the flat-face `fuse=True` cross-section path; see [Known limits](auto-eps_fuse_and_through.md#known-limits) for the full list of cases where auto-eps can silently fail.
 
 ### `bridge=True` under `disable_eps_fuse()`
 
