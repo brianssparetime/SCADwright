@@ -1,6 +1,6 @@
-# Text on a surface — `add_text`
+# Text on a surface — `add_text()`
 
-`.add_text(...)` puts raised or inset text on any flat face, cylindrical wall, or conical wall of a shape. After `add_text()`, chaining more labels or calling `attach()` still works — the host's anchors are still there.
+`.add_text(...)` puts raised or inset text on any flat face, cylindrical wall, conical wall, or rim of a host shape. Placement uses [anchors](anchors.md) — the same system `attach()` uses — so any face name or custom anchor on the host is a valid label location, and the kwargs for parametric placement (`angle=`, `at_z=`, `at_radial=`) mean the same things they do in [attach()](attach.md#parametric-placement-on-rotational-surfaces). After `add_text()`, the host's anchors stay intact, so you can chain more labels or call `attach()`.
 
 ```python
 from scadwright.primitives import cube
@@ -20,7 +20,7 @@ plate.add_text(label="v1.0",  relief=-0.3, on="top", font_size=4)  # inset
 
 ## Where the text goes
 
-Three ways to say where the text goes — pick the one that fits.
+Placement uses the same anchor system as `attach()`. See [anchors.md](anchors.md) for the data type (position + normal + surface metadata) and how Components declare their own. Four placement modes, picked by which kwargs you pass:
 
 ### Named face
 
@@ -42,7 +42,7 @@ Bracket(w=20, thk=3).add_text(label="A1", relief=0.4, on="badge", font_size=4)
 
 The text is centered on the face. Use `halign=` and `valign=` to align inside the face.
 
-### Named face + offset
+### Named face + in-face offset (`offset=`)
 
 Use `offset=(u, v)` (a 2-tuple, in mm) to nudge the text away from face center:
 
@@ -64,9 +64,9 @@ The `(u, v)` axes are picked per face so they read intuitively when the face is 
 
 Custom Component anchors and `Anchor` objects with non-axis-aligned normals get a sensible `(u, v)` frame in the face's plane.
 
-`offset=(u, v)` doesn't apply to cylindrical or conical walls — those use `angle=` and `at_z=`.
+`offset=(u, v)` doesn't apply to cylindrical or conical walls — those use `angle=` and `at_z=` (see [Curved surfaces](#curved-surfaces) below).
 
-`offset=` is distinct from `at=`: `at=` is a 3-tuple coordinate for ad-hoc placement (see below), while `offset=` is a 2-tuple in-face nudge for a named anchor. The split keeps `at=` consistent with its meaning elsewhere in the library — always a 3D coordinate.
+`offset=` is distinct from `at=`: `at=` is a 3-tuple coordinate for ad-hoc placement (next section), `offset=` is a 2-tuple in-face nudge for a named anchor. The split keeps `at=` consistent with its meaning elsewhere in the library — always a 3D coordinate.
 
 ### Anchor object
 
@@ -96,50 +96,133 @@ plate.add_text(
 
 `at=` and `normal=` must come together; pass neither (and use `on=`) or both.
 
-## Cylindrical walls
+## Raised vs inset
 
-`cylinder()` and `Tube` have an `outer_wall` anchor. `add_text()` wraps the label around the cylinder:
+- `relief > 0` raises text outward from the surface by `relief` mm.
+- `relief < 0` cuts the text inward by `|relief|` mm. If `|relief|` is greater than the host's wall thickness, the cut punches all the way through.
+- `relief = 0` isn't allowed.
+
+On [inner walls](#inner-walls) (Tube, Funnel) the sign convention flips relative to the reader: raised text protrudes *into* the hollow.
+
+## Multi-line text
+
+A `\n` in `label` splits the string into lines:
+
+```python
+plate.add_text(label="LINE 1\nLINE 2",  relief=0.5, on="top", font_size=8)
+plate.add_text(label="VERSION\n1.0",    relief=-0.3, on="top", font_size=4, valign="top")
+```
+
+Lines stack along the surface's natural "up" axis — vertically on planar faces, axially on cylindrical/conical walls, radially on rim arcs. Line 0 always ends up at the visual "top": largest Y on a planar face, highest axial position on a wall, outermost ring on a rim.
+
+### `line_spacing=`
+
+Baseline-to-baseline distance, expressed as a multiple of `font_size`. Default `1.2`. Smaller values pack lines tighter; larger values spread them out.
+
+### `valign=` with multi-line
+
+For a multi-line label, `valign` positions the *whole block* on the face:
+
+- `"center"` (default) — block center on the face center / wall mid / rim default radius.
+- `"top"` — top of line 0 sits at the face anchor.
+- `"bottom"` / `"baseline"` — bottom of the last line sits at the face anchor.
+
+`halign=` is applied per-line as supplied.
+
+### Empty lines
+
+`"A\n\nB"` keeps the empty line's spacing slot (giving extra gap between A and B) but draws nothing in it. A label that's nothing but newlines is an error.
+
+### Restrictions
+
+- `direction="ttb"` or `"btt"` (column writing) is single-line only — combining with `\n` is an error.
+- On cones, each line wraps at its own height; if any line falls past the cone tip you get an error pointing at which line.
+- On rim arcs, the innermost line's circle must have positive radius. With many lines or a big `font_size`/`line_spacing`, this can fail; bump `at_radial` or shrink the spacing.
+
+## Chaining and `attach()` after `add_text()`
+
+`add_text()` is a *decoration* transform — it preserves the host's anchors, so multiple labels chain and `attach()` after `add_text()` still finds the host's named faces:
+
+```python
+# Chain two labels:
+plate.add_text(label="A", relief=0.4, on="top",   font_size=4) \
+     .add_text(label="B", relief=0.4, on="rside", font_size=4)
+
+# Label, then attach:
+labeled = bracket.add_text(label="A1", relief=0.3, on="top", font_size=3)
+sensor = cube([8, 8, 4]).attach(labeled, on="badge")
+```
+
+If you wrap a labeled host in an explicit `union()` or `difference()`, the host's custom anchors do go away — at that point you've made a new combined shape. See [Anchor propagation](anchors.md#anchor-propagation) for the full rules.
+
+## Other `text()` options
+
+Anything OpenSCAD's `text()` takes passes through: `font`, `halign`, `valign`, `spacing`, `direction`, `language`, `script`, plus `fn`/`fa`/`fs` for resolution. For example:
+
+```python
+plate.add_text(
+    label="brand",
+    relief=0.4,
+    on="top",
+    font_size=6,
+    font="DejaVu Sans:style=Bold",
+    halign="left",
+    valign="bottom",
+)
+```
+
+## Curved surfaces
+
+When `on=` names an anchor with curved-surface geometry, `add_text()` wraps the label along the surface automatically. Hosts that publish curved/rim anchors:
+
+- `cylinder()` — `outer_wall` (cylindrical or conical), plus rim metadata on `top` / `bottom`.
+- `Tube` — `outer_wall`, `inner_wall`, plus rims.
+- `Funnel` — `outer_wall` and `inner_wall` (conical), plus rims.
+- `Barrel` — `outer_wall` and `inner_wall` (curved meridian), plus rims.
+
+See [attach.md's host table](attach.md#which-hosts-publish-which-anchor-kinds) for the full list. Spherical anchors are not yet supported by `add_text()` — wrap a label around a sphere by labeling a tangent cylinder if you need that today.
+
+The placement vocabulary (`angle=`, `at_z=`, `at_radial=`) is identical to `attach()`'s — see [Parametric placement on rotational surfaces](attach.md#parametric-placement-on-rotational-surfaces) for the canonical kwarg definitions. The sections below cover what's specific to text wrapping.
+
+### Walls — cylindrical, conical, meridional
 
 ```python
 from scadwright.primitives import cylinder
-from scadwright.shapes import Tube
+from scadwright.shapes import Funnel
 
 cyl = cylinder(h=20, r=10)
-cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)               # default angle +X, mid-wall
-cyl.add_text(label="ON",   relief=0.4, on="outer_wall", font_size=4, angle="front")
-cyl.add_text(label="OFF",  relief=0.4, on="outer_wall", font_size=4, angle="back")
-cyl.add_text(label="LOT",  relief=-0.3, on="outer_wall", font_size=3, at_z=-7)      # 7mm below mid-wall
+cyl.add_text(label="BRAND", relief=0.4, on="outer_wall", font_size=4)              # default angle +X, mid-wall
+cyl.add_text(label="ON",    relief=0.4, on="outer_wall", font_size=4, angle="front")
+cyl.add_text(label="LOT",   relief=-0.3, on="outer_wall", font_size=3, at_z=-7)    # 7mm below mid-wall
 
 # Numeric angle: tick marks at arbitrary positions.
 for a in (0, 30, 60, 90, 120, 150):
     cyl = cyl.add_text(label=f"{a}", relief=0.3, on="outer_wall", font_size=2,
                        angle=a, at_z=8)
+
+# Conical wall on a tapered cylinder or Funnel:
+cone = cylinder(h=30, r1=10, r2=4).add_text(
+    label="MAX", relief=0.4, on="outer_wall", font_size=3, at_z=10,
+)
 ```
 
-### `angle=`
+#### Placement: `angle=`, `at_z=`
 
-The angular position around the cylinder axis. Accepts either:
+`angle=` is the angular position around the surface axis (degrees CCW from +X, or one of the friendly aliases `"+x"` / `"+y"` / `"-x"` / `"-y"` / `"rside"` / `"back"` / `"lside"` / `"front"`). Default `"+x"`.
 
-- A string: `"+x"` / `"+y"` / `"-x"` / `"-y"` (or the friendly aliases `"rside"` / `"back"` / `"lside"` / `"front"`). Default: `"+x"`.
-- A number: degrees CCW from `+X`.
+`at_z=` is the axial offset from the wall's midpoint, in mm. Default `0` (mid-wall). Positive moves the label up the axis, negative down.
 
-`angle` applies on cylindrical, conical, and rim-arc placements. Matches `attach(angle=...)`.
+A label longer than the cylinder's circumference still emits, but you get a warning that it wraps all the way around and glyphs will overlap.
 
-### `at_z=`
+On cones, the wall radius varies along the axis, so the same label near the wide end wraps less than near the narrow end. If `at_z` puts the label past the cone's apex, that's an error. If the cone is very narrow at that height relative to `font_size`, you get a warning that glyphs may overlap.
 
-Axial offset from the wall's midpoint, in mm. Default `0` (mid-wall). Positive moves the label up the axis, negative down.
-
-### `halign=` on cylindrical surfaces
+`halign=` on a wall:
 
 - `"center"` (default): label centered on the angle.
 - `"left"`: label starts at the angle, extending CCW.
 - `"right"`: label ends at the angle, extending CW.
 
-### Long labels
-
-A label longer than the cylinder's circumference still works, but you get a warning that it wraps all the way around and glyphs will overlap.
-
-### Text direction and glyph rotation
+#### Glyph orientation: `text_dir`, `rotate_glyphs`, `flip`
 
 By default, the line of text wraps around the cylinder's axis (circumferentially) with letters upright. Three kwargs together select any of 8 layouts:
 
@@ -186,9 +269,43 @@ Multi-line works in both directions but the stacking axis swaps:
 
 `text_dir`, `rotate_glyphs`, and `flip` only apply to curved walls. Passing them on a planar or rim anchor raises a clear error (the existing planar/rim placement is rotation-aware via the host's transform — use `.rotate()` / `.mirror()` on the host instead).
 
-## Disk rims (cylinder/Tube/Funnel top and bottom)
+#### Cones: `text_orient=`
 
-The flat top and bottom faces of `cylinder()`, `Tube`, and `Funnel` are circular rims. By default, text on a rim wraps along the circle:
+On a conical wall, glyphs can either stay vertical or tilt to follow the slope:
+
+```python
+f = Funnel(h=30, bot_od=20, top_od=40, thk=2)
+f.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4)                # glyphs vertical (default)
+f.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4,
+           text_orient="slant")                                                    # tilted to follow the slope
+```
+
+- `"axial"` (default): glyphs stay vertical, parallel to the cone's axis. Most legible.
+- `"slant"`: glyphs tilt with the cone's slope so they lie flat against the surface. Looks tilted, but follows the surface.
+
+`text_orient` is also accepted on cylindrical walls, where it has no visible effect (cylinders don't tilt).
+
+#### Inner walls
+
+`Tube` and `Funnel` (and `Barrel` with `thk` set) are hollow, so they have an inner surface as well as an outer one. Their `inner_wall` anchor accepts the same kwargs as `outer_wall`:
+
+```python
+# Tube — text on the inside surface, viewed from inside the hollow.
+Tube(h=30, od=24, thk=2).add_text(
+    label="LOT 7", relief=0.3, on="inner_wall", font_size=4, angle="front",
+)
+
+# Funnel inner wall (conical), placed below mid-wall.
+Funnel(h=30, bot_od=20, top_od=40, thk=2).add_text(
+    label="0.5L", relief=0.3, on="inner_wall", font_size=4, at_z=-5,
+)
+```
+
+The relief-sign convention flips relative to the reader inside the hollow: `relief > 0` makes text protrude *into* the hollow (raised when viewed from inside); `relief < 0` cuts into the wall material from the inner surface. `angle=`, `at_z=`, and `text_orient=` (conical only) work the same way as on the outer walls.
+
+### Rim arcs — top/bottom of cylinder, Tube, Funnel, Barrel
+
+The flat top and bottom faces of `cylinder()`, `Tube`, `Funnel`, and `Barrel` are circular rims. By default, text on a rim wraps along the circle:
 
 ```python
 cyl = cylinder(h=10, r=15)
@@ -205,7 +322,13 @@ cyl.add_text(label="N",  relief=0.4, on="top", font_size=2, angle="+y")      # n
 cyl.add_text(label="SE", relief=0.4, on="top", font_size=2, angle=-45)       # numeric degrees CCW
 ```
 
-### `text_curvature=`
+#### Placement: `angle=`, `at_radial=`
+
+`angle=` is the angular position around the cap (same `"+x"` / `"+y"` / numeric-degrees vocabulary as the wall case).
+
+`at_radial=` is the radius of the circle the text follows, in mm. Defaults to leave a small font-size margin inside the rim. Passing `at_radial` larger than the rim radius gives a warning — the text path runs outside the rim.
+
+#### Arc vs flat: `text_curvature=`
 
 - `None` (default): arc on rim anchors, flat on flat-face anchors.
 - `"arc"`: explicit arc — error if the anchor isn't a rim.
@@ -213,124 +336,7 @@ cyl.add_text(label="SE", relief=0.4, on="top", font_size=2, angle=-45)       # n
 
 Passing `text_curvature` on a cylindrical or conical side wall is an error: side walls always wrap.
 
-### `at_radial=`
-
-The radius of the circle the text follows, in mm. Defaults to leave a small font-sized margin inside the rim. Passing `at_radial` larger than the rim radius gives a warning — the text path runs outside the rim.
-
-## Conical walls (Funnel and tapered cones)
-
-`Funnel` and any tapered `cylinder()` (where `r1 != r2`) have a conical `outer_wall` anchor. `angle=` and `at_z=` work the same as on cylindrical walls. One extra option, `text_orient=`, controls glyph orientation.
-
-```python
-from scadwright.shapes import Funnel
-from scadwright.primitives import cylinder
-
-f = Funnel(h=30, bot_od=20, top_od=40, thk=2)
-f.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4)              # glyphs vertical (default)
-f.add_text(label="0.5L", relief=0.4, on="outer_wall", font_size=4,
-           text_orient="slant")                                                  # tilted to follow the slope
-
-cone = cylinder(h=30, r1=10, r2=4).add_text(
-    label="MAX", relief=0.4, on="outer_wall", font_size=3, at_z=10,             # 10 mm above mid-wall
-)
-```
-
-### `text_orient=`
-
-- `"axial"` (default): glyphs stay vertical, parallel to the cone's axis. Most legible.
-- `"slant"`: glyphs tilt with the cone's slope so they lie flat against the surface. Looks tilted, but follows the surface.
-
-`text_orient` is also accepted on cylindrical walls (where it has no visible effect, since cylinders don't tilt).
-
-### `at_z` on a cone
-
-The cone's radius varies along its axis, so a label near the wide end of a funnel wraps less than the same label near the narrow end. If `at_z` puts the label past the cone's apex, that's an error. If the cone is very narrow at that height relative to `font_size`, you get a warning that glyphs may overlap.
-
-## Inner walls (Tube and Funnel)
-
-`Tube` and `Funnel` are hollow, so they have an inner surface as well as an outer one. Both have an `inner_wall` anchor:
-
-```python
-from scadwright.shapes import Tube, Funnel
-
-# Tube — text on the inside surface, viewed from inside the hollow.
-Tube(h=30, od=24, thk=2).add_text(
-    label="LOT 7", relief=0.3, on="inner_wall", font_size=4, angle="front",
-)
-
-# Funnel inner wall (conical), placed below mid-wall.
-Funnel(h=30, bot_od=20, top_od=40, thk=2).add_text(
-    label="0.5L", relief=0.3, on="inner_wall", font_size=4, at_z=-5,
-)
-```
-
-`relief > 0` makes text protrude into the hollow (raised when viewed from inside). `relief < 0` cuts into the wall material from the inner surface. `angle=`, `at_z=`, and `text_orient=` (conical only) work the same way as on the outer walls.
-
-## Multi-line text
-
-A `\n` in `label` splits the string into lines. Lines are stacked vertically on planar faces, axially on cylindrical/conical walls, and radially on rim arcs. Line 0 always ends up at the visual "top" — outermost ring on a rim, highest axial position on a wall, largest Y on a planar face.
-
-```python
-plate.add_text(label="LINE 1\nLINE 2",  relief=0.5, on="top", font_size=8)
-plate.add_text(label="VERSION\n1.0",    relief=-0.3, on="top", font_size=4, valign="top")
-
-cyl.add_text(label="BRAND\nMODEL X",    relief=0.4, on="outer_wall", font_size=4,
-             angle="front", line_spacing=1.4)
-
-cyl.add_text(label="MAX\n5L",           relief=0.4, on="top", font_size=2)   # rim arc, two rings
-```
-
-### `line_spacing=`
-
-Baseline-to-baseline distance, expressed as a multiple of `font_size`. Default `1.2`. Smaller values pack lines tighter; larger values spread them out.
-
-### `valign=` with multi-line
-
-For a multi-line label, `valign` positions the *whole block* on the face:
-
-- `"center"` (default) — block center on the face center / wall mid / rim default radius.
-- `"top"` — top of line 0 sits at the face anchor.
-- `"bottom"` / `"baseline"` — bottom of the last line sits at the face anchor.
-
-`halign=` is applied per-line as supplied.
-
-### Empty lines
-
-`"A\n\nB"` keeps the empty line's spacing slot (giving extra gap between A and B) but draws nothing in it. A label that's nothing but newlines is an error.
-
-### Restrictions
-
-- `direction="ttb"` or `"btt"` (column writing) is single-line only — combining with `\n` is an error.
-- On cones, each line wraps at its own height; if any line falls past the cone tip you get an error pointing at which line.
-- On rim arcs, the innermost line's circle must have positive radius. With many lines or a big `font_size`/`line_spacing`, this can fail; bump `at_radial` or shrink the spacing.
-
-## Raised vs inset
-
-- `relief > 0` raises text outward from the surface by `relief` mm.
-- `relief < 0` cuts the text inward by `|relief|` mm. If `|relief|` is greater than the host's wall thickness, the cut punches all the way through.
-- `relief = 0` isn't allowed.
-
-## Chaining and `attach()` after `add_text()`
-
-`add_text()` keeps the host's anchors intact. Multiple labels chain, and `attach()` after `add_text()` still finds the host's named faces:
-
-```python
-# Chain two labels:
-plate.add_text(label="A", relief=0.4, on="top",   font_size=4) \
-     .add_text(label="B", relief=0.4, on="rside", font_size=4)
-
-# Label, then attach:
-labeled = bracket.add_text(label="A1", relief=0.3, on="top", font_size=3)
-sensor = cube([8, 8, 4]).attach(labeled, on="badge")
-```
-
-If you wrap a labeled host in an explicit `union()` or `difference()`, the host's custom anchors do go away — at that point you've made a new combined shape.
-
-## Overflow check
-
-For text on a named face whose size scadwright can determine, you get a warning if the label would overflow the face. The estimate is conservative and font-agnostic, so it's a best-effort heads-up. Ad-hoc placements (no named face) skip the check.
-
-## Glyph spacing on curved walls
+### Glyph spacing on curved walls and rim arcs
 
 Flat planar surfaces emit one OpenSCAD `text()` for the whole label, so OpenSCAD handles glyph layout — proportional advances, kerning, and so on — exactly as you'd expect.
 
@@ -348,7 +354,7 @@ That pulls in `freetype-py` and queries the font for per-glyph advance widths at
 
 Per-glyph `text()` calls on curved walls and rim arcs always emit with `valign="baseline"` regardless of the user's `valign` kwarg. Mixed-height glyphs (a tall `t`, an `i` whose ink starts above zero, a `g` with a descender) all share a baseline this way; per-glyph "center" alignment would jitter them at different visual heights. The user's `valign` still governs *block* placement on multi-line labels.
 
-### Calibration override
+#### Calibration override
 
 The default per-glyph advance widths match OpenSCAD's flat `text()` rendering for typical Latin fonts (the empirical `1.5 × ascender / units_per_EM` factor). If you hit a font where the default packs glyphs too tightly or too loosely, scope an override:
 
@@ -360,22 +366,6 @@ with sw.text_advance_calibration(1.6):
 ```
 
 Pass `1.0` to revert to bare em-relative scaling (about 26% tighter than OpenSCAD's natural layout). The override stacks with `add_text(spacing=…)` multiplicatively. Has no effect when `freetype-py` isn't installed (the heuristic fallback uses a flat `0.6 * font_size * spacing` per glyph).
-
-## Other `text()` options
-
-Anything `text()` takes passes through: `font`, `halign`, `valign`, `spacing`, `direction`, `language`, `script`, plus `fn`/`fa`/`fs` for resolution. For example:
-
-```python
-plate.add_text(
-    label="brand",
-    relief=0.4,
-    on="top",
-    font_size=6,
-    font="DejaVu Sans:style=Bold",
-    halign="left",
-    valign="bottom",
-)
-```
 
 ## Argument reference
 
@@ -393,6 +383,9 @@ plate.add_text(
 | `at_radial` | rim arc only | Radius of the text path circle. Default leaves a font-size margin inside the rim. |
 | `text_curvature` | planar only | `None` (default — arc on rims, flat elsewhere), `"arc"`, or `"flat"`. |
 | `text_orient` | conical only (ignored on cylindrical) | `"axial"` (default) or `"slant"`. |
+| `text_dir` | curved walls only | `"circumferential"` (default) or `"axial"`. Raises on planar / rim. |
+| `rotate_glyphs` | curved walls only | `False` (default) or `True` — rotate each glyph 90° in the surface tangent plane. |
+| `flip` | curved walls only | `False` (default) or `True` — rotate the layout 180°. |
 | `line_spacing` | multi-line only | Baseline-to-baseline distance as a multiple of `font_size`. Default `1.2`. |
 | `font` | no | Font family/style. |
 | `halign` | no | `"left" \| "center" \| "right"` (default `"center"`). |
@@ -410,8 +403,11 @@ plate.add_text(
 - `offset=` on a cylindrical, conical, or meridional wall — those use `angle=` / `at_z=`.
 - `relief = 0`.
 - `angle` or `at_z` on a flat planar face — those are for cylindrical and conical walls.
+- `at_z` on a rim — use `at_radial=` for the in-plane radial offset.
+- `at_radial=` on a non-rim anchor.
 - `text_curvature="arc"` on a face that isn't a rim.
 - `text_curvature` on a cylindrical or conical side wall — those always wrap.
+- `text_dir`, `rotate_glyphs`, or `flip` on a planar or rim anchor.
 - `at_z` (or a `line_spacing` for multi-line) that puts a glyph past the cone's apex.
-</content>
-</invoke>
+
+For text on a named face whose size scadwright can determine, you get a **warning** (not an error) if the label would overflow the face. The estimate is conservative and font-agnostic, so it's a best-effort heads-up. Ad-hoc placements (no named face) skip the check.
