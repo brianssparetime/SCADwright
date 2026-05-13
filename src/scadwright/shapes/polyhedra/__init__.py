@@ -1,6 +1,6 @@
 """Polyhedra and basic 3D shapes."""
 
-from scadwright.shapes.polyhedra.dome import Dome, Ellipsoid, Ogive, Paraboloid, SphericalCap
+from scadwright.shapes.polyhedra.dome import Dome, Ellipsoid, Ogive, Paraboloid
 from scadwright.shapes.polyhedra.prism import Prism, Pyramid
 from scadwright.shapes.polyhedra.regular import (
     Dodecahedron,
@@ -20,7 +20,6 @@ __all__ = [
     "Ogive",
     "Paraboloid",
     "Prism",
-    "SphericalCap",
     "Pyramid",
     "Tetrahedron",
     "Torus",

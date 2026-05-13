@@ -1,4 +1,4 @@
-"""Dome, SphericalCap, Ogive, Paraboloid, and Ellipsoid Components."""
+"""Dome, Ogive, Paraboloid, and Ellipsoid Components."""
 
 from __future__ import annotations
 
@@ -13,44 +13,35 @@ from scadwright.primitives import cylinder, polygon, sphere
 
 
 class Dome(Component):
-    """Hemisphere with optional wall thickness, flat face on z=0.
+    """A portion of a sphere sliced by a plane — solid only.
 
-    Solid dome when ``thk`` is not provided. Hollow shell when ``thk``
-    is given (the inner sphere has radius ``r - thk``).
-    """
+    The cap sits with its flat face on z=0 and the curved surface rising
+    in +z. Four dimensional parameters linked by two equations; supply any
+    consistent pair and the framework solves the rest::
 
-    equations = """
-        r > 0
-        ?thk > 0
-        ?thk < r
-    """
+        Dome(sphere_r=15, cap_height=15)    # hemisphere
+        Dome(cap_dia=30, cap_height=15)     # same hemisphere, diameter form
+        Dome(sphere_r=20, cap_height=8)     # shallow cap
+        Dome(cap_dia=30, sphere_r=18)       # solver derives cap_height
 
-    def build(self):
-        # Full sphere clipped to z >= 0.
-        clip = cylinder(h=self.r + 1, r=self.r + 1)
-        outer = intersection(sphere(r=self.r), clip)
-        if self.thk is None:
-            return outer
-        inner_r = self.r - self.thk
-        inner = intersection(sphere(r=inner_r), clip)
-        return difference(outer, inner)
+    Solid only. For a hollow shell, build it from two domes::
 
-    def tight_bbox(self):
-        # Both branches: outer extents = the clipped outer sphere's
-        # bbox. The thk-cavity is interior; doesn't change them.
-        from scadwright.bbox import bbox
-        return bbox(self)
+        outer = Dome(sphere_r=15, cap_height=15)
+        inner = Dome(sphere_r=13, cap_height=13)
+        shell = difference(outer, inner)
 
+    Anchors:
 
-class SphericalCap(Component):
-    """A portion of a sphere sliced off by a plane.
-
-    The cap sits with its flat face on z=0 and the dome rising in +z.
-    Four dimensional parameters linked by two equations; specify any
-    two and the framework solves the rest::
-
-        SphericalCap(sphere_r=20, cap_height=8)
-        SphericalCap(cap_dia=30, cap_height=5)
+    - ``base`` — center of the flat z=0 face, normal ``-z``, with
+      ``rim_radius=cap_r`` for ``attach(angle=, at_radial=)`` and
+      ``add_text(on="base", ...)`` arc-on-rim.
+    - ``surface`` — entry point for the curved cap surface (kind
+      ``spherical``). The underlying sphere is centered at
+      ``z = cap_height - sphere_r`` (below the flat face when the cap
+      is less than a hemisphere). Use ``attach(polar=, angle=)`` to
+      land anywhere on the cap; the apex (``polar=0``) is at
+      ``(0, 0, cap_height)``. Polar angles past the cap's edge land in
+      empty space — the framework doesn't clamp.
     """
 
     equations = """
@@ -60,8 +51,34 @@ class SphericalCap(Component):
         cap_height <= 2 * sphere_r
     """
 
+    base = anchor(
+        at=(0.0, 0.0, 0.0),
+        normal=(0.0, 0.0, -1.0),
+        kind="planar",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "rim_radius": "cap_r",
+        },
+    )
+    surface = anchor(
+        at="0, 0, cap_height",
+        normal=(0.0, 0.0, 1.0),
+        kind="spherical",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "axis_origin": "(0.0, 0.0, cap_height - sphere_r)",
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "radius": "sphere_r",
+        },
+    )
+
     def build(self):
-        s = sphere(r=self.sphere_r).up(self.sphere_r - self.cap_height)
+        # Sphere center sits at z = cap_height - sphere_r (below z=0 when
+        # cap_height < sphere_r), so the sphere's apex lands at z=cap_height.
+        # The clip cylinder bounds the cap to z in [0, cap_height]; rim at
+        # z=0 has radius cap_r per the cap equation.
+        s = sphere(r=self.sphere_r).down(self.sphere_r - self.cap_height)
         clip = cylinder(h=self.cap_height, r=self.sphere_r + 0.01)
         return intersection(s, clip)
 

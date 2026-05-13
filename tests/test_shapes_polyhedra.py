@@ -6,6 +6,7 @@ import pytest
 
 from scadwright import bbox, emit_str
 from scadwright.errors import ValidationError
+from scadwright.primitives import cube
 from scadwright.shapes import (
     Dodecahedron,
     Dome,
@@ -14,7 +15,6 @@ from scadwright.shapes import (
     Icosahedron,
     Ogive,
     Paraboloid,
-    SphericalCap,
     Octahedron,
     Prism,
     Pyramid,
@@ -125,58 +125,104 @@ def test_torus_minor_ge_major_raises():
         Torus(major_r=5, minor_r=5)
 
 
-# --- Dome ---
+# --- Dome (renamed from SphericalCap; the old hemisphere-with-thk Dome
+# was removed — use difference(Dome(R), Dome(R-thk)) for a hollow shell) ---
 
 
-def test_dome_solid():
-    d = Dome(r=10)
+def test_dome_hemisphere():
+    """sphere_r == cap_height gives the hemisphere special case."""
+    d = Dome(sphere_r=10, cap_height=10)
     bb = bbox(d)
     assert bb.max[2] == pytest.approx(10.0, abs=0.5)
     assert bb.min[2] == pytest.approx(0.0, abs=0.5)
+    assert d.cap_r == pytest.approx(10.0)
 
 
-def test_dome_hollow():
-    d = Dome(r=10, thk=2)
-    scad = emit_str(d)
-    assert "difference" in scad
-
-
-def test_dome_thk_too_large_raises():
-    with pytest.raises(ValidationError, match="thk < r"):
-        Dome(r=10, thk=10)
-
-
-# --- SphericalCap ---
-
-
-def test_spherical_cap_by_sphere_r_and_cap_height():
-    c = SphericalCap(sphere_r=20, cap_height=8)
-    bb = bbox(c)
+def test_dome_by_sphere_r_and_cap_height():
+    d = Dome(sphere_r=20, cap_height=8)
+    bb = bbox(d)
     assert bb.size[2] == pytest.approx(8.0, abs=0.5)
-    assert c.sphere_r == 20
-    assert c.cap_height == 8
+    assert d.sphere_r == 20
+    assert d.cap_height == 8
 
 
-def test_spherical_cap_solves_cap_dia():
-    c = SphericalCap(sphere_r=20, cap_height=8)
-    assert c.cap_dia > 0
-    assert c.cap_r == pytest.approx(c.cap_dia / 2)
+def test_dome_solves_cap_dia():
+    d = Dome(sphere_r=20, cap_height=8)
+    assert d.cap_dia > 0
+    assert d.cap_r == pytest.approx(d.cap_dia / 2)
 
 
-def test_spherical_cap_by_cap_dia_and_cap_height():
-    c = SphericalCap(cap_dia=30, cap_height=5)
-    assert c.cap_r == pytest.approx(15.0)
-    assert c.sphere_r > 0
+def test_dome_by_cap_dia_and_cap_height():
+    d = Dome(cap_dia=30, cap_height=5)
+    assert d.cap_r == pytest.approx(15.0)
+    assert d.sphere_r > 0
 
 
-def test_spherical_cap_too_tall_raises():
+def test_dome_too_tall_raises():
     with pytest.raises((ValueError, ValidationError)):
-        SphericalCap(sphere_r=5, cap_height=11)
+        Dome(sphere_r=5, cap_height=11)
 
 
-def test_spherical_cap_emits():
-    scad = emit_str(SphericalCap(sphere_r=10, cap_height=5))
+def test_dome_emits():
+    scad = emit_str(Dome(sphere_r=10, cap_height=5))
     assert "intersection" in scad
+
+
+def test_dome_apex_at_top():
+    """Dome should narrow from rim (radius cap_r at z=0) to the apex at
+    z=cap_height. Sphere center sits at z = cap_height - sphere_r (below
+    z=0 for partial caps). Verify cap_r matches first-principles math.
+    """
+    import math
+    sphere_r, cap_height = 20.0, 8.0
+    d = Dome(sphere_r=sphere_r, cap_height=cap_height)
+    z_c = cap_height - sphere_r
+    expected_cap_r = math.sqrt(sphere_r ** 2 - z_c ** 2)
+    assert d.cap_r == pytest.approx(expected_cap_r, abs=1e-9)
+
+
+def test_dome_anchors():
+    from scadwright.anchor import get_node_anchors
+    d = Dome(sphere_r=20, cap_height=8)
+    anchors = get_node_anchors(d)
+    assert "base" in anchors and "surface" in anchors
+    base = anchors["base"]
+    assert base.kind == "planar"
+    assert base.position == pytest.approx((0.0, 0.0, 0.0))
+    assert base.normal == pytest.approx((0.0, 0.0, -1.0))
+    assert base.rim_radius == pytest.approx(d.cap_r)
+    surface = anchors["surface"]
+    assert surface.kind == "spherical"
+    assert surface.radius == pytest.approx(20.0)
+    # Apex at z=cap_height with sphere center at z = cap_height - sphere_r.
+    assert surface.position == pytest.approx((0.0, 0.0, 8.0))
+    assert surface.axis_origin == pytest.approx((0.0, 0.0, -12.0))
+    assert not surface.inner
+
+
+def test_dome_surface_attach_with_polar():
+    """Attaching to Dome.surface with polar/angle dispatches via the
+    sphere placement helper and then through bridge=True onto the
+    spherical surface."""
+    from scadwright.ast.csg import Union
+    peg = cube([2, 2, 5])
+    placed = peg.attach(
+        Dome(sphere_r=10, cap_height=10),
+        on="surface", polar=45, angle=0, orient=True, bridge=True,
+    )
+    assert isinstance(placed, Union)
+
+
+def test_dome_partial_cap_surface_bridge():
+    """Shallow cap (cap_height < sphere_r): bridge=True onto the
+    surface works at any polar angle within the cap's reach."""
+    from scadwright.ast.csg import Union
+    peg = cube([2, 2, 5])
+    placed = peg.attach(
+        Dome(sphere_r=20, cap_height=8),
+        on="surface", polar=20, angle=0, orient=True, bridge=True,
+    )
+    assert isinstance(placed, Union)
 
 
 # --- Ogive ---

@@ -2,12 +2,12 @@
 can span a part whose outer faces are both concave (the central
 thickness of a biconcave lens, or the web of material left between two
 opposing countersunk holes drilled from each side of a plate). A plain
-jaw tip can't seat on either surface; the spherical-cap feeler nests
-into the concavity so the caliper ends up reading the distance between
-the feelers' outer domes.
+jaw tip can't seat on either surface; the dome feeler nests into the
+concavity so the caliper ends up reading the distance between the
+feelers' outer domes.
 
 One primitive (`cylinder`) and two shape-library Components
-(`UShapeChannel` as the jaw clip, `SphericalCap` as the feeler tip)
+(`UShapeChannel` as the jaw clip, `Dome` as the feeler tip)
 stacked with `attach()`. The print variant lays a matching pair out
 side-by-side for a single print job.
 
@@ -18,7 +18,7 @@ Run:
 from scadwright.boolops import union
 from scadwright.design import Design, run, variant
 from scadwright.primitives import cylinder
-from scadwright.shapes import SphericalCap, UShapeChannel
+from scadwright.shapes import Dome, UShapeChannel
 
 
 class ConvexCaliper(Design):
@@ -32,7 +32,7 @@ class ConvexCaliper(Design):
             n_shape=True, center="xy",
         )
         neck = cylinder(r=clip.bottom_width / 2, h=15).attach(clip)
-        cap = SphericalCap(cap_dia=clip.bottom_width, cap_height=5).attach(neck)
+        cap = Dome(cap_dia=clip.bottom_width, cap_height=5).attach(neck)
         head = union(clip, neck, cap)
         # Two mirrored heads on the bed, one for each caliper jaw.
         spread = clip.outer_width / 2 + 10

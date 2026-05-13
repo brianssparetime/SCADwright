@@ -128,19 +128,11 @@ def test_vent_slots_tight_equals_bbox():
     assert tb == lb
 
 
-def test_dome_solid_tight_equals_bbox():
+def test_dome_tight_equals_bbox():
     from scadwright.shapes import Dome
-    # No thk: build returns Intersection — walks fine without override,
-    # but the override still returns the same answer.
-    d = Dome(r=10)
-    tb, lb = _bbox_pair(d)
-    assert tb == lb
-
-
-def test_dome_hollow_tight_equals_bbox():
-    from scadwright.shapes import Dome
-    # With thk: build returns Difference — would raise without override.
-    d = Dome(r=10, thk=2)
+    # Dome's build is an Intersection; the override returns the same
+    # answer the generic walker would.
+    d = Dome(sphere_r=10, cap_height=10)
     tb, lb = _bbox_pair(d)
     assert tb == lb
 

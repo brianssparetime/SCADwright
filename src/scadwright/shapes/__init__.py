@@ -91,7 +91,6 @@ from scadwright.shapes.polyhedra import (
     Paraboloid,
     Prism,
     Pyramid,
-    SphericalCap,
     Tetrahedron,
     Torus,
 )
@@ -178,7 +177,6 @@ __all__ = [
     "Pyramid",
     "Rack",
     "RectTube",
-    "SphericalCap",
     "RingGear",
     "RoundedBox",
     "RoundedEndsArc",
