@@ -2,7 +2,7 @@
 
 OpenSCAD requires a small overlap (epsilon) whenever two shapes share a face in a boolean operation. Without it, F5 preview shows wavering, missing, or flickering surfaces — the GL renderer can't classify points on a coincident boundary. SCADwright handles this automatically so you don't have to define `eps` constants and manually adjust cutter sizes.
 
-`fuse=` is the eps mechanism for **planar** contacts. For convex-outer curved hosts (cylinder, cone, sphere), use `bridge=True` instead — that's a separate, structural verb covered in [anchors.md](anchors.md#curved-host-attach-bridge-true).
+`fuse=` is the eps mechanism for **planar** contacts. For convex-outer curved hosts (cylinder, cone, sphere), use `bridge=True` instead — that's a separate, structural verb covered in [anchors.md](anchors.md#putting-things-on-curved-surfaces-bridge-true).
 
 ## Quick reference
 
@@ -60,7 +60,7 @@ The result preserves the user-facing dimensions of the shape exactly — only th
 
 The framework validates the anchor before constructing the slab. The anchor must lie on the shape's outermost face along its normal direction (a dot-product check that works for axis-aligned and slanted normals); the bbox must have non-zero extent in at least two axes. Failures raise a clear `ValidationError`. Shape-specific overrides catch degeneracies the bbox check can't see — `Cylinder.cross_section_extend` raises on cone-apex (`r=0`) cases.
 
-`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they aren't reachable by this path. Attach to a sphere with [`bridge=True`](anchors.md#curved-host-attach-bridge-true).
+`Sphere`'s bbox-derived anchors carry `kind="spherical"`, not `kind="planar"`, so they aren't reachable by this path. Attach to a sphere with [`bridge=True`](anchors.md#putting-things-on-curved-surfaces-bridge-true).
 
 ### When neither tier applies
 

@@ -1,8 +1,8 @@
 # Anchors
 
-Anchors are named attachment points on shapes. Each anchor has a **position** (where it is in space) and a **normal** (which direction the surface faces there), plus optional **surface metadata** (kind + geometric parameters) that lets `attach()` and `add_text()` compute parametric placements on curved surfaces.
+Anchors are named spots on a shape that you can attach other things to. Every shape gets six of them by default, one per face. Components can name more.
 
-This page covers the anchor data type and how to declare your own. For placing one shape against another with anchors, see [Attaching shapes](attach.md). For text on a surface, see [add_text](add_text.md).
+This page is about the anchors you get for free, how to declare your own, and what happens to anchors when you transform or combine shapes. For placing one shape against another, see [Attaching shapes](attach.md). For putting text on a surface, see [add_text](add_text.md).
 
 Imports used on this page:
 
@@ -13,7 +13,7 @@ from scadwright.primitives import cube, cylinder
 
 ## The six standard faces
 
-Every shape gets six standard anchors derived from its axis-aligned bounding box:
+Every shape gets six standard anchors, one per face of its bounding box:
 
 | Name     | Axis-sign | Normal    | Position                  |
 |----------|-----------|-----------|---------------------------|
@@ -24,62 +24,13 @@ Every shape gets six standard anchors derived from its axis-aligned bounding box
 | `lside`  | `-x`      | (-1,0,0)  | center of left face       |
 | `rside`  | `+x`      | (1,0,0)   | center of right face      |
 
-The friendly names (`top`, `bottom`, etc.) and axis-sign names (`+z`, `-z`, etc.) both work everywhere. Friendly names are preferred in code.
+Both naming styles work everywhere. Friendly names like `top` read better in code.
 
-Bbox-derived face anchors always survive boolean operations — they're tied to the result's conservative bbox, not to specific geometry. Custom anchors (next section) follow different rules.
-
-## Surface metadata: `kind` and `surface_params`
-
-Every `Anchor` carries a `kind` field describing the surface it lies on. The default is `"planar"`. Other kinds are `"cylindrical"`, `"conical"`, `"spherical"`, and `"meridional"` (curved-meridian walls, e.g. `Barrel`). Curved kinds carry geometric parameters so `attach(angle=, at_z=, at_radial=, polar=)` and `add_text(angle=, at_z=, at_radial=)` can compute parametric placements on the surface.
-
-`cylinder()` carries an `outer_wall` anchor (cylindrical when `r1 == r2`, conical when tapered). `Tube` and `Funnel` carry `outer_wall` and `inner_wall` anchors. `sphere()` carries a `surface` anchor. `Barrel` carries `outer_wall` and `inner_wall` anchors of kind `"meridional"`.
-
-```python
-from scadwright.primitives import cylinder
-from scadwright.anchor import get_node_anchors
-
-a = get_node_anchors(cylinder(h=20, r=5))["outer_wall"]
-a.kind                     # "cylindrical"
-a.surface_param("radius")  # 5.0
-a.surface_param("axis")    # (0.0, 0.0, 1.0)
-a.surface_param("length")  # 20.0
-```
-
-Surface params transform alongside `position` and `normal`: rotating the host rotates the axis, scaling scales the radius and length. `cylinder(h=20, r=5).rotate([90, 0, 0])` reports `axis=(0, -1, 0)` for its outer wall, and `add_text(on="outer_wall", ...)` wraps correctly around the rotated cylinder.
-
-### Required fields by kind
-
-| Kind          | Required surface parameters |
-|---------------|-----------------------------|
-| `planar`      | (none) |
-| `cylindrical` | `axis`, `radius`, `length` |
-| `conical`     | `axis`, `r1`, `r2`, `length` |
-| `spherical`   | `axis`, `axis_origin`, `meridian_zero`, `radius` |
-| `meridional`  | `axis`, `axis_origin`, `meridian_zero`, `meridian_r`, `mid_r`, `meridian_s`, `length` |
-
-Planar cap anchors (cylinder/cone/Barrel `top` and `bottom`) are kind `"planar"` but carry `axis`, `meridian_zero`, and `rim_radius` so `attach(angle=, at_radial=)` can place on the cap and `add_text()` can wrap arc text on the rim.
-
-### Trust contract
-
-The framework can't verify that a Component-declared anchor lies on the actual rendered geometry of the Component's `build()` output — that would require evaluating the CSG tree. If an author declares an anchor with internally-consistent geometry that nevertheless doesn't match the rendered shape (e.g., `kind="cylindrical"` with `radius=5` on a Component that builds a `cylinder(r=10)`), the framework happily uses the declared values.
-
-What the framework *can* check, and does at user-input boundaries (Component class-scope `anchor()`, framework-internal `Component._set_anchor()`, `Node.with_anchor()`):
-
-| Kind | Checks |
-|---|---|
-| `cylindrical` | `normal` is unit and perpendicular to `axis`; `radius` and `length` positive. |
-| `conical` | `normal` is unit and perpendicular to `axis`; `r1`, `r2` non-negative (not both zero); `length` positive. |
-| `spherical` | `position` lies at distance `radius` from `axis_origin`; `normal` is the radial direction (or its negation for `inner=True`); `radius` positive. |
-| `meridional` | Required-fields presence only — full arc-evaluation consistency isn't checked. |
-| `planar` | No curved-surface checks. |
-
-These catch the most common author errors (typos in `at=` expressions that put the anchor far off the surface; declaring `kind="cylindrical"` with a normal that doesn't point radially). They don't catch declarations that are internally consistent but lie about the rendered geometry — that's the trust boundary.
-
-After spatial transforms (`transform_anchors`), the geometric checks are *not* re-run: a non-uniform scale on a sphere produces an internally inconsistent anchor by design (we don't model ellipsoids), and that's an accepted internal artifact, not an author error.
+These six always survive boolean operations like `union()` and `difference()`. Custom anchors follow different rules; see [How transforms and booleans affect anchors](#how-transforms-and-booleans-affect-anchors).
 
 ## Custom anchors on Components
 
-Declare anchors at class scope with the `anchor()` descriptor, alongside equations:
+Declare anchors inside your Component using `anchor()`:
 
 ```python
 from scadwright import Component, anchor
@@ -93,44 +44,32 @@ class Bracket(Component):
         return cube([self.w, self.w, self.depth])
 ```
 
-The `at=` argument accepts either a string of three comma-separated Python expressions (evaluated against the instance's attributes after params are set) or a literal tuple:
+`at=` is the position. Use a tuple `(x, y, z)` for a fixed point, or a string with three comma-separated expressions if the position should depend on the Component's parameters:
 
 ```python
 fixed_point = anchor(at=(0, 0, 10), normal=(0, 0, 1))       # literal position
-mount_face  = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))  # expression
+mount_face  = anchor(at="w/2, w/2, thk", normal=(0, 0, 1))  # uses w and thk
 ```
 
-The attribute name (`mount_face`) becomes the anchor's name. Callers attach to it by that name:
+The attribute name (`mount_face`) becomes the anchor's name when callers attach to it:
 
 ```python
 sensor = cube([8, 8, 4]).attach(Bracket(w=20, thk=3, depth=15), on="mount_face")
 ```
 
-Custom anchors with the same name as a standard face (e.g. `"top"`) override the bbox-derived default. This lets a Component define a semantically meaningful "top" that differs from its bounding box top.
+If you give an anchor the same name as a standard face (like `"top"`), it replaces the default. Use this when your part has a semantically meaningful "top" that isn't the bounding-box top.
 
-The `at=` string supports ternary expressions evaluated against instance attributes, so conditional positions don't need any special machinery: `anchor(at="0 if n_shape else h", normal=(0, 0, 1))`. Conditional **normals** are the narrow remaining case — `normal=` is a fixed tuple at class definition time, so a runtime-chosen normal is a framework-internal escape hatch (library Components only; not a user-facing pattern).
-
-Curved-surface anchors carry their geometry in `surface_params={...}`:
+A Python `if`/`else` expression works inside `at=`, so conditional positions don't need anything special:
 
 ```python
-# Cylindrical anchor on a Component. surface_params values can be
-# Python expressions (strings) evaluated against instance attributes —
-# same as `at=` strings.
-outer_wall = anchor(
-    at="od/2, 0, h/2",
-    normal=(1, 0, 0),
-    kind="cylindrical",
-    surface_params={"axis": (0, 0, 1), "radius": "od/2", "length": "h"},
-)
+anchor(at="0 if n_shape else h", normal=(0, 0, 1))
 ```
 
-See [Surface metadata](#surface-metadata-kind-and-surface_params) for which fields each kind requires.
+Typos in anchor expressions are caught early: if you misspell a parameter name in `at=`, you get a clear error at script-start, naming the bad anchor and the unknown name, instead of a confusing error later when someone uses the Component.
 
-**Class-load validation.** Anchor `at=`, string-form `normal=`, and string values inside `surface_params={...}` are AST-checked when the Component class is defined. Every name referenced must resolve to a declared `Param` or an equation-derived symbol — typos surface at module-import time with an error naming the anchor and the offending name, instead of at downstream user instantiation. The runtime `eval` is unchanged; this just moves the check forward.
+## Naming a point on a single shape: `with_anchor()`
 
-## One-off anchors on any node: `with_anchor()`
-
-When you want a named point on a primitive (or any other Node) without writing a Component, use the chained `with_anchor()` method:
+If you want a named point on one specific shape without writing a Component, chain `with_anchor()`:
 
 ```python
 peg = (
@@ -141,34 +80,13 @@ peg = (
 placed = peg.attach(plate, on="top", using_anchor="base")
 ```
 
-`at=` and `normal=` are 3-tuples in the wrapped node's local frame. Curved-surface kwargs (`axis`, `radius`, `r1`/`r2`, `length`, `rim_radius`, `axis_origin`, `meridian_zero`, `inner`, etc.) carry the geometry that `add_text` and the bridge dispatch need on curved kinds.
+`at=` and `normal=` are 3-tuples in the shape's local space. The anchor moves with any transforms you apply afterward, the same way Component custom anchors do.
 
-Spatial transforms applied after `with_anchor()` propagate to the anchor's position and normal exactly the same way Component custom anchors propagate. Custom anchors with the same name as a bbox-derived face override the default. Boolean operations drop them, like all custom anchors.
+Use `with_anchor()` when you only need one named point on one shape. If you're building a parametric family of parts with several anchors, write a Component instead.
 
-`with_anchor()` is the lightweight escape hatch for "I want one named point on this shape" — for a parametric family with multiple anchors, write a Component.
+## Library shapes with extra anchors
 
-## Anchor propagation
-
-Anchors (including custom ones) propagate through transforms:
-
-```python
-bracket = Bracket(w=20, thk=3, depth=15).right(20).up(10)
-sensor = cube([8, 8, 4]).attach(bracket, on="mount_face")
-# mount_face position is correctly shifted by both transforms
-```
-
-Boolean operations follow these rules for **custom** anchors:
-
-- **`union` and `intersection`** drop all custom anchors. The semantic ambiguity is real — there's no clear "this anchor still means the same thing" rule when two shapes are combined.
-- **`difference`** propagates custom anchors from the first child (the thing being subtracted from), with one defensive check: any custom anchor whose position falls inside a cutter's bounding box is dropped, since the cutter may have removed material at the anchor's face. The 80% case — drilling a hole through a bracket far from `mount_face` — keeps `mount_face`. The breaking case — drilling through `mount_face` itself — drops it, and the next `attach()` to that name raises a clear missing-anchor error rather than silently producing wrong-looking output.
-
-Bbox-derived face anchors (`top`, `bottom`, etc.) always survive booleans — they're tied to the result's conservative bbox, not to specific geometry.
-
-Non-spatial wrappers (`.color()`, `.highlight()`, etc.) pass anchors through unchanged.
-
-## Shape-library anchors
-
-Shape-library Components ship with useful custom anchors:
+These shape-library Components come with named anchors beyond the six standard faces:
 
 | Component      | Anchor name       | Description                     |
 |----------------|-------------------|---------------------------------|
@@ -177,47 +95,138 @@ Shape-library Components ship with useful custom anchors:
 | `Bolt`         | `tip`             | Bottom of the shaft             |
 | `Counterbore`  | `tip`             | Bottom of the shaft, points -z (mates to `Bolt.tip`) |
 
-## Manifold-clean unions: `fuse=True`
+Cylinders, cones, spheres, and rims also carry richer anchors that let you place things at a specific angle around an axis (like `angle=30`), at a specific axial position, or at a specific point on a sphere. See [Attaching shapes](attach.md#parametric-placement-on-rotational-surfaces) for which options work where, and the list of library shapes that have these anchors.
 
-For clean unions at planar contacts, `attach(fuse=True)` adds a small overlap at the contact face. The full mechanism — Tier 1 parametric extension, Tier 2 cross-section fallback, `bond=` for explicit control, the standalone `fuse(a, b, ...)`, `disable_eps_fuse()`, `through()`, and known limits — lives in [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
+## How transforms and booleans affect anchors
 
-## Curved-host attach: `bridge=True`
+Transforms (translate, rotate, scale, mirror) carry anchors along, so you can attach to a shape after moving it:
 
-Bridging is a separate verb from fusing. Where `fuse=True` is the planar-contact eps mechanism (an aesthetic adjustment to keep OpenSCAD's preview clean), **`bridge=True` adds a structural piece of material** that fills the air gap between a peg's planar near-face and a convex-outer curved host (cylinder, cone, sphere). The bridge is part of the design — it's what makes the peg look (and print) merged into the curved surface, rather than balanced on a thin tangent line.
+```python
+bracket = Bracket(w=20, thk=3, depth=15).right(20).up(10)
+sensor = cube([8, 8, 4]).attach(bracket, on="mount_face")
+# mount_face's position is correctly shifted by both .right() and .up().
+```
 
-Pass `bridge=True` to `attach()` for any convex-outer curved on-anchor (`kind` in `cylindrical`, `conical`, `spherical`, `inner=False`):
+Boolean operations are more selective. The six standard face anchors always survive (they're recomputed from the result's bounding box). Custom anchors follow these rules:
+
+- **`union` and `intersection`** drop all custom anchors. When two shapes are combined, there's no clean rule for which custom anchors should still apply, so SCADwright drops them all.
+- **`difference`** keeps custom anchors from the first shape (the one being cut into), with one safety check: if a cutter's bounding box covers the anchor's position, that anchor is dropped. The common case (drilling far from `mount_face`) keeps the anchor. The breaking case (drilling through `mount_face` itself) drops it, and the next `attach()` to that name gives you a clear error instead of silently producing wrong-looking output.
+
+Effects like `.color()` and `.highlight()` don't move the shape, so anchors pass through unchanged.
+
+## Clean unions with `fuse=True`
+
+When two parts share a flat face, OpenSCAD's preview shows a seam where the surfaces meet. Pass `fuse=True` to `attach()` to add a tiny overlap that fixes it:
+
+```python
+pylon = cube([5, 5, 10]).attach(floor, fuse=True)
+```
+
+For the full set of related options (`bond=`, `disable_eps_fuse()`, the standalone `fuse(a, b)`, and `through()` for cutters), see [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
+
+## Putting things on curved surfaces: `bridge=True`
+
+Attaching a flat-bottomed peg to a cylinder, cone, or sphere with the usual `attach()` leaves a visible gap where the peg touches the curved surface; the peg looks balanced on a thin contact line. Pass `bridge=True` to fill that gap with a small piece of material so the peg looks merged into the host:
 
 ```python
 peg = cube([2, 2, 5])
 hub = cylinder(h=20, r=10)
 mount = peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True)
-# Returns union(placed_peg, bridge). Bridge fills the inscription gap
-# between peg's flat near-face and the cylinder's curved surface.
 ```
 
-The bridge is the peg's cross-section extruded along the contact normal by the analytical inscription depth (`R - sqrt(R² - r²)` where `R` is host radius and `r` is peg's max radial extent in the tangent plane), differenced with the host.
+The bridge is part of the final design, not a rendering tweak. It fills the empty space between the peg's flat side and the curved surface so the part both looks and prints as one piece.
 
-**Add `fuse=True` for a manifold-clean peg/bridge join.** By default `bridge=True` produces a bridge prism flush with the peg's near-face. The peg and bridge share a coincident plane there, which OpenSCAD's preview classifies the same way it would any other coincident boundary. Pass `fuse=True` alongside to extend the bridge prism by `eps` past the peg's near-face on the peg side — same machinery as planar `fuse=True`, just built into the bridge:
+By default the bridge sits flush against the peg, which means the peg-and-bridge boundary is a coincident plane. If you want that union to render without a seam too, add `fuse=True`:
 
 ```python
-peg.attach(hub, on="outer_wall", angle=30, orient=True,
-           bridge=True, fuse=True)   # bridge + eps overlap on peg side
+peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)
 ```
 
-`bridge=True` and `bond=` don't combine — `bond=` controls the planar eps mechanism, `bridge=True` is the curved-host fill. Passing both raises.
+`bridge=True` only works on the outside of a curved host. On a tube's inner wall, the peg's corners already sink into the wall material, so there's no gap to fill. For a clean union on an inner wall, pass `bond="shift"` instead.
 
-**`fuse=True` alone on a curved host raises.** Bare `fuse=True` is the planar eps machinery; on a curved host it can't apply, and the validator points at `bridge=True` rather than silently doing nothing useful.
+See [Advanced notes](#advanced-notes) for how the bridge is built, what it checks before building, and the limitations to watch for.
 
-**Peg-anchor validation.** Like the [planar cross-section path](auto-eps_fuse_and_through.md#tier-2-cross-section-fallback), the bridge dispatch validates the peg's at-anchor against the peg's bbox before building the prism: the anchor must lie on the peg's outermost face along its normal direction, and the peg must have non-zero extent in at least two axes. Failures raise a clear `ValidationError` rather than silently producing an empty bridge. The check unwraps `Translate` / `Rotate` / `Mirror` so a peg rotated by `orient=True` is validated against its underlying primitive's local frame.
+## Advanced notes
 
-**Coaxial requirement.** The bridge dispatch requires the peg's at-anchor normal to be anti-parallel to the host's on-anchor normal (within tolerance). Without `orient=True` or manual peg alignment, the call raises `ValidationError("requires coaxial normals")` rather than silently producing geometry that doesn't match user intent.
+The sections below are for corner cases. Most users won't need them.
 
-**Concave inner surfaces** (anchors with `surface_params["inner"]=True`, e.g., `Tube.inner_wall`): the peg's corners naturally inscribe into the wall material as soon as the peg is placed tangent — no bridge needed. `bridge=True` on an inner wall raises. For inner-wall attachment with eps cleanup, use `bond="shift"`.
+### Curved anchors carry surface details
 
-**Under `disable_eps_fuse()`:** the bridge structural geometry persists, but the peg-side `-eps` slice (gated on `fuse=True`) drops. Precision builds get exact structural geometry.
+When an anchor sits on a curved surface, SCADwright stores extra information about the surface so `attach()` and `add_text()` can place things at a specific angle, axial position, or point on the surface. The supported `kind` values:
 
-**Inherited limitations from the cross-section primitive** (same set as items 1 and 2 of [Known limits](auto-eps_fuse_and_through.md#known-limits-and-recovery-paths) on the planar path):
+| `kind`         | Surface                                       | Where it appears                              |
+|----------------|-----------------------------------------------|-----------------------------------------------|
+| `"planar"`     | A flat face                                   | Default for all shapes                        |
+| `"cylindrical"`| A straight wall around an axis                | `outer_wall` of a cylinder or `Tube`          |
+| `"conical"`    | A tapered wall around an axis                 | `outer_wall` of a `Funnel` or tapered cylinder|
+| `"spherical"`  | A round surface around a center point         | `surface` of a sphere                         |
+| `"meridional"` | A curved-meridian wall (bulged or waisted)    | `outer_wall` and `inner_wall` of `Barrel`     |
 
-- **Non-convex peg with empty cross-section at contact.** Bridge is empty; fuse is silently a no-op.
-- **Polyhedron peg with degenerate cap.** `projection()` may fail at CGAL render with "given mesh is not closed". The scadwright build succeeds but the rendered output errors. Use `fuse=False` for that one attach (the rocket fin example does this with a manual `.left(fin_fillet)` workaround).
+Each kind needs certain extra fields to work. Most users won't write these by hand; library shapes set them up for you. If you do declare a curved anchor on your own Component, here's what each kind needs:
 
+| Kind          | Required surface parameters |
+|---------------|-----------------------------|
+| `planar`      | (none) |
+| `cylindrical` | `axis`, `radius`, `length` |
+| `conical`     | `axis`, `r1`, `r2`, `length` |
+| `spherical`   | `axis`, `axis_origin`, `meridian_zero`, `radius` |
+| `meridional`  | `axis`, `axis_origin`, `meridian_zero`, `meridian_r`, `mid_r`, `meridian_s`, `length` |
+
+Cap anchors on cylinders, cones, and barrels (`top`/`bottom`) are `kind="planar"` but also carry `axis`, `meridian_zero`, and `rim_radius`, so you can place things on the cap by angle and radius.
+
+Pass these in `surface_params` when declaring the anchor:
+
+```python
+outer_wall = anchor(
+    at="od/2, 0, h/2",
+    normal=(1, 0, 0),
+    kind="cylindrical",
+    surface_params={"axis": (0, 0, 1), "radius": "od/2", "length": "h"},
+)
+```
+
+String values inside `surface_params` are evaluated against the Component's parameters the same way `at=` strings are.
+
+### What SCADwright checks when you declare an anchor
+
+When you call `anchor()` or `with_anchor()` with a curved `kind`, SCADwright checks a few things to catch common typos:
+
+| Kind          | Checks |
+|---------------|--------|
+| `cylindrical` | `normal` is a unit vector perpendicular to `axis`; `radius` and `length` are positive. |
+| `conical`     | `normal` is a unit vector perpendicular to `axis`; `r1`, `r2` are non-negative (not both zero); `length` is positive. |
+| `spherical`   | `position` lies at distance `radius` from `axis_origin`; `normal` is the radial direction (negated for `inner=True`); `radius` is positive. |
+| `meridional`  | The required fields are present (the full arc geometry isn't double-checked). |
+| `planar`      | (no curved-surface checks) |
+
+What SCADwright can't check: whether the anchor you declared actually lines up with the geometry your `build()` produces. If you declare `kind="cylindrical"` with `radius=5` on a Component that actually builds `cylinder(r=10)`, SCADwright uses your declared values and the bridge ends up in the wrong place.
+
+After a transform like `scale()`, the geometric checks aren't re-run. A non-uniform scale on a sphere produces an inconsistent anchor on purpose, since SCADwright doesn't model ellipsoids.
+
+### How `bridge=True` builds the fill
+
+`bridge=True` does these steps internally:
+
+1. Takes the peg's cross-section in the plane facing the host.
+2. Extrudes it along the contact normal by an inscription depth of `R - sqrt(R² - r²)`, where `R` is the host's radius at the contact point and `r` is the peg's largest extent in the tangent plane.
+3. Subtracts the host from that prism, leaving exactly the gap-filling shape between peg and host.
+4. Unions the result with the placed peg.
+
+Before building, SCADwright checks that the peg's at-anchor lies on the peg's outermost face along its normal direction, and that the peg has non-zero extent in at least two axes. Otherwise the bridge would be empty or wrong-shaped, so you get a clear error instead.
+
+`bridge=True` also requires that the peg's at-anchor normal points opposite the host's on-anchor normal. With `orient=True`, that's handled for you. Without it, if your peg isn't already aligned, you get a `"requires coaxial normals"` error rather than a wrong-looking part.
+
+`bridge=True` and `bond=` can't combine. `bond=` is for the planar overlap mechanism; `bridge=True` is the curved-host fill. Passing both gives you an error.
+
+### Bridge limitations
+
+These cases either fail silently or fail at render time:
+
+- **Non-convex pegs with an empty cross-section at the contact face.** A torus tangent point, two separated parts, or a peg with a `difference()` hole at the contact plane all fall in this bucket. The bridge ends up empty, and `bridge=True` becomes a no-op (same as if you'd passed `fuse=False`).
+- **Polyhedron pegs with a degenerate cap exactly at the contact face.** OpenSCAD's CGAL renderer may fail with `"given mesh is not closed"` / `"Projection() failed"`. The build succeeds; rendering doesn't. Pass `fuse=False` on that one call as a workaround. The rocket fin in `examples/rocket.py` shows the pattern (it adds a manual `.left(fin_fillet)` to dodge the issue).
+
+Both limitations also apply to the planar `fuse=True` cross-section path; see [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md#known-limits-and-recovery-paths) for the full list of cases where auto-eps can silently fail.
+
+### `bridge=True` under `disable_eps_fuse()`
+
+Inside a `with disable_eps_fuse():` block, the bridge geometry itself stays put: it's part of the design, not a rendering tweak. The small `-eps` peg-side slice that `fuse=True` adds (only when you pass both `bridge=True` and `fuse=True`) does drop. So a precision build wrapped in `disable_eps_fuse()` still gets accurate structural bridges.

@@ -181,7 +181,7 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)
 
 `bridge=True` requires a convex-outer curved on-anchor (`cylindrical`, `conical`, or `spherical`); on a planar host or concave-inner wall it raises. `bridge=True` and `bond=` don't combine — `bond=` is the planar-eps mechanism, `bridge=True` is the curved-host fill.
 
-Full bridge mechanism (geometry, validation, the coaxial-normal requirement, behavior under `disable_eps_fuse()`, limitations) lives in [Curved-host attach: `bridge=True`](anchors.md#curved-host-attach-bridge-true).
+Full bridge mechanism (geometry, validation, the coaxial-normal requirement, behavior under `disable_eps_fuse()`, limitations) lives in [Putting things on curved surfaces: `bridge=True`](anchors.md#putting-things-on-curved-surfaces-bridge-true).
 
 ## Symmetric form — `fuse(a, b, ...)`
 

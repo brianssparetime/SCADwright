@@ -153,7 +153,7 @@ labeled = bracket.add_text(label="A1", relief=0.3, on="top", font_size=3)
 sensor = cube([8, 8, 4]).attach(labeled, on="badge")
 ```
 
-If you wrap a labeled host in an explicit `union()` or `difference()`, the host's custom anchors do go away — at that point you've made a new combined shape. See [Anchor propagation](anchors.md#anchor-propagation) for the full rules.
+If you wrap a labeled host in an explicit `union()` or `difference()`, the host's custom anchors do go away — at that point you've made a new combined shape. See [How transforms and booleans affect anchors](anchors.md#how-transforms-and-booleans-affect-anchors) for the full rules.
 
 ## Other `text()` options
 
