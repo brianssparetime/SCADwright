@@ -235,7 +235,7 @@ Pass `orient=True` to also rotate self so the two anchors' normals oppose each o
 peg.attach(plate, on="rside", using_anchor="bottom", orient=True)  # rotate to face outward
 ```
 
-Components can declare custom anchors at class scope — see [Anchors and attachment](anchors.md) for the full reference.
+See [Attaching shapes](attach.md) for the full `attach()` reference (parametric placement on rotational surfaces, `fuse=True`, `bridge=True`, etc.), and [Anchors](anchors.md) for declaring custom anchors at class scope.
 
 ### `through`
 

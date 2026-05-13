@@ -158,7 +158,7 @@ Generic Components import only from SCADwright and the standard library. Concret
 
 Once you're comfortable with the three stages above, these features are worth learning next:
 
-- [Anchors and attachment](anchors.md): position parts relative to each other without manual coordinate math (`peg.attach(plate)`)
+- [Attaching shapes](attach.md): position parts relative to each other without manual coordinate math (`peg.attach(plate)`); see also [Anchors](anchors.md) for declaring custom attachment points
 - [Eliminating epsilon overlap](auto-eps_fuse_and_through.md): `through(parent)` for cutters and `attach(fuse=True)` for joints, replacing manual EPS constants
 - [Custom transforms](custom_transforms.md): add your own verbs to the language (`.chamfer_top(depth=1)` on any shape)
 - [Shape library](shapes/README.md): tubes, gears, fasteners, and dozens more pre-built shapes

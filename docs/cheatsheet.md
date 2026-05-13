@@ -94,7 +94,7 @@ cube(1).up(5)     .down(5)     .left(5)
 cube(1).flip("z")                         # mirror across XY
 cube(1).red()     .steelblue(alpha=0.5)   # any SVG/X11 color name
 
-# Placement helpers:
+# Placement helpers — attach() and friends (→ attach.md):
 part.center_bbox()                        # AABB centered at origin
 peg.attach(plate)                         # bottom of peg on top of plate
 peg.attach(plate, on="rside", using_anchor="lside")  # side-by-side

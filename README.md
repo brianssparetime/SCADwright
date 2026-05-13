@@ -285,7 +285,7 @@ scadwright build widget.py --variant=display
 
 In OpenSCAD, stacking a lid on a box means computing `translate([0, 0, box_height])` by hand. If you add a spacer or change a dimension, every downstream offset needs updating.
 
-SCADwright's [`attach()` method](docs/anchors.md) lets you position parts by naming which faces should touch:
+SCADwright's [`attach()` method](docs/attach.md) lets you position parts by naming which faces should touch:
 
 ```python
 from scadwright.primitives import cube, cylinder
@@ -297,7 +297,7 @@ cap   = cube([8, 8, 2]).attach(peg, on="top")                # cap on top of peg
 
 Insert a spacer between any two parts and nothing downstream needs to change. Components can declare custom named anchors for semantically meaningful attachment points.
 
-See [Anchors and attachment](docs/anchors.md) for the full reference.
+See [Attaching shapes](docs/attach.md) for the full `attach()` reference, and [Anchors](docs/anchors.md) for declaring custom attachment points on Components.
 
 ### 9. Parts know their bounds without needing to render, allowing print-bed tests and overlap tests
 

@@ -50,7 +50,7 @@ A tool that slips over the jaws of a measuring caliper so it can span a part who
 
 *Print variant: two mirrored heads on the bed, one per caliper jaw.*
 
-**Reference:** [shape library](../docs/shapes/README.md) · [attach()](../docs/anchors.md#basic-usage) · [Design + @variant](../docs/variants.md) · [centering](../docs/components.md#centering-with-center)
+**Reference:** [shape library](../docs/shapes/README.md) · [attach()](../docs/attach.md#basic-usage) · [Design + @variant](../docs/variants.md) · [centering](../docs/components.md#centering-with-center)
 
 ---
 
@@ -97,7 +97,7 @@ A wall-mount coat hook: a plate with two countersunk screw holes and a J-hook th
 
 *Left: display variant, plate with J-hook attached at `hook_mount`. Right: print variant, plate and hook laid flat on the bed.*
 
-**Reference:** [anchors and attach()](../docs/anchors.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [variants](../docs/variants.md)
+**Reference:** [attach()](../docs/attach.md) · [anchors](../docs/anchors.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [variants](../docs/variants.md)
 
 ---
 
@@ -185,7 +185,7 @@ This is a flat script — no Components, no Design class — built from shape-li
 - `Helix(wire_profile=almond_profile(...), r=8, r_end=4, ...)` sweeps a custom 2D cross-section along a tapered helical path. `overhang=chord_r` extends the swept tube into the adjoining solids so the joints close cleanly, no manual `fuse=True` needed.
 - `Barrel` is used twice — once for the body's convex bulge, once for the nozzle's outward flare (the latter halved with `.halve(z=1)` to keep just the upper bell).
 - `Ogive(kind="parabolic", fn=64).attach(body, on="top")` stacks the nose on the body, no z-offset math.
-- Fins: `polygon → linear_extrude → minkowski(sphere)` for the rounded blank, `attach(body, on="outer_wall", using_anchor="lside", at_z=...)` to seat one fin tangent to the bulged body, a small `.left(fin_fillet)` to embed it so the curved meridian carves into the fin root, and `.rotate_copy(angle=120, n=3, axis=[0, 0, 1])` for the 3-fold pattern. (No `fuse=True` on the curved wall — `fuse=` is for planar contacts; for curved hosts the structural verb is `bridge=True`, but the rocket inscribes manually to keep the polyhedron-fin's geometry stable.)
+- Fins: `polygon → linear_extrude → minkowski(sphere)` for the rounded blank, `attach(body, on="outer_wall", using_anchor="lside", at_z=...)` to seat one fin tangent to the bulged body, a small `.left(fin_fillet)` to embed it so the curved meridian carves into the fin root, and `.rotate_copy(angle=120, n=3, axis=[0, 0, 1])` for the 3-fold pattern. 
 - Nested `linear_copy(...)` stamps a 2x2 array of M2 counterbores at the plate corners; `.through(plate_solid, axis="z")` flushes the cuts.
 - `add_text(angle=45, ...)` engraves text along a meridian on the body's curved outer wall — once horizontally for the wordmark (raised relief), then chained again with `text_dir="axial"` and `rotate_glyphs=True` for the multi-line punchline (recessed relief).
 

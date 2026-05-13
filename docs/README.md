@@ -46,7 +46,8 @@ having to re-write anything.
 - [Shape library](shapes/README.md) — 50+ ready-made Components: tubes, gears, fasteners, bearings, infill panels, and more
 - [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
-- [Anchors and attachment](anchors.md) — named attachment points for positioning parts relative to each other
+- [Attaching shapes](attach.md) — `attach()` to position parts relative to each other
+- [Anchors](anchors.md) — the data type (named attachment points), authoring custom anchors on Components
 - [Composition helpers](composition_helpers.md) — `mirror_copy`, `rotate_copy`, `linear_copy`, `multi_hull`, `sequential_hull`
 
 **Workflow**

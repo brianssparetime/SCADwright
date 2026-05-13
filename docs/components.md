@@ -528,4 +528,5 @@ When `0` (or `False`, or `()`, or `""`) is a legitimate value the caller might p
 
 ### See also
 
-- [Anchors and attachment](anchors.md): named attachment points on Components; position parts relative to each other with `attach()`.
+- [Anchors](anchors.md): named attachment points on Components, the data type and authoring API.
+- [Attaching shapes](attach.md): use `attach()` to position parts relative to each other.

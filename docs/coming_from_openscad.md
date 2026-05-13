@@ -418,9 +418,11 @@ If you're coming from BOSL2, you may be used to its `attach()` / `anchor()` syst
 
 Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and they don't shift the origin. SCADwright keeps `center=` for origin control and `attach()` for positioning — two separate concepts.
 
-See [Anchors and attachment](anchors.md) for the full reference.
+See [Attaching shapes](attach.md) for the `attach()` reference and [Anchors](anchors.md) for the data type and authoring API.
 
-SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) and [bridge=True](anchors.md#curved-host-attach-bridge-true).
+For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#curved-host-attach-bridge-true).
+
+SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. 
 
 ## Text on a 3D shape
 
