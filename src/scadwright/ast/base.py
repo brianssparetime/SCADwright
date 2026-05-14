@@ -198,6 +198,27 @@ class Node(
         values = tuple((None, v) for v in args) + tuple(sorted(kwargs.items()))
         return Echo(values=values, child=self, source_location=loc)
 
+    def with_bbox_from(self, source) -> "Node":
+        """Override bbox and tight_bbox queries on this node to report
+        ``source``'s extents instead of computing from the AST.
+
+        This is a user assertion: the framework does NOT verify that
+        ``source`` matches actual geometry. Reach for it when AST
+        analysis can't tighten a Difference (the canonical case is a
+        small cutter against a much larger host where you know the
+        cutter doesn't move the bbox), and downstream consumers like
+        ``pack_on_bed`` need the host's extents.
+
+        ``source`` is a :class:`Node` (its bbox / tight_bbox is queried
+        lazily, so spatial transforms applied after this call propagate
+        to source's bbox just like they do to the child's) or a
+        :class:`BBox` literal.
+        """
+        from scadwright.ast.transforms import WithBBox
+
+        loc = SourceLocation.from_caller()
+        return WithBBox(child=self, source=source, source_location=loc)
+
     def with_anchor(
         self,
         name: str,

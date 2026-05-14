@@ -234,3 +234,42 @@ class WithAnchor(Node):
             anchor=self.anchor,
             source_location=self.source_location,
         )
+
+
+@dataclass(frozen=True)
+class WithBBox(Node):
+    """Metadata-only wrapper that overrides bbox / tight_bbox queries on
+    its child, declaring them equal to those of ``source``.
+
+    User assertion: the wrapper does NOT verify that the child's actual
+    geometry matches ``source``'s extents. Reach for this when AST
+    analysis can't tighten a Difference (the canonical case is a small
+    cutter against a much larger host where the cutter doesn't move the
+    bbox), and you'd otherwise need a Component subclass or a custom
+    transform with a tight_bbox hook just to expose the host's extents.
+
+    Transparent to emit and to anchor queries; only intercepts the two
+    bbox visitors. ``source`` is a ``Node`` (whose bbox / tight_bbox is
+    queried lazily, so spatial transforms above this wrapper propagate
+    through the visitor's ctx the same way they do for the child) or a
+    ``BBox`` literal (used directly, transformed by ctx).
+    """
+
+    child: Node
+    source: "Node | BBox"  # type: ignore[name-defined]
+
+    def fuse_extend(self, anchor, eps: float):
+        """Pass through to child; re-wrap the extended result.
+
+        WithBBox is metadata-only — the bbox assertion attaches to the
+        child's local frame. Recursing lets parametric extension reach
+        the underlying primitive and keeps the assertion in place.
+        """
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return WithBBox(
+            child=extended_child,
+            source=self.source,
+            source_location=self.source_location,
+        )

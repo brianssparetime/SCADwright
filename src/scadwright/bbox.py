@@ -349,6 +349,12 @@ def bbox(node) -> BBox:
     return BBoxVisitor().visit(node)
 
 
+def with_bbox_from(child, source):
+    """Standalone form of :meth:`Node.with_bbox_from`. See that method
+    for the user-assertion semantics."""
+    return child.with_bbox_from(source)
+
+
 def resolved_transform(node) -> Matrix:
     """Return the world-space transform at `node` (top-level: identity).
 
@@ -479,6 +485,12 @@ class BBoxVisitor(Visitor):
     def visit_Color(self, n): return self.visit(n.child)
     def visit_ForceRender(self, n): return self.visit(n.child)
     def visit_WithAnchor(self, n): return self.visit(n.child)
+
+    def visit_WithBBox(self, n):
+        # User assertion: this node's bbox is `source`'s bbox.
+        if isinstance(n.source, BBox):
+            return n.source.transformed(self._ctx)
+        return self.visit(n.source)
 
     def visit_PreviewModifier(self, n):
         if n.mode == "disable":
@@ -664,6 +676,15 @@ class TightBBoxVisitor(BBoxVisitor):
             "(3) if loose-and-fast is acceptable, use `bbox()` "
             "(returns the first child's AABB — conservative)."
         )
+
+    def visit_WithBBox(self, n):
+        # User assertion: this node's tight_bbox is `source`'s tight_bbox.
+        # If source is itself a Difference (or another untightenable node),
+        # the recursive visit will raise — which is correct: the user has
+        # to point at a node whose tight_bbox is computable.
+        if isinstance(n.source, BBox):
+            return n.source.transformed(self._ctx)
+        return self.visit(n.source)
 
     def visit_component(self, n):
         cached = getattr(n, "_tight_bbox_cache", None)

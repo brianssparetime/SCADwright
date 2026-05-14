@@ -557,6 +557,11 @@ class _AnchorVisitor(_Visitor):
         anchors[n.anchor_name] = n.anchor
         return anchors
 
+    # --- WithBBox: anchor-transparent (bbox assertion doesn't affect anchors). ---
+
+    def visit_WithBBox(self, n):
+        return self.visit(n.child)
+
     # --- Difference: propagate first-child anchors, dropping any custom
     # anchor whose position falls inside a cutter's bbox.
     #

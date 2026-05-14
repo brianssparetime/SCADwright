@@ -16,6 +16,7 @@ from scadwright.ast.transforms import (
     Scale,
     Translate,
     WithAnchor,
+    WithBBox,
 )
 from scadwright.emit.format import _fmt_bool, _fmt_color, _fmt_matrix, _fmt_num, _fmt_vec
 
@@ -122,4 +123,9 @@ class _TransformVisitorMixin:
     def visit_WithAnchor(self, n: WithAnchor) -> None:
         # Metadata-only wrapper. The anchor lives in the framework's
         # anchor dict; SCAD output is just the child.
+        self.visit(n.child)
+
+    def visit_WithBBox(self, n: WithBBox) -> None:
+        # Metadata-only wrapper. The bbox override lives in the bbox
+        # visitor; SCAD output is just the child.
         self.visit(n.child)

@@ -8,7 +8,7 @@ One-page reference. Each section links to its full docs page for details.
 from scadwright import (
     Component, Param, Spec, Adjustment, materialize,
     positive, non_negative, minimum, maximum, in_range, one_of,
-    BBox, bbox, tight_bbox, tree_hash, Matrix, SourceLocation,
+    BBox, bbox, tight_bbox, with_bbox_from, tree_hash, Matrix, Node, SourceLocation,
     emit, emit_str, render,
     resolution,
     clearances, Clearances, DEFAULT_CLEARANCES,
@@ -763,7 +763,13 @@ bb.transformed(matrix)
 bb = tight_bbox(shape)                      # tight AABB by AST analysis
                                             # raises on Difference (use halve()
                                             # instead, or override tight_bbox
-                                            # on the offending Component).
+                                            # on the offending Component, or
+                                            # assert via with_bbox_from below).
+
+# Override bbox / tight_bbox when AST analysis can't tighten (small cutter
+# against a much larger host; user asserts the bbox is unchanged):
+engraved = difference(body, cutter).with_bbox_from(body)
+asserted = part.with_bbox_from(BBox(min=(0,0,0), max=(40,40,10)))
 
 class TruncCone(Component):                 # author declares the truth when
     equations = "r, z_t > 0"                # AST analysis can't reach it

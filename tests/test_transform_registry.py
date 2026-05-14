@@ -50,6 +50,53 @@ def test_kwargs_sorted_for_stable_identity():
     assert n1.kwargs == n2.kwargs == (("a", 1), ("b", 2))
 
 
+def test_node_kwarg_on_hoisted_raises():
+    """Hoisted transforms become SCAD modules; SCAD modules can't accept
+    geometry as a named parameter. Catching this at call time prevents
+    silent emission of repr-shaped invalid SCAD."""
+    from scadwright.boolops import difference
+
+    @transform("_test_hoisted_engrave")
+    def _t(node, *, cutter):
+        return difference(node, cutter)
+
+    host = cube(10)
+    glyph = cube(1)
+    with pytest.raises(SCADwrightError, match="Node, but the transform"):
+        host._test_hoisted_engrave(cutter=glyph)
+
+
+def test_node_kwarg_on_inline_works():
+    """Inline transforms expand at the use site, so kwargs never get
+    serialized to SCAD module parameters. Node kwargs are fine."""
+    from scadwright.boolops import difference
+    from scadwright.emit import emit_str
+
+    @transform("_test_inline_engrave", inline=True)
+    def _t(node, *, cutter):
+        return difference(node, cutter)
+
+    host = cube(10)
+    glyph = cube(1)
+    result = host._test_inline_engrave(cutter=glyph)
+    scad = emit_str(result)
+    assert "difference()" in scad
+
+
+def test_scalar_kwargs_on_hoisted_still_work():
+    """Regression guard: the Node-kwarg check shouldn't reject scalars."""
+    from scadwright.emit import emit_str
+
+    @transform("_test_hoisted_scalar")
+    def _t(node, *, dx, label):
+        return node.translate([dx, 0, 0])
+
+    host = cube(10)
+    result = host._test_hoisted_scalar(dx=5, label="hi")
+    scad = emit_str(result)
+    assert "translate" in scad
+
+
 def test_duplicate_registration_raises():
     @transform("_test_dup")
     def _a(node):

@@ -54,6 +54,21 @@ You can also build one by hand:
 BBox(min=(0, 0, 0), max=(10, 20, 30))
 ```
 
+### Overriding bbox: `with_bbox_from`
+
+`tight_bbox` can't tighten a `difference()` from AST analysis alone — the result extents depend on whether the cutter actually removes material from the bbox edges, which is a CSG-evaluation question. When you know the answer (the cutter is small relative to the host; engravings, mounting holes, fiducials), assert it:
+
+```python
+from scadwright import with_bbox_from
+
+engraved = difference(body.force_render(), cutter).with_bbox_from(body)
+tight_bbox(engraved)        # == tight_bbox(body)
+```
+
+`source` is a Node (its bbox / tight_bbox is queried lazily, so spatial transforms above the call compose) or a `BBox` literal (used directly).
+
+This is a *user assertion* — the framework doesn't verify that `source` matches what the geometry would actually produce. Reach for it when AST analysis can't tighten a Difference and you'd otherwise have to write a Component subclass or a custom transform just to expose the host's extents.
+
 ## Test assertions
 
 Four helpers raise `AssertionError` (the same kind pytest uses) with informative messages on failure.

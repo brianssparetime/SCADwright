@@ -39,7 +39,7 @@ cutter = body.text_geometry(label="...", relief=-0.3, ...)
 result = difference(body.force_render(), cutter)
 ```
 
-[`text_geometry`](add_text.md#returning-glyph-geometry-without-combining-text_geometry) is the text-specific tool; for hole cutouts and similar, plain `difference()` with the cutter as its own expression does the same job.
+[`text_geometry`](add_text.md#returning-glyph-geometry-without-combining-text_geometry) is the text-specific tool; for hole cutouts and similar, plain `difference()` with the cutter as its own expression does the same job. When a downstream consumer (`pack_on_bed`, anything that calls `tight_bbox`) needs to see the cached body's extents, wrap with [`with_bbox_from(body)`](introspection.md#overriding-bbox-with_bbox_from) so the difference doesn't trip the "can't tighten" raise.
 
 ## `echo`
 

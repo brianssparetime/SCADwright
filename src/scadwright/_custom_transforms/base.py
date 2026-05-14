@@ -197,6 +197,25 @@ def _node_getattr(self, attr_name: str):
 
     def call(**kwargs):
         loc = SourceLocation.from_caller()
+        # Hoisted transforms become SCAD modules; SCAD modules can't take
+        # geometry as a named parameter (only via implicit children()). A
+        # Node-valued kwarg would silently serialize via repr() and produce
+        # invalid SCAD. Catch it at the call site with an actionable message.
+        if not t.inline:
+            for kw_name, kw_value in kwargs.items():
+                if isinstance(kw_value, Node):
+                    raise SCADwrightError(
+                        f"transform {attr_name!r}: kwarg {kw_name!r} is a "
+                        f"Node, but the transform is registered with "
+                        f"inline=False (hoisted). SCAD modules can't take "
+                        f"geometry as a named parameter. Either declare "
+                        f"@transform({attr_name!r}, inline=True) so the body "
+                        f"expands at the use site, or for bbox-preserving "
+                        f"difference patterns use "
+                        f"`difference(host, cutter).with_bbox_from(host)` "
+                        f"(see docs/bbox.md).",
+                        source_location=loc,
+                    )
         # Sort kwargs by name for stable hashing/identity.
         kw_tuple = tuple(sorted(kwargs.items()))
         return Custom(
