@@ -82,6 +82,78 @@ def linear_copy(offset, n: int, *children) -> Union:
     return Union(children=tuple(out), source_location=loc)
 
 
+def hole_grid(
+    *,
+    rows: int,
+    cols: int,
+    row_spacing: float,
+    col_spacing: float,
+    hole: Node,
+    center: bool = True,
+) -> Node:
+    """Replicate a hole cutter in a rows × cols rectangular grid.
+
+    The grid spans ``(rows - 1) * row_spacing`` along the row direction
+    (Y) and ``(cols - 1) * col_spacing`` along the column direction (X).
+    By default the grid centers on the origin; pass ``center=False`` to
+    place the bottom-left hole at the origin.
+
+    Pass any cutter shape as ``hole`` — a clearance hole, counterbore,
+    countersink, or any custom cutter. The result is intended for use
+    as a cutter in ``difference()``::
+
+        from scadwright.shapes import clearance_hole
+        from scadwright.composition_helpers import hole_grid
+
+        plate = cube([60, 60, 3])
+        cutter = hole_grid(
+            rows=2, cols=2,
+            row_spacing=30.5, col_spacing=30.5,
+            hole=clearance_hole("M3", depth=5),
+        )
+        result = difference(plate, cutter)
+
+    Common patterns: flight-controller stack holes (16×16, 20×20,
+    25.5×25.5, 30.5×30.5 mm), VESA monitor-mount patterns, vent
+    arrays, and rectangular bolt grids.
+    """
+    loc = SourceLocation.from_caller()
+    if not isinstance(rows, int) or rows < 1:
+        raise ValidationError(
+            f"hole_grid: rows must be a positive int, got {rows!r}",
+            source_location=loc,
+        )
+    if not isinstance(cols, int) or cols < 1:
+        raise ValidationError(
+            f"hole_grid: cols must be a positive int, got {cols!r}",
+            source_location=loc,
+        )
+    if row_spacing <= 0:
+        raise ValidationError(
+            f"hole_grid: row_spacing must be > 0, got {row_spacing!r}",
+            source_location=loc,
+        )
+    if col_spacing <= 0:
+        raise ValidationError(
+            f"hole_grid: col_spacing must be > 0, got {col_spacing!r}",
+            source_location=loc,
+        )
+
+    grid = linear_copy([col_spacing, 0, 0], cols, hole)
+    grid = linear_copy([0, row_spacing, 0], rows, grid)
+    if center:
+        grid = Translate(
+            v=(
+                -(cols - 1) * col_spacing / 2.0,
+                -(rows - 1) * row_spacing / 2.0,
+                0.0,
+            ),
+            child=grid,
+            source_location=loc,
+        )
+    return grid
+
+
 def multi_hull(first: Node, *others) -> Union:
     """Hull connecting `first` to each of `others`. Then unioned.
 
@@ -229,11 +301,12 @@ def pack_on_bed(
 
 
 __all__ = [
-    "multi_hull",
-    "sequential_hull",
-    "linear_copy",
-    "rotate_copy",
-    "mirror_copy",
     "halve",
+    "hole_grid",
+    "linear_copy",
+    "mirror_copy",
+    "multi_hull",
     "pack_on_bed",
+    "rotate_copy",
+    "sequential_hull",
 ]

@@ -44,8 +44,10 @@ from scadwright.shapes.mechanical import (
     BearingSpec,
     DShaft,
     GT2Pulley,
+    Grommet,
     HTDPulley,
     KeyedShaft,
+    TubeClamp,
 )
 from scadwright.shapes.gears import (
     BevelGear,
@@ -155,6 +157,7 @@ __all__ = [
     "GridfinitySpec",
     "STANDARD_GRIDFINITY",
     "GripTab",
+    "Grommet",
     "GT2Pulley",
     "HTDPulley",
     "HeatSetPocket",
@@ -196,6 +199,7 @@ __all__ = [
     "Torus",
     "TriGridPanel",
     "Tube",
+    "TubeClamp",
     "UShapeChannel",
     "VentSlots",
     "Wedge",
