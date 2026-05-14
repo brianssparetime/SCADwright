@@ -683,6 +683,34 @@ if __name__ == "__main__":
     run()                                  # replaces render() when using Design
 ```
 
+## Morph (variant-to-variant animation) &nbsp; &nbsp;[→ full](morph.md)
+
+```python
+from scadwright import morph
+
+class BoxAndLid(Design):
+    box = MyBox()
+    lid = MyLid()
+
+    @variant
+    def print(self):
+        return union(self.box, self.lid.rotate([180, 0, 0]).up(2).right(80))
+
+    @variant(default=True)
+    def display(self):
+        return union(self.box, self.lid.up(50))
+
+    assemble = morph(start="print", end="display")
+    # Optional kwargs: order=["base", "body", "lid"], simultaneous=False
+```
+
+```bash
+scadwright morph widget.py assemble out.apng                 # animated PNG (no ffmpeg)
+scadwright morph widget.py assemble out.apng --frames=120    # longer
+scadwright morph widget.py assemble out.scad                 # animated SCAD only
+scadwright morph widget.py assemble frame.png --frames=60    # PNG sequence: frame_0001.png ...
+```
+
 ## Math helpers &nbsp; &nbsp;[→ full](math.md)
 
 ```python

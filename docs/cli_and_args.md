@@ -51,6 +51,32 @@ scadwright render widget.py --variant=print
 
 `render` builds the script to a temp `.scad` file and then invokes `openscad -o OUT.stl TEMPFILE` synchronously to produce an STL (or any format OpenSCAD's `-o` accepts based on extension — `.off`, `.amf`, `.3mf`, etc.). Output streams to stdout/stderr; the command returns OpenSCAD's exit code.
 
+## `scadwright morph`
+
+```
+scadwright morph widget.py assemble out.apng                 # animated PNG
+scadwright morph widget.py assemble out.apng --frames=120    # longer
+scadwright morph widget.py assemble out.scad                 # animated SCAD only
+scadwright morph widget.py assemble frame.png --frames=60    # PNG sequence: frame_0001.png ...
+```
+
+`morph` renders a `Design`'s morph variant (declared with `name = morph(start=..., end=...)`) into an animation file. The output extension picks the encoding:
+
+- **`.apng`** — animated PNG via the vendored encoder (no ffmpeg or Pillow dependency). Renders on GitHub READMEs and every modern browser.
+- **`.scad`** — animated SCAD only; open in OpenSCAD's View → Animate to scrub by hand.
+- **`.png`** — frame sequence; `OUTPUT` is treated as a filename prefix.
+
+Flags:
+
+- `--frames N` — frame count (default `60`).
+- `--fps N` — APNG frame rate (default `30`).
+- `--imgsize WxH` — image dimensions (default `800x600`).
+- `--loop` / `--no-loop` — APNG loop control (default `--loop`).
+- `--keep-frames` — keep intermediate PNG frames after encoding.
+- `--openscad PATH` — OpenSCAD binary path.
+
+See [Morph](morph.md) for the full feature documentation.
+
 ## Script parameters: `arg`
 
 Declare a parameter at the top of your script. The first time you call `arg`, SCADwright parses the command-line arguments and looks up the value:

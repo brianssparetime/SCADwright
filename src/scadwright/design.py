@@ -81,19 +81,55 @@ class Design:
     """Base class for a project-scale design with one or more variants.
 
     Subclasses should declare shared parts as class-body statements and
-    variants as methods decorated with `@variant`.
+    variants as methods decorated with `@variant`. Morphs (declared with
+    ``name = morph(start=..., end=...)`` at class level) register as
+    variants in their own right — they appear in ``__variants__`` so the
+    existing CLI / resolver paths find them, with an extra ``__morphs__``
+    dict that the render path uses to detect and dispatch the morph case.
     """
 
     __variants__: dict[str, _VariantMeta] = {}
+    __morphs__: dict = {}  # dict[str, _MorphSpec]; typed loosely to avoid an import cycle.
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        # Late import: scadwright.api.morph depends only on errors, so this
+        # late-bind sidesteps any potential cycle if morph.py grows imports.
+        from scadwright.api.morph import _MorphSpec
+
         variants: dict[str, _VariantMeta] = {}
+        morphs: dict[str, _MorphSpec] = {}
         for name, value in vars(cls).items():
             meta = getattr(value, "_scadwright_variant", None)
             if meta is not None:
                 variants[name] = meta
+                continue
+            if isinstance(value, _MorphSpec):
+                morphs[name] = value
+        # Synthesize a _VariantMeta for each morph so resolve_variants() finds
+        # it by name. The fields are all-None: resolution / viewpoint context
+        # for a morph is sourced per-end from the underlying variants at
+        # render time, not from this synthesized meta. A name collision with
+        # an @variant method isn't possible here — Python class-body
+        # reassignment already resolved it before __init_subclass__ ran, so
+        # ``vars(cls)`` shows whichever of the two appeared last; the other
+        # never makes it into the namespace.
+        for mname in morphs:
+            variants[mname] = _VariantMeta()
+        # Validate that every morph's start/end references a real variant.
+        # Morphs can't reference other morphs (no chaining in v1).
+        real_variant_names = {n for n, m in variants.items() if n not in morphs}
+        for mname, spec in morphs.items():
+            for role, ref in (("start", spec.start), ("end", spec.end)):
+                if ref not in real_variant_names:
+                    raise ValidationError(
+                        f"{cls.__name__}: morph {mname!r} {role}={ref!r} does not "
+                        f"reference an @variant method. Available: "
+                        f"{sorted(real_variant_names)}"
+                    )
+
         cls.__variants__ = variants
+        cls.__morphs__ = morphs
 
         defaults = [n for n, m in variants.items() if m.default]
         if len(defaults) > 1:
@@ -250,31 +286,60 @@ def _render_one(
     out_override: str | Path | None = None,
     cli_viewpoint: dict | None = None,
 ) -> Path:
-    from contextlib import ExitStack
-
-    from scadwright.animation import viewpoint as _viewpoint
-    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
     from scadwright.render import render  # avoid import cycle
 
+    out_path = _resolve_out_path(design_cls, vname, meta, base_dir, out_override)
+
+    # Morph dispatch: if vname names a morph, route to the morph capture
+    # + build path instead of invoking a method (morphs have no method).
+    if vname in getattr(design_cls, "__morphs__", {}):
+        from scadwright.animation._morph_emit import build_animated_tree
+        from scadwright.animation._morph_walker import walk as _walk_morph
+
+        spec = design_cls.__morphs__[vname]
+        start_meta = design_cls.__variants__[spec.start]
+        end_meta = design_cls.__variants__[spec.end]
+        instance = design_cls()
+
+        # Capture end first, then start. Component _built_tree caches end
+        # up reflecting whichever variant was built most recently —
+        # capturing start last means components carry start's resolution
+        # snapshot through to the final render (matching the documented
+        # "fn inherits from start" rule).
+        tree_end = _capture_variant(design_cls, instance, spec.end, end_meta)
+        tree_start = _capture_variant(design_cls, instance, spec.start, start_meta)
+
+        plan = _walk_morph(tree_start, tree_end, instance)
+        animated = build_animated_tree(plan, spec)
+
+        # Render inside end variant's viewpoint context (so $vpr/$vpt/etc.
+        # in the output SCAD frame the end pose, which is what users
+        # typically want to look at) plus the CLI viewpoint override if
+        # any. Resolution is already pinned via start's components in
+        # cache; we don't re-enter resolution context here.
+        from contextlib import ExitStack
+        from scadwright.animation import viewpoint as _viewpoint
+        with ExitStack() as stack:
+            if _meta_has_viewpoint(end_meta):
+                stack.enter_context(_viewpoint(
+                    rotation=end_meta.rotation, target=end_meta.target,
+                    distance=end_meta.distance, fov=end_meta.fov,
+                ))
+            if cli_viewpoint:
+                stack.enter_context(_viewpoint(**cli_viewpoint))
+            render(animated, out_path)
+        return out_path
+
+    # Regular variant flow.
     instance = design_cls()
     method = getattr(instance, vname)
 
-    # Build the node inside whatever contexts the variant / Design /
-    # CLI request. Variant-level viewpoint is the outer context;
-    # CLI viewpoint (if any) is the inner context so it overrides.
-    has_res = meta.fn is not None or meta.fa is not None or meta.fs is not None
-    has_vp = (meta.rotation is not None or meta.target is not None
-              or meta.distance is not None or meta.fov is not None)
-    has_cli_vp = bool(cli_viewpoint)
-    design_clearances = getattr(design_cls, "clearances", None)
+    from contextlib import ExitStack
+    from scadwright.animation import viewpoint as _viewpoint
+    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
 
-    if out_override is not None:
-        out_path = Path(out_override)
-    else:
-        out_name = meta.out or f"{design_cls.__name__}-{vname}.scad"
-        out_path = Path(out_name)
-        if not out_path.is_absolute() and base_dir is not None:
-            out_path = base_dir / out_path
+    design_clearances = getattr(design_cls, "clearances", None)
+    has_cli_vp = bool(cli_viewpoint)
 
     # Class-attribute Components (the documented Design pattern) cache
     # `_built_tree` across renders. If a prior variant render filled the
@@ -283,11 +348,11 @@ def _render_one(
     _invalidate_design_components(design_cls)
 
     with ExitStack() as stack:
-        if has_res:
+        if _meta_has_resolution(meta):
             stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
         if isinstance(design_clearances, Clearances):
             stack.enter_context(_clearances_ctx(design_clearances))
-        if has_vp:
+        if _meta_has_viewpoint(meta):
             stack.enter_context(_viewpoint(
                 rotation=meta.rotation, target=meta.target,
                 distance=meta.distance, fov=meta.fov,
@@ -305,6 +370,59 @@ def _render_one(
         render(node, out_path)
 
     return out_path
+
+
+def _resolve_out_path(
+    design_cls, vname, meta, base_dir, out_override,
+) -> Path:
+    if out_override is not None:
+        return Path(out_override)
+    out_name = meta.out or f"{design_cls.__name__}-{vname}.scad"
+    out_path = Path(out_name)
+    if not out_path.is_absolute() and base_dir is not None:
+        out_path = base_dir / out_path
+    return out_path
+
+
+def _meta_has_resolution(meta) -> bool:
+    return meta.fn is not None or meta.fa is not None or meta.fs is not None
+
+
+def _meta_has_viewpoint(meta) -> bool:
+    return (meta.rotation is not None or meta.target is not None
+            or meta.distance is not None or meta.fov is not None)
+
+
+def _capture_variant(design_cls, instance, vname, meta):
+    """Invoke variant ``vname`` inside its full context; return the AST
+    and leave Components in the design with caches reflecting this
+    variant's context.
+
+    Used by the morph dispatch to capture start and end trees with their
+    proper resolution / clearance / viewpoint contexts. The variant's
+    method is invoked, eager-built, and discarded as a return value of
+    this helper — only the AST and Component-cache state matter.
+    """
+    from contextlib import ExitStack
+    from scadwright.animation import viewpoint as _viewpoint
+    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
+
+    design_clearances = getattr(design_cls, "clearances", None)
+    _invalidate_design_components(design_cls)
+    with ExitStack() as stack:
+        if _meta_has_resolution(meta):
+            stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
+        if isinstance(design_clearances, Clearances):
+            stack.enter_context(_clearances_ctx(design_clearances))
+        if _meta_has_viewpoint(meta):
+            stack.enter_context(_viewpoint(
+                rotation=meta.rotation, target=meta.target,
+                distance=meta.distance, fov=meta.fov,
+            ))
+        method = getattr(instance, vname)
+        node = method()
+        _force_eager_build(node)
+    return node
 
 
 def run(*, variant: str | None = None, kind: str = "build") -> None:

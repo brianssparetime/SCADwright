@@ -386,6 +386,8 @@ cube(10).rotate([0, 0, t() * 360])    # full turn over the animation
 
 `viewpoint()` emits `$vpr`/`$vpt`/`$vpd`/`$vpf` at the top of the file. Can also be set per-variant via `@variant(rotation=..., distance=...)` kwargs, or from the CLI with `--vpr`/`--vpd` flags.
 
+SCADwright also has a higher-level animation feature with no OpenSCAD equivalent: [morph](morph.md) turns two existing variants (e.g. `print` and `display`) into an animation that interpolates between them. One line in the Design class, one CLI command, produces an APNG suitable for a README.
+
 ### `$children`
 
 See [`children()` and `$children`](#children-and-children) above.

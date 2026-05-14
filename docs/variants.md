@@ -182,6 +182,28 @@ In order:
 4. If multiple are marked `default=True`, error (caught at class-definition time).
 5. Multiple variants, none default: `scadwright build` runs all of them; `scadwright preview` and `scadwright render` error (they need exactly one target).
 
+## Animating between variants
+
+Once you have two variants that contain the same parts in different arrangements, a single line declares an animation that morphs from one to the other:
+
+```python
+class BoxAndLid(Design):
+    box = MyBox()
+    lid = MyLid()
+
+    @variant
+    def print(self):
+        return union(self.box, self.lid.rotate([180, 0, 0]).up(2).right(80))
+
+    @variant(default=True)
+    def display(self):
+        return union(self.box, self.lid.up(50))
+
+    assemble = morph(start="print", end="display")
+```
+
+`scadwright morph widget.py assemble out.apng` writes an animated PNG that swings the lid from its print-bed pose into its seated pose along a hinge-like arc. See [Morph](morph.md) for the full feature page (limitations, ordering knobs, error catalog).
+
 ---
 
 ### Advanced notes

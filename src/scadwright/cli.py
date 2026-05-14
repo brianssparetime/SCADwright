@@ -139,6 +139,51 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_openscad_option(rend)
     _add_build_options(rend)
 
+    morph = sub.add_parser(
+        "morph",
+        help="Render a Design's morph variant into an animation file (.apng / .scad / .png sequence)",
+    )
+    morph.add_argument("script", help="Path to the Python script defining a Design with a morph")
+    morph.add_argument("morph_name", help="Name of the morph class attribute (e.g. 'assemble')")
+    morph.add_argument(
+        "output",
+        help=(
+            "Output file. Extension picks format: .apng (default animated PNG), "
+            ".scad (animated SCAD only, no rendering), .png (frame sequence with "
+            "OUTPUT as the filename prefix)"
+        ),
+    )
+    morph.add_argument(
+        "--frames", type=int, default=60,
+        help="Number of animation frames. Default: 60.",
+    )
+    morph.add_argument(
+        "--fps", type=int, default=30,
+        help="Frame rate for .apng output. Default: 30.",
+    )
+    morph.add_argument(
+        "--imgsize", default="800x600", metavar="WxH",
+        help="Image dimensions, e.g. 1920x1080. Default: 800x600.",
+    )
+    morph.add_argument(
+        "--loop", dest="loop", action="store_true", default=True,
+        help=".apng loop forever (default).",
+    )
+    morph.add_argument(
+        "--no-loop", dest="loop", action="store_false",
+        help=".apng plays once and stops.",
+    )
+    morph.add_argument(
+        "--keep-frames", action="store_true",
+        help="Don't delete intermediate PNG frames after encoding. The temp "
+             "directory path is printed at the end.",
+    )
+    morph.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Show INFO-level scadwright log output.",
+    )
+    _add_openscad_option(morph)
+
     sub.add_parser(
         "lsp",
         help=(
@@ -551,10 +596,220 @@ def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
     return 0
 
 
+def _parse_imgsize(s: str) -> tuple[int, int]:
+    """Parse 'WxH' (or 'W,H') into (width, height)."""
+    sep = "x" if "x" in s else ","
+    parts = s.split(sep)
+    if len(parts) != 2:
+        raise SCADwrightError(
+            f"--imgsize must be 'WxH' (e.g. 1920x1080), got {s!r}"
+        )
+    try:
+        w, h = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise SCADwrightError(
+            f"--imgsize dimensions must be integers, got {s!r}"
+        )
+    if w <= 0 or h <= 0:
+        raise SCADwrightError(
+            f"--imgsize dimensions must be positive, got {w}x{h}"
+        )
+    return w, h
+
+
+_MORPH_OUTPUT_EXTS = {".apng", ".scad", ".png"}
+
+# Common extensions users might reach for that we deliberately don't support.
+# The CLI gives format-specific guidance for these rather than a bare
+# "unknown extension" message — the design choice to avoid ffmpeg / Pillow
+# isn't obvious to someone typing `out.mp4`.
+_MORPH_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".avi", ".mkv"}
+_MORPH_GIF_EXTS = {".gif"}
+
+
+def _morph_extension_error(ext: str) -> SCADwrightError:
+    """Build a format-specific error for unsupported output extensions.
+
+    Video and .gif outputs all need a heavyweight encoder (ffmpeg or Pillow);
+    SCADwright stays dependency-free by exporting APNG for the in-the-box
+    path and PNG sequence for the external-encoder path.
+    """
+    if ext in _MORPH_VIDEO_EXTS:
+        return SCADwrightError(
+            f"morph doesn't support {ext} output directly. SCADwright "
+            f"avoids the ffmpeg dependency to keep installation simple. "
+            f"Two options:\n"
+            f"  - Use APNG (renders on GitHub READMEs, Discord, every "
+            f"modern browser):\n"
+            f"      scadwright morph SCRIPT NAME out.apng\n"
+            f"  - Output a PNG sequence and encode with ffmpeg yourself:\n"
+            f"      scadwright morph SCRIPT NAME frame.png --frames=N\n"
+            f"      ffmpeg -framerate 30 -i frame_%04d.png "
+            f"-c:v libx264 -pix_fmt yuv420p out{ext}"
+        )
+    if ext in _MORPH_GIF_EXTS:
+        return SCADwrightError(
+            f"morph doesn't support .gif output directly. APNG is the "
+            f"in-the-box alternative: same coverage on modern browsers and "
+            f"GitHub READMEs, without .gif's lossy 256-colour quantization "
+            f"(which dithers metallic / anti-aliased 3D renders into noise).\n"
+            f"  scadwright morph SCRIPT NAME out.apng\n"
+            f"If you need .gif specifically for a legacy target, output a "
+            f"PNG sequence and convert with ImageMagick:\n"
+            f"  scadwright morph SCRIPT NAME frame.png --frames=N\n"
+            f"  convert -delay 3 -loop 0 frame_*.png out.gif"
+        )
+    available = ", ".join(sorted(_MORPH_OUTPUT_EXTS))
+    return SCADwrightError(
+        f"unknown output extension {ext!r}; supported: {available}"
+    )
+
+
+def _cmd_morph(args: argparse.Namespace, unknown: list[str]) -> int:
+    """Build a Design's morph and write it to an animation file.
+
+    The OUTPUT extension picks the encoding path:
+        - .scad → stop after building the animated SCAD.
+        - .apng → render frames via OpenSCAD, encode as animated PNG.
+        - .png  → render frames via OpenSCAD, rename into a sequence.
+    """
+    script_path = _common_setup(args, unknown)
+    output_path = Path(args.output)
+    ext = output_path.suffix.lower()
+    if ext not in _MORPH_OUTPUT_EXTS:
+        raise _morph_extension_error(ext)
+    width, height = _parse_imgsize(args.imgsize)
+    if args.frames < 1:
+        raise SCADwrightError(f"--frames must be >= 1, got {args.frames}")
+
+    # Resolve the morph name to a Design class.
+    from scadwright.design import registered_designs
+
+    _, designs = _import_with_fresh_design_registry(script_path)
+    if not designs:
+        raise SCADwrightError(
+            f"{script_path.name} defines no Design subclass; cannot render morph."
+        )
+    morph_owner = None
+    for design_cls in designs:
+        if args.morph_name in getattr(design_cls, "__morphs__", {}):
+            morph_owner = design_cls
+            break
+    if morph_owner is None:
+        available = sorted({
+            n
+            for d in designs
+            for n in getattr(d, "__morphs__", {}).keys()
+        })
+        if available:
+            raise SCADwrightError(
+                f"no morph named {args.morph_name!r}; available: {', '.join(available)}"
+            )
+        raise SCADwrightError(
+            f"no morph named {args.morph_name!r}; {script_path.name} has no "
+            f"morph declarations. Add `name = morph(start='a', end='b')` to "
+            f"a Design subclass."
+        )
+
+    # Build the animated SCAD. For .scad output, write directly to OUTPUT
+    # and stop. Otherwise write to a temp file.
+    from scadwright.design import _render_one
+
+    if ext == ".scad":
+        scad_path = output_path
+        scad_temp_dir = None
+    else:
+        scad_temp_dir = Path(tempfile.mkdtemp(prefix="scadwright-morph-"))
+        scad_path = scad_temp_dir / "morph.scad"
+
+    try:
+        meta = morph_owner.__variants__[args.morph_name]
+        _render_one(
+            morph_owner, args.morph_name, meta,
+            base_dir=script_path.parent,
+            out_override=scad_path,
+        )
+        print(f"wrote {scad_path}", file=sys.stderr)
+
+        if ext == ".scad":
+            return 0
+
+        # Render frames via OpenSCAD --animate.
+        openscad = _resolve_openscad(args.openscad)
+        frames_dir = Path(tempfile.mkdtemp(prefix="scadwright-morph-frames-"))
+        try:
+            frame_prefix = frames_dir / "frame.png"
+            print(
+                f"rendering {args.frames} frames at {width}x{height} via OpenSCAD...",
+                file=sys.stderr,
+            )
+            result = subprocess.run(
+                [
+                    openscad,
+                    "--animate", str(args.frames),
+                    "--imgsize", f"{width},{height}",
+                    "-o", str(frame_prefix),
+                    str(scad_path),
+                ],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                stderr = result.stderr.decode("utf-8", errors="replace")
+                raise SCADwrightError(
+                    f"OpenSCAD exited with code {result.returncode} during "
+                    f"animation render:\n{stderr}"
+                )
+            # Glob and sort. OpenSCAD --animate produces 5-digit zero-padded
+            # filenames (frame00000.png .. frameNNNNN.png), so lex sort
+            # matches numeric order.
+            frames = sorted(frames_dir.glob("frame*.png"))
+            if len(frames) != args.frames:
+                raise SCADwrightError(
+                    f"OpenSCAD wrote {len(frames)} frames; expected {args.frames}. "
+                    f"Files: {[p.name for p in frames]}"
+                )
+
+            if ext == ".apng":
+                from scadwright.animation._apng import write_apng
+                write_apng(
+                    frames, output_path,
+                    fps=args.fps,
+                    loop=0 if args.loop else 1,
+                )
+                print(f"wrote {output_path}", file=sys.stderr)
+            elif ext == ".png":
+                # Sequence output: OUTPUT acts as a prefix.
+                stem = output_path.with_suffix("").name
+                parent = output_path.parent
+                parent.mkdir(parents=True, exist_ok=True)
+                pad_width = max(4, len(str(len(frames))))
+                for i, src in enumerate(frames):
+                    dst = parent / f"{stem}_{i:0{pad_width}d}.png"
+                    shutil.copy2(src, dst)
+                print(
+                    f"wrote {len(frames)} frames to {parent}/{stem}_*.png",
+                    file=sys.stderr,
+                )
+        finally:
+            if args.keep_frames:
+                print(
+                    f"--keep-frames: intermediate PNGs preserved at {frames_dir}",
+                    file=sys.stderr,
+                )
+            else:
+                shutil.rmtree(frames_dir, ignore_errors=True)
+    finally:
+        if scad_temp_dir is not None and not args.keep_frames:
+            shutil.rmtree(scad_temp_dir, ignore_errors=True)
+
+    return 0
+
+
 _DISPATCH = {
     "build": _cmd_build,
     "preview": _cmd_preview,
     "render": _cmd_render,
+    "morph": _cmd_morph,
     "lsp": _cmd_lsp,
     "graph": _cmd_graph,
 }

@@ -153,6 +153,83 @@ class Matrix:
     def is_identity(self) -> bool:
         return self == Matrix.identity()
 
+    def decompose_scale(self) -> Vec3:
+        """Return (sx, sy, sz) — the column norms of the upper-left 3×3.
+
+        For a matrix composed as translate ∘ rotate ∘ scale (uniform or
+        non-uniform), this returns the scale factors. For a pure rotation
+        or pure translation, returns (1, 1, 1). For a matrix containing a
+        mirror, at least one scale will compose with the reflection in a
+        way the column-norm formula can't see: callers needing to reject
+        mirrors should check `determinant() > 0` separately.
+        """
+        e = self.elements
+        sx = math.sqrt(e[0][0] * e[0][0] + e[1][0] * e[1][0] + e[2][0] * e[2][0])
+        sy = math.sqrt(e[0][1] * e[0][1] + e[1][1] * e[1][1] + e[2][1] * e[2][1])
+        sz = math.sqrt(e[0][2] * e[0][2] + e[1][2] * e[1][2] + e[2][2] * e[2][2])
+        return (sx, sy, sz)
+
+    def decompose_rotation_axis_angle(self) -> tuple[Vec3, float]:
+        """Return (axis_unit, angle_degrees) after stripping per-axis scale.
+
+        Builds a rotation matrix from the column-normalized upper-left 3×3,
+        then converts to axis-angle. Assumes the matrix represents a proper
+        rotation (possibly composed with scale) — callers should check
+        `determinant() > 0` to reject mirrors before calling.
+
+        - Identity rotation returns ((1, 0, 0), 0.0).
+        - 180° rotation has a sign-ambiguous axis; this routine returns one
+          of the two valid axes (the one whose largest component is
+          non-negative). Callers needing a particular sign (e.g. the morph
+          z-bias heuristic) must select after the fact.
+        """
+        sx, sy, sz = self.decompose_scale()
+        if sx == 0 or sy == 0 or sz == 0:
+            raise ValueError(
+                f"matrix has a zero-length column; rotation is undefined.\n{self!r}"
+            )
+        e = self.elements
+        r00, r01, r02 = e[0][0] / sx, e[0][1] / sy, e[0][2] / sz
+        r10, r11, r12 = e[1][0] / sx, e[1][1] / sy, e[1][2] / sz
+        r20, r21, r22 = e[2][0] / sx, e[2][1] / sy, e[2][2] / sz
+        trace = r00 + r11 + r22
+        cos_theta = max(-1.0, min(1.0, (trace - 1.0) / 2.0))
+        theta = math.acos(cos_theta)
+        if theta < 1e-9:
+            return ((1.0, 0.0, 0.0), 0.0)
+        if theta > math.pi - 1e-6:
+            # 180° rotation: sin(theta) ≈ 0, the standard formula divides by
+            # zero. Use the diagonal: R = 2·axis⊗axis − I, so
+            # axis[i]² = (R[i][i] + 1) / 2  and  axis[i]·axis[j] = R[i][j] / 2.
+            # Pick the i with the largest diagonal to maximize precision in
+            # the sqrt — the smallest-magnitude axis components fall out as
+            # ratios of larger numbers.
+            diags = (r00, r11, r22)
+            i = max(range(3), key=lambda k: diags[k])
+            sq = max(0.0, (diags[i] + 1.0) / 2.0)
+            ax_i = math.sqrt(sq)
+            row_i = (
+                (r00, r01, r02),
+                (r10, r11, r12),
+                (r20, r21, r22),
+            )[i]
+            axis = [0.0, 0.0, 0.0]
+            axis[i] = ax_i
+            denom = 2.0 * ax_i if ax_i > 0 else 1.0
+            for j in range(3):
+                if j != i:
+                    axis[j] = row_i[j] / denom
+            norm = math.sqrt(sum(a * a for a in axis))
+            if norm > 0:
+                axis = [a / norm for a in axis]
+            return ((axis[0], axis[1], axis[2]), 180.0)
+        # General case.
+        sin_theta = math.sin(theta)
+        ax = (r21 - r12) / (2.0 * sin_theta)
+        ay = (r02 - r20) / (2.0 * sin_theta)
+        az = (r10 - r01) / (2.0 * sin_theta)
+        return ((ax, ay, az), math.degrees(theta))
+
     # --- operations ---
 
     def compose(self, other: "Matrix") -> "Matrix":

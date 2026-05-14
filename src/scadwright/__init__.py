@@ -39,6 +39,7 @@ from scadwright.component import (
 from scadwright.api.args import arg, from_json, parse_args
 from scadwright.api.clearances import DEFAULT_CLEARANCES, Clearances, clearances
 from scadwright.api.fuse_mode import disable_eps_fuse, fuse_enabled
+from scadwright.api.morph import morph
 from scadwright.api.print_stamp import print_stamp
 from scadwright.api.resolution import resolution
 from scadwright.api.text_calibration import text_advance_calibration
@@ -103,6 +104,7 @@ __all__ = [
     "current_variant",
     "register_variants",
     "Variant",
+    "morph",
     # CLI
     "arg",
     "from_json",

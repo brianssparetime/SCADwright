@@ -43,6 +43,7 @@ having to re-write anything.
 - [Components](components.md) — your own parametric parts as classes (replaces OpenSCAD modules)
 - [Specs](specs_and_adjustments.md#your-first-spec) — shared dimensions across parts in a single source of truth
 - [Variants](variants.md) — print vs. display, multi-part assemblies, section views, resolution tiers
+- [Morph](morph.md) — one-line animations between two variants, exported as APNG for READMEs
 - [Shape library](shapes/README.md) — 50+ ready-made Components: tubes, gears, fasteners, bearings, infill panels, and more
 - [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
