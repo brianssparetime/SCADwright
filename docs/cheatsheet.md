@@ -185,11 +185,17 @@ Sweep a 2D profile along a 3D path; build paths from primitives or curves.
 path_extrude(circle_profile(2), helix_path(r=10, pitch=5, turns=3))
 path_extrude(profile, path, closed=True)            # torus-like loop
 
+# Loft: multiple sections + path -> polyhedron interpolating between them.
+loft([circle_profile(5, 24), resample_profile(square_profile(8), 24)],
+     [(0, 0, 0), (0, 0, 10)])                       # round-to-square adapter
+loft(sections, path, smooth=True, smooth_steps=8)   # Catmull-Rom between sections
+
 # Cross-section profiles (return CCW (x, y) point lists):
 circle_profile(r=5, segments=16)
 square_profile(10)                                  # or (w, h); center=False available
 polygon_profile(sides=6, r=5, rotate=0.0)           # n-gon, first vertex on +X
 rounded_rect_profile(x=20, y=10, r=2)               # centered, sharp at r=0
+resample_profile(profile, n=16)                     # evenly-spaced points, for loft
 
 # Path generators (return (x, y, z) point lists):
 helix_path(r=10, pitch=5, turns=3)

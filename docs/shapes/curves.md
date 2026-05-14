@@ -4,8 +4,9 @@ Path generators, cross-section profiles, sweep operations, and Bezier/Catmull-Ro
 
 ```python
 from scadwright.shapes import (
-    path_extrude,
+    path_extrude, loft,
     circle_profile, square_profile, polygon_profile, rounded_rect_profile,
+    resample_profile,
     helix_path, bezier_path, composite_bezier_path, catmull_rom_path, arc_path,
     bezier_2d, catmull_rom_2d,
     Helix, Spring,
@@ -28,6 +29,39 @@ shape = path_extrude(profile, path)
 - `convexity` -- OpenSCAD rendering hint. Default `10`.
 
 When `closed=False`, flat end-caps are generated. The profile is oriented perpendicular to the path using rotation-minimizing frames to avoid twisting.
+
+## `loft(sections, path)`
+
+Sweeps *multiple* 2D cross-sections along a 3D path, producing a polyhedron whose surface interpolates between them. Where `path_extrude` uses one profile, `loft` lets each path point carry its own section — square-to-round adapters, tapered nozzles, organic transitions.
+
+```python
+sections = [
+    circle_profile(5, segments=24),
+    resample_profile(square_profile(8), 24),
+]
+path = [(0, 0, 0), (0, 0, 10)]
+adapter = loft(sections, path)
+```
+
+All sections must have the same number of vertices — use `resample_profile` to bring profiles with different native point counts to a common count. Sections sit perpendicular to the path tangent (same rotation-minimizing frames as `path_extrude`), so on a curved path each section tilts to follow the path direction.
+
+- `sections` -- list of `(x, y)` profiles, one per path point.
+- `path` -- list of `(x, y, z)` positions; `len(path) == len(sections)`.
+- `closed` -- connect last section back to first (ring loft). Default `False`.
+- `smooth` -- when `True`, each vertex's track through the sections is smoothed with a Catmull-Rom spline sampled at `smooth_steps` sub-sections per input segment. Default `False` (ruled — straight triangle strips between adjacent sections). Works with `closed=True` (periodic Catmull-Rom; the smoothed curve wraps cleanly through the loop).
+- `smooth_steps` -- sub-sections per input segment when `smooth=True`. Default `8`.
+- `convexity` -- OpenSCAD rendering hint. Default `10`.
+
+```python
+# Smooth taper through three circles of different radii.
+sections = [circle_profile(5, segments=16),
+            circle_profile(8, segments=16),
+            circle_profile(3, segments=16)]
+path = [(0, 0, 0), (0, 0, 5), (0, 0, 15)]
+shape = loft(sections, path, smooth=True)
+```
+
+End-caps are fan-triangulated from vertex 0 of each end section, same as `path_extrude` — sections should be convex.
 
 ## Cross-section profiles
 
@@ -68,6 +102,21 @@ rounded_rect_profile(20, 10, 2)      # 20 × 10, 2 mm corners
 rounded_rect_profile(20, 10, 0)      # plain rectangle
 ```
 
+### `resample_profile(profile, n)`
+
+Resample a closed 2D profile to `n` evenly-spaced points along its perimeter. Use it to align profiles of different native point counts so they can be lofted together — `loft` requires every section to have the same vertex count.
+
+```python
+sections = [
+    resample_profile(circle_profile(5, segments=24), 16),
+    resample_profile(square_profile(8), 16),
+    resample_profile(polygon_profile(sides=6, r=4), 16),
+]
+shape = loft(sections, [(0, 0, 0), (0, 0, 5), (0, 0, 10)])
+```
+
+The resampled profile preserves the source's perimeter and traces its polygon edges; points are linearly interpolated along the source edges at equal arc-length intervals. The first output point coincides with the first input point.
+
 ## Path generators
 
 Each path generator returns a list of `(x, y, z)` points.
@@ -101,13 +150,15 @@ path = composite_bezier_path([
 
 `composite_bezier_path([segment])` produces the same output as `bezier_path(segment)`.
 
-### `catmull_rom_path(points, steps_per_segment=16)`
+### `catmull_rom_path(points, steps_per_segment=16, closed=False)`
 
 Smooth curve passing through every point:
 
 ```python
 path = catmull_rom_path([(0,0,0), (10,5,0), (20,0,0), (30,5,0)])
 ```
+
+Pass `closed=True` for a periodic loop — the curve wraps from the last point back to the first using actual neighbor tangents (no endpoint mirroring). Closed mode requires at least 3 input points and produces `n * steps_per_segment` samples (no duplicate at the seam).
 
 ### `arc_path(center, radius, start_angle, end_angle, normal=(0,0,1), steps=32)`
 
