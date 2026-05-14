@@ -113,6 +113,43 @@ def test_catmull_rom_too_few_raises():
         catmull_rom_path([(0, 0, 0)])
 
 
+def test_catmull_rom_closed_loop_wraps_cleanly():
+    """closed=True uses wraparound neighbors instead of mirroring at
+    endpoints. Output has n * steps points (no terminal endpoint, since
+    the loop returns to the start). Catmull-Rom passes through every
+    input point exactly at the segment boundaries."""
+    import math
+    # 4 points around a unit circle in XY.
+    pts = [
+        (math.cos(a), math.sin(a), 0)
+        for a in (0, math.pi / 2, math.pi, 3 * math.pi / 2)
+    ]
+    steps = 8
+    path = catmull_rom_path(pts, steps_per_segment=steps, closed=True)
+    # Output has exactly n_segments * steps points (no terminal endpoint).
+    assert len(path) == len(pts) * steps
+    # Catmull-Rom passes through each control point exactly at segment
+    # boundaries. The k-th input point sits at sample index k * steps.
+    for k in range(len(pts)):
+        sample = path[k * steps]
+        expected = pts[k]
+        assert sample == pytest.approx(expected, abs=1e-9), (
+            f"Sample {k * steps} should be input point {k} ({expected}), "
+            f"got {sample}"
+        )
+    # Sanity: the last sample (just before the seam) is close to pts[0]
+    # but not exactly there (it's at t=7/8 of the last segment).
+    last_to_input = math.hypot(
+        path[-1][0] - pts[0][0], path[-1][1] - pts[0][1]
+    )
+    assert 0.1 < last_to_input < 0.3
+
+
+def test_catmull_rom_closed_requires_three_points():
+    with pytest.raises(ValidationError, match="closed=True requires at least 3"):
+        catmull_rom_path([(0, 0, 0), (1, 0, 0)], closed=True)
+
+
 # --- circle_profile ---
 
 

@@ -104,6 +104,213 @@ def path_extrude(
     return _polyhedron(points=points, faces=faces, convexity=convexity)
 
 
+def loft(
+    sections: list[list[tuple[float, float]]],
+    path: list[tuple[float, float, float]],
+    *,
+    closed: bool = False,
+    smooth: bool = False,
+    smooth_steps: int = 8,
+    convexity: int = 10,
+) -> "Node":
+    """Sweep multiple 2D cross-sections along a 3D path, producing a
+    polyhedron whose surface interpolates between adjacent sections.
+
+    ``sections[i]`` is placed at ``path[i]`` perpendicular to the path
+    tangent (rotation-minimizing frame, same as ``path_extrude``). All
+    sections must have the same number of vertices; use
+    ``resample_profile`` to align profiles with different native point
+    counts before lofting.
+
+    Two interpolation modes:
+
+    - **Ruled** (``smooth=False``, default) — triangle strips connect
+      adjacent sections directly. Surface is piecewise-linear between
+      input sections. Use for ducting transitions, square-to-round
+      adapters, faceted tapers.
+    - **Smooth** (``smooth=True``) — each vertex's "track" across the
+      input sections is smoothed with a Catmull-Rom spline sampled at
+      ``smooth_steps`` sub-sections per input segment. Surface is
+      C1-continuous through every input section. Use for organic
+      shapes and smooth transitions. With only 2 input sections, the
+      spline degenerates to a straight line: ``smooth=True`` produces
+      the same shape as ruled, just with more triangles. Pass 3+
+      sections to see actual curvature.
+
+    ``closed=True`` connects the last section back to the first (for
+    ring-shaped lofts). Combination with ``smooth=True`` is not
+    supported in this version — the closed-Catmull-Rom case adds
+    enough complexity to defer until needed.
+
+    End-caps are fan-triangulated from vertex 0 of each end section,
+    matching ``path_extrude``'s convention. Sections should be convex
+    for the cap winding to produce a valid polyhedron.
+    """
+    if len(sections) != len(path):
+        raise ValidationError(
+            f"loft: sections and path must have the same length, "
+            f"got {len(sections)} sections and {len(path)} path points"
+        )
+    if len(sections) < 2:
+        raise ValidationError(
+            f"loft: needs at least 2 sections, got {len(sections)}"
+        )
+    n_profile = len(sections[0])
+    if n_profile < 3:
+        raise ValidationError(
+            f"loft: each section needs at least 3 points, got {n_profile}"
+        )
+    for i, s in enumerate(sections):
+        if len(s) != n_profile:
+            raise ValidationError(
+                f"loft: section {i} has {len(s)} points; expected "
+                f"{n_profile} (matching section 0). Use resample_profile "
+                f"to align profiles with different native point counts."
+            )
+    if smooth and closed and len(sections) < 3:
+        raise ValidationError(
+            f"loft: smooth=True with closed=True needs at least 3 "
+            f"sections (periodic Catmull-Rom can't form a loop from 2 "
+            f"points); got {len(sections)}"
+        )
+    frames = _compute_frames(path, closed)
+    n_path = len(path)
+
+    # Place each section at its frame to get an n_path × n_profile grid
+    # of 3D vertices.
+    sect_points: list[list[tuple[float, float, float]]] = []
+    for i, (origin, normal, binormal) in enumerate(frames):
+        sect = []
+        for px, py in sections[i]:
+            sect.append((
+                origin[0] + px * normal[0] + py * binormal[0],
+                origin[1] + px * normal[1] + py * binormal[1],
+                origin[2] + px * normal[2] + py * binormal[2],
+            ))
+        sect_points.append(sect)
+
+    if smooth:
+        from scadwright.shapes.curves.paths import catmull_rom_path
+        # For each vertex index j, smooth its track across sections.
+        # ``closed=True`` produces a periodic Catmull-Rom (no endpoint
+        # mirroring; tangents come from actual wraparound neighbors).
+        tracks: list[list[tuple[float, float, float]]] = []
+        for j in range(n_profile):
+            track = [sect_points[i][j] for i in range(n_path)]
+            tracks.append(catmull_rom_path(
+                track, steps_per_segment=smooth_steps, closed=closed,
+            ))
+        # All tracks have the same length (controlled by smooth_steps
+        # and n_path). Reassemble into per-sample sections.
+        m_samples = len(tracks[0])
+        sect_points = [
+            [tracks[j][i] for j in range(n_profile)] for i in range(m_samples)
+        ]
+
+    # Flatten to a single points list and build the face list.
+    n_sect = len(sect_points)
+    points = [v for sect in sect_points for v in sect]
+
+    faces = []
+    for i in range(n_sect - 1 if not closed else n_sect):
+        i_next = (i + 1) % n_sect
+        base = i * n_profile
+        base_next = i_next * n_profile
+        for j in range(n_profile):
+            j_next = (j + 1) % n_profile
+            faces.append([
+                base + j,
+                base_next + j,
+                base_next + j_next,
+            ])
+            faces.append([
+                base + j,
+                base_next + j_next,
+                base + j_next,
+            ])
+
+    # End caps (when not closed). Same fan triangulation as path_extrude:
+    # convex section assumed; start cap winds with profile order; end
+    # cap winds reversed.
+    if not closed:
+        for j in range(1, n_profile - 1):
+            faces.append([0, j, j + 1])
+        end_base = (n_sect - 1) * n_profile
+        last = end_base + n_profile - 1
+        for j in range(1, n_profile - 1):
+            faces.append([last, last - j, last - j - 1])
+
+    return _polyhedron(points=points, faces=faces, convexity=convexity)
+
+
+def resample_profile(
+    profile: list[tuple[float, float]],
+    n: int,
+) -> list[tuple[float, float]]:
+    """Resample a closed 2D profile to ``n`` evenly-spaced points along
+    its perimeter.
+
+    Useful for adapting profiles with different native vertex counts so
+    they can be lofted together — ``loft`` requires all sections to have
+    the same point count.
+
+    The original profile's perimeter is preserved within floating-point
+    precision; points are linearly interpolated along each edge of the
+    source polygon, spaced so that consecutive output points have equal
+    arc length.
+
+    Returns ``n`` points counter-clockwise (assuming the input is
+    counter-clockwise). The first output point coincides with the
+    first input point.
+    """
+    if n < 3:
+        raise ValidationError(
+            f"resample_profile: n must be >= 3, got {n}"
+        )
+    if len(profile) < 3:
+        raise ValidationError(
+            f"resample_profile: profile needs at least 3 points, "
+            f"got {len(profile)}"
+        )
+
+    # Edge lengths (closed polygon).
+    n_src = len(profile)
+    edge_lengths = []
+    for i in range(n_src):
+        x0, y0 = profile[i]
+        x1, y1 = profile[(i + 1) % n_src]
+        edge_lengths.append(math.hypot(x1 - x0, y1 - y0))
+    perimeter = sum(edge_lengths)
+    if perimeter == 0:
+        raise ValidationError(
+            "resample_profile: profile has zero perimeter (all points "
+            "coincident); can't resample"
+        )
+
+    # Walk the perimeter in equal arc-length steps. ``edge_start_at`` is
+    # the cumulative arc length at the start of the current edge; advance
+    # past whole edges until the target falls inside one, then linearly
+    # interpolate within it.
+    step = perimeter / n
+    result: list[tuple[float, float]] = []
+    edge_i = 0
+    edge_start_at = 0.0
+    for k in range(n):
+        target = k * step
+        while (edge_i < n_src - 1
+                and edge_start_at + edge_lengths[edge_i] <= target + 1e-12):
+            edge_start_at += edge_lengths[edge_i]
+            edge_i += 1
+        distance_into_edge = target - edge_start_at
+        L = edge_lengths[edge_i]
+        t = distance_into_edge / L if L > 0 else 0.0
+        x0, y0 = profile[edge_i]
+        x1, y1 = profile[(edge_i + 1) % n_src]
+        result.append((x0 + t * (x1 - x0), y0 + t * (y1 - y0)))
+
+    return result
+
+
 def circle_profile(r: float, *, segments: int = 16) -> list[tuple[float, float]]:
     """Generate a circular cross-section profile for use with path_extrude.
 

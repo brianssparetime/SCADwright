@@ -238,42 +238,70 @@ def catmull_rom_path(
     points: list[tuple[float, float, float]],
     *,
     steps_per_segment: int = 16,
+    closed: bool = False,
 ) -> list[tuple[float, float, float]]:
     """Generate a smooth path through a sequence of points using Catmull-Rom splines.
 
-    At least 2 points are required. The curve passes through every point.
-    Endpoint tangents are mirrored from the adjacent segment.
+    The curve passes through every point.
+
+    - Open (default, ``closed=False``): endpoint tangents are mirrored
+      from the adjacent segment. Output has ``(n-1) * steps_per_segment + 1``
+      points. Requires at least 2 input points.
+    - Closed (``closed=True``): the curve wraps around — the last point
+      connects back to the first, with neighbor tangents taken from the
+      actual loop (no mirroring). Output has ``n * steps_per_segment``
+      points; the last sampled point sits just before the first
+      (avoiding the duplicate at the seam). Requires at least 3 input
+      points.
     """
     n = len(points)
-    if n < 2:
-        raise ValidationError(
-            f"catmull_rom_path requires at least 2 points, got {n}"
-        )
-    if n == 2:
-        # Degenerate: straight line.
-        result = []
-        for i in range(steps_per_segment + 1):
-            t = i / steps_per_segment
-            result.append((
-                points[0][0] + t * (points[1][0] - points[0][0]),
-                points[0][1] + t * (points[1][1] - points[0][1]),
-                points[0][2] + t * (points[1][2] - points[0][2]),
-            ))
-        return result
+    if not closed:
+        if n < 2:
+            raise ValidationError(
+                f"catmull_rom_path requires at least 2 points, got {n}"
+            )
+        if n == 2:
+            # Degenerate: straight line.
+            result = []
+            for i in range(steps_per_segment + 1):
+                t = i / steps_per_segment
+                result.append((
+                    points[0][0] + t * (points[1][0] - points[0][0]),
+                    points[0][1] + t * (points[1][1] - points[0][1]),
+                    points[0][2] + t * (points[1][2] - points[0][2]),
+                ))
+            return result
+    else:
+        if n < 3:
+            raise ValidationError(
+                f"catmull_rom_path: closed=True requires at least 3 "
+                f"points, got {n}"
+            )
 
+    n_segments = n if closed else n - 1
     result = []
-    for seg in range(n - 1):
-        # Catmull-Rom uses 4 control points: p_prev, p0, p1, p_next.
-        # Mirror at endpoints.
-        p_prev = points[seg - 1] if seg > 0 else _mirror(points[1], points[0])
-        p0 = points[seg]
-        p1 = points[seg + 1]
-        p_next = points[seg + 2] if seg + 2 < n else _mirror(points[n - 2], points[n - 1])
+    for seg in range(n_segments):
+        if closed:
+            # Wrap neighbors around the loop.
+            p_prev = points[(seg - 1) % n]
+            p0 = points[seg]
+            p1 = points[(seg + 1) % n]
+            p_next = points[(seg + 2) % n]
+        else:
+            # Mirror at endpoints to fabricate phantom neighbors.
+            p_prev = points[seg - 1] if seg > 0 else _mirror(points[1], points[0])
+            p0 = points[seg]
+            p1 = points[seg + 1]
+            p_next = points[seg + 2] if seg + 2 < n else _mirror(points[n - 2], points[n - 1])
 
         steps = steps_per_segment
-        # Skip the last point of each segment except the final one, to
-        # avoid duplicates at segment boundaries.
-        end = steps + 1 if seg == n - 2 else steps
+        # Closed loops: never include the segment endpoint (it's the
+        # next segment's start, or the seam back to point 0). Open
+        # paths: include the final endpoint on the last segment only.
+        if closed:
+            end = steps
+        else:
+            end = steps + 1 if seg == n - 2 else steps
         for i in range(end):
             t = i / steps
             result.append(_catmull_rom_interp(p_prev, p0, p1, p_next, t))

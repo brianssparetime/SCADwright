@@ -12,8 +12,10 @@ from scadwright.shapes.curves.shapes_2d import bezier_2d, catmull_rom_2d
 from scadwright.shapes.curves.sweep import (
     almond_profile,
     circle_profile,
+    loft,
     path_extrude,
     polygon_profile,
+    resample_profile,
     rounded_rect_profile,
     square_profile,
 )
@@ -33,8 +35,10 @@ __all__ = [
     "circle_profile",
     "composite_bezier_path",
     "helix_path",
+    "loft",
     "path_extrude",
     "polygon_profile",
+    "resample_profile",
     "rounded_rect_profile",
     "square_profile",
 ]
