@@ -26,6 +26,21 @@ force_render(complex_part, convexity=5)
 
 This doesn't change the emitted geometry — only OpenSCAD's rendering strategy. The bounding box passes straight through the child.
 
+### What goes inside the wrap
+
+`force_render` is a memoization boundary: everything inside it is part of the cache build, and any edit invalidates the cache. Put stable, expensive geometry inside; keep cheap or iteratively-edited operations outside. Putting frequent differences (engravings, version stamps, sweepable hole arrays) inside the wrap means each preview re-evaluates them as part of the cache; build the cutter outside instead:
+
+```python
+# Cutter inside the cache, dragged into every rebuild:
+result = body.add_text(label="...", relief=-0.3, ...).force_render()
+
+# Cutter outside, body cached on its own:
+cutter = body.text_geometry(label="...", relief=-0.3, ...)
+result = difference(body.force_render(), cutter)
+```
+
+[`text_geometry`](add_text.md#returning-glyph-geometry-without-combining-text_geometry) is the text-specific tool; for hole cutouts and similar, plain `difference()` with the cutter as its own expression does the same job.
+
 ## `echo`
 
 Emits SCAD's `echo(...)` for diagnostic output visible at SCAD render time. Accepts positional and keyword arguments, which map to SCAD's anonymous and named echo arguments.

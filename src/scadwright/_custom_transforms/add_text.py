@@ -493,7 +493,6 @@ def _orient_glyph_matrix(tangent, axial, radial) -> Matrix:
 
 
 def _place_wrapped(
-    host_node,
     anchor,
     lines,
     font_size,
@@ -770,9 +769,7 @@ def _place_wrapped(
             loc=loc,
         ))
 
-    if raised:
-        return union(host_node, *glyph_nodes)
-    return difference(host_node, *glyph_nodes)
+    return glyph_nodes
 
 
 def _emit_wrap_line(
@@ -1069,7 +1066,6 @@ def _emit_wrap_line(
 
 
 def _place_on_rim(
-    host_node,
     anchor,
     lines,
     font_size,
@@ -1190,9 +1186,7 @@ def _place_on_rim(
             loc=loc,
         ))
 
-    if raised:
-        return union(host_node, *glyph_nodes)
-    return difference(host_node, *glyph_nodes)
+    return glyph_nodes
 
 
 def _emit_rim_line(
@@ -1303,8 +1297,7 @@ def _emit_rim_line(
 # --- The transform itself ---
 
 
-@transform("add_text", inline=True, decoration=True)
-def add_text(
+def _collect_glyphs(
     node,
     *,
     label,
@@ -1334,19 +1327,11 @@ def add_text(
     fa=None,
     fs=None,
 ):
-    """Add raised or inset text to a host shape's surface.
+    """Validate kwargs, resolve placement, dispatch to ``_place_*``.
 
-    ``relief`` is signed: positive raises the text outward by that
-    distance, negative cuts it that deep into the host. Placement is
-    chosen by one of three kwarg combinations: ``on=`` for a named
-    anchor (optionally with ``offset=(u, v)`` to nudge in the face's
-    tangent plane), or ``at=(x, y, z)`` + ``normal=(x, y, z)`` for
-    ad-hoc 3D placement. ``angle=`` and ``at_z=`` apply only on
-    cylindrical and conical surfaces (the angular position around the
-    axis and the axial offset from mid-wall). ``text_orient=`` controls
-    glyph orientation on conical surfaces (``"axial"`` keeps glyphs
-    vertical; ``"slant"`` tilts them with the cone). See
-    ``docs/add_text.md`` for the full reference.
+    Returns the placed glyph subtree(s) as ``list[Node]`` in the host's
+    coordinate frame, uncombined. The caller (``add_text`` or
+    ``text_geometry``) decides whether to combine with the host.
     """
     if not isinstance(label, str):
         raise ValidationError(
@@ -1506,7 +1491,7 @@ def add_text(
                 "fn": fn, "fa": fa, "fs": fs,
             }
             return _place_on_rim(
-                node, placement_anchor,
+                placement_anchor,
                 lines, font_size, relief,
                 angle, at_radial,
                 halign, valign, line_spacing,
@@ -1514,7 +1499,7 @@ def add_text(
             )
 
         return _place_planar(
-            node, placement_anchor, face_dims,
+            placement_anchor, face_dims,
             lines, font_size, relief,
             font, halign, valign, spacing, line_spacing,
             direction, language, script,
@@ -1543,7 +1528,7 @@ def add_text(
             "fn": fn, "fa": fa, "fs": fs,
         }
         return _place_wrapped(
-            node, placement_anchor,
+            placement_anchor,
             lines, font_size, relief,
             angle, at_z,
             halign, valign, line_spacing,
@@ -1558,8 +1543,145 @@ def add_text(
     )
 
 
+@transform("add_text", inline=True, decoration=True)
+def add_text(
+    node,
+    *,
+    label,
+    relief,
+    font_size,
+    on=None,
+    at=None,
+    normal=None,
+    offset=None,
+    angle=None,
+    at_z=None,
+    at_radial=None,
+    text_curvature=None,
+    text_orient="axial",
+    text_dir="circumferential",
+    rotate_glyphs=False,
+    flip=False,
+    font=None,
+    halign="center",
+    valign=_UNSET,
+    spacing=1.0,
+    line_spacing=1.2,
+    direction="ltr",
+    language="en",
+    script="latin",
+    fn=None,
+    fa=None,
+    fs=None,
+):
+    """Add raised or inset text to a host shape's surface.
+
+    ``relief`` is signed: positive raises the text outward by that
+    distance, negative cuts it that deep into the host. Placement is
+    chosen by one of three kwarg combinations: ``on=`` for a named
+    anchor (optionally with ``offset=(u, v)`` to nudge in the face's
+    tangent plane), or ``at=(x, y, z)`` + ``normal=(x, y, z)`` for
+    ad-hoc 3D placement. ``angle=`` and ``at_z=`` apply only on
+    cylindrical and conical surfaces (the angular position around the
+    axis and the axial offset from mid-wall). ``text_orient=`` controls
+    glyph orientation on conical surfaces (``"axial"`` keeps glyphs
+    vertical; ``"slant"`` tilts them with the cone). See
+    ``docs/add_text.md`` for the full reference.
+
+    To get the placed glyph geometry without combining it with the host
+    (for use as a cutter, or to apply the difference outside a
+    ``force_render`` scope), use ``text_geometry`` with the same kwargs.
+    """
+    glyphs = _collect_glyphs(
+        node,
+        label=label, relief=relief, font_size=font_size,
+        on=on, at=at, normal=normal, offset=offset, angle=angle,
+        at_z=at_z, at_radial=at_radial,
+        text_curvature=text_curvature, text_orient=text_orient,
+        text_dir=text_dir, rotate_glyphs=rotate_glyphs, flip=flip,
+        font=font, halign=halign, valign=valign,
+        spacing=spacing, line_spacing=line_spacing,
+        direction=direction, language=language, script=script,
+        fn=fn, fa=fa, fs=fs,
+    )
+    if relief > 0:
+        return union(node, *glyphs)
+    return difference(node, *glyphs)
+
+
+@transform("text_geometry", inline=True)
+def text_geometry(
+    node,
+    *,
+    label,
+    relief,
+    font_size,
+    on=None,
+    at=None,
+    normal=None,
+    offset=None,
+    angle=None,
+    at_z=None,
+    at_radial=None,
+    text_curvature=None,
+    text_orient="axial",
+    text_dir="circumferential",
+    rotate_glyphs=False,
+    flip=False,
+    font=None,
+    halign="center",
+    valign=_UNSET,
+    spacing=1.0,
+    line_spacing=1.2,
+    direction="ltr",
+    language="en",
+    script="latin",
+    fn=None,
+    fa=None,
+    fs=None,
+):
+    """Return placed text-glyph geometry in the host's coordinate frame
+    *without* combining it with the host.
+
+    Same kwargs as ``add_text``. The host is consumed for anchor resolution
+    only; the returned subtree is just the glyph mesh(es). The sign of
+    ``relief`` still chooses the extrusion direction and overshoot exactly
+    as in ``add_text``: negative produces a cutter that overshoots both
+    sides of the surface (compose with ``difference``), positive produces
+    a raised mesh that overshoots into the host (compose with ``union``).
+
+    The motivating use is pulling text cutters out of a ``force_render``
+    scope so the cached subtree doesn't have to re-evaluate per-glyph
+    differences::
+
+        smooth = body.force_render()
+        cutter = body.text_geometry(label="HELLO", relief=-0.3, on="top",
+                                    font_size=6)
+        result = difference(smooth, cutter)
+
+    Validation messages reference ``add_text`` because the validation
+    logic is shared. See ``docs/add_text.md`` for the full kwarg
+    reference and ``docs/debug.md`` for the force_render pattern.
+    """
+    glyphs = _collect_glyphs(
+        node,
+        label=label, relief=relief, font_size=font_size,
+        on=on, at=at, normal=normal, offset=offset, angle=angle,
+        at_z=at_z, at_radial=at_radial,
+        text_curvature=text_curvature, text_orient=text_orient,
+        text_dir=text_dir, rotate_glyphs=rotate_glyphs, flip=flip,
+        font=font, halign=halign, valign=valign,
+        spacing=spacing, line_spacing=line_spacing,
+        direction=direction, language=language, script=script,
+        fn=fn, fa=fa, fs=fs,
+    )
+    if len(glyphs) == 1:
+        return glyphs[0]
+    return union(*glyphs)
+
+
 def _place_planar(
-    node, placement_anchor, face_dims,
+    placement_anchor, face_dims,
     lines, font_size, relief,
     font, halign, valign, spacing, line_spacing,
     direction, language, script,
@@ -1630,7 +1752,4 @@ def _place_planar(
     else:
         shift = (pos[0] + eps * n[0], pos[1] + eps * n[1], pos[2] + eps * n[2])
     placed = Translate(v=shift, child=rotated, source_location=loc)
-
-    if raised:
-        return union(node, placed)
-    return difference(node, placed)
+    return [placed]

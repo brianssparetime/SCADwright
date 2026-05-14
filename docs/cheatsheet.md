@@ -281,6 +281,15 @@ uses a `0.6 * font_size` heuristic by default. Install
 freetype-py and proportional spacing; scope `with sw.text_advance_calibration(...)`
 to tighten or loosen tracking.
 
+`.text_geometry(...)` takes the same kwargs but returns just the placed
+glyph mesh (no host combine) — for cutter use or pulling the difference
+out of a `force_render` scope:
+
+```python
+cutter = body.text_geometry(label="LABEL", on="top", relief=-0.3, font_size=4)
+result = difference(body.force_render(), cutter)   # cache smooth body, diff outside
+```
+
 ## Preview modifiers &nbsp; &nbsp;[→ full](transformations.md#preview-modifiers)
 
 Affect preview only, not rendered output.

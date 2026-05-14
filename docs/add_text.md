@@ -383,6 +383,19 @@ For text on a named face whose size scadwright can determine, you get a **warnin
 
 ## Advanced notes
 
+### Returning glyph geometry without combining: `text_geometry`
+
+`text_geometry` takes the same arguments as `add_text` but returns the placed glyph subtree without combining it with the host. The host is consumed for anchor resolution only.
+
+```python
+cutter = plate.text_geometry(label="X", on="top", relief=-0.3, font_size=4)
+result = difference(plate, cutter)
+```
+
+The sign of `relief` still controls extrusion direction and overshoot, so use a negative value with `difference` and a positive value with `union`.
+
+The motivating case is pulling glyph diffs out of a `force_render` scope so they don't sit inside the cached subtree — see [docs/debug.md](debug.md#what-goes-inside-the-wrap). Unlike `add_text`, `text_geometry` is not a decoration transform: chaining `.attach()` to its result targets the glyph mesh, not the host's anchors.
+
 ### Glyph orientation with `text_dir="axial"` and multi-line
 
 When `text_dir="axial"` (the line runs along the surface axis) and the label is multi-line, `halign` and `valign` shift roles:
