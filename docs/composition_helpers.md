@@ -6,7 +6,8 @@ Imports used on this page:
 
 ```python
 from scadwright.composition_helpers import (
-    linear_copy, rotate_copy, mirror_copy, multi_hull, sequential_hull,
+    linear_copy, rotate_copy, mirror_copy, hole_grid,
+    multi_hull, sequential_hull,
 )
 ```
 
@@ -98,6 +99,40 @@ cube(2).array(count=3, spacing=5, axis=[1, 1, 0])   # diagonal
 - `axis` — `"x"`, `"y"`, `"z"` (case-insensitive) or an explicit 3-vector.
 
 For more complex spacing (per-step deltas that aren't a simple axis × scalar), use `linear_copy` directly.
+
+## `hole_grid`
+
+Replicate a hole cutter in a `rows × cols` rectangular grid. The grid spans `(rows - 1) * row_spacing` along the row direction (Y) and `(cols - 1) * col_spacing` along the column direction (X). By default it centers on the origin; pass `center=False` to place the bottom-left hole at the origin.
+
+```python
+from scadwright.composition_helpers import hole_grid
+from scadwright.shapes import clearance_hole
+
+# Flight-controller stack mount (4 holes in a 30.5×30.5 mm square).
+plate = cube([60, 60, 3])
+cutter = hole_grid(
+    rows=2, cols=2,
+    row_spacing=30.5, col_spacing=30.5,
+    hole=clearance_hole("M3", depth=5),
+)
+result = difference(plate, cutter)
+
+# A 3×4 vent array on a panel.
+vents = hole_grid(
+    rows=3, cols=4,
+    row_spacing=10, col_spacing=10,
+    hole=cylinder(h=3, r=2.5),
+)
+```
+
+**Parameters (all kwarg-only):**
+
+- `rows`, `cols` — positive integers.
+- `row_spacing`, `col_spacing` — distance between adjacent holes along each axis.
+- `hole` — any cutter shape: `clearance_hole("M3", ...)`, a `Counterbore`, a plain `cylinder`, or a custom node.
+- `center` — when `True` (default), the grid is centered on the origin. When `False`, the bottom-left hole sits at the origin.
+
+Common patterns: flight-controller stack holes (16×16, 20×20, 25.5×25.5, 30.5×30.5 mm), VESA monitor-mount holes, vent arrays, rectangular bolt grids. For irregular hole positions, use `linear_copy` directly or hand-translate each hole.
 
 ## `multi_hull`
 

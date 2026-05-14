@@ -29,7 +29,7 @@ from scadwright.transforms import (
 from scadwright.extrusions import linear_extrude, rotate_extrude
 from scadwright.composition_helpers import (
     linear_copy, rotate_copy, mirror_copy, halve,
-    multi_hull, sequential_hull, pack_on_bed,
+    hole_grid, multi_hull, sequential_hull, pack_on_bed,
 )
 from scadwright.shapes import (
     Tube, Funnel, RoundedBox, UShapeChannel, FilletRing,
@@ -150,6 +150,7 @@ union(a, [b, c], d)        # iterables flatten one level
 ```python
 cube(5).linear_copy([10, 0, 0], n=5)                # 5 copies along X
 cube(5).array(count=3, spacing=10, axis="y")        # simpler alias
+hole_grid(rows=2, cols=2, row_spacing=30.5, col_spacing=30.5, hole=clearance_hole("M3", depth=5))   # 2D grid of holes (centered)
 shape.rotate_copy(angle=60, n=6, axis=[0, 0, 1])    # radial array
 rotate_copy(60, shape1, shape2, n=6)                # standalone: shapes positional, n kwarg
 shape.mirror_copy(normal=[1,0,0])                   # chained; also accepts positional vector
@@ -566,6 +567,9 @@ Rack(module=2, teeth=10, length=63, h=5)          # linear gear
 Bearing.of("608")                                 # fit-check dummy; publishes .id, .od, .width
 Bearing(spec=BearingSpec(id=10, od=30, width=9))  # custom
 GT2Pulley(teeth=20, bore_d=5, belt_width=6)
+TubeClamp(tube_d=12, clamp_length=20, wall_thk=3, bolt_offset=5)   # round saddle clamp
+TubeClamp(tube_w=10, clamp_length=20, wall_thk=3, bolt_offset=5, style="split")  # square split clamp
+Grommet(plate_thk=1.6, plate_hole_d=4, flange_d=6)                  # vibration sleeve; +groove_depth/_width for TPU
 
 # Curves: see the "Curves and sweep" section above for path_extrude,
 # Helix, Spring, profile + path generators, and bezier_2d / catmull_rom_2d.
