@@ -806,6 +806,23 @@ scadwright lsp                                              # language server (e
 
 LSP integration: `pip install 'scadwright[lsp]'`, then point your editor at `scadwright lsp`. Full setup → [lsp_setup.md](lsp_setup.md).
 
+## Print provenance
+
+```python
+from scadwright import print_stamp
+# Short SHA of the current HEAD; raises if the tree has uncommitted changes
+# so the stamp on the printed part always resolves back via
+#   git show <sha>:path/to/source.py
+stamp = print_stamp()                          # e.g. "a1b2c3d"
+stamp = print_stamp(length=10)                 # longer SHA
+stamp = print_stamp(allow_dirty=True)          # "a1b2c3d-dirty" if tree differs from HEAD
+
+# Emboss it on the part:
+MODEL = part.add_text(label=print_stamp(), relief="inset", font_size=3, anchor=Anchor.BOTTOM)
+```
+
+Tracked-file dirty check only — untracked build artifacts (`.scad`, `.stl`) don't block. Raises `SCADwrightError` if `git` is missing, the cwd isn't a working tree, or the tree is dirty without `allow_dirty=True`.
+
 ## Errors &nbsp; &nbsp;[→ full](errors_and_logging.md)
 
 ```python

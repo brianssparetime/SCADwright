@@ -39,6 +39,7 @@ from scadwright.component import (
 from scadwright.api.args import arg, from_json, parse_args
 from scadwright.api.clearances import DEFAULT_CLEARANCES, Clearances, clearances
 from scadwright.api.fuse_mode import disable_eps_fuse, fuse_enabled
+from scadwright.api.print_stamp import print_stamp
 from scadwright.api.resolution import resolution
 from scadwright.api.text_calibration import text_advance_calibration
 from scadwright.api.tolerances import (
@@ -106,6 +107,8 @@ __all__ = [
     "arg",
     "from_json",
     "parse_args",
+    # Print provenance
+    "print_stamp",
     # Logging
     "get_logger",
     "set_verbose",
