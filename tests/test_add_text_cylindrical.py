@@ -156,8 +156,8 @@ def test_angle_string_aliases(alias, expected_angle_deg):
     scad = emit_str(p)
     # Glyph should be placed at (R*cos(θ), R*sin(θ), z_mid).
     th = math.radians(expected_angle_deg)
-    expected_x = 9.99 * math.cos(th)  # R - eps for raised
-    expected_y = 9.99 * math.sin(th)
+    expected_x = 9.5 * math.cos(th)  # R - host_eps for raised
+    expected_y = 9.5 * math.sin(th)
     # Find the translate; the values appear in the SCAD as floats.
     # Use approximate matching by checking the expected position is in the SCAD.
     assert f"{expected_x:.5g}" in scad.replace(",", "") or \
@@ -171,8 +171,8 @@ def test_angle_numeric():
     )
     scad = emit_str(p)
     th = math.radians(37.5)
-    expected_x = 9.99 * math.cos(th)
-    expected_y = 9.99 * math.sin(th)
+    expected_x = 9.5 * math.cos(th)
+    expected_y = 9.5 * math.sin(th)
     # Just check the SCAD emits without error and contains the text.
     assert '"X"' in scad
 

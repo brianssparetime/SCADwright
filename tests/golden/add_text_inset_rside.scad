@@ -3,9 +3,9 @@
 
 difference() {
     cube([30, 20, 10], center=false);
-    translate([30.01, 10, 5]) {
+    translate([30.5, 10, 5]) {
         rotate(a=90, v=[0, -1, 0]) {
-            linear_extrude(height=0.32, center=false) {
+            linear_extrude(height=0.81, center=false) {
                 text("v1.0", size=4, halign="center", valign="center");
             }
         }

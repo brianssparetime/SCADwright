@@ -372,8 +372,8 @@ def test_offset_on_rside_shifts_yz():
         label="X", relief=0.4, on="rside", font_size=4, offset=(2, 1),
     ))
     # rside face center: (20, 10, 5). After offset=(2,1) with (u=-Y, v=+Z) frame:
-    # translate = (20 - eps, 10 + 2*-1, 5 + 1*1) = (19.99, 8, 6).
-    assert "19.99, 8, 6" in scad
+    # translate = (20 - host_eps, 10 + 2*-1, 5 + 1*1) = (19.5, 8, 6).
+    assert "19.5, 8, 6" in scad
 
 
 def test_offset_on_front_shifts_xz():
@@ -382,8 +382,8 @@ def test_offset_on_front_shifts_xz():
         label="X", relief=0.4, on="front", font_size=4, offset=(2, 1),
     ))
     # front face center: (10, 0, 5) with normal (0, -1, 0).
-    # offset=(2, 1) → (+2 X, +1 Z). Position: (10 + 2, 0 + eps, 5 + 1) = (12, 0.01, 6).
-    assert "12, 0.01, 6" in scad
+    # offset=(2, 1) → (+2 X, +1 Z). Position: (10+2, 0+host_eps, 5+1) = (12, 0.5, 6).
+    assert "12, 0.5, 6" in scad
 
 
 def test_offset_zero_is_noop():

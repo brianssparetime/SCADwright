@@ -64,6 +64,28 @@ POINT_IN_BBOX_TOL = 1e-6
 # surface, etc.). See ``Anchor._validate_geometry``.
 ANCHOR_GEOMETRY_TOL = 1e-3
 
+# Text-cutter host-side overshoot. ``add_text`` / ``text_geometry`` shifts
+# the cutter's host-facing face this far past the host's nominal surface
+# so CGAL's difference (inset) or union (raised) has clean clearance even
+# after OpenSCAD polygonizes a curved host. Polygon discrepancy from the
+# ideal cylinder/cone is ``R · (1 − cos(π/fn))`` — typically tens to
+# hundreds of microns for reasonable ``$fn`` and part sizes — so 0.01 mm
+# (the original placement-eps value) was reliably too small and produced
+# non-manifold STL on curved hosts. 0.5 mm comfortably exceeds polygon
+# discrepancy for ``$fn ≥ 24`` at radii up to ~40 mm and ``$fn ≥ 48`` at
+# radii up to ~150 mm, while staying below the typical minimum FDM wall
+# thickness (the constraint for raised relief, whose cutter base is
+# buried this far inside host material).
+TEXT_HOST_OVERSHOOT = 0.5
+
+# Text-cutter far-side overshoot. Inset cutters extend this much past the
+# requested relief depth so the cut floor doesn't end up coplanar with a
+# host inner surface when wall thickness happens to equal ``abs_relief``.
+# Small enough that the over-depth (≤ 0.01 mm) is below FDM print
+# resolution. Only used in the inset path; raised has no far-side eps
+# (the visible tip sits exactly at the requested relief height).
+TEXT_FAR_OVERSHOOT = 0.01
+
 
 # --- User-tunable values -----------------------------------------------------
 

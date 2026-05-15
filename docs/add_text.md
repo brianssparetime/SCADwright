@@ -396,6 +396,14 @@ The sign of `relief` still controls extrusion direction and overshoot, so use a 
 
 The motivating case is pulling glyph diffs out of a `force_render` scope so they don't sit inside the cached subtree — see [docs/debug.md](debug.md#what-goes-inside-the-wrap). Unlike `add_text`, `text_geometry` is not a decoration transform: chaining `.attach()` to its result targets the glyph mesh, not the host's anchors.
 
+### Cutter overshoot
+
+The cutter that does the union (raised) or difference (inset) extends past the host's nominal surface by `0.5 mm` on the host-facing side. OpenSCAD polygonizes curved hosts before CGAL sees them, and the resulting polygon facets sit `R · (1 − cos(π/fn))` inside the ideal cylinder — tens to hundreds of microns for typical `$fn` and part sizes. Without the overshoot, the cutter's host-facing face lands inside the polygon mesh and CGAL produces degenerate triangles that read as non-manifold edges in the exported STL. The overshoot is invisible: for inset relief it sits outside the host and gets clipped, for raised relief it sits inside host material and gets absorbed by the union.
+
+For raised relief, the cutter's base is buried inside the wall by the overshoot amount, so the host needs at least `0.5 mm` of material thickness in the relief direction. Typical FDM walls (0.8 mm+) clear this comfortably; sub-`0.5 mm` walls combined with raised text would put the cutter's base through the opposite side of the wall.
+
+The inset path also extends past the requested cut depth by a small `0.01 mm`, so a wall whose thickness exactly equals `relief` doesn't produce a coplanar floor face. Cut depth is `relief + 0.01 mm` in practice — well below print resolution.
+
 ### Glyph orientation with `text_dir="axial"` and multi-line
 
 When `text_dir="axial"` (the line runs along the surface axis) and the label is multi-line, `halign` and `valign` shift roles:

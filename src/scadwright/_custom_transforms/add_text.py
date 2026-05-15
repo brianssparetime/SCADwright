@@ -20,6 +20,7 @@ from scadwright.anchor import (
     FACE_NAMES,
     get_node_anchors,
 )
+from scadwright.api.tolerances import TEXT_FAR_OVERSHOOT, TEXT_HOST_OVERSHOOT
 from scadwright.ast.base import SourceLocation
 from scadwright.ast.transforms import MultMatrix, Rotate, Translate
 from scadwright.bbox import _text_bbox_estimate, bbox as _bbox
@@ -31,11 +32,6 @@ from scadwright.primitives import text as _text_factory
 
 
 _log = get_logger("scadwright.add_text")
-
-# Overshoot used to avoid coincident-surface artifacts: extends a raised
-# prism slightly into the host (clean union seam) and overshoots a cutter
-# both above and below the surface (clean difference cut).
-_PLACEMENT_EPS = 0.01
 
 # Sentinel used as the default for ``valign`` so we can resolve it
 # context-dependently (curved/rim → "baseline", flat planar → "center")
@@ -585,8 +581,10 @@ def _place_wrapped(
 
     raised = relief > 0
     abs_relief = abs(relief)
-    eps = _PLACEMENT_EPS
-    extrude_h = abs_relief + (eps if raised else 2 * eps)
+    # See ``TEXT_HOST_OVERSHOOT`` in api/tolerances.py for the rationale.
+    host_eps = TEXT_HOST_OVERSHOOT
+    far_eps = TEXT_FAR_OVERSHOOT
+    extrude_h = abs_relief + host_eps + (0.0 if raised else far_eps)
 
     # Axis origin uses the mid-wall radius of the host (constant across lines)
     # so the per-line glyph positions all reference the same centerline.
@@ -746,7 +744,8 @@ def _place_wrapped(
             line_at_z=line_at_z,
             font_size=font_size,
             extrude_h=extrude_h,
-            eps=eps,
+            host_eps=host_eps,
+            far_eps=far_eps,
             abs_relief=abs_relief,
             raised=raised,
             base_angle_rad=line_angle_rad,
@@ -775,7 +774,7 @@ def _place_wrapped(
 def _emit_wrap_line(
     *,
     line, line_radius, line_at_z,
-    font_size, extrude_h, eps, abs_relief, raised,
+    font_size, extrude_h, host_eps, far_eps, abs_relief, raised,
     base_angle_rad, halign,
     axis, anchor_normal, axis_origin, s_outward,
     is_conical, text_orient,
@@ -1055,7 +1054,13 @@ def _emit_wrap_line(
             source_location=loc,
         )
 
-        d = s_outward * char_radius - eps - (abs_relief if not raised else 0.0)
+        # Base offset from the host surface, toward wall material:
+        # raised → host_eps (so the prism's bottom is buried for clean union),
+        # inset  → abs_relief + far_eps (so the cut floor sits the full relief
+        # depth plus a tiny extra below the surface). Multiplied by s_outward
+        # via the radial direction in glyph_pos below.
+        base_offset = host_eps if raised else (abs_relief + far_eps)
+        d = s_outward * char_radius - base_offset
         glyph_pos = (
             axis_origin[0] + d * radial[0] + char_at_z * axis[0],
             axis_origin[1] + d * radial[1] + char_at_z * axis[1],
@@ -1136,8 +1141,10 @@ def _place_on_rim(
 
     raised = relief > 0
     abs_relief = abs(relief)
-    eps = _PLACEMENT_EPS
-    extrude_h = abs_relief + (eps if raised else 2 * eps)
+    # See ``TEXT_HOST_OVERSHOOT`` in api/tolerances.py for the rationale.
+    host_eps = TEXT_HOST_OVERSHOOT
+    far_eps = TEXT_FAR_OVERSHOOT
+    extrude_h = abs_relief + host_eps + (0.0 if raised else far_eps)
 
     if len(lines) == 1:
         line_y_offsets = [0.0]
@@ -1173,7 +1180,8 @@ def _place_on_rim(
             line_path_radius=line_path_radius,
             font_size=font_size,
             extrude_h=extrude_h,
-            eps=eps,
+            host_eps=host_eps,
+            far_eps=far_eps,
             raised=raised,
             base_angle_rad=base_angle_rad,
             halign=halign,
@@ -1192,7 +1200,7 @@ def _place_on_rim(
 def _emit_rim_line(
     *,
     line, line_path_radius,
-    font_size, extrude_h, eps, raised,
+    font_size, extrude_h, host_eps, far_eps, raised,
     base_angle_rad, halign,
     face_normal, rim_center, u_axis, rotation_axis,
     text_kwargs, label_repr, loc,
@@ -1284,7 +1292,10 @@ def _emit_rim_line(
             source_location=loc,
         )
 
-        normal_shift = -eps if raised else eps
+        # Raised: shift the prism's base into the host by host_eps (buried
+        # for clean union). Inset: shift the prism's top above the rim by
+        # host_eps (cutter clears the surface for a clean difference).
+        normal_shift = -host_eps if raised else host_eps
         glyph_pos = (
             rim_center[0] + line_path_radius * radial[0] + normal_shift * face_normal[0],
             rim_center[1] + line_path_radius * radial[1] + normal_shift * face_normal[1],
@@ -1738,8 +1749,10 @@ def _place_planar(
 
     raised = relief > 0
     abs_relief = abs(relief)
-    eps = _PLACEMENT_EPS
-    extrude_h = abs_relief + (eps if raised else 2 * eps)
+    # See ``TEXT_HOST_OVERSHOOT`` in api/tolerances.py for the rationale.
+    host_eps = TEXT_HOST_OVERSHOOT
+    far_eps = TEXT_FAR_OVERSHOOT
+    extrude_h = abs_relief + host_eps + (0.0 if raised else far_eps)
     extruded = linear_extrude(text_2d, height=extrude_h)
 
     n = placement_anchor.normal
@@ -1747,9 +1760,13 @@ def _place_planar(
     rotated = _rotate_z_to(extruded, target, loc)
 
     pos = placement_anchor.position
+    # Raised: shift base INTO the host by host_eps so the prism's bottom
+    # face is buried for a clean union seam. Inset: shift base OUTWARD by
+    # host_eps so the prism's top face clears the host's polygonized
+    # surface for a clean difference cut.
     if raised:
-        shift = (pos[0] - eps * n[0], pos[1] - eps * n[1], pos[2] - eps * n[2])
+        shift = (pos[0] - host_eps * n[0], pos[1] - host_eps * n[1], pos[2] - host_eps * n[2])
     else:
-        shift = (pos[0] + eps * n[0], pos[1] + eps * n[1], pos[2] + eps * n[2])
+        shift = (pos[0] + host_eps * n[0], pos[1] + host_eps * n[1], pos[2] + host_eps * n[2])
     placed = Translate(v=shift, child=rotated, source_location=loc)
     return [placed]

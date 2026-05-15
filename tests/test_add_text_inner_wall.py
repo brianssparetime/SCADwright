@@ -75,33 +75,33 @@ def _first_translate_vec(scad: str) -> tuple[float, float, float]:
 
 
 def test_tube_inner_raised_at_plus_x_meridian():
-    """Glyph base at (id/2 + eps, 0, h/2) for raised on inner +X meridian."""
+    """Glyph base at (id/2 + host_eps, 0, h/2) for raised on inner +X."""
     p = Tube(h=20, od=20, thk=2).add_text(
         label="X", relief=0.4, on="inner_wall", font_size=4,
     )
     scad = emit_str(p)
-    # id/2 = 8, eps = 0.01 → translate at (8.01, 0, 10).
-    assert "8.01, 0, 10" in scad
+    # id/2 = 8, host_eps = 0.5 → translate at (8.5, 0, 10).
+    assert "8.5, 0, 10" in scad
 
 
 def test_tube_inner_inset_at_plus_x_meridian():
-    """Glyph base at (id/2 + relief + eps, 0, h/2) for inset on inner +X."""
+    """Glyph base at (id/2 + relief + far_eps, 0, h/2) for inset on inner +X."""
     p = Tube(h=20, od=20, thk=2).add_text(
         label="X", relief=-0.3, on="inner_wall", font_size=4,
     )
     scad = emit_str(p)
-    # id/2 + relief + eps = 8 + 0.3 + 0.01 = 8.31
+    # id/2 + relief + far_eps = 8 + 0.3 + 0.01 = 8.31
     assert "8.31, 0, 10" in scad
 
 
 def test_tube_inner_at_plus_y_meridian():
-    """Glyph at +Y meridian: position (0, id/2 + eps, h/2)."""
+    """Glyph at +Y meridian: position (0, id/2 + host_eps, h/2)."""
     p = Tube(h=20, od=20, thk=2).add_text(
         label="X", relief=0.4, on="inner_wall", font_size=4, angle="+y",
     )
     scad = emit_str(p)
-    # Some near-zero floats may format as 6.x e-16 but the y component is 8.01.
-    assert ", 8.01, 10" in scad
+    # Some near-zero floats may format as 6.x e-16 but the y component is 8.5.
+    assert ", 8.5, 10" in scad
 
 
 def test_funnel_inner_at_mid_wall():
@@ -109,8 +109,8 @@ def test_funnel_inner_at_mid_wall():
     f = Funnel(h=20, bot_od=20, top_od=10, thk=2)  # bot_id=16, top_id=6
     p = f.add_text(label="X", relief=0.4, on="inner_wall", font_size=2)
     scad = emit_str(p)
-    # mid_radius = (8 + 3)/2 = 5.5; +eps = 5.51
-    assert "5.51, 0, 10" in scad
+    # mid_radius = (8 + 3)/2 = 5.5; +host_eps = 6.0
+    assert "6, 0, 10" in scad
 
 
 # --- Smoke ---

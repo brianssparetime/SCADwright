@@ -412,9 +412,9 @@ class TestCumulativeOffsetMath:
         # "ABC" on a cylinder(h=20, r=10), default meridian +x, halign=center.
         # Heuristic advance = 0.6 * 4 = 2.4mm per char; total = 7.2mm.
         # Glyph centers in mm: [-2.4, 0, +2.4]; theta_off = mm/radius = ±0.24, 0.
-        # raised relief=0.4 → d = r - eps = 10 - 0.01 = 9.99.
+        # raised relief=0.4 → d = r - host_eps = 10 - 0.5 = 9.5.
         # axis_origin = (0, 0, 10). So 3D positions are
-        # (9.99 cos θ, 9.99 sin θ, 10) for θ in {-0.24, 0, +0.24}.
+        # (9.5 cos θ, 9.5 sin θ, 10) for θ in {-0.24, 0, +0.24}.
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="ABC", relief=0.4, on="outer_wall", font_size=4,
@@ -423,8 +423,8 @@ class TestCumulativeOffsetMath:
         positions = _glyph_translates_3d(scad)
         assert len(positions) == 3, positions
         positions.sort(key=lambda p: p[1])  # sort by y (the meridian-tangent axis)
-        x_a, x_b, x_c = (9.99 * math.cos(0.24), 9.99, 9.99 * math.cos(0.24))
-        y_a, y_b, y_c = (-9.99 * math.sin(0.24), 0.0, +9.99 * math.sin(0.24))
+        x_a, x_b, x_c = (9.5 * math.cos(0.24), 9.5, 9.5 * math.cos(0.24))
+        y_a, y_b, y_c = (-9.5 * math.sin(0.24), 0.0, +9.5 * math.sin(0.24))
         assert positions[0] == pytest.approx((x_a, y_a, 10.0), abs=0.005)
         assert positions[1] == pytest.approx((x_b, y_b, 10.0), abs=0.005)
         assert positions[2] == pytest.approx((x_c, y_c, 10.0), abs=0.005)
@@ -444,9 +444,9 @@ class TestCumulativeOffsetMath:
         )
         positions = _glyph_translates_3d(scad)
         assert len(positions) == 3, positions
-        # All three glyphs at the +x meridian (x ≈ 9.99, y ≈ 0).
+        # All three glyphs at the +x meridian (x ≈ 9.5, y ≈ 0).
         for p in positions:
-            assert p[0] == pytest.approx(9.99, abs=0.005), p
+            assert p[0] == pytest.approx(9.5, abs=0.005), p
             assert p[1] == pytest.approx(0.0, abs=0.005), p
         # z ordering: char 0 at top (z=14), char 1 at z=10, char 2 at z=6.
         zs = sorted(p[2] for p in positions)
@@ -500,7 +500,7 @@ class TestConicalAxialCumulativeRadius:
         # spacing — with default calibration matching OpenSCAD, char
         # positions at_z = +3.167, 0, -3.167 (char 0 at top, char 2 at
         # bottom). Local radius: top = 7 - 0.95 = 6.05; mid = 7; bottom =
-        # 7.95. Each glyph's translate.x ≈ local_radius - eps.
+        # 7.95. Each glyph's translate.x ≈ local_radius - host_eps.
         scad = _emit(
             cylinder(h=20, r1=10, r2=4).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
@@ -514,13 +514,13 @@ class TestConicalAxialCumulativeRadius:
         top, mid, bot = positions
         # Top char at z ≈ 13.167. Local radius = 7 + 3.167 × -0.3 ≈ 6.05.
         assert top[2] == pytest.approx(13.167, abs=0.05)
-        assert top[0] == pytest.approx(6.05 - 0.01, abs=0.05)
+        assert top[0] == pytest.approx(6.05 - 0.5, abs=0.05)
         # Mid at z=10, radius=7.
         assert mid[2] == pytest.approx(10.0, abs=0.05)
-        assert mid[0] == pytest.approx(7.0 - 0.01, abs=0.05)
+        assert mid[0] == pytest.approx(7.0 - 0.5, abs=0.05)
         # Bottom at z ≈ 6.833, radius = 7 + (-3.167)*-0.3 ≈ 7.95.
         assert bot[2] == pytest.approx(6.833, abs=0.05)
-        assert bot[0] == pytest.approx(7.95 - 0.01, abs=0.05)
+        assert bot[0] == pytest.approx(7.95 - 0.5, abs=0.05)
 
 
 @pytest.mark.freetype
@@ -531,8 +531,7 @@ class TestRimArcCumulativeOffsets:
     def test_rim_arc_iWi_glyph_angles_proportional(self, bundled_font_path):
         # cylinder(h=10, r=15).top — rim arc. Default at_radial = max(15-4, 2) = 11.
         # "iWi" with halign=center. theta(glyph_n) = center_mm[n] / 11.
-        # Glyph 3D position on the rim: ≈ (11 cos θ, 11 sin θ, 10 + ε) where
-        # the rim normal lifts by ±eps.
+        # Glyph 3D position on the rim: ≈ (11 cos θ, 11 sin θ, 10 ± host_eps).
         scad = _emit(
             cylinder(h=10, r=15).add_text(
                 label="iWi", relief=0.4, on="top", font_size=4,
@@ -542,10 +541,10 @@ class TestRimArcCumulativeOffsets:
         positions = _glyph_translates_3d(scad)
         assert len(positions) == 3
         # All on the +z face. For raised relief the extrusion BASE is shifted
-        # by -eps (into the host) so the extrusion overlaps cleanly through
-        # the rim plane; visible relief extends above z=10.
+        # by -host_eps (into the host) so the extrusion overlaps cleanly
+        # through the rim plane; visible relief extends above z=10.
         for p in positions:
-            assert p[2] == pytest.approx(9.99, abs=0.005), p
+            assert p[2] == pytest.approx(9.5, abs=0.005), p
         # Compute each glyph's theta from atan2(y, x) and verify symmetry +
         # proportional steps. i-W spacing should equal W-i spacing (palindrome).
         thetas = sorted(math.atan2(p[1], p[0]) for p in positions)

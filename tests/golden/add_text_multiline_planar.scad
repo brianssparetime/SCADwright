@@ -4,8 +4,8 @@
 union() {
     cube([50, 30, 3], center=false);
 
-    translate([25, 15, 2.99]) {
-        linear_extrude(height=0.51, center=false) {
+    translate([25, 15, 2.5]) {
+        linear_extrude(height=1, center=false) {
             union() {
                 translate([0, 3, 0]) {
                     text("LINE 1", size=5, halign="center", valign="center");
