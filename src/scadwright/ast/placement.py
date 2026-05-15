@@ -1015,11 +1015,26 @@ def _dispatch_smart_cascade_attach(
 
     Try overlap if applicable, otherwise raise. Bridge is no longer part
     of the cascade — curved hosts opt in via ``bridge=True``. The user
-    who wants the bilateral shift writes ``bond='shift'`` explicitly.
+    who wants the bilateral shift writes ``bond='shift'`` explicitly,
+    or a Component opts in via ``prefers_shift_at_anchor``.
     """
     from scadwright.errors import ValidationError
 
     if _can_dispatch_overlap(working_self_anchor, other_anchor):
+        # Either side may declare it can't be locally extended cleanly at
+        # its anchor (cap-like Components whose outermost cross-section IS
+        # the contact face, so ``cross_section_extend`` would produce a
+        # slab coplanar with the host's outer surface and the union has
+        # the same coplanarity overlap was meant to fix). If so, dispatch
+        # ``bond='shift'`` instead. The bilateral eps drift on the
+        # opposite face is the explicit tradeoff the Component author
+        # accepted by overriding the hook.
+        if (working_self.prefers_shift_at_anchor(working_self_anchor)
+                or other.prefers_shift_at_anchor(other_anchor)):
+            return _shift_translate(
+                working_self, working_self_anchor, other_anchor,
+                with_eps=True, eps=eps, loc=loc,
+            )
         return _dispatch_overlap(
             working_self, working_self_anchor, other_anchor, eps, loc,
         )

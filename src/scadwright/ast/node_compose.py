@@ -74,6 +74,23 @@ class _CompositionMixin:
         for Intersection folds children's bboxes via intersection, so the
         clipping is automatic. Geometrically identical to the
         difference-of-removed-region form.
+
+        **Mesh quality on Component-rich bodies.** CGAL's intersection of
+        a closed manifold mesh with a half-space cube is itself manifold
+        in the abstract, but it exposes any coincident-but-unmerged
+        surfaces inside the input mesh as non-manifold edges in the cut
+        plane: where two Component-yielded parts touched on a coplanar
+        face that CGAL kept as two surfaces (rather than merging into
+        one), the cut produces an edge incident to three faces (the cut
+        surface plus both Component faces). Downstream STL tooling
+        (Bambu Studio, PrusaSlicer, trimesh) flags those edges for
+        repair. The workaround is to fuse touching Components
+        explicitly with ``attach(fuse=True)`` so the union is built
+        with eps overlap and CGAL merges them. Whether that's enough
+        for the cap-like case (annular ring on a same-od cylinder)
+        depends on whether the moving side's
+        :meth:`Node.prefers_shift_at_anchor` is set — see that method
+        and ``cross_section_extend``'s docstring.
         """
         from scadwright.api._vectors import _vec_from_args
         from scadwright.ast.base import SourceLocation

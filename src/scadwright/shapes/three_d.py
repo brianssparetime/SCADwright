@@ -234,6 +234,18 @@ class FilletRing(Component):
         from scadwright.bbox import bbox
         return bbox(self)
 
+    def prefers_shift_at_anchor(self, anchor) -> bool:
+        # FilletRing is sized to match its host's od by design — when
+        # attached to that host, the bbox-derived top/bottom anchors land
+        # on the ring's outermost annular cap (or, for slant="outwards"
+        # top, the cone apex). cross_section_extend at either anchor
+        # produces a slab whose outer surface is coplanar with the host's
+        # outer cylinder. Use bond='shift' instead; the bilateral eps drift
+        # on the opposite face is invisible on a fillet.
+        if anchor.kind != "planar":
+            return False
+        return abs(anchor.normal[2]) > 1.0 - 1e-9
+
 
 class Capsule(Component):
     """Pill / stadium solid: a cylinder with hemispherical caps on both ends.

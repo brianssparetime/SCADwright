@@ -282,6 +282,33 @@ class Node(
         """
         return None
 
+    def prefers_shift_at_anchor(self, anchor) -> bool:
+        """Declare that ``attach(fuse=True)`` should pick ``bond='shift'``
+        instead of ``bond='overlap'`` at this anchor.
+
+        Returning ``True`` tells the smart cascade in ``attach(fuse=True)``
+        to skip local extension (Tier 1 ``fuse_extend`` and Tier 2
+        ``cross_section_extend``) and use the bilateral shift directly.
+        The use case is Components whose cross-section at this anchor IS
+        the entire outermost cross-section of the shape — annular caps
+        (fillet rings, lids, washers) sized to match a host's outer
+        diameter — where ``cross_section_extend`` produces a slab
+        coplanar with the host's outer surface and the union has the
+        same coplanarity it was supposed to fix.
+
+        The shift mode accepts a bilateral ``eps`` drift on the opposite
+        face. Override only when that drift is acceptable for this
+        Component's design (typically yes for decorative caps; check
+        before overriding if the opposite face is dimensionally
+        critical).
+
+        Default ``False`` (use the local-extension cascade as usual).
+        Consulted only when the user passes ``fuse=True`` without an
+        explicit ``bond=`` — explicit ``bond='overlap'`` or
+        ``bond='shift'`` bypasses the hook.
+        """
+        return False
+
     def cross_section_extend(self, anchor, eps: float):
         """Generic local extension via projection + slab.
 
@@ -303,6 +330,18 @@ class Node(
         Subclasses can override to raise on shape-specific degenerate
         cases the bbox check misses (e.g., ``Cylinder`` with ``r=0``
         on the apex side).
+
+        **Cap-like Components.** When the cross-section at the anchor
+        IS the entire outermost cross-section of the shape (annular
+        caps on fillet rings, lids, washers sized to match a host's
+        outer dimension), the resulting slab is coplanar with whatever
+        the shape is attached to. The union has the same coplanarity
+        ``attach(fuse=True)`` was meant to fix, just rotated 90° — no
+        error, but no improvement over ``fuse=False`` either. For
+        Components in that pattern, override
+        :meth:`Node.prefers_shift_at_anchor` to return ``True`` at the
+        affected anchor; the smart cascade will skip this method and
+        use bilateral shift instead.
         """
         if anchor.kind != "planar":
             return None
