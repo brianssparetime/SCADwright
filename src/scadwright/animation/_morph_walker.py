@@ -164,7 +164,7 @@ def _import_ast_types():
     from scadwright.ast.transforms import (
         Color, Echo, ForceRender, Mirror, MultMatrix, Offset,
         PreviewModifier, Projection, Resize, Rotate, Scale, Translate,
-        WithAnchor,
+        WithAnchor, WithBBox,
     )
     from scadwright.component.base import Component
     return {
@@ -172,7 +172,7 @@ def _import_ast_types():
         "spatial_transforms": (Translate, Rotate, Scale, Mirror, MultMatrix),
         "structural": (Union, Difference, Intersection, Hull, Minkowski),
         "decorations": (
-            Color, WithAnchor, PreviewModifier, ForceRender,
+            Color, WithAnchor, WithBBox, PreviewModifier, ForceRender,
             Resize, Projection, Offset, Echo,
         ),
     }
@@ -198,8 +198,16 @@ def _decoration_matches(node_a, node_b) -> tuple[bool, str]:
     Compares every dataclass field except ``child`` (recursed into
     elsewhere) and ``source_location`` (line-number drift isn't semantic).
     Works for any frozen-dataclass decoration node — Color, WithAnchor,
-    PreviewModifier, ForceRender, Resize, Projection, Offset, Echo,
-    or any new metadata wrapper added later.
+    WithBBox, PreviewModifier, ForceRender, Resize, Projection, Offset,
+    Echo, or any new metadata wrapper added later.
+
+    Field comparison uses ``tree_hash`` rather than ``==``: most fields
+    are simple scalars where this makes no difference, but some
+    decorations (notably ``WithBBox.source``) hold a ``Node`` value, and
+    the dataclass-auto ``__eq__`` for a Node includes ``source_location``.
+    Two semantically-identical Nodes constructed at different call sites
+    would false-mismatch under ``==``. ``tree_hash`` canonicalizes Nodes
+    without source_location, giving the right semantic equality.
 
     Returns ``(matches, reason_if_not)``. ``reason_if_not`` is empty
     when ``matches`` is True.
@@ -220,7 +228,7 @@ def _decoration_matches(node_a, node_b) -> tuple[bool, str]:
             continue
         va = getattr(node_a, f.name)
         vb = getattr(node_b, f.name)
-        if va != vb:
+        if tree_hash(va) != tree_hash(vb):
             return False, (
                 f"different {cls_name}.{f.name} ({va!r} vs {vb!r})"
             )

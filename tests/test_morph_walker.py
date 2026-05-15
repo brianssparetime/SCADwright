@@ -748,6 +748,52 @@ def test_walker_different_projection_cut_raises():
         walk(inst.a(), inst.b(), inst)
 
 
+def test_walker_with_bbox_is_a_decoration():
+    """WithBBox is a metadata-only wrapper (overrides bbox queries but is
+    transparent to emit and anchor walks). The walker treats it as a
+    decoration: recurses into the child, requires the source field to
+    match across variants."""
+    from scadwright.ast.transforms import WithBBox
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def a(self):
+            return WithBBox(child=self.box, source=cube(10))
+
+        @variant(default=True)
+        def b(self):
+            return WithBBox(child=self.box.up(5), source=cube(10))
+
+    inst = D()
+    plan = walk(inst.a(), inst.b(), inst)
+    # box animates through the WithBBox wrapper; one leaf in the plan.
+    assert len(plan.leaves) == 1
+    assert plan.leaves[0].display_name == "box"
+
+
+def test_walker_with_bbox_different_sources_raises():
+    """The generic decoration-field comparator catches mismatched
+    WithBBox.source values across variants."""
+    from scadwright.ast.transforms import WithBBox
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def a(self):
+            return WithBBox(child=self.box, source=cube(10))
+
+        @variant(default=True)
+        def b(self):
+            return WithBBox(child=self.box, source=cube(20))
+
+    inst = D()
+    with pytest.raises(
+        ValidationError, match=r"(?s)decoration mismatch.*WithBBox\.source",
+    ):
+        walk(inst.a(), inst.b(), inst)
+
+
 def test_walker_different_with_anchor_names_raises():
     """WithAnchor carries an anchor_name (str) and an Anchor (frozen
     dataclass) — the generic field comparison detects mismatches in
