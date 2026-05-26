@@ -147,8 +147,8 @@ Returns a `Matrix` describing the world-space transform at a node. For a top-lev
 
 ### Advanced notes
 
-- Bounding boxes are axis-aligned (AABBs). For a rotated shape they're a loose upper bound, not the tightest possible box. There's no oriented-bounding-box (OBB) support yet; a primitive-only `tight_bbox(prim)` exists as a stub for future expansion.
-- For composed shapes (transforms, CSG, components), use `bbox` exclusively. `tight_bbox` raises on anything but bare primitives.
+- Bounding boxes are axis-aligned (AABBs). For a rotated shape they're a loose upper bound, not the tightest possible box.
+- `tight_bbox` works through transforms, unions, intersections, hulls, Components (via `tight_bbox()` override), and custom transforms (via `tight_bbox=` hook). It raises only on `difference()`, because the post-difference extents depend on whether the cutter actually removes material from the bbox edges -- a CSG question the framework can't answer from the AST. Use `with_bbox_from()`, a Component `tight_bbox()` override, or `halve()` (which emits Intersection, not Difference) to get past this.
 - `tree_hash` excludes source-location information, so the same code in different files hashes the same. It also walks Components by their parameter values plus the materialized tree, so changing a parameter changes the hash.
 - For Components, the bounding box is computed once per instance and cached. `_invalidate()` clears the cache.
 - The `Matrix` type is hashable and immutable. All operations (`compose`, `apply_point`, `invert`) return new matrices.

@@ -150,6 +150,27 @@ def test_default_output_path_uses_design_and_variant_names():
         assert out.name == "D-scene.scad"
 
 
+def test_design_name_attribute_overrides_class_name_in_output():
+    from scadwright.design import _render_one
+
+    class LensHousingDesign(Design):
+        name = "v13f"
+
+        @variant()
+        def print(self):
+            return cube(1)
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        from pathlib import Path
+        out = _render_one(
+            LensHousingDesign, "print",
+            LensHousingDesign.__variants__["print"],
+            base_dir=Path(td),
+        )
+        assert out.name == "v13f-print.scad"
+
+
 def test_variant_out_override_respected():
     from scadwright.design import _render_one
 

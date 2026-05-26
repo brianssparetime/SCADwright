@@ -372,12 +372,18 @@ def _render_one(
     return out_path
 
 
+def _design_output_name(design_cls) -> str:
+    """The stem used for output filenames: the ``name`` class attribute
+    if the Design declares one, otherwise the class's ``__name__``."""
+    return getattr(design_cls, "name", None) or design_cls.__name__
+
+
 def _resolve_out_path(
     design_cls, vname, meta, base_dir, out_override,
 ) -> Path:
     if out_override is not None:
         return Path(out_override)
-    out_name = meta.out or f"{design_cls.__name__}-{vname}.scad"
+    out_name = meta.out or f"{_design_output_name(design_cls)}-{vname}.scad"
     out_path = Path(out_name)
     if not out_path.is_absolute() and base_dir is not None:
         out_path = base_dir / out_path

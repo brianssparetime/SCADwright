@@ -674,6 +674,7 @@ with viewpoint(rotation=[60, 0, 30], distance=200):
 from scadwright.design import Design, run, variant
 
 class WidgetProject(Design):
+    name = "widget"                        # output stem; default is the class name
     widget = MyWidget()
 
     @variant(fn=48, default=True)
@@ -829,6 +830,7 @@ echo("count:", n=4, _node=cube(1))                       # mixed args + wrap
 from scadwright import arg, from_json
 from scadwright.primitives import cube
 width = arg("width", default=40, type=float, help="widget width")
+debug = arg("debug", default=False, type=bool)               # --debug flag (present = True)
 
 # Pass complex/nested data via JSON (single payload):
 spec = from_json() or {}                                    # None if --from-json not supplied

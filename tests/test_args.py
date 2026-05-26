@@ -48,3 +48,33 @@ def test_bad_value_raises():
     _args.set_argv(["--count=notanumber"])
     with pytest.raises(SCADwrightError):
         arg("count", default=1, type=int)
+
+
+def test_bool_flag_present_sets_true():
+    _args.set_argv(["--verbose"])
+    assert arg("verbose", default=False, type=bool) is True
+
+
+def test_bool_flag_absent_keeps_default_false():
+    _args.set_argv([])
+    assert arg("verbose", default=False, type=bool) is False
+
+
+def test_bool_flag_default_true_flips_to_false():
+    _args.set_argv(["--skip"])
+    assert arg("skip", default=True, type=bool) is False
+
+
+def test_bool_flag_default_true_absent_stays_true():
+    _args.set_argv([])
+    assert arg("skip", default=True, type=bool) is True
+
+
+def test_bool_flag_no_default_treated_as_false():
+    _args.set_argv(["--debug"])
+    assert arg("debug", type=bool) is True
+
+
+def test_bool_flag_absent_no_default():
+    _args.set_argv([])
+    assert arg("debug", type=bool) is False

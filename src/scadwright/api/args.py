@@ -91,6 +91,12 @@ def arg(
     returns `10` if no `--width=NN` argv is present. Returns the parsed value
     otherwise. Safe to call multiple times with the same name; must use
     identical parameters or a `SCADwrightError` is raised.
+
+    ``type=bool`` registers a flag: ``--name`` sets ``True``,
+    absence gives the default.  When the default is ``True``,
+    ``--name`` flips it to ``False`` (a ``--no-name`` convention is
+    cleaner; this handles the case where the caller wrote it the
+    other way).
     """
     global _parsed
     if name in _registered:
@@ -101,13 +107,23 @@ def arg(
             )
     else:
         parser = _get_parser()
-        parser.add_argument(
-            f"--{name}",
-            dest=name,
-            default=default,
-            type=type,
-            help=help,
-        )
+        if type is bool:
+            action = "store_false" if default is True else "store_true"
+            parser.add_argument(
+                f"--{name}",
+                dest=name,
+                default=bool(default) if default is not None else False,
+                action=action,
+                help=help,
+            )
+        else:
+            parser.add_argument(
+                f"--{name}",
+                dest=name,
+                default=default,
+                type=type,
+                help=help,
+            )
         _registered[name] = {"default": default, "type": type, "help": help}
         _flush_parse()
     ns = _ensure_parsed()
