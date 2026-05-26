@@ -113,6 +113,7 @@ peg.attach(plate, bond="shift")           # explicit: bilateral shift; always wo
 holder.fuse(barrel)                       # mate without placement — framework matches contact + applies eps
 holder.fuse(barrel, on="inner_wall")      # host anchor explicit
 holder.fuse(barrel, on="inner_wall", from_anchor="outer_wall")  # both sides explicit
+holder.fuse(barrel, self_only=True)       # return extended self only — for generator build() where host is yielded separately
 fuse(a, b)                                # peer form — symmetric, either side extends
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
 cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter

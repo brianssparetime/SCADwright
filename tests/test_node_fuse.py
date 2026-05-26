@@ -446,3 +446,73 @@ def test_fuse_explicit_same_side_wall_suggests_union():
     msg = str(excinfo.value)
     assert "same cylindrical surface from the same side" in msg
     assert "union(self, host)" in msg
+
+
+# --- self_only=True: return extended self without host union ---
+
+
+def test_self_only_concentric_returns_extended_self_no_host():
+    """Holder inside barrel with self_only=True. Returns the extended
+    holder only; barrel is not in the result."""
+    barrel = Tube(h=50, od=20, id=10)
+    holder = Tube(h=8, od=10, id=4).up(20)
+    result = holder.fuse(barrel, self_only=True)
+    assert not isinstance(result, Union)
+    bb = bbox(result)
+    assert bb.min[2] == pytest.approx(20.0)
+    assert bb.max[2] == pytest.approx(28.0)
+
+
+def test_self_only_planar_returns_extended_self_no_host():
+    """Cube on cube with self_only=True. Returns the extended peg
+    only; plate is not in the result."""
+    plate = cube([10, 10, 2], center=True)
+    peg = cube([10, 10, 5], center=True).up(3.5)
+    result = peg.fuse(plate, self_only=True)
+    assert not isinstance(result, Union)
+    bb = bbox(result)
+    assert bb.max[2] == pytest.approx(6.0)
+
+
+def test_self_only_raises_when_lever_on_host():
+    """When self has no fuse_extend and the lever is on host, self_only
+    raises instead of silently falling back to host extension."""
+    from scadwright.component.anchors import anchor as _anchor
+
+    class Holder(Component):
+        equations = "h, od > 0"
+        outer_wall = _anchor(
+            at="od / 2, 0, h / 2",
+            normal=(1.0, 0.0, 0.0),
+            kind="cylindrical",
+            surface_params={
+                "axis": (0.0, 0.0, 1.0),
+                "radius": "od / 2",
+                "length": "h",
+            },
+        )
+        def build(self):
+            return cylinder(h=self.h, r=self.od / 2)
+
+    barrel = Tube(h=50, od=20, id=10)
+    holder = Holder(h=8, od=10).up(20)
+    # Normal fuse() works (falls through to barrel's inner-wall lever).
+    normal_result = holder.fuse(barrel)
+    assert isinstance(normal_result, Union)
+    # self_only raises because Holder (a Component) has no fuse_extend.
+    with pytest.raises(ValidationError, match="self_only"):
+        holder.fuse(barrel, self_only=True)
+
+
+def test_self_only_disable_eps_returns_aligned_self():
+    """Under disable_eps_fuse(), self_only returns the aligned self
+    without extension and without host."""
+    from scadwright import disable_eps_fuse
+    barrel = Tube(h=50, od=20, id=10)
+    holder = Tube(h=8, od=10, id=4).up(20)
+    with disable_eps_fuse():
+        result = holder.fuse(barrel, self_only=True)
+    assert not isinstance(result, Union)
+    bb = bbox(result)
+    assert bb.min[2] == pytest.approx(20.0)
+    assert bb.max[2] == pytest.approx(28.0)

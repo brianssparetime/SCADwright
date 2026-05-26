@@ -685,6 +685,7 @@ class Node(
         on: str | None = None,
         from_anchor: str | None = None,
         eps: float | None = None,
+        self_only: bool = False,
     ) -> "Node":
         """Fuse self with ``host`` at their coincident contact surface,
         eps-clean for CGAL unions.
@@ -715,10 +716,21 @@ class Node(
         a self anchor explicitly. Pass both to skip matching entirely;
         pass either to short-circuit matching on that side.
 
+        ``self_only=True`` returns just the extended self without
+        wrapping it in ``union(self, host)``. Use inside a generator
+        ``build()`` where host is yielded separately::
+
+            yield barrel
+            yield holder.fuse(barrel, self_only=True)
+
+        Raises if the extension lever lives on host rather than self;
+        the error points at ``fuse()`` (without ``self_only``) as the
+        fallback.
+
         Inside ``disable_eps_fuse()`` the matching step still runs (a
         bad call still raises), but the eps mechanics are bypassed
-        and the call returns ``union(aligned_self, host)`` with exact
-        contact.
+        and the call returns ``union(aligned_self, host)`` (or just
+        ``aligned_self`` when ``self_only=True``) with exact contact.
         """
         from scadwright.anchor import get_node_anchors
         from scadwright.api.fuse_mode import fuse_enabled
@@ -729,6 +741,7 @@ class Node(
         )
         from scadwright.ast.transforms import Translate
         from scadwright.boolops import union as _union
+        from scadwright.errors import ValidationError
 
         loc = SourceLocation.from_caller()
         if eps is None:
@@ -741,13 +754,16 @@ class Node(
             self, host, self_anchors, host_anchors, on, from_anchor, loc,
         )
 
-        # disable_eps_fuse(): no extension, just align + union.
+        # disable_eps_fuse(): no extension, just align (+ union unless self_only).
         if not fuse_enabled():
             aligned = _alignment_translate(
                 self, match.self_anchor, match.host_anchor,
                 concentric=match.concentric, loc=loc,
             )
-            return _union(aligned, host)
+            return aligned if self_only else _union(aligned, host)
+
+        if self_only:
+            return self._fuse_self_only(match, eps, loc)
 
         if match.concentric:
             return _dispatch_curved_overlap(
@@ -772,7 +788,6 @@ class Node(
                 match.self_anchor, eps, context="fuse",
             )
         if extended is None:
-            from scadwright.errors import ValidationError
             raise ValidationError(
                 f"fuse: planar contact but neither fuse_extend nor "
                 f"cross_section_extend applied. self="
@@ -784,6 +799,55 @@ class Node(
             concentric=False, loc=loc,
         )
         return _union(aligned, host)
+
+    def _fuse_self_only(self, match, eps, loc):
+        """Extension path for ``fuse(self_only=True)``: extend self only,
+        return without wrapping in union with host."""
+        from scadwright.ast.placement import _alignment_translate
+        from scadwright.ast.transforms import Translate
+        from scadwright.errors import ValidationError
+
+        if match.concentric:
+            extended = self.fuse_extend(match.self_anchor, eps)
+            if extended is None:
+                raise ValidationError(
+                    f"fuse(self_only=True): the extension lever for this "
+                    f"{match.self_anchor.kind} contact lives on host "
+                    f"({type(match.host_anchor).__name__}), not self "
+                    f"({type(self).__name__}). Either give self a "
+                    f"fuse_extend() that handles this anchor, or use "
+                    f"fuse() without self_only and accept the host union.",
+                    source_location=loc,
+                )
+            return extended
+
+        # Planar: shift or overlap, self side only.
+        if self.prefers_shift_at_anchor(match.self_anchor):
+            aligned = _alignment_translate(
+                self, match.self_anchor, match.host_anchor,
+                concentric=False, loc=loc,
+            )
+            h_norm = match.host_anchor.normal
+            shift = (-h_norm[0] * eps, -h_norm[1] * eps, -h_norm[2] * eps)
+            return Translate(v=shift, child=aligned, source_location=loc)
+
+        extended = self.fuse_extend(match.self_anchor, eps)
+        if extended is None:
+            extended = self.cross_section_extend(
+                match.self_anchor, eps, context="fuse",
+            )
+        if extended is None:
+            raise ValidationError(
+                f"fuse(self_only=True): self ({type(self).__name__}) has "
+                f"no extension lever for this planar contact. Either "
+                f"override fuse_extend on self, or use fuse() without "
+                f"self_only and accept the host union.",
+                source_location=loc,
+            )
+        return _alignment_translate(
+            extended, match.self_anchor, match.host_anchor,
+            concentric=False, loc=loc,
+        )
 
     def through(
         self,
