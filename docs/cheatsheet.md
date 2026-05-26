@@ -336,6 +336,7 @@ The triple-quoted block form is preferred. The list form is also accepted (usefu
 # what you supplied, and checks anything you over-supplied for agreement.
 "od = id + 2*thk"
 "pitch = spec.d + 2 * (clearance + wall_thk)"
+"bore = element.dia + element.clearances.radial"  # chained attribute access
 "cradle_positions = tuple(-(count-1)*pitch/2 + i*pitch for i in range(count))"
 "max(a, b) = foo"                          # solves foo from a, b
 "x * len(y) = c"                           # solves x from y, c

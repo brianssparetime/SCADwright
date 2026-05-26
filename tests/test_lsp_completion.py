@@ -419,3 +419,72 @@ def test_attribute_completion_without_block_returns_empty() -> None:
         ContextKind.ATTRIBUTE, attribute_base="b",
     )
     assert items == []
+
+
+def test_attribute_completion_chained_two_levels() -> None:
+    src = (
+        'class C:\n'
+        '    radial = Param(float)\n'
+        '    axial = Param(float)\n'
+        '    equations = "x = radial"\n'
+        '\n'
+        'class B:\n'
+        '    clearances = Param(C)\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+        '\n'
+        'class A:\n'
+        '    spec = Param(B)\n'
+        '    equations = "y = spec.clearances.radial"\n'
+    )
+    blocks = _all_blocks(src)
+    a_block = next(b for b in blocks if b.class_name == "A")
+    items = build_completion_items(
+        ContextKind.ATTRIBUTE,
+        block=a_block,
+        attribute_chain=["spec", "clearances"],
+        sibling_blocks=blocks,
+    )
+    assert {it.label for it in items} == {"radial", "axial"}
+
+
+def test_attribute_completion_chain_broken_at_intermediate_returns_empty() -> None:
+    src = (
+        'class B:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+        '\n'
+        'class A:\n'
+        '    spec = Param(B)\n'
+        '    equations = "y = spec.nonexistent.whatever"\n'
+    )
+    blocks = _all_blocks(src)
+    a_block = next(b for b in blocks if b.class_name == "A")
+    items = build_completion_items(
+        ContextKind.ATTRIBUTE,
+        block=a_block,
+        attribute_chain=["spec", "nonexistent"],
+        sibling_blocks=blocks,
+    )
+    assert items == []
+
+
+def test_attribute_completion_single_level_via_chain() -> None:
+    src = (
+        'class B:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+        '\n'
+        'class A:\n'
+        '    b = Param(B)\n'
+        '    equations = "y = b.width"\n'
+    )
+    blocks = _all_blocks(src)
+    a_block = next(b for b in blocks if b.class_name == "A")
+    items = build_completion_items(
+        ContextKind.ATTRIBUTE,
+        block=a_block,
+        attribute_chain=["b"],
+        sibling_blocks=blocks,
+    )
+    assert {it.label for it in items} == {"width"}

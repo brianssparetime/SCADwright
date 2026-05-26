@@ -193,17 +193,18 @@ def _previous_non_blank_non_ident(line: str, col: int) -> str | None:
     return line[i] if i >= 0 else None
 
 
-def extract_attribute_base(line: str, col: int) -> str | None:
+def extract_attribute_chain(line: str, col: int) -> list[str] | None:
     """If the cursor is in attribute-completion position (after a
-    ``.`` whose left operand is a bare identifier), return the
-    identifier. Else ``None``.
+    ``.`` whose left operand is an identifier chain), return the
+    chain of identifiers leading up to the cursor. Else ``None``.
 
-    Walks left from ``col`` past the partial attribute name,
-    optional whitespace, the ``.``, more whitespace, and reads the
-    bare identifier. Non-identifier bases (parenthesized
-    expressions, subscripts, calls) yield ``None`` — the static
-    type information needed to resolve their attributes isn't
-    available without actually running the code.
+    For ``spec.clearances.|``, returns ``["spec", "clearances"]``.
+    For ``spec.|``, returns ``["spec"]``.
+
+    Non-identifier bases (parenthesized expressions, subscripts,
+    calls) yield ``None`` — the static type information needed to
+    resolve their attributes isn't available without actually
+    running the code.
     """
     i = col - 1
     while i >= 0 and (line[i].isalnum() or line[i] == "_"):
@@ -212,16 +213,40 @@ def extract_attribute_base(line: str, col: int) -> str | None:
         i -= 1
     if i < 0 or line[i] != ".":
         return None
-    i -= 1
-    while i >= 0 and line[i] in " \t":
-        i -= 1
-    if i < 0 or not (line[i].isalnum() or line[i] == "_"):
+    chain: list[str] = []
+    while True:
+        i -= 1  # skip the dot
+        while i >= 0 and line[i] in " \t":
+            i -= 1
+        if i < 0 or not (line[i].isalnum() or line[i] == "_"):
+            break
+        end = i + 1
+        while i >= 0 and (line[i].isalnum() or line[i] == "_"):
+            i -= 1
+        start = i + 1
+        name = line[start:end]
+        if name[0].isdigit():
+            break
+        chain.append(name)
+        while i >= 0 and line[i] in " \t":
+            i -= 1
+        if i < 0 or line[i] != ".":
+            break
+    if not chain:
         return None
-    end = i + 1
-    while i >= 0 and (line[i].isalnum() or line[i] == "_"):
-        i -= 1
-    start = i + 1
-    name = line[start:end]
-    if name[0].isdigit():
+    chain.reverse()
+    return chain
+
+
+def extract_attribute_base(line: str, col: int) -> str | None:
+    """If the cursor is in attribute-completion position (after a
+    ``.`` whose left operand is an identifier), return the leftmost
+    base identifier. Else ``None``.
+
+    Thin wrapper over :func:`extract_attribute_chain` for callers
+    that only need the base name.
+    """
+    chain = extract_attribute_chain(line, col)
+    if chain is None:
         return None
-    return name
+    return chain[0]

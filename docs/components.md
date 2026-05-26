@@ -66,7 +66,7 @@ Any Python expression in an equation can use these pieces:
 - Arithmetic: `+`, `-`, `*`, `/`, `**`, parentheses.
 - Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `degrees`, `radians`, `sqrt`, `log`, `exp`, `abs`, `ceil`, `floor`, `min`, `max`, `pi`, `e`. Trig functions take and return **degrees**, matching SCAD and `scadwright.math`.
 - Conditional: `a if cond else b`.
-- Reading a field or an item out of an input: `spec.d`, `arr[0]`, `holes[i]`.
+- Reading a field or an item out of an input: `spec.d`, `spec.clearances.radial`, `arr[0]`, `holes[i]`.
 - Tuples, lists, dicts, comprehensions: `tuple(...)`, `list(...)`, `range(...)`, `len(...)`, `sum(...)`, `sorted(...)`, `tuple(i*pitch for i in range(count))`.
 
 If an equation gives a value a name (`pitch = ...`, `od = ...`), SCADwright works out the value when you make the part and stores it on the part. You can read it back: `b.pitch`, `b.od`. An equation that doesn't name a new value (`len(size) = 3`, `spec.foo = 5`) is just a check: SCADwright reads each side and raises an error if they don't agree.

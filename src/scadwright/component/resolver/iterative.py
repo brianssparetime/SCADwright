@@ -1113,14 +1113,33 @@ class IterativeResolver:
             )
         raise ValidationError(message)
 
+    @staticmethod
+    def _unpack_attribute_chain(node: ast.Attribute) -> tuple[str | None, str]:
+        """Walk a (possibly nested) ``ast.Attribute`` chain and return
+        ``(base_name, full_dotted_path)`` where *base_name* is the
+        innermost ``ast.Name.id`` (or ``None`` if the chain bottoms out
+        at something other than a Name) and *full_dotted_path* is the
+        reconstructed ``"a.b.c"`` string.
+        """
+        parts: list[str] = [node.attr]
+        cur = node.value
+        while isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+        if isinstance(cur, ast.Name):
+            parts.append(cur.id)
+            parts.reverse()
+            return cur.id, ".".join(parts)
+        return None, ""
+
     def _attribute_base_hints(
         self,
         pending_eqs: list[ParsedEquation],
         unresolved: set[str],
     ) -> str:
         """Return a short ``"b (b.xyz, b.qpr)"``-style summary for any
-        unresolved name that appears as the value of an
-        :class:`ast.Attribute`. Empty string if none.
+        unresolved name that appears as the base of an
+        :class:`ast.Attribute` chain. Empty string if none.
         """
         if not unresolved:
             return ""
@@ -1130,15 +1149,12 @@ class IterativeResolver:
                 for sub in ast.walk(side):
                     if not isinstance(sub, ast.Attribute):
                         continue
-                    base = sub.value
-                    if not isinstance(base, ast.Name):
+                    base_name, full_path = self._unpack_attribute_chain(sub)
+                    if base_name is None or base_name not in unresolved:
                         continue
-                    if base.id not in unresolved:
-                        continue
-                    reads = per_name.setdefault(base.id, [])
-                    read = f"{base.id}.{sub.attr}"
-                    if read not in reads:
-                        reads.append(read)
+                    reads = per_name.setdefault(base_name, [])
+                    if full_path not in reads:
+                        reads.append(full_path)
         if not per_name:
             return ""
         parts = []

@@ -424,3 +424,53 @@ def test_hover_string_context_with_block_returns_none() -> None:
     assert build_hover_content(
         "width", ContextKind.STRING, block=block,
     ) is None
+
+
+def test_hover_attribute_chain_resolves_param() -> None:
+    src = (
+        'class C:\n'
+        '    radial = Param(float, doc="Radial clearance")\n'
+        '    equations = "x = radial"\n'
+        '\n'
+        'class B:\n'
+        '    clearances = Param(C)\n'
+        '    equations = "x = clearances.radial"\n'
+        '\n'
+        'class A:\n'
+        '    spec = Param(B)\n'
+        '    equations = "y = spec.clearances.radial"\n'
+    )
+    blocks = tuple(find_equations_blocks(src))
+    a_block = next(b for b in blocks if b.class_name == "A")
+    h = build_hover_content(
+        "radial",
+        ContextKind.ATTRIBUTE,
+        block=a_block,
+        attribute_chain=["spec", "clearances"],
+        sibling_blocks=blocks,
+    )
+    assert h is not None
+    assert "Param(float)" in h.markdown
+    assert "Radial clearance" in h.markdown
+
+
+def test_hover_attribute_chain_broken_returns_none() -> None:
+    src = (
+        'class B:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+        '\n'
+        'class A:\n'
+        '    spec = Param(B)\n'
+        '    equations = "y = spec.nonexistent.whatever"\n'
+    )
+    blocks = tuple(find_equations_blocks(src))
+    a_block = next(b for b in blocks if b.class_name == "A")
+    h = build_hover_content(
+        "whatever",
+        ContextKind.ATTRIBUTE,
+        block=a_block,
+        attribute_chain=["spec", "nonexistent"],
+        sibling_blocks=blocks,
+    )
+    assert h is None

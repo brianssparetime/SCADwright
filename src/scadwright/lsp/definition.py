@@ -32,6 +32,7 @@ from scadwright.lsp.analyze import (
 )
 from scadwright.lsp.context import ContextKind
 from scadwright.lsp.positions import map_raw_offset_to_file
+from scadwright.lsp.resolve import resolve_chain_to_block
 
 
 @dataclass(frozen=True)
@@ -51,12 +52,26 @@ def build_definition_location(
     name: str,
     context: ContextKind,
     block: EquationsBlock,
+    *,
+    attribute_chain: list[str] | None = None,
+    sibling_blocks: tuple[EquationsBlock, ...] = (),
 ) -> DefinitionLocation | None:
     """Find the definition location of ``name`` in ``block``.
 
-    Only expression-context lookups resolve. Type-tag, string, and
-    comment contexts return ``None``.
+    Expression context resolves Params and auto-declared targets.
+    Attribute context (``spec.clearances.|``) resolves the dotted
+    chain through Param type_text lookups and returns the definition
+    of ``name`` in the resolved block. Type-tag, string, and comment
+    contexts return ``None``.
     """
+    if context == ContextKind.ATTRIBUTE:
+        if attribute_chain is not None:
+            resolved = resolve_chain_to_block(
+                attribute_chain, block, sibling_blocks,
+            )
+            if resolved is not None:
+                return _param_definition(name, resolved)
+        return None
     if context != ContextKind.EXPRESSION:
         return None
     param_loc = _param_definition(name, block)

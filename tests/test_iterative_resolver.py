@@ -147,6 +147,46 @@ def test_standalone_attribute_access():
     assert out["pitch"] == pytest.approx(17.5)
 
 
+def test_chained_attribute_access():
+    Inner = namedtuple("Inner", "axial radial")
+    Outer = namedtuple("Outer", "dia clearances")
+    eqs, cons, _, _, _ = parse_equations_unified([
+        "bore = element.dia + element.clearances.radial",
+        "axial_gap = 2 * element.clearances.axial",
+    ])
+    params = {"element": Param(Outer)}
+    out = IterativeResolver(
+        eqs, cons, params,
+        {"element": Outer(dia=42.5, clearances=Inner(axial=0.2, radial=0.3))},
+        "T",
+    ).resolve()
+    assert out["bore"] == pytest.approx(42.8)
+    assert out["axial_gap"] == pytest.approx(0.4)
+
+
+def test_chained_attribute_in_constraint():
+    Inner = namedtuple("Inner", "axial radial")
+    Outer = namedtuple("Outer", "dia clearances")
+    eqs, cons, _, _, _ = parse_equations_unified([
+        "bore = element.dia + element.clearances.radial",
+        "bore < 50",
+    ])
+    params = {"element": Param(Outer), "bore": _make_param()}
+    out = IterativeResolver(
+        eqs, cons, params,
+        {"element": Outer(dia=42.5, clearances=Inner(axial=0.2, radial=0.3))},
+        "T",
+    ).resolve()
+    assert out["bore"] == pytest.approx(42.8)
+
+    with pytest.raises(ValidationError, match="must be < 50"):
+        IterativeResolver(
+            eqs, cons, params,
+            {"element": Outer(dia=49.9, clearances=Inner(axial=0.2, radial=0.3))},
+            "T",
+        ).resolve()
+
+
 def test_standalone_constraint_passes():
     eqs, cons, _, _, _ = parse_equations_unified([
         "od = id + 2*thk",

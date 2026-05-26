@@ -283,6 +283,39 @@ def test_extract_attribute_base_non_identifier_base_returns_none() -> None:
     assert extract_attribute_base("func().foo", 10) is None
 
 
+def test_extract_attribute_chain_single_level() -> None:
+    from scadwright.lsp.context import extract_attribute_chain
+
+    assert extract_attribute_chain("x = b.", 6) == ["b"]
+    assert extract_attribute_chain("x = b.foo", 9) == ["b"]
+    assert extract_attribute_chain("x = b. ", 7) == ["b"]
+
+
+def test_extract_attribute_chain_two_levels() -> None:
+    from scadwright.lsp.context import extract_attribute_chain
+
+    assert extract_attribute_chain("x = b.foo.", 10) == ["b", "foo"]
+    assert extract_attribute_chain("x = b.foo.bar", 13) == ["b", "foo"]
+
+
+def test_extract_attribute_chain_three_levels() -> None:
+    from scadwright.lsp.context import extract_attribute_chain
+
+    assert extract_attribute_chain("x = a.b.c.", 10) == ["a", "b", "c"]
+
+
+def test_extract_attribute_chain_no_dot_returns_none() -> None:
+    from scadwright.lsp.context import extract_attribute_chain
+
+    assert extract_attribute_chain("x = b", 5) is None
+
+
+def test_extract_attribute_chain_non_identifier_base_returns_none() -> None:
+    from scadwright.lsp.context import extract_attribute_chain
+
+    assert extract_attribute_chain("func().foo", 10) is None
+
+
 def test_triple_quoted_string_with_inner_newline_keeps_string_context() -> None:
     # The splitter preserves a triple-quoted span verbatim even when it
     # contains newlines, so a logical line's cleaned text can carry an

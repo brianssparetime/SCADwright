@@ -54,7 +54,7 @@ from scadwright.lsp.completion import (
 from scadwright.lsp.context import (
     ContextKind,
     classify_context,
-    extract_attribute_base,
+    extract_attribute_chain,
 )
 from scadwright.lsp.definition import (
     DefinitionLocation as ScDefinitionLocation,
@@ -369,9 +369,9 @@ def _completion_items_for(
     located = _locate_cursor(source, file_line, file_col)
     if located is None:
         return []
-    attribute_base: str | None = None
+    attribute_chain: list[str] | None = None
     if located.context_kind == ContextKind.ATTRIBUTE:
-        attribute_base = extract_attribute_base(
+        attribute_chain = extract_attribute_chain(
             located.line.cleaned, located.cursor.splitter_col,
         )
     sc_items = build_completion_items(
@@ -379,7 +379,7 @@ def _completion_items_for(
         block=located.block,
         host_index=located.cursor.host_index,
         line_index=located.cursor.line_index,
-        attribute_base=attribute_base,
+        attribute_chain=attribute_chain,
         sibling_blocks=located.sibling_blocks,
     )
     return [_to_lsp_completion(it) for it in sc_items]
@@ -399,12 +399,19 @@ def _hover_for(
     word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
     if word is None:
         return None
+    attribute_chain: list[str] | None = None
+    if located.context_kind == ContextKind.ATTRIBUTE:
+        attribute_chain = extract_attribute_chain(
+            located.line.cleaned, located.cursor.splitter_col,
+        )
     content = build_hover_content(
         word,
         located.context_kind,
         block=located.block,
         host_index=located.cursor.host_index,
         line_index=located.cursor.line_index,
+        attribute_chain=attribute_chain,
+        sibling_blocks=located.sibling_blocks,
     )
     if content is None:
         return None
@@ -425,8 +432,15 @@ def _definition_for(
     word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
     if word is None:
         return None
+    attribute_chain: list[str] | None = None
+    if located.context_kind == ContextKind.ATTRIBUTE:
+        attribute_chain = extract_attribute_chain(
+            located.line.cleaned, located.cursor.splitter_col,
+        )
     sc_loc = build_definition_location(
         word, located.context_kind, located.block,
+        attribute_chain=attribute_chain,
+        sibling_blocks=located.sibling_blocks,
     )
     if sc_loc is None:
         return None

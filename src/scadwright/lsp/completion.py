@@ -18,12 +18,13 @@ Coverage by context:
   signature rather than as ``auto-declared``.
 - ``TYPE_TAG`` -> the six inline type names from
   ``_INLINE_TYPE_ALLOWLIST``.
-- ``ATTRIBUTE`` -> when the cursor sits at ``b.|`` and ``b`` is a
-  Param of the surrounding class whose ``type_text`` matches another
-  Component class in the same source file, return that class's
-  Param names. Cross-file resolution is out of scope here; bases
-  whose type can't be resolved against the same-file blocks yield
-  an empty list.
+- ``ATTRIBUTE`` -> when the cursor sits after a ``.`` whose left
+  operand is a dotted identifier chain (e.g. ``b.|`` or
+  ``b.sub.|``), the chain is resolved step by step through Param
+  type_text lookups against sibling blocks in the same file. The
+  final resolved block's Params are returned. Cross-file resolution
+  is out of scope here; chains whose type can't be resolved against
+  the same-file blocks yield an empty list.
 - ``STRING`` / ``COMMENT`` -> empty list.
 """
 
@@ -42,6 +43,7 @@ from scadwright.lsp.analyze import (
     auto_declared_origins_before,
 )
 from scadwright.lsp.context import ContextKind
+from scadwright.lsp.resolve import resolve_chain_to_block
 
 
 # ``True``, ``False``, ``None`` live in ``_CURATED_BUILTINS`` as
@@ -85,6 +87,7 @@ def build_completion_items(
     host_index: int = 0,
     line_index: int = 0,
     attribute_base: str | None = None,
+    attribute_chain: list[str] | None = None,
     sibling_blocks: tuple[EquationsBlock, ...] = (),
 ) -> list[CompletionItem]:
     """Return the completion items appropriate for ``context``.
@@ -101,13 +104,14 @@ def build_completion_items(
     locate the cursor's logical line so auto-declared targets are
     only those that precede the cursor.
 
-    For ``ATTRIBUTE`` context, ``attribute_base`` is the bare
-    identifier appearing before the ``.`` (extracted by
-    :func:`scadwright.lsp.context.extract_attribute_base`) and
-    ``sibling_blocks`` is the list of every equations block in the
-    current source file. The function looks up the base in
-    ``block.params``, takes its ``type_text``, and offers the
-    matching same-file class's Params as Variable items.
+    For ``ATTRIBUTE`` context, ``attribute_chain`` (or the legacy
+    single-name ``attribute_base``) identifies the dotted chain
+    preceding the ``.`` and ``sibling_blocks`` lists every
+    equations block in the current source file. The function walks
+    the chain through Param type_text lookups and offers the
+    resolved class's Params as Variable items. Chained access
+    (``spec.clearances.|``) resolves each intermediate step
+    through the same-file sibling blocks.
     """
     if context == ContextKind.EXPRESSION:
         items = list(_EXPRESSION_ITEMS)
@@ -121,9 +125,12 @@ def build_completion_items(
     if context == ContextKind.TYPE_TAG:
         return list(_TYPE_TAG_ITEMS)
     if context == ContextKind.ATTRIBUTE:
-        if block is None or attribute_base is None:
+        if block is None:
             return []
-        return _attribute_items(block, attribute_base, sibling_blocks)
+        chain = attribute_chain or ([attribute_base] if attribute_base else None)
+        if chain is None:
+            return []
+        return _attribute_items(block, chain, sibling_blocks)
     return []
 
 
@@ -221,34 +228,27 @@ def _auto_declared_items(
 
 def _attribute_items(
     block: EquationsBlock,
-    base_name: str,
+    chain: list[str],
     sibling_blocks: tuple[EquationsBlock, ...],
 ) -> list[CompletionItem]:
-    """Build completion items for the attributes of ``base_name``.
+    """Build completion items for the attributes at the end of a
+    dotted chain.
 
-    Looks up ``base_name`` in the surrounding block's Params; if its
-    ``type_text`` matches the class name of another equations block
-    in the same file, returns that block's Params as Variable items.
-    Same-file only — cross-file resolution would need import-graph
-    walking that's out of scope here.
+    Walks ``chain`` through Param type_text lookups starting from
+    ``block``; if the final step resolves to a sibling equations
+    block, returns that block's Params as Variable items. Same-file
+    only — cross-file resolution would need import-graph walking
+    that's out of scope here.
     """
-    target_param: ParamInfo | None = None
-    for p in block.params:
-        if p.name == base_name:
-            target_param = p
-            break
-    if target_param is None or target_param.type_text is None:
+    resolved = resolve_chain_to_block(chain, block, sibling_blocks)
+    if resolved is None:
         return []
-    type_name = target_param.type_text
-    for other in sibling_blocks:
-        if other.class_name == type_name:
-            return [
-                CompletionItem(
-                    label=p.name,
-                    kind="variable",
-                    detail=p.signature(),
-                    documentation=p.doc_text,
-                )
-                for p in other.params
-            ]
-    return []
+    return [
+        CompletionItem(
+            label=p.name,
+            kind="variable",
+            detail=p.signature(),
+            documentation=p.doc_text,
+        )
+        for p in resolved.params
+    ]

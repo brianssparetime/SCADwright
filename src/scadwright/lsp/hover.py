@@ -34,6 +34,7 @@ from scadwright.lsp.analyze import (
     auto_declared_origins_before,
 )
 from scadwright.lsp.context import ContextKind
+from scadwright.lsp.resolve import resolve_chain_to_block
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,8 @@ def build_hover_content(
     block: EquationsBlock | None = None,
     host_index: int = 0,
     line_index: int = 0,
+    attribute_chain: list[str] | None = None,
+    sibling_blocks: tuple[EquationsBlock, ...] = (),
 ) -> HoverContent | None:
     """Return hover content for ``name`` in ``context``, or ``None``
     when no static info is available.
@@ -66,12 +69,26 @@ def build_hover_content(
     appearing as bare-Name equation targets on lines strictly
     before ``(host_index, line_index)``), then the curated
     namespace. The first match wins.
+
+    Attribute context (``spec.clearances.|``) resolves the dotted
+    chain through Param type_text lookups and returns the hover
+    info for ``name`` in the resolved block's Params.
     """
     if context in (ContextKind.STRING, ContextKind.COMMENT):
         return None
     if context == ContextKind.TYPE_TAG:
         body = _TYPE_TAG_DOCS.get(name)
         return HoverContent(markdown=body) if body is not None else None
+    if context == ContextKind.ATTRIBUTE:
+        if block is not None and attribute_chain is not None:
+            resolved = resolve_chain_to_block(
+                attribute_chain, block, sibling_blocks,
+            )
+            if resolved is not None:
+                md = _param_hover_markdown(name, resolved)
+                if md is not None:
+                    return HoverContent(markdown=md)
+        return None
     if context == ContextKind.EXPRESSION:
         if block is not None:
             md = _param_hover_markdown(name, block)

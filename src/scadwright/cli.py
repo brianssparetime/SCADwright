@@ -241,6 +241,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _import_script(script_path: Path):
+    script_dir = str(script_path.resolve().parent)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
     spec = importlib.util.spec_from_file_location("__scadwright_script__", script_path)
     if spec is None or spec.loader is None:
         raise SCADwrightError(f"could not load script: {script_path}")

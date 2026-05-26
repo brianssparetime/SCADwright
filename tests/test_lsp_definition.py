@@ -196,6 +196,55 @@ def test_non_expression_context_returns_none() -> None:
 # =============================================================================
 
 
+def test_definition_attribute_chain_resolves_param() -> None:
+    src = (
+        'class C:\n'
+        '    radial = Param(float)\n'
+        '    equations = "x = radial"\n'
+        '\n'
+        'class B:\n'
+        '    clearances = Param(C)\n'
+        '    equations = "x = clearances.radial"\n'
+        '\n'
+        'class A:\n'
+        '    spec = Param(B)\n'
+        '    equations = "y = spec.clearances.radial"\n'
+    )
+    blocks = tuple(find_equations_blocks(src))
+    a_block = next(b for b in blocks if b.class_name == "A")
+    loc = build_definition_location(
+        "radial",
+        ContextKind.ATTRIBUTE,
+        a_block,
+        attribute_chain=["spec", "clearances"],
+        sibling_blocks=blocks,
+    )
+    assert loc is not None
+    assert loc.start_line == 1
+
+
+def test_definition_attribute_chain_broken_returns_none() -> None:
+    src = (
+        'class B:\n'
+        '    width = Param(float)\n'
+        '    equations = "x = width"\n'
+        '\n'
+        'class A:\n'
+        '    spec = Param(B)\n'
+        '    equations = "y = spec.nope.whatever"\n'
+    )
+    blocks = tuple(find_equations_blocks(src))
+    a_block = next(b for b in blocks if b.class_name == "A")
+    loc = build_definition_location(
+        "whatever",
+        ContextKind.ATTRIBUTE,
+        a_block,
+        attribute_chain=["spec", "nope"],
+        sibling_blocks=blocks,
+    )
+    assert loc is None
+
+
 def test_definition_location_is_immutable() -> None:
     loc = DefinitionLocation(
         start_line=0, start_col=0, end_line=0, end_col=1,
