@@ -10,7 +10,7 @@ Everything on this page works on flat-face contacts. For attaching things to the
 |---|---|
 | Position a part flush against another flat face, with overlap so `union()` is preview-clean | `part.attach(other, fuse=True)` |
 | Same, but pick the bond explicitly | `part.attach(other, bond="overlap" | "shift")` |
-| Mate two parts that are already in place (a yielded Component sitting inside a host, concentric cylinders, lid on container) | `part.fuse(host)` — see [attach.md](attach.md#mating-without-placement-nodefuse) |
+| Mate two parts already in place (concentric cylinders, lid on a matching tube, etc.) | `part.fuse(host)` — see [attach.md](attach.md#mating-without-placement-nodefuse) |
 | Drill a cutter through a parent shape | `cutter.through(parent)` inside `difference()` |
 | Combine two parts symmetrically — either side may carry the eps lever | `fuse(a, b)` from `scadwright.boolops` (peer auto-match form) |
 | Same, with explicit anchors and bond/bridge control | `fuse(a, b, on=..., using_anchor=..., bond=..., bridge=...)` |
@@ -205,6 +205,23 @@ If neither method applies (concave inner walls, contacts that aren't flat-on-fla
 - `fuse=False` for exact contact, no overlap.
 - `bridge=True` for the curved-host case.
 
+### Curved-surface fuses
+
+`node.fuse(host)` and `fuse(a, b)` extend the same way as `attach(fuse=True)` for planar contact. On curved concentric contact (cylindrical, conical, spherical, meridional), the framework picks the side whose `fuse_extend` carries the radial lever, preferring `inner=False` (the convex/outer side) first.
+
+Standard-library shapes that ship with a curved lever:
+
+- `Cylinder` primitive — bumps `r1` and `r2`.
+- `Sphere` primitive — bumps `r`.
+- `Tube` — rebuilds with `od + 2*eps` (outer wall) or `id - 2*eps` (inner wall).
+- `Funnel` — rebuilds with both ends' `od` (outer) or `id` (inner) bumped.
+- `Barrel` — rebuilds with `end_d`/`mid_d` (outer) or `thk += eps` (inner).
+- `SphericalShell` — rebuilds with `od + 2*eps` (outer) or `id - 2*eps` (inner).
+
+Component authors who want their Component to act as the extending side override `fuse_extend(anchor, eps)` and return the rebuilt Component. Authors without an override rely on the other side — an `ElementHolder` inside a `Tube` works without overriding because `Tube` carries the inner-wall lever. If neither side has a lever, the call raises with both class names and points at the override.
+
+On curved concentric contact the framework does not translate self: the matched anchor positions are reference points on the contact surfaces, not the contact location, and translating would slide self off the placement the user already chose. On planar contact the auto-match guarantee means positions already coincide, so no translate runs there either. Only the explicit-placement form at non-coincident planar anchors shifts self.
+
 ### `bond=` for explicit control
 
 `fuse=True` picks `bond="overlap"` when it applies. Pass `bond=` directly when you want explicit control:
@@ -223,9 +240,9 @@ peg.attach(plate, bond="shift")                # explicit bilateral shift
 
 ### Symmetric form: `fuse(a, b, ...)`
 
-`attach()` returns `self` translated to land on `other`. With `fuse=True`, the framework tries to extend `self` along the contact face. It doesn't try to extend `other`, because `other` isn't part of the returned value: an extension on it would be invisible.
+`attach(fuse=True)` only extends `self`; the framework can't extend `other` because `other` isn't part of the returned value, so an extension on it would be invisible. The standalone `fuse(a, b)` from `scadwright.boolops` returns the union directly, so either side can carry the extension.
 
-If you want SCADwright to try extending either side (whichever one qualifies), use the free function `fuse(a, b, on=..., using_anchor=..., eps=0.01)` from `scadwright.boolops`. It returns the union directly, so an extension on `b` lives in the returned value where it can be used. When both sides qualify, `fuse()` picks the side whose extension produces simpler output.
+`fuse(a, b)` with no anchors auto-matches the contact, same rules as `node.fuse(host)`. With explicit `on=` / `using_anchor=` / `bond=` / `bridge=`, it falls back to placement-style behavior — useful when you want symmetric side-selection paired with an explicit bond.
 
 ### How `through()` handles rotated cutters internally
 

@@ -152,9 +152,19 @@ def fuse(
         eps = default_eps()
 
     if using_anchor is not None and from_anchor is not None:
+        placement_path = bond is not None or bridge
+        if placement_path:
+            path_desc = "placement (you passed bond=/bridge=)"
+            canonical = "using_anchor="
+            sibling = "attach()"
+        else:
+            path_desc = "auto-match"
+            canonical = "from_anchor="
+            sibling = "node.fuse()"
         raise ValidationError(
-            "fuse: pass only one of using_anchor= or from_anchor= "
-            "(they're aliases for the same concept).",
+            f"fuse: pass only one of using_anchor= or from_anchor= — they "
+            f"name the same anchor on a. For this call — {path_desc} — "
+            f"the conventional spelling is {canonical}, matching {sibling}.",
             source_location=loc,
         )
     a_anchor_name = using_anchor if using_anchor is not None else from_anchor

@@ -1475,7 +1475,8 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
     """
     from scadwright.ast._surface_match import (
         ContactMatch, _match_pair,
-        cross_kind_bridge_candidates, find_contacts,
+        cross_kind_bridge_candidates, diagnose_match_failure, find_contacts,
+        planar_near_miss_candidates, same_side_wall_candidates,
     )
     from scadwright.errors import ValidationError
 
@@ -1484,14 +1485,23 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
         self_anchor = _resolve_attach_anchor(self, from_anchor, "self", loc)
         match_result = _match_pair(self_anchor, host_anchor)
         if match_result is None:
+            reasons = diagnose_match_failure(self_anchor, host_anchor)
+            if not reasons:
+                # Defensive: _match_pair said no but diagnose found nothing.
+                reasons = [
+                    "the anchor pair doesn't satisfy the match rules for "
+                    f"kind={self_anchor.kind!r}."
+                ]
+            if len(reasons) == 1:
+                reason_block = f"  Reason: {reasons[0]}"
+            else:
+                reason_block = "  Reasons:\n" + "\n".join(
+                    f"    - {r}" for r in reasons
+                )
             raise ValidationError(
                 f"fuse: explicit on={on!r} and from_anchor={from_anchor!r} "
-                f"do not describe a coincident surface (self anchor kind="
-                f"{self_anchor.kind!r}/inner={self_anchor.inner}, host "
-                f"anchor kind={host_anchor.kind!r}/inner={host_anchor.inner}). "
-                f"For planar contact the positions must coincide and normals "
-                f"must oppose; for curved contact the axes must coincide and "
-                f"radii match with one inner=True and one inner=False.",
+                f"do not describe a coincident surface.\n"
+                f"{reason_block}",
                 source_location=loc,
             )
         kind, concentric = match_result
@@ -1529,46 +1539,84 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
             source_location=loc,
         )
 
-    # Zero matches.
+    # Zero matches. Build a single error that layers any applicable
+    # specific hints (planar near-miss, same-side wall, bridge
+    # candidates) on top of the generic anchor-list / next-steps tail.
+    near_miss = planar_near_miss_candidates(self_anchors, host_anchors)
+    same_side = same_side_wall_candidates(self_anchors, host_anchors)
     bridge_hints = cross_kind_bridge_candidates(self_anchors, host_anchors)
-    if bridge_hints:
+
+    lines = [
+        f"fuse: found no coincident-surface contact between self "
+        f"({type(self).__name__}) and host ({type(host).__name__})."
+    ]
+
+    if near_miss:
+        # Show the closest near-miss as the headline; list any others.
+        near_miss_sorted = sorted(near_miss, key=lambda nm: nm[2])
+        s_name, h_name, offset = near_miss_sorted[0]
+        lines.append(
+            f"  Near-miss: self.{s_name} and host.{h_name} sit on the same "
+            f"plane but their reference positions don't coincide (offset = "
+            f"{offset:.3g} mm). For place-and-fuse, use "
+            f"self.attach(host, fuse=True)."
+        )
+        for s_name, h_name, offset in near_miss_sorted[1:]:
+            lines.append(
+                f"    Also: self.{s_name} ↔ host.{h_name} (offset = "
+                f"{offset:.3g} mm)."
+            )
+
+    if same_side:
+        s_name, h_name, kind, inner_flag = same_side[0]
+        side_word = "concave-inner" if inner_flag else "convex-outer"
+        lines.append(
+            f"  Same surface: self.{s_name} and host.{h_name} describe the "
+            f"same {kind} surface from the same side (both {side_word}). "
+            f"fuse needs one inner and one outer for concentric contact; "
+            f"for two parts whose surfaces literally coincide, use "
+            f"union(self, host) — OpenSCAD handles fully-coincident "
+            f"surfaces cleanly without an internal seam."
+        )
+
+    if bridge_hints and not same_side:
+        # Same-side hint is strictly more specific; suppress the
+        # bridge hint when it fires to avoid contradictory advice.
         outer_hits = [h for h in bridge_hints if not h[4]]
         inner_hits = [h for h in bridge_hints if h[4]]
-        msg = (
-            f"fuse: found no coincident-surface contact, but self has "
-            f"planar face anchor(s) against host's curved wall — that's "
-            f"a bridge case, not a fuse case."
+        lines.append(
+            f"  Self has planar face anchor(s) positioned against host's "
+            f"curved wall — that's a bridge case, not a fuse case."
         )
         if outer_hits:
             example = outer_hits[0]
-            msg += (
-                f"\n  For convex-outer bridge (peg merges into a curved "
+            lines.append(
+                f"    For convex-outer bridge (peg merges into a curved "
                 f"surface): use "
                 f"self.attach(host, on={example[2]!r}, bridge=True, "
                 f"orient=True)."
             )
         if inner_hits:
             example = inner_hits[0]
-            msg += (
-                f"\n  For concave-inner bridge (peg clipped to a bore): "
+            lines.append(
+                f"    For concave-inner bridge (peg clipped to a bore): "
                 f"use self.attach(host, on={example[2]!r}, bridge=True, "
                 f"orient=True)."
             )
-        raise ValidationError(msg, source_location=loc)
 
-    raise ValidationError(
-        f"fuse: found no coincident-surface contact between self "
-        f"({type(self).__name__}) and host ({type(host).__name__}).\n"
-        f"  Declared anchors on self: {sorted(self_anchors)}\n"
-        f"  Declared anchors on host: {sorted(host_anchors)}\n"
-        f"Next steps:\n"
-        f"  - Declare a contact anchor on your Component (see "
-        f"docs/anchors.md).\n"
-        f"  - Name the contact explicitly with on=<host_anchor> and "
-        f"from_anchor=<self_anchor>.\n"
-        f"  - For place-and-fuse, use self.attach(host, fuse=True).",
-        source_location=loc,
+    lines.append(f"  Declared anchors on self: {sorted(self_anchors)}")
+    lines.append(f"  Declared anchors on host: {sorted(host_anchors)}")
+    lines.append("Next steps:")
+    lines.append(
+        "  - Declare a contact anchor on your Component (see "
+        "docs/anchors.md)."
     )
+    lines.append(
+        "  - Name the contact explicitly with on=<host_anchor> and "
+        "from_anchor=<self_anchor>."
+    )
+    lines.append("  - For place-and-fuse, use self.attach(host, fuse=True).")
+    raise ValidationError("\n".join(lines), source_location=loc)
 
 
 def _alignment_translate(working_self, self_anchor, host_anchor, *, concentric, loc):

@@ -220,7 +220,7 @@ Outcomes:
 
 - **Exactly one matched contact** → the framework uses it.
 - **Multiple matched contacts** → the call raises, names each candidate, and points at `on=` / `from_anchor=` to disambiguate.
-- **Zero matched contacts** → the call raises, lists the declared anchors on each side, and suggests next moves (declare a contact anchor, name the contact explicitly, or reach for `attach()` if the goal is place-and-fuse). If self has a planar face anchor against host's curved wall, the error points at `attach(host, bridge=True)` instead.
+- **Zero matched contacts** → the call raises, lists the declared anchors on each side, and suggests next moves (declare a contact anchor, name the contact explicitly, or reach for `attach()` for place-and-fuse). When it can detect what you probably meant — planar anchors on the same plane but offset, a planar face positioned against a curved wall, or two curved anchors describing the same surface from the same side — it points you at the right alternative (`attach(host, fuse=True)`, `attach(host, bridge=True)`, or plain `union(self, host)`).
 
 ### Explicit overrides
 
@@ -231,44 +231,16 @@ holder.fuse(barrel, on="inner_wall", from_anchor="outer_wall") # name both
 
 Reach for these when matching is ambiguous, when one side has no declared anchor for the contact, or when forcing a fuse at a contact self hasn't already been placed against.
 
-### Eps mechanism
-
-For planar contact: the same cascade `attach(fuse=True)` runs — parametric `fuse_extend` on Cube / Cylinder cap / `linear_extrude` end-face, with the generic `cross_section_extend` as the fallback. Components with [`prefers_shift_at_anchor`](attach.md#prefers_shift_at_anchor) at the anchor get a bilateral shift instead.
-
-For curved concentric contact: the framework calls `fuse_extend` on whichever side carries the radial lever, preferring the `inner=False` (outer) side first. Standard-library shapes that ship with the lever:
-
-- `Cylinder` primitive — bumps `r1` and `r2`.
-- `Sphere` primitive — bumps `r`.
-- `Tube` — rebuilds with `od + 2*eps` (outer wall) or `id - 2*eps` (inner wall).
-- `Funnel` — rebuilds with both ends' `od` (outer) or `id` (inner) bumped.
-- `Barrel` — rebuilds with `end_d`/`mid_d` (outer) or `thk += eps` (inner).
-
-Component authors who want their Component to act as the extending side override `fuse_extend(anchor, eps)` and return the rebuilt Component. Authors without an override rely on the other side's lever — for example, an `ElementHolder` inside a `Tube` works without overriding because `Tube` carries the inner-wall lever.
-
-If neither side has the lever, the call raises with the per-side class names and points at the override.
-
-### Alignment
-
-When the matched contact is curved concentric, the framework does NOT translate self — the matched anchor positions are reference points on the contact surfaces, not the contact location, and translating would slide self off the placement the user already chose.
-
-When the contact is planar with positions already coincident (the matching-engine guarantee for the auto-match path), no translate runs either.
-
-The general case (explicit override at a non-coincident planar pair, where the user is asking for placement) wraps self in a `Translate` to move the named self anchor onto the named host anchor.
-
-### `disable_eps_fuse()`
-
-Inside the scope, matching still runs (a bad call still raises), but the eps mechanics are bypassed: the result is `union(aligned_self, host)` with exact contact. Used for precision builds, performance debugging, and cases where CGAL's behavior at this contact is acceptable.
-
 ### Peer form: `fuse(a, b)`
 
-The chained `node.fuse(host)` is asymmetric — host stays put. The standalone `fuse(a, b)` from `scadwright.boolops` is the peer form: either side may extend; the framework picks whichever has the lever (preferring the simpler / outer side). Same matching rules, same dispatch, same error matrix.
+The chained `node.fuse(host)` is asymmetric — host stays put. The standalone `fuse(a, b)` from `scadwright.boolops` is the peer form: either side may extend; the framework picks whichever has the lever.
 
 ```python
 from scadwright.boolops import fuse
 result = fuse(holder, barrel)
 ```
 
-The legacy explicit form `fuse(a, b, on=..., using_anchor=..., bond=..., bridge=...)` is preserved for advanced control over the eps mechanism with named placement. See the dispatch table in [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
+For the explicit-placement form `fuse(a, b, on=..., using_anchor=..., bond=..., bridge=...)`, how eps is applied per shape, and the `disable_eps_fuse()` scope, see [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
 
 ## Naming convention
 

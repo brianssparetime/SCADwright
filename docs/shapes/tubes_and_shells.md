@@ -101,7 +101,7 @@ SphericalShell(id=14, thk=3)             # equivalent; od solved
 ```
 
 Anchors:
-- `outer_wall` — `kind="spherical"`, on the outer surface. Reference position is the +Z tangent point; the matching engine identifies the surface by `axis_origin` (sphere center) and `radius`, so any anchor pointing at the same sphere collapses to one canonical surface.
-- `inner_wall` — `kind="spherical"`, `inner=True`, on the bore surface. This is the producer of inner-spherical anchors in the standard library; a `sphere(d=14).fuse(SphericalShell(od=20, id=14))` auto-matches the sphere's outer surface against the shell's inner_wall.
+- `outer_wall` — `kind="spherical"`, on the outer surface.
+- `inner_wall` — `kind="spherical"`, `inner=True`, on the bore.
 
-`fuse_extend`: outer-wall extension rebuilds with `od + 2*eps` (wall thickens outward); inner-wall extension rebuilds with `id - 2*eps` (wall thickens inward, bore shrinks). The shell carries the radial lever for both sides.
+`sphere(d=14).fuse(SphericalShell(od=20, id=14))` auto-matches the sphere's outer surface to the shell's `inner_wall`. `SphericalShell` is the only standard-library shape that declares an `inner=True` spherical anchor, so it's the natural counterpart for fitting a sphere into a bore.

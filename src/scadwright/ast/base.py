@@ -698,7 +698,7 @@ class Node(
         on containers sized to match, fillet rings against the
         cylinder they fillet)::
 
-            yield ElementHolder(...).fuse(barrel)
+            yield Tube(od=10, id=4, h=8).up(20).fuse(barrel)
             yield front_fillet.fuse(barrel)
 
         Not for press-fit or sliding joints — those use ``clearances``,

@@ -81,12 +81,44 @@ def test_fuse_zero_matches_with_planar_pair_misaligned_raises():
 
 
 def test_fuse_zero_matches_with_bridge_hint_points_at_attach_bridge():
-    """A planar peg against a curved host (cylindrical wall) has no
-    fuse match; the error names the bridge alternative."""
-    peg = cube([2, 2, 5])
-    tube = Tube(h=20, od=20, id=10)
+    """A planar peg positioned against a curved host (cylindrical
+    wall) has no fuse match; the error names the bridge alternative.
+
+    The peg is offset to put its ``lside`` face center exactly on the
+    tube's outer wall — the proximity gate in
+    ``cross_kind_bridge_candidates`` only fires the bridge hint when
+    the planar face is actually on the curved surface.
+    """
+    peg = cube([2, 2, 5], center=True).right(11)  # lside at (10, 0, 0)
+    tube = Tube(h=20, od=20, id=10)  # outer wall radius 10, axial 0..20
     with pytest.raises(ValidationError, match="bridge case"):
         peg.fuse(tube)
+
+
+def test_fuse_zero_matches_no_proximity_suppresses_bridge_hint():
+    """Two shapes that don't touch — a cube in the middle of the bore
+    with no face on either wall — should not get the bridge hint.
+    The proximity gate keeps the diagnostic honest.
+    """
+    peg = cube([2, 2, 5])  # default position; sits in the bore, no face on a wall
+    tube = Tube(h=20, od=20, id=10)
+    with pytest.raises(ValidationError) as excinfo:
+        peg.fuse(tube)
+    assert "bridge case" not in str(excinfo.value)
+
+
+def test_fuse_zero_matches_planar_near_miss_suggests_attach_fuse():
+    """An off-center peg sitting on a plate: the planes coincide, but
+    the named face-center positions don't match. The zero-match error
+    should flag the near-miss and suggest ``attach(host, fuse=True)``.
+    """
+    plate = cube([20, 20, 2], center=True)
+    peg = cube([5, 5, 8], center=True).right(5).up(5)  # bottom at z=1 = plate top
+    with pytest.raises(ValidationError) as excinfo:
+        peg.fuse(plate)
+    msg = str(excinfo.value)
+    assert "Near-miss" in msg
+    assert "attach(host, fuse=True)" in msg
 
 
 # --- Scale-style wrapper hint in the no-lever error ---
@@ -196,6 +228,64 @@ def test_fuse_explicit_kinds_mismatch_raises():
         peg.fuse(tube, on="outer_wall", from_anchor="bottom")
 
 
+def test_fuse_explicit_kinds_mismatch_planar_self_curved_host_suggests_bridge():
+    """When self anchor is planar and host is curved, the diagnostic
+    names this as a bridge case and suggests attach(bridge=True)."""
+    peg = cube([2, 2, 5])
+    tube = Tube(h=20, od=20, id=10)
+    with pytest.raises(ValidationError) as excinfo:
+        peg.fuse(tube, on="outer_wall", from_anchor="bottom")
+    msg = str(excinfo.value)
+    assert "bridge case" in msg
+    assert "bridge=True" in msg
+
+
+def test_fuse_explicit_axial_extent_mismatch_names_spans():
+    """Holder above the barrel's axial range: axes coincide, radii
+    match, inner flags compat, but axial extents don't overlap. The
+    diagnostic should call out the axial-extent failure and show the
+    two spans."""
+    holder = Tube(h=8, od=10, id=4).up(100)
+    barrel = Tube(h=50, od=20, id=10)
+    with pytest.raises(ValidationError) as excinfo:
+        holder.fuse(barrel, on="inner_wall", from_anchor="outer_wall")
+    msg = str(excinfo.value)
+    assert "axial extents don't overlap" in msg
+
+
+def test_fuse_explicit_planar_near_miss_suggests_attach_fuse():
+    """Explicit form: planes coincide but positions differ.
+    Diagnostic should suggest attach(host, fuse=True)."""
+    plate = cube([20, 20, 2], center=True)
+    peg = cube([5, 5, 8], center=True).right(5).up(5)
+    with pytest.raises(ValidationError) as excinfo:
+        peg.fuse(plate, on="top", from_anchor="bottom")
+    msg = str(excinfo.value)
+    assert "planar positions don't coincide" in msg
+    assert "attach(host, fuse=True)" in msg
+
+
+def test_fuse_explicit_inner_flag_mismatch_names_rule():
+    """Two cylindrical anchors with inner=False on **different**
+    surfaces: the inner-flag rule message fires. (Same-surface case
+    is covered by
+    test_fuse_explicit_same_side_wall_suggests_union below.)
+    """
+    # Synthetic outer anchor at a different radius from the host tube,
+    # so they fail both the inner-flag rule and the radius check.
+    a = Tube(h=20, od=10, id=4).with_anchor(
+        "synth_outer", at=(7, 0, 10), normal=(1, 0, 0),
+        kind="cylindrical",
+        axis=(0, 0, 1), radius=7.0, length=20.0, inner=False,
+    )
+    b = Tube(h=20, od=10, id=4)  # outer_wall at radius 5
+    with pytest.raises(ValidationError) as excinfo:
+        a.fuse(b, on="outer_wall", from_anchor="synth_outer")
+    msg = str(excinfo.value)
+    assert "inner=False" in msg
+    assert "inner=True (concave/bore side)" in msg
+
+
 # --- Errors: explicit anchor lookup ---
 
 
@@ -263,3 +353,49 @@ def test_fuse_disable_eps_still_raises_on_no_match():
     with disable_eps_fuse():
         with pytest.raises(ValidationError, match="no coincident-surface contact"):
             a.fuse(b)
+
+
+# --- Errors: same-side wall (telescoping / coincident surfaces) ---
+
+
+def test_fuse_zero_matches_telescoping_tubes_suggests_union():
+    """Two same-OD tubes overlapping axially: their outer walls
+    describe the same cylindrical surface from the same side. fuse
+    rightly rejects (compatible_inner_flags requires one True one
+    False); the error should point at plain union()."""
+    lower = Tube(h=20, od=20, id=10)
+    upper = Tube(h=20, od=20, id=10).up(10)  # axially overlaps lower
+    with pytest.raises(ValidationError) as excinfo:
+        upper.fuse(lower)
+    msg = str(excinfo.value)
+    assert "Same surface" in msg
+    assert "union(self, host)" in msg
+    # The bridge hint should be suppressed when same-side fires.
+    assert "bridge case" not in msg
+
+
+def test_fuse_zero_matches_telescoping_same_id_bores_suggests_union():
+    """Two same-ID tubes overlapping axially: their inner walls
+    describe the same bore surface from the same side. Same case,
+    inner=True flavor."""
+    a = Tube(h=20, od=20, id=10)
+    b = Tube(h=20, od=20, id=10).up(10)
+    with pytest.raises(ValidationError) as excinfo:
+        b.fuse(a)
+    msg = str(excinfo.value)
+    assert "Same surface" in msg
+    assert "union(self, host)" in msg
+
+
+def test_fuse_explicit_same_side_wall_suggests_union():
+    """Explicit form: user names two anchors that describe the same
+    cylindrical surface from the same side. Diagnostic upgrades from
+    the bare 'both inner=False' rule statement to the union()
+    suggestion."""
+    lower = Tube(h=20, od=20, id=10)
+    upper = Tube(h=20, od=20, id=10).up(10)
+    with pytest.raises(ValidationError) as excinfo:
+        upper.fuse(lower, on="outer_wall", from_anchor="outer_wall")
+    msg = str(excinfo.value)
+    assert "same cylindrical surface from the same side" in msg
+    assert "union(self, host)" in msg

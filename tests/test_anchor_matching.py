@@ -149,18 +149,30 @@ def test_sphere_inside_spherical_shell_matches():
 
 
 def test_cross_kind_bridge_candidates_planar_peg_against_cylindrical_wall():
-    """A peg with planar bottom + cylindrical host (Tube outer_wall):
-    cross_kind_bridge_candidates lists the pair so the dispatcher can
-    point at attach(bridge=True)."""
+    """A peg with a planar face positioned exactly on a cylindrical
+    host wall: cross_kind_bridge_candidates returns the pair so the
+    dispatcher can point at attach(bridge=True)."""
+    # peg.lside at (10, 0, 0), on the tube's outer wall (radius 10).
+    peg = cube([2, 2, 5], center=True).right(11)
+    tube = Tube(h=20, od=20, id=10)
+    candidates = cross_kind_bridge_candidates(
+        get_node_anchors(peg), get_node_anchors(tube)
+    )
+    # outer wall hit (host_inner=False); peg isn't near the bore.
+    assert any(c[4] is False for c in candidates)
+    assert not any(c[4] is True for c in candidates)
+
+
+def test_cross_kind_bridge_candidates_proximity_gate_suppresses_distant_peg():
+    """Same planar-self / curved-host kinds, but the peg sits in the
+    middle of the bore with no face on either wall: proximity gate
+    rejects every candidate."""
     peg = cube([2, 2, 5])
     tube = Tube(h=20, od=20, id=10)
     candidates = cross_kind_bridge_candidates(
         get_node_anchors(peg), get_node_anchors(tube)
     )
-    # bbox-face planar anchors on the cube (6 unique) ×
-    # outer_wall + inner_wall on the tube (2). Expect both surfaces.
-    assert any(c[4] is False for c in candidates)  # outer host
-    assert any(c[4] is True for c in candidates)   # inner host
+    assert candidates == []
 
 
 def test_cross_kind_bridge_candidates_empty_when_no_curved_host():
