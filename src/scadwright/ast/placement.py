@@ -1475,7 +1475,8 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
     """
     from scadwright.ast._surface_match import (
         ContactMatch, _match_pair,
-        cross_kind_bridge_candidates, diagnose_match_failure, find_contacts,
+        cross_kind_bridge_candidates, curved_near_miss_candidates,
+        diagnose_match_failure, find_contacts,
         planar_near_miss_candidates, same_side_wall_candidates,
     )
     from scadwright.errors import ValidationError
@@ -1544,6 +1545,7 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
     # candidates) on top of the generic anchor-list / next-steps tail.
     near_miss = planar_near_miss_candidates(self_anchors, host_anchors)
     same_side = same_side_wall_candidates(self_anchors, host_anchors)
+    curved_miss = curved_near_miss_candidates(self_anchors, host_anchors)
     bridge_hints = cross_kind_bridge_candidates(self_anchors, host_anchors)
 
     lines = [
@@ -1578,6 +1580,14 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
             f"union(self, host) — OpenSCAD handles fully-coincident "
             f"surfaces cleanly without an internal seam."
         )
+
+    if curved_miss and not same_side:
+        for s_name, h_name, reasons in curved_miss:
+            lines.append(
+                f"  Curved near-miss: self.{s_name} ↔ host.{h_name}:"
+            )
+            for r in reasons:
+                lines.append(f"    - {r}")
 
     if bridge_hints and not same_side:
         # Same-side hint is strictly more specific; suppress the

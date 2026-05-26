@@ -818,6 +818,33 @@ def _is_same_curved_surface(a, b):
     return False
 
 
+def curved_near_miss_candidates(self_anchors, host_anchors):
+    """Return ``[(self_name, host_name, reasons), ...]`` for same-kind
+    curved pairs that share an axis line (or sphere center) but fail
+    on a downstream rule (inner-flag compatibility, radius match,
+    axial extent).
+
+    Called from the zero-match branch of ``_resolve_fuse_match`` to
+    show why a cylindrical/conical/spherical/meridional pair didn't
+    match, alongside (not instead of) the bridge-case hint. The user
+    sees the specific rule that failed and can fix their anchor
+    declaration directly.
+    """
+    self_canon = _canonical_anchors(self_anchors)
+    host_canon = _canonical_anchors(host_anchors)
+    out = []
+    for s_name, s_anchor in self_canon:
+        if s_anchor.kind not in _CURVED_KINDS:
+            continue
+        for h_name, h_anchor in host_canon:
+            if h_anchor.kind != s_anchor.kind:
+                continue
+            reasons = diagnose_match_failure(s_anchor, h_anchor)
+            if reasons:
+                out.append((s_name, h_name, reasons))
+    return out
+
+
 def same_side_wall_candidates(self_anchors, host_anchors):
     """Return ``[(self_name, host_name, kind, inner_flag), ...]`` for
     pairs of curved anchors that describe **the same surface from the

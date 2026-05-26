@@ -107,6 +107,53 @@ def test_fuse_zero_matches_no_proximity_suppresses_bridge_hint():
     assert "bridge case" not in str(excinfo.value)
 
 
+def test_fuse_zero_matches_curved_near_miss_reports_inner_flag():
+    """A holder and a section with matching radii but both inner=False.
+    The section is offset in z so the axial extents don't overlap
+    (preventing same_side_wall_candidates from firing). The error
+    should name the curved near-miss with the specific rule that
+    failed."""
+    from scadwright.component.anchors import anchor as _anchor
+
+    class Section(Component):
+        equations = "h, od, thk > 0"
+        outer_wall = _anchor(
+            at="(od / 2), 0, h / 2",
+            normal=(1.0, 0.0, 0.0),
+            kind="cylindrical",
+            surface_params={
+                "axis": (0.0, 0.0, 1.0),
+                "radius": "od / 2",
+                "length": "h",
+            },
+        )
+        def build(self):
+            return Tube(h=self.h, od=self.od, id=self.od - 2 * self.thk)
+
+    class Holder(Component):
+        equations = "h, od, thk > 0"
+        outer_wall = _anchor(
+            at="(od / 2), 0, h / 2",
+            normal=(1.0, 0.0, 0.0),
+            kind="cylindrical",
+            surface_params={
+                "axis": (0.0, 0.0, 1.0),
+                "radius": "od / 2",
+                "length": "h",
+            },
+        )
+        def build(self):
+            return Tube(h=self.h, od=self.od, id=self.od - 2 * self.thk)
+
+    section = Section(h=20, od=20, thk=2)
+    holder = Holder(h=5, od=20, thk=1).up(30)
+    with pytest.raises(ValidationError) as excinfo:
+        holder.fuse(section)
+    msg = str(excinfo.value)
+    assert "Curved near-miss" in msg
+    assert "inner=" in msg
+
+
 def test_fuse_zero_matches_planar_near_miss_suggests_attach_fuse():
     """An off-center peg sitting on a plate: the planes coincide, but
     the named face-center positions don't match. The zero-match error

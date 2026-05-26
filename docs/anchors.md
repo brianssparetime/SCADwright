@@ -172,10 +172,12 @@ Each kind needs certain extra fields to work. Most users won't write these by ha
 | Kind          | Required surface parameters |
 |---------------|-----------------------------|
 | `planar`      | (none) |
-| `cylindrical` | `axis`, `radius`, `length` |
-| `conical`     | `axis`, `r1`, `r2`, `length` |
-| `spherical`   | `axis`, `axis_origin`, `meridian_zero`, `radius` |
-| `meridional`  | `axis`, `axis_origin`, `meridian_zero`, `meridian_r`, `mid_r`, `meridian_s`, `length` |
+| `cylindrical` | `axis`, `radius`, `length`; `inner` for bore-side anchors |
+| `conical`     | `axis`, `r1`, `r2`, `length`; `inner` for bore-side anchors |
+| `spherical`   | `axis`, `axis_origin`, `meridian_zero`, `radius`; `inner` for concave-side anchors |
+| `meridional`  | `axis`, `axis_origin`, `meridian_zero`, `meridian_r`, `mid_r`, `meridian_s`, `length`; `inner` for bore-side anchors |
+
+`inner` defaults to `False` (convex/outer surface). Set it to `True` on bore-side or concave anchors. The flag affects how the framework computes the central axis from the anchor's position, and `fuse()` requires one `inner=True` and one `inner=False` anchor for concentric curved contacts.
 
 Cap anchors on cylinders, cones, and barrels (`top`/`bottom`) are `kind="planar"` but also carry `axis`, `meridian_zero`, and `rim_radius`, so you can place things on the cap by angle and radius.
 
@@ -188,9 +190,16 @@ outer_wall = anchor(
     kind="cylindrical",
     surface_params={"axis": (0, 0, 1), "radius": "od/2", "length": "h"},
 )
+
+inner_wall = anchor(
+    at="id/2, 0, h/2",
+    normal=(-1, 0, 0),
+    kind="cylindrical",
+    surface_params={"axis": (0, 0, 1), "radius": "id/2", "length": "h", "inner": True},
+)
 ```
 
-String values inside `surface_params` are evaluated against the Component's parameters the same way `at=` strings are.
+String values inside `surface_params` are evaluated against the Component's parameters the same way `at=` strings are. Chained attribute access works: `"element.face_z_top - element.face_z_bot"` resolves through the `element` Param's fields.
 
 ### What SCADwright checks when you declare an anchor
 

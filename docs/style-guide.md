@@ -217,6 +217,8 @@ class LensMountWithLatch(LensMount):
 
 Without this, the subclass has to duplicate the parent's entire `build()` just to add one cutter to the same `difference()` call. A second `difference()` layer (diffing from `super().build()`) leaves a paper-thin shell between the two cuts.
 
+Prefer `difference(solid, *cutters)` over `difference(solid, union(*cutters))`. OpenSCAD's `difference()` already unions children 2..N internally, so the explicit `union()` adds a redundant nesting level in the emitted SCAD.
+
 ### Structure files as REUSABLE / CONCRETE / DESIGN
 
 ```python
