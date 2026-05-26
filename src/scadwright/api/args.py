@@ -213,7 +213,25 @@ def _load_json_payloads() -> dict[str, Any]:
     return payloads
 
 
-def from_json(name: str | None = None, *, required: bool = False) -> Any:
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge ``override`` into ``base``. Dict values recurse;
+    everything else (lists, scalars, None) in ``override`` replaces the
+    base value."""
+    result = dict(base)
+    for key, val in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result
+
+
+def from_json(
+    name: str | None = None,
+    *,
+    required: bool = False,
+    default: dict | None = None,
+) -> Any:
     """Return the parsed content of a ``--from-json`` payload.
 
     Two call shapes:
@@ -232,34 +250,53 @@ def from_json(name: str | None = None, *, required: bool = False) -> Any:
     ``required=True`` turns a missing payload into a parse-time error
     (``sys.exit(2)`` via the parser's error path), surfaced in the same
     place a missing required ``arg()`` would.
+
+    ``default=`` supplies a fallback dict. When no ``--from-json`` is
+    supplied, ``default`` is returned instead of ``None``. When
+    ``--from-json`` IS supplied, the JSON content is deep-merged over
+    ``default`` (dict values recurse; everything else in the JSON
+    replaces the default). This eliminates the if/else branch that
+    otherwise appears at every call site::
+
+        _cfg = from_json(default={
+            "fov": 57.0,
+            "stop": {"depth": -2.7, "hole_diameters": [20.0, 14.3]},
+        })
+        # _cfg is always a dict — JSON overrides defaults where present.
     """
     _register_from_json()
     payloads = _load_json_payloads()
 
+    raw = None
     if name is None:
         if not payloads:
             if required:
                 _get_parser().error(
                     "--from-json is required (no payload supplied)"
                 )
-            return None
-        if len(payloads) > 1:
+        elif len(payloads) > 1:
             names = sorted(payloads)
             raise SCADwrightError(
                 f"from_json() called without a name but {len(payloads)} "
                 f"--from-json payloads supplied: {names!r}. Disambiguate "
                 f"with from_json(\"<basename>\")."
             )
-        # Single payload — return its content directly.
-        return next(iter(payloads.values()))
+        else:
+            raw = next(iter(payloads.values()))
+    else:
+        if name in payloads:
+            raw = payloads[name]
+        elif required:
+            supplied = sorted(payloads) or "none"
+            _get_parser().error(
+                f"--from-json {name!r} is required but was not supplied "
+                f"(supplied: {supplied})"
+            )
 
-    # Named mode: basename match.
-    if name in payloads:
-        return payloads[name]
-    if required:
-        supplied = sorted(payloads) or "none"
-        _get_parser().error(
-            f"--from-json {name!r} is required but was not supplied "
-            f"(supplied: {supplied})"
-        )
-    return None
+    if default is not None:
+        if raw is None:
+            return dict(default)
+        if isinstance(raw, dict):
+            return _deep_merge(default, raw)
+        return raw
+    return raw

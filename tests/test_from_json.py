@@ -193,3 +193,75 @@ def test_coexists_with_arg(tmp_path):
     _args.set_argv(["--width=80", "--from-json", p])
     assert arg("width", default=40, type=float) == 80.0
     assert from_json() == {"k": "v"}
+
+
+# =============================================================================
+# default= parameter: merge JSON over a fallback dict.
+# =============================================================================
+
+
+def test_default_returned_when_no_json():
+    _args.set_argv([])
+    result = from_json(default={"fov": 57.0, "name": "default"})
+    assert result == {"fov": 57.0, "name": "default"}
+
+
+def test_default_is_a_copy():
+    _args.set_argv([])
+    defaults = {"fov": 57.0}
+    result = from_json(default=defaults)
+    result["fov"] = 999
+    assert defaults["fov"] == 57.0
+
+
+def test_json_overrides_default(tmp_path):
+    p = _write(tmp_path, "d.json", {"fov": 47.0})
+    _args.set_argv(["--from-json", p])
+    result = from_json(default={"fov": 57.0, "name": "default"})
+    assert result == {"fov": 47.0, "name": "default"}
+
+
+def test_deep_merge_nested_dicts(tmp_path):
+    p = _write(tmp_path, "d.json", {"stop": {"depth": 5.0}})
+    _args.set_argv(["--from-json", p])
+    result = from_json(default={
+        "stop": {"depth": -2.7, "hole_diameters": [20.0, 14.3]},
+        "fov": 57.0,
+    })
+    assert result["stop"]["depth"] == 5.0
+    assert result["stop"]["hole_diameters"] == [20.0, 14.3]
+    assert result["fov"] == 57.0
+
+
+def test_json_list_replaces_default_list(tmp_path):
+    p = _write(tmp_path, "d.json", {"items": [4, 5, 6]})
+    _args.set_argv(["--from-json", p])
+    result = from_json(default={"items": [1, 2, 3]})
+    assert result["items"] == [4, 5, 6]
+
+
+def test_json_extra_keys_pass_through(tmp_path):
+    p = _write(tmp_path, "d.json", {"fov": 47.0, "extra": True})
+    _args.set_argv(["--from-json", p])
+    result = from_json(default={"fov": 57.0})
+    assert result["extra"] is True
+
+
+def test_default_with_named_payload(tmp_path):
+    p = _write(tmp_path, "design.json", {"fov": 47.0})
+    _args.set_argv(["--from-json", p])
+    result = from_json("design.json", default={"fov": 57.0, "name": "default"})
+    assert result == {"fov": 47.0, "name": "default"}
+
+
+def test_default_with_named_no_match():
+    _args.set_argv([])
+    result = from_json("missing.json", default={"fov": 57.0})
+    assert result == {"fov": 57.0}
+
+
+def test_non_dict_json_ignores_default(tmp_path):
+    p = _write(tmp_path, "d.json", [1, 2, 3])
+    _args.set_argv(["--from-json", p])
+    result = from_json(default={"fallback": True})
+    assert result == [1, 2, 3]

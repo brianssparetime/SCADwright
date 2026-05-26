@@ -834,6 +834,8 @@ debug = arg("debug", default=False, type=bool)               # --debug flag (pre
 
 # Pass complex/nested data via JSON (single payload):
 spec = from_json() or {}                                    # None if --from-json not supplied
+# With defaults: always returns a dict; JSON overrides where present:
+cfg = from_json(default={"fov": 57.0, "stop": {"depth": -2.7}})
 # Multiple JSON payloads disambiguated by basename:
 design = from_json("design.json")                           # None if not supplied
 caps   = from_json("caps.json", required=True)              # parse-time error if missing
