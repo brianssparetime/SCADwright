@@ -196,6 +196,27 @@ def build(self):
         yield Tube(od=7, id=3, h=8).translate([px, py, self.floor_thk])
 ```
 
+### Factor cutters for subclass extensibility
+
+When a Component's `build()` uses `difference()` and a subclass might need to add cutters, pull the cutters into a generator method. The subclass extends the cutters; the blank and the difference stay in `build()`:
+
+```python
+class LensMount(Component):
+    def _cutters(self):
+        yield self._bore_cutter()
+        yield self._groove_cutter()
+
+    def build(self):
+        yield difference(self._blank(), *self._cutters())
+
+class LensMountWithLatch(LensMount):
+    def _cutters(self):
+        yield from super()._cutters()
+        yield self._notch_cutter()
+```
+
+Without this, the subclass has to duplicate the parent's entire `build()` just to add one cutter to the same `difference()` call. A second `difference()` layer (diffing from `super().build()`) leaves a paper-thin shell between the two cuts.
+
 ### Structure files as REUSABLE / CONCRETE / DESIGN
 
 ```python
