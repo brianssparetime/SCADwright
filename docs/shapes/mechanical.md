@@ -91,8 +91,6 @@ TubeClamp(tube_d=12, clamp_length=30, wall_thk=3, bolt_offset=5, n_bolts=4)   # 
 
 The tube axis runs along +X. The clamp's base sits on z=0, so the bbox-derived `bottom` anchor is the mount-to-parent face. Default `screw="M3"`, `n_bolts=2`, `saw_cut_width=0.5`. For 4-bolt placement, the axial inset of the corner holes from each end defaults to `wall_thk + 2`; override with `bolt_axial_inset=`.
 
-Common applications: drone-frame arm mounts, conduit and PVC pipe holders, garden-hose mounts, cable bundle clamps, robot-arm members, telescope tube saddles.
-
 ## `Grommet(plate_thk, plate_hole_d, flange_d)`
 
 Vibration-isolating sleeve that sits in a plate's hole. The barrel passes through the plate; flanges above and below sandwich the plate. An optional equatorial groove around the barrel seats in the plate hole — useful for printable TPU grommets where the groove is what catches the plate edge.
@@ -107,8 +105,6 @@ Grommet(plate_thk=1.6, plate_hole_d=4, flange_d=6,
 Sits centered on the origin with its axis along +Z. Total height is `plate_thk + 2 * flange_thk`; the bottom flange face is at z=0. Defaults: `flange_thk=0.6`, `slip=0.1` (barrel undersize), `screw="M3"`, `groove_depth=0` (no groove).
 
 Anchors: `top` and `bottom` are planar with `rim_radius=flange_d/2`, so `add_text` arc-on-rim and `attach(angle=, at_radial=)` both work on either flange face.
-
-Common applications: flight-controller soft-mounting on a drone frame, sensor isolation on machine equipment, panel-mount strain relief for cabling.
 
 ### See also
 

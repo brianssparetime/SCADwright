@@ -113,40 +113,7 @@ The morph framework is intentionally "easy mode" — not infinitely extensible. 
 
 For the inline-primitive case where you want to animate a `cube(5)`-like piece between variants, lift it to a class attribute (`self.spacer = cube(5)`) so both variants reference the same instance.
 
-## Error catalog
-
-### Mirror in the difference
-
-```
-morph: part 'lid' uses a mirror on one side but not the other.
-Mirrors are reflections (det = -1) and can't be smoothly interpolated.
-  Replace .flip(...) with .rotate([180, 0, 0]) (or the equivalent
-  rotation) — same final pose, and the morph will animate it as a
-  single hinge swing.
-```
-
-### Non-uniform scale change
-
-```
-morph: part 'widget' has non-uniform scale that differs between variants.
-  start scale: (1.0, 1.0, 1.0)
-  end scale:   (2.0, 1.0, 1.0)
-  Only uniform scale changes can be animated; for shape morphing,
-  define separate parts.
-```
-
-### Structural mismatch
-
-```
-morph: variant ASTs differ in structure — kind differs (component vs spatial).
-  start has: _Lid
-  end has:   Translate
-  morph requires both variants to share the same CSG / decoration
-  skeleton; only the transforms above leaves (Components, primitives)
-  may differ.
-```
-
-### Lifting inline parts
+## Lifting inline parts
 
 If you see "inline primitive geometry differs at the same structural position," the morph is telling you that two variants have a `cube(...)` (or `sphere`, `cylinder`, etc.) at the same point in the CSG tree but with different transforms — and inline primitives can't pair across variants for animation.
 

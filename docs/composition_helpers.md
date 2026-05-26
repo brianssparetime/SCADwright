@@ -132,7 +132,7 @@ vents = hole_grid(
 - `hole` — any cutter shape: `clearance_hole("M3", ...)`, a `Counterbore`, a plain `cylinder`, or a custom node.
 - `center` — when `True` (default), the grid is centered on the origin. When `False`, the bottom-left hole sits at the origin.
 
-Common patterns: flight-controller stack holes (16×16, 20×20, 25.5×25.5, 30.5×30.5 mm), VESA monitor-mount holes, vent arrays, rectangular bolt grids. For irregular hole positions, use `linear_copy` directly or hand-translate each hole.
+For irregular hole positions, use `linear_copy` directly or hand-translate each hole.
 
 ## `multi_hull`
 
