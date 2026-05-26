@@ -189,23 +189,99 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)
 
 For how the bridge is built, what it checks, and the limitations to watch for, see [Putting things on curved surfaces](anchors.md#putting-things-on-curved-surfaces-bridge-true) in `anchors.md`.
 
+## Mating without placement: `node.fuse()`
+
+`attach()` answers "where does this go?" plus optionally "and make the seam clean." `node.fuse(host)` answers only the seam question: self is already at the right place; the framework finds the coincident surface between self and host and applies eps where it belongs.
+
+Reach for `fuse` whenever two parts share a surface by design and would otherwise leave a non-manifold seam in the union. The recurring cases:
+
+- Component yields whose surfaces touch (`yield Holder().fuse(barrel)` inside a parent's `build()`).
+- Lids on containers sized to match.
+- Tubes joined at matching OD.
+- Fillet rings against the cylinder they fillet.
+
+Not for press-fit or sliding joints — those use [`clearances`](clearances.md), which puts a deliberate non-zero gap between the parts. `fuse` is for parts the author conceives as one body but expresses as two.
+
+### Auto-matching
+
+By default `fuse(host)` walks the anchor declarations on both sides and looks for one that describes the same surface. The match rules:
+
+| Anchor kinds | What must match |
+|---|---|
+| planar + planar | positions coincide, normals anti-parallel |
+| cylindrical + cylindrical | same axis line, same radius, one `inner=True` / one `inner=False`, overlapping axial extent |
+| conical + conical | same axis line, matching `r1` / `r2`, `inner` compat, axial extents match strictly |
+| spherical + spherical | coincident centers, same radius, `inner` compat |
+| meridional + meridional | same axis line, matching meridian params, `inner` compat, axial extents match strictly |
+
+End-to-end tubes (matching OD, abutting axially) match at their cap-to-cap planar anchors, not their walls — the walls share an edge, not a surface, and the axial-extent rule rejects the wall match.
+
+Outcomes:
+
+- **Exactly one matched contact** → the framework uses it.
+- **Multiple matched contacts** → the call raises, names each candidate, and points at `on=` / `from_anchor=` to disambiguate.
+- **Zero matched contacts** → the call raises, lists the declared anchors on each side, and suggests next moves (declare a contact anchor, name the contact explicitly, or reach for `attach()` if the goal is place-and-fuse). If self has a planar face anchor against host's curved wall, the error points at `attach(host, bridge=True)` instead.
+
+### Explicit overrides
+
+```python
+holder.fuse(barrel, on="inner_wall")                          # name host anchor only
+holder.fuse(barrel, on="inner_wall", from_anchor="outer_wall") # name both
+```
+
+Reach for these when matching is ambiguous, when one side has no declared anchor for the contact, or when forcing a fuse at a contact self hasn't already been placed against.
+
+### Eps mechanism
+
+For planar contact: the same cascade `attach(fuse=True)` runs — parametric `fuse_extend` on Cube / Cylinder cap / `linear_extrude` end-face, with the generic `cross_section_extend` as the fallback. Components with [`prefers_shift_at_anchor`](attach.md#prefers_shift_at_anchor) at the anchor get a bilateral shift instead.
+
+For curved concentric contact: the framework calls `fuse_extend` on whichever side carries the radial lever, preferring the `inner=False` (outer) side first. Standard-library shapes that ship with the lever:
+
+- `Cylinder` primitive — bumps `r1` and `r2`.
+- `Sphere` primitive — bumps `r`.
+- `Tube` — rebuilds with `od + 2*eps` (outer wall) or `id - 2*eps` (inner wall).
+- `Funnel` — rebuilds with both ends' `od` (outer) or `id` (inner) bumped.
+- `Barrel` — rebuilds with `end_d`/`mid_d` (outer) or `thk += eps` (inner).
+
+Component authors who want their Component to act as the extending side override `fuse_extend(anchor, eps)` and return the rebuilt Component. Authors without an override rely on the other side's lever — for example, an `ElementHolder` inside a `Tube` works without overriding because `Tube` carries the inner-wall lever.
+
+If neither side has the lever, the call raises with the per-side class names and points at the override.
+
+### Alignment
+
+When the matched contact is curved concentric, the framework does NOT translate self — the matched anchor positions are reference points on the contact surfaces, not the contact location, and translating would slide self off the placement the user already chose.
+
+When the contact is planar with positions already coincident (the matching-engine guarantee for the auto-match path), no translate runs either.
+
+The general case (explicit override at a non-coincident planar pair, where the user is asking for placement) wraps self in a `Translate` to move the named self anchor onto the named host anchor.
+
+### `disable_eps_fuse()`
+
+Inside the scope, matching still runs (a bad call still raises), but the eps mechanics are bypassed: the result is `union(aligned_self, host)` with exact contact. Used for precision builds, performance debugging, and cases where CGAL's behavior at this contact is acceptable.
+
+### Peer form: `fuse(a, b)`
+
+The chained `node.fuse(host)` is asymmetric — host stays put. The standalone `fuse(a, b)` from `scadwright.boolops` is the peer form: either side may extend; the framework picks whichever has the lever (preferring the simpler / outer side). Same matching rules, same dispatch, same error matrix.
+
+```python
+from scadwright.boolops import fuse
+result = fuse(holder, barrel)
+```
+
+The legacy explicit form `fuse(a, b, on=..., using_anchor=..., bond=..., bridge=...)` is preserved for advanced control over the eps mechanism with named placement. See the dispatch table in [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
+
 ## Naming convention
 
-The four placement options that show up across `attach()`, `add_text()`, and anchor declarations:
+The placement options that show up across `attach()`, `fuse()`, `add_text()`, and anchor declarations:
 
 | Option | Type | Meaning |
 |---|---|---|
 | `on=` | string (anchor name) or `Anchor` | The anchor on the *other* shape (the one being attached to). |
-| `using_anchor=` | string (anchor name) | The anchor on *self* (the shape being moved). Only on `attach()` and `fuse()`. |
+| `using_anchor=` | string (anchor name) | The anchor on *self* (the shape being moved). Used on `attach()` and the explicit `fuse(a, b)` form. |
+| `from_anchor=` | string (anchor name) | The anchor on *self*. Used on `node.fuse()` and the peer `fuse(a, b)` form. Alias for `using_anchor` on the standalone — pass one or the other, not both. |
 | `at=` | 3-tuple or string expression | A 3D position. Used by `anchor()` declarations, `with_anchor()`, and `add_text()`'s ad-hoc placement (paired with `normal=`). Always a coordinate, never an offset. |
 | `offset=` | 2-tuple (mm) | An in-face nudge for a named anchor (only on `add_text()`). 2D offset along the face. |
 
 The split keeps `at=` consistent: it always means "a 3D coordinate in some local frame." For nudging a named anchor along the face it sits on, use `offset=` instead.
 
-Anchor-name options (`on=`, `using_anchor=`) and position options (`at=`) stay distinct: anchor names are always selectors, coordinates are always coordinates.
-
-## Advanced notes
-
-### Symmetric form: `fuse(a, b, ...)`
-
-`attach(fuse=True)` only extends `self`. If `self` can't be extended at the contact face but `other` can, the extension is lost: `other` isn't part of the returned shape. For cases where either side might need to carry the extension, use the free function `fuse(a, b, on=..., using_anchor=..., ...)` from `scadwright.boolops`. It picks whichever side qualifies, and when both do it picks the one that produces simpler output. See the dispatch table in [Eliminating manual epsilon overlap](auto-eps_fuse_and_through.md).
+Anchor-name options (`on=`, `using_anchor=`, `from_anchor=`) and position options (`at=`) stay distinct: anchor names are always selectors, coordinates are always coordinates.

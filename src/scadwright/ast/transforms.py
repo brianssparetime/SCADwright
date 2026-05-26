@@ -122,6 +122,16 @@ class Color(Node):
     child: Node
     alpha: float = 1.0
 
+    def fuse_extend(self, anchor, eps: float):
+        """Color is metadata-only — recurse into child and re-wrap."""
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return Color(
+            c=self.c, child=extended_child, alpha=self.alpha,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Resize(Node):
@@ -143,6 +153,16 @@ class PreviewModifier(Node):
 
     mode: str
     child: Node
+
+    def fuse_extend(self, anchor, eps: float):
+        """Preview-modifier is metadata-only — recurse and re-wrap."""
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return PreviewModifier(
+            mode=self.mode, child=extended_child,
+            source_location=self.source_location,
+        )
 
 
 @dataclass(frozen=True)
@@ -171,6 +191,16 @@ class ForceRender(Node):
     child: Node
     convexity: int | None = None
 
+    def fuse_extend(self, anchor, eps: float):
+        """ForceRender is metadata-only — recurse and re-wrap."""
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return ForceRender(
+            child=extended_child, convexity=self.convexity,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Echo(Node):
@@ -183,6 +213,21 @@ class Echo(Node):
 
     values: tuple
     child: Node | None = None
+
+    def fuse_extend(self, anchor, eps: float):
+        """Echo is metadata-only when it wraps a child — recurse and
+        re-wrap. Bare Echo (no child) is a statement, not a shape; falls
+        to the base-class None.
+        """
+        if self.child is None:
+            return None
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return Echo(
+            values=self.values, child=extended_child,
+            source_location=self.source_location,
+        )
 
 
 @dataclass(frozen=True)

@@ -82,8 +82,9 @@ def minkowski(*args) -> Minkowski:
 def fuse(
     a: Node, b: Node,
     *,
-    on: str,
-    using_anchor: str,
+    on: str | None = None,
+    using_anchor: str | None = None,
+    from_anchor: str | None = None,
     bond: str | None = None,
     bridge: bool = False,
     eps_overlap: bool = True,
@@ -129,12 +130,16 @@ def fuse(
 
     Returns ``union(...)``.
     """
+    from scadwright.anchor import get_node_anchors
     from scadwright.api.fuse_mode import fuse_enabled
     from scadwright.ast.placement import (
+        _alignment_translate,
         _dispatch_bridge_symmetric,
+        _dispatch_curved_overlap_symmetric,
         _dispatch_overlap_symmetric,
         _dispatch_smart_cascade_fuse,
         _resolve_attach_anchor,
+        _resolve_fuse_match,
         _shift_for_anchors,
         _validate_bond_value,
     )
@@ -145,6 +150,15 @@ def fuse(
     if eps is None:
         from scadwright.api.tolerances import default_eps
         eps = default_eps()
+
+    if using_anchor is not None and from_anchor is not None:
+        raise ValidationError(
+            "fuse: pass only one of using_anchor= or from_anchor= "
+            "(they're aliases for the same concept).",
+            source_location=loc,
+        )
+    a_anchor_name = using_anchor if using_anchor is not None else from_anchor
+
     bond = _validate_bond_value(bond, loc, context="fuse")
     if bond is not None and bridge:
         raise ValidationError(
@@ -160,36 +174,63 @@ def fuse(
             f"default eps_overlap=True.",
             source_location=loc,
         )
-    a_anchor = _resolve_attach_anchor(a, using_anchor, "a", loc)
-    b_anchor = _resolve_attach_anchor(b, on, "b", loc)
 
-    # disable_eps_fuse() collapses eps to zero: eps_overlap becomes
-    # False, bond is dropped, and the bridge's peg-side slice goes
-    # away. Bridge geometry itself still builds.
-    if not fuse_enabled():
-        eps_overlap = False
-        bond = None
+    both_named = on is not None and a_anchor_name is not None
+    explicit_op = bond is not None or bridge
 
-    if bridge:
-        return _dispatch_bridge_symmetric(
-            a, a_anchor, b, b_anchor, eps, loc, eps_overlap=eps_overlap,
+    if both_named:
+        # Legacy explicit dispatch — anchors named, placement-shift
+        # semantics preserved for bond= / bridge= cases.
+        a_anchor = _resolve_attach_anchor(a, a_anchor_name, "a", loc)
+        b_anchor = _resolve_attach_anchor(b, on, "b", loc)
+        if not fuse_enabled():
+            eps_overlap = False
+            bond = None
+        if bridge:
+            return _dispatch_bridge_symmetric(
+                a, a_anchor, b, b_anchor, eps, loc, eps_overlap=eps_overlap,
+            )
+        if bond == "overlap":
+            return _dispatch_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc)
+        if bond == "shift":
+            shift = _shift_for_anchors(a_anchor, b_anchor, eps_overlap, eps)
+            placed_a = Translate(v=shift, child=a, source_location=loc)
+            return union(placed_a, b)
+        if not eps_overlap:
+            shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
+            placed_a = Translate(v=shift, child=a, source_location=loc)
+            return union(placed_a, b)
+        return _dispatch_smart_cascade_fuse(a, a_anchor, b, b_anchor, eps, loc)
+
+    if explicit_op:
+        raise ValidationError(
+            "fuse: bond= / bridge= require both on= and using_anchor= "
+            "(or from_anchor=) to name the anchors. They don't combine "
+            "with the peer auto-match form.",
+            source_location=loc,
         )
 
-    if bond == "overlap":
-        return _dispatch_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc)
-    if bond == "shift":
-        shift = _shift_for_anchors(a_anchor, b_anchor, eps_overlap, eps)
-        placed_a = Translate(v=shift, child=a, source_location=loc)
-        return union(placed_a, b)
+    # Peer auto-match path.
+    a_anchors = get_node_anchors(a)
+    b_anchors = get_node_anchors(b)
+    match = _resolve_fuse_match(
+        a, b, a_anchors, b_anchors, on, a_anchor_name, loc,
+    )
 
-    if not eps_overlap:
-        # Exact-contact union (under disable_eps_fuse() or eps_overlap=False).
-        shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
-        placed_a = Translate(v=shift, child=a, source_location=loc)
-        return union(placed_a, b)
+    if not fuse_enabled():
+        aligned = _alignment_translate(
+            a, match.self_anchor, match.host_anchor,
+            concentric=match.concentric, loc=loc,
+        )
+        return union(aligned, b)
 
-    # bond=None, eps_overlap=True: smart cascade (overlap or raise).
-    return _dispatch_smart_cascade_fuse(a, a_anchor, b, b_anchor, eps, loc)
+    if match.concentric:
+        return _dispatch_curved_overlap_symmetric(
+            a, match.self_anchor, b, match.host_anchor, eps, loc,
+        )
+    return _dispatch_overlap_symmetric(
+        a, match.self_anchor, b, match.host_anchor, eps, loc,
+    )
 
 
 __all__ = ["union", "difference", "intersection", "hull", "minkowski", "fuse"]

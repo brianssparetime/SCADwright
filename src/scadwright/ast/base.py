@@ -309,7 +309,7 @@ class Node(
         """
         return False
 
-    def cross_section_extend(self, anchor, eps: float):
+    def cross_section_extend(self, anchor, eps: float, *, context: str = "cross-section fuse"):
         """Generic local extension via projection + slab.
 
         Aligns ``anchor.position`` to the origin and ``anchor.normal``
@@ -352,7 +352,7 @@ class Node(
         from scadwright.boolops import union as _union
         from scadwright.ast.transforms import MultMatrix
 
-        validate_planar_anchor_for_cross_section(self, anchor)
+        validate_planar_anchor_for_cross_section(self, anchor, context=context)
         m = align_anchor_to_z_up(anchor)
         m_inv = m.invert()
         loc = self.source_location
@@ -677,6 +677,113 @@ class Node(
             working_self, working_self_anchor,
             other, other_anchor, eps, loc,
         )
+
+    def fuse(
+        self,
+        host: "Node",
+        *,
+        on: str | None = None,
+        from_anchor: str | None = None,
+        eps: float | None = None,
+    ) -> "Node":
+        """Fuse self with ``host`` at their coincident contact surface,
+        eps-clean for CGAL unions.
+
+        The framework matches a contact between self and host (one
+        anchor declaration on each side describing the same surface),
+        applies ``eps`` on whichever side has the lever, and returns
+        ``union(extended_self_or_host, host_or_self)``. Use whenever
+        two parts share a surface by design and would otherwise leave
+        an internal seam (Component yields whose surfaces touch, lids
+        on containers sized to match, fillet rings against the
+        cylinder they fillet)::
+
+            yield ElementHolder(...).fuse(barrel)
+            yield front_fillet.fuse(barrel)
+
+        Not for press-fit or sliding joints — those use ``clearances``,
+        which puts a deliberate non-zero gap between the parts.
+
+        Auto-matching is exhaustive: exactly one matched contact uses
+        it; multiple matches raise (use ``on=`` / ``from_anchor=``
+        to disambiguate); zero matches raise with the declared anchors
+        named and the next move (declare an anchor on the relevant
+        Component, name the contact explicitly, or use ``attach()``
+        for place-and-fuse).
+
+        ``on=`` names a host anchor explicitly; ``from_anchor=`` names
+        a self anchor explicitly. Pass both to skip matching entirely;
+        pass either to short-circuit matching on that side.
+
+        Inside ``disable_eps_fuse()`` the matching step still runs (a
+        bad call still raises), but the eps mechanics are bypassed
+        and the call returns ``union(aligned_self, host)`` with exact
+        contact.
+        """
+        from scadwright.anchor import get_node_anchors
+        from scadwright.api.fuse_mode import fuse_enabled
+        from scadwright.ast.placement import (
+            _alignment_translate,
+            _dispatch_curved_overlap,
+            _resolve_fuse_match,
+        )
+        from scadwright.ast.transforms import Translate
+        from scadwright.boolops import union as _union
+
+        loc = SourceLocation.from_caller()
+        if eps is None:
+            from scadwright.api.tolerances import default_eps
+            eps = default_eps()
+
+        self_anchors = get_node_anchors(self)
+        host_anchors = get_node_anchors(host)
+        match = _resolve_fuse_match(
+            self, host, self_anchors, host_anchors, on, from_anchor, loc,
+        )
+
+        # disable_eps_fuse(): no extension, just align + union.
+        if not fuse_enabled():
+            aligned = _alignment_translate(
+                self, match.self_anchor, match.host_anchor,
+                concentric=match.concentric, loc=loc,
+            )
+            return _union(aligned, host)
+
+        if match.concentric:
+            return _dispatch_curved_overlap(
+                self, match.self_anchor, host, match.host_anchor, eps, loc,
+            )
+
+        # Planar branch. Honor prefers_shift_at_anchor on either side.
+        if (self.prefers_shift_at_anchor(match.self_anchor)
+                or host.prefers_shift_at_anchor(match.host_anchor)):
+            aligned = _alignment_translate(
+                self, match.self_anchor, match.host_anchor,
+                concentric=False, loc=loc,
+            )
+            h_norm = match.host_anchor.normal
+            shift = (-h_norm[0] * eps, -h_norm[1] * eps, -h_norm[2] * eps)
+            shifted = Translate(v=shift, child=aligned, source_location=loc)
+            return _union(shifted, host)
+
+        extended = self.fuse_extend(match.self_anchor, eps)
+        if extended is None:
+            extended = self.cross_section_extend(
+                match.self_anchor, eps, context="fuse",
+            )
+        if extended is None:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"fuse: planar contact but neither fuse_extend nor "
+                f"cross_section_extend applied. self="
+                f"{type(self).__name__}.",
+                source_location=loc,
+            )
+        aligned = _alignment_translate(
+            extended, match.self_anchor, match.host_anchor,
+            concentric=False, loc=loc,
+        )
+        return _union(aligned, host)
 
     def through(
         self,

@@ -32,7 +32,7 @@ from scadwright.composition_helpers import (
     hole_grid, multi_hull, sequential_hull, pack_on_bed,
 )
 from scadwright.shapes import (
-    Tube, Funnel, RoundedBox, UShapeChannel, FilletRing,
+    Tube, Funnel, SphericalShell, RoundedBox, UShapeChannel, FilletRing,
     Arc, Sector, CircularSegment, RoundedSlot, RoundedEndsArc,
     regular_polygon, rounded_rect, rounded_square,
     Helix, Spring,
@@ -110,7 +110,10 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True) 
 peg.attach(tube, on="inner_wall", angle=30, orient=True, bridge=True)  # inner case: clip peg to bore (Tube/Funnel/hollow Barrel)
 peg.attach(plate, bond="overlap")         # explicit: planar local extension; raises on curved host
 peg.attach(plate, bond="shift")           # explicit: bilateral shift; always works, opposite face drifts by eps
-fuse(pylon, floor, using_anchor="bottom", on="top")  # standalone form; symmetric side selection
+holder.fuse(barrel)                       # mate without placement — framework matches contact + applies eps
+holder.fuse(barrel, on="inner_wall")      # host anchor explicit
+holder.fuse(barrel, on="inner_wall", from_anchor="outer_wall")  # both sides explicit
+fuse(a, b)                                # peer form — symmetric, either side extends
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
 cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter
 with disable_eps_fuse(): ...              # scope-wide opt-out (precision builds, perf debugging, fuse-can't-fix-it)
@@ -543,6 +546,7 @@ UShapeChannel(wall_thk=2, channel_length=50, channel_width=10)
 RectTube(outer_w=30, outer_d=20, wall_thk=2, h=10)   # rect sibling of Tube
 Barrel(h=80, end_d=50, mid_d=64)                  # solid bowed barrel (mid_d<end_d for waist)
 Barrel(h=80, end_d=50, bulge=7, thk=3)            # hollow barrel (constant radial wall)
+SphericalShell(od=20, id=14)                      # hollow sphere; outer_wall / inner_wall anchors for fuse
 
 # Polyhedra and basic 3D shapes:
 Prism(sides=6, r=10, h=20)                        # hex prism (or frustum with top_r=)

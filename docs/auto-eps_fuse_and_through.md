@@ -10,8 +10,10 @@ Everything on this page works on flat-face contacts. For attaching things to the
 |---|---|
 | Position a part flush against another flat face, with overlap so `union()` is preview-clean | `part.attach(other, fuse=True)` |
 | Same, but pick the bond explicitly | `part.attach(other, bond="overlap" | "shift")` |
+| Mate two parts that are already in place (a yielded Component sitting inside a host, concentric cylinders, lid on container) | `part.fuse(host)` — see [attach.md](attach.md#mating-without-placement-nodefuse) |
 | Drill a cutter through a parent shape | `cutter.through(parent)` inside `difference()` |
-| Combine two parts symmetrically with overlap (no "self" / "other" asymmetry) | `fuse(a, b, on=..., using_anchor=..., bond=..., eps=...)` from `scadwright.boolops` |
+| Combine two parts symmetrically — either side may carry the eps lever | `fuse(a, b)` from `scadwright.boolops` (peer auto-match form) |
+| Same, with explicit anchors and bond/bridge control | `fuse(a, b, on=..., using_anchor=..., bond=..., bridge=...)` |
 | Disable all auto-eps inside a scope (precision builds, performance debugging) | `with disable_eps_fuse(): ...` |
 | Override the default `eps` value across a scope | `with tolerances(eps=0.001): ...` |
 | Override `through()`'s face-matching tolerance | `with tolerances(coincidence=1e-5): ...` |

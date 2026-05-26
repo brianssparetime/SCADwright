@@ -3,7 +3,7 @@
 Parametric hollow shapes with equation-driven dimensions.
 
 ```python
-from scadwright.shapes import Tube, Funnel, RoundedBox, UShapeChannel, RectTube, Barrel
+from scadwright.shapes import Tube, Funnel, RoundedBox, UShapeChannel, RectTube, Barrel, SphericalShell
 ```
 
 ## `Tube(h, id|od|thk)`
@@ -89,3 +89,19 @@ Anchors:
 `add_text(on="outer_wall", angle=θ, at_z=z)` and `add_text(on="inner_wall", ...)` wrap the label along the curved wall: per-glyph radius and tilt follow the meridian, so text sits flush whether the barrel is convex or concave.
 
 A `bulge` of exactly zero degrades silently to the equivalent `cylinder` or `Tube`, so parametric sweeps that cross zero curvature don't need a special-case branch. Pinched waists where `mid_r` collapses toward zero emit a `BarrelDegeneracyWarning` (filterable via the standard `warnings` module) but still build the geometry.
+
+## `SphericalShell(id|od|thk)`
+
+Hollow sphere centered at the origin. Provide any two of (`id`, `od`, `thk`); the third is solved (`od = id + 2*thk`).
+
+```python
+SphericalShell(od=20, id=14)             # 3 mm wall, 14 mm bore
+SphericalShell(od=20, thk=3)             # equivalent; id solved
+SphericalShell(id=14, thk=3)             # equivalent; od solved
+```
+
+Anchors:
+- `outer_wall` — `kind="spherical"`, on the outer surface. Reference position is the +Z tangent point; the matching engine identifies the surface by `axis_origin` (sphere center) and `radius`, so any anchor pointing at the same sphere collapses to one canonical surface.
+- `inner_wall` — `kind="spherical"`, `inner=True`, on the bore surface. This is the producer of inner-spherical anchors in the standard library; a `sphere(d=14).fuse(SphericalShell(od=20, id=14))` auto-matches the sphere's outer surface against the shell's inner_wall.
+
+`fuse_extend`: outer-wall extension rebuilds with `od + 2*eps` (wall thickens outward); inner-wall extension rebuilds with `id - 2*eps` (wall thickens inward, bore shrinks). The shell carries the radial lever for both sides.

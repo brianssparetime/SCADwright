@@ -80,6 +80,99 @@ class Tube(Component):
         from scadwright.bbox import bbox
         return bbox(self)
 
+    def fuse_extend(self, anchor, eps: float):
+        """Radially extend the Tube on the matched wall.
+
+        Outer wall (``inner=False``): rebuild with ``od + 2*eps``, ``id``
+        preserved. The wall thickens outward by eps.
+        Inner wall (``inner=True``): rebuild with ``id - 2*eps``, ``od``
+        preserved. The wall thickens inward by eps; the bore shrinks
+        by 2*eps in diameter. Raises if the resulting bore is
+        non-positive.
+        """
+        if anchor.kind != "cylindrical":
+            return None
+        if anchor.inner:
+            new_id = self.id - 2.0 * eps
+            if new_id <= 0:
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"fuse_extend: inner-wall extension on Tube with id="
+                    f"{self.id} would produce id={new_id} (eps={eps}). The "
+                    f"bore can't shrink past zero."
+                )
+            return Tube(h=self.h, od=self.od, id=new_id)
+        return Tube(h=self.h, od=self.od + 2.0 * eps, id=self.id)
+
+
+class SphericalShell(Component):
+    """Hollow sphere — concentric outer and inner spherical surfaces.
+
+    The shell is centered at the origin. Provide any two of (id, od, thk);
+    the third is solved. od = outer diameter, id = inner diameter, thk =
+    wall thickness.
+    """
+
+    equations = """
+        od = id + 2*thk
+        od, id, thk > 0
+    """
+
+    outer_wall = anchor(
+        at="0, 0, od/2",
+        normal=(0.0, 0.0, 1.0),
+        kind="spherical",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "axis_origin": (0.0, 0.0, 0.0),
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "radius": "od/2",
+        },
+    )
+    inner_wall = anchor(
+        at="0, 0, id/2",
+        normal=(0.0, 0.0, -1.0),
+        kind="spherical",
+        surface_params={
+            "axis": (0.0, 0.0, 1.0),
+            "axis_origin": (0.0, 0.0, 0.0),
+            "meridian_zero": (1.0, 0.0, 0.0),
+            "radius": "id/2",
+            "inner": True,
+        },
+    )
+
+    def build(self):
+        return difference(sphere(d=self.od), sphere(d=self.id))
+
+    def tight_bbox(self):
+        # Bore is interior; outer extents = outer sphere's bbox.
+        from scadwright.bbox import bbox
+        return bbox(self)
+
+    def fuse_extend(self, anchor, eps: float):
+        """Radially extend the shell on the matched spherical wall.
+
+        Outer wall (``inner=False``): rebuild with ``od + 2*eps``,
+        ``id`` preserved.
+        Inner wall (``inner=True``): rebuild with ``id - 2*eps``,
+        ``od`` preserved. Raises if the inner diameter would drop to
+        zero or below.
+        """
+        if anchor.kind != "spherical":
+            return None
+        if anchor.inner:
+            new_id = self.id - 2.0 * eps
+            if new_id <= 0:
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"fuse_extend: inner-wall extension on SphericalShell "
+                    f"with id={self.id} would produce id={new_id} "
+                    f"(eps={eps}). The bore can't shrink past zero."
+                )
+            return SphericalShell(od=self.od, id=new_id)
+        return SphericalShell(od=self.od + 2.0 * eps, id=self.id)
+
 
 class Funnel(Component):
     """Tapered tube (truncated cone with wall thickness).
@@ -155,6 +248,39 @@ class Funnel(Component):
         # Bore is interior; outer extents = outer tapered cylinder's bbox.
         from scadwright.bbox import bbox
         return bbox(self)
+
+    def fuse_extend(self, anchor, eps: float):
+        """Radially extend the Funnel on the matched conical wall.
+
+        Outer wall (``inner=False``): both ``bot_od`` and ``top_od``
+        bump by ``2*eps``; the cone slope is preserved at the eps
+        scale.
+        Inner wall (``inner=True``): both ``bot_id`` and ``top_id``
+        shrink by ``2*eps``. Raises if either inner diameter would
+        drop to zero or below.
+        """
+        if anchor.kind != "conical":
+            return None
+        if anchor.inner:
+            new_bot_id = self.bot_id - 2.0 * eps
+            new_top_id = self.top_id - 2.0 * eps
+            if new_bot_id <= 0 or new_top_id <= 0:
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"fuse_extend: inner-wall extension on Funnel with "
+                    f"bot_id={self.bot_id}, top_id={self.top_id} would "
+                    f"produce bot_id={new_bot_id}, top_id={new_top_id} "
+                    f"(eps={eps}). The bore can't shrink past zero."
+                )
+            return Funnel(
+                h=self.h, thk=self.thk,
+                bot_id=new_bot_id, top_id=new_top_id,
+            )
+        return Funnel(
+            h=self.h, thk=self.thk,
+            bot_od=self.bot_od + 2.0 * eps,
+            top_od=self.top_od + 2.0 * eps,
+        )
 
 
 class RoundedBox(Component):
@@ -620,3 +746,35 @@ class Barrel(Component):
         # The bore (when thk is set) is interior; doesn't change extents.
         from scadwright.bbox import bbox
         return bbox(self)
+
+    def fuse_extend(self, anchor, eps: float):
+        """Radially extend the Barrel on the matched meridional wall.
+
+        Outer wall (``inner=False``): both ``end_d`` and ``mid_d`` bump
+        by ``2*eps``; the meridian arc shifts outward by eps. ``thk``
+        is preserved (hollow Barrels retain the original wall
+        thickness, the bore meridian moves outward with the outer).
+        Inner wall (``inner=True``): ``thk += eps`` (wall thickens
+        inward, bore meridian retreats). Requires a hollow Barrel
+        (``self.thk is not None``); raises otherwise.
+        """
+        if anchor.kind != "meridional":
+            return None
+        if anchor.inner:
+            if self.thk is None:
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"fuse_extend: inner-wall extension on Barrel with "
+                    f"thk=None (solid). A solid Barrel has no inner wall "
+                    f"to extend."
+                )
+            new_thk = self.thk + eps
+            return Barrel(
+                h=self.h, end_d=self.end_d, mid_d=self.mid_d, thk=new_thk,
+            )
+        return Barrel(
+            h=self.h,
+            end_d=self.end_d + 2.0 * eps,
+            mid_d=self.mid_d + 2.0 * eps,
+            thk=self.thk,
+        )

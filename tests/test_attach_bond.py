@@ -344,3 +344,16 @@ def test_fuse_function_smart_cascade_redirects_to_bridge():
     b = Tube(od=30, id=12, h=20)
     with pytest.raises(ValidationError, match="bridge=True"):
         fuse(a, b, on="inner_wall", using_anchor="inner_wall")
+
+
+def test_attach_fuse_cone_apex_error_has_attach_prefix():
+    """When attach(fuse=True) hits the cone-apex degeneracy via
+    cross_section_extend, the error must read 'attach:' to match the
+    user's call, not leak the internal 'cross-section fuse:' prefix."""
+    cone = cylinder(h=10, r1=5, r2=0)  # apex at z=10
+    plate = cube([10, 10, 2])
+    # Attach the apex (cone.top) to plate.bottom — Cylinder.fuse_extend
+    # returns None for the r2=0 cap, falling through to
+    # cross_section_extend which raises the cone-apex error.
+    with pytest.raises(ValidationError, match=r"^attach:.*cone apex"):
+        cone.attach(plate, on="bottom", using_anchor="top", fuse=True)

@@ -10,6 +10,7 @@ import pytest
 
 from scadwright import bbox, disable_eps_fuse, fuse_enabled
 from scadwright.boolops import fuse, union
+from scadwright.errors import ValidationError
 from scadwright.primitives import cube, cylinder, sphere
 
 
@@ -187,3 +188,81 @@ def test_disable_eps_fuse_preserves_boolops_fuse_bridge():
         )
     assert isinstance(result, Union)
     assert any(isinstance(c, Difference) for c in result.children)
+
+
+# --- node.fuse(host) chained form under disable_eps_fuse ---
+
+
+def test_node_fuse_planar_inside_disable_no_extension():
+    """Node.fuse on planar contact inside disable: no fuse_extend run,
+    no cross-section slab, no shift — just union of self and host."""
+    from scadwright.ast.csg import Union
+    from scadwright.shapes import Tube
+    plate = cube([10, 10, 2], center=True)
+    peg = cube([10, 10, 5], center=True).up(3.5)
+    with disable_eps_fuse():
+        result = peg.fuse(plate)
+    assert isinstance(result, Union)
+    # bbox should not include any eps overlap on the contact face.
+    bb = bbox(result)
+    assert bb.min[2] == pytest.approx(-1.0)
+    assert bb.max[2] == pytest.approx(6.0)
+
+
+def test_node_fuse_curved_inside_disable_no_radial_extension():
+    """Node.fuse on concentric cylindrical contact inside disable:
+    no rebuild of host with bumped id; just the bare union."""
+    from scadwright.ast.csg import Union
+    from scadwright.shapes import Tube
+    barrel = Tube(h=50, od=20, id=10)
+    holder = Tube(h=8, od=10, id=4).up(20)
+    with disable_eps_fuse():
+        result = holder.fuse(barrel)
+    assert isinstance(result, Union)
+    # Barrel id should stay 10 (no shrink).
+    assert barrel.id == 10
+    # Holder od should stay 10.
+    assert holder.child.od == 10  # holder is a Translate wrapping the Tube
+
+
+def test_node_fuse_inside_disable_still_validates_matching():
+    """Matching runs even under disable; a bad call still raises."""
+    a = cube([5, 5, 5])
+    b = cube([5, 5, 5]).up(20)
+    with disable_eps_fuse():
+        with pytest.raises(ValidationError, match="no coincident-surface contact"):
+            a.fuse(b)
+
+
+# --- standalone fuse(a, b) peer form under disable_eps_fuse ---
+
+
+def test_peer_fuse_planar_inside_disable_no_extension():
+    from scadwright.ast.csg import Union
+    plate = cube([10, 10, 2], center=True)
+    peg = cube([10, 10, 5], center=True).up(3.5)
+    with disable_eps_fuse():
+        result = fuse(peg, plate)
+    assert isinstance(result, Union)
+    bb = bbox(result)
+    assert bb.min[2] == pytest.approx(-1.0)
+    assert bb.max[2] == pytest.approx(6.0)
+
+
+def test_peer_fuse_curved_inside_disable_no_radial_extension():
+    from scadwright.ast.csg import Union
+    from scadwright.shapes import Tube
+    barrel = Tube(h=50, od=20, id=10)
+    holder = Tube(h=8, od=10, id=4).up(20)
+    with disable_eps_fuse():
+        result = fuse(holder, barrel)
+    assert isinstance(result, Union)
+    assert barrel.id == 10
+
+
+def test_peer_fuse_inside_disable_still_validates_matching():
+    a = cube([5, 5, 5])
+    b = cube([5, 5, 5]).up(20)
+    with disable_eps_fuse():
+        with pytest.raises(ValidationError, match="no coincident-surface contact"):
+            fuse(a, b)

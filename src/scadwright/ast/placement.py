@@ -886,7 +886,9 @@ def _dispatch_overlap(working_self, working_self_anchor, other_anchor, eps, loc)
     if extended is None:
         # Tier 2: cross-section. Raises on degenerate geometry; on
         # planar input it always returns a non-None result otherwise.
-        extended = working_self.cross_section_extend(working_self_anchor, eps)
+        extended = working_self.cross_section_extend(
+            working_self_anchor, eps, context="attach",
+        )
     return _shift_translate(
         extended, working_self_anchor, other_anchor,
         with_eps=False, eps=eps, loc=loc,
@@ -1180,8 +1182,8 @@ def _dispatch_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc):
 
     # Tier 2: neither side has parametric extension. cross_section_extend
     # raises on degenerate contact, so a passing call returns non-None.
-    extended_a = a.cross_section_extend(a_anchor, eps)
-    extended_b = b.cross_section_extend(b_anchor, eps)
+    extended_a = a.cross_section_extend(a_anchor, eps, context="fuse")
+    extended_b = b.cross_section_extend(b_anchor, eps, context="fuse")
     chosen = _pick_simpler_extension(a, b, extended_a, extended_b)
     if chosen == "a":
         shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
@@ -1366,5 +1368,282 @@ def _dispatch_smart_cascade_fuse(a, a_anchor, b, b_anchor, eps, loc):
         f"To accept the bilateral shift (a moves by eps along b's "
         f"normal), pass bond='shift'. To skip auto-eps in a whole "
         f"scope, wrap in disable_eps_fuse().",
+        source_location=loc,
+    )
+
+
+# =============================================================================
+# Curved-contact dispatchers — concentric cylindrical / conical / spherical /
+# meridional. The matching engine in ``_surface_match`` identifies the
+# contact; this layer applies eps via the per-shape ``fuse_extend`` hook,
+# preferring the ``inner=False`` (outer) side per the spec's rule.
+# =============================================================================
+
+
+def _scale_style_wrapper_name(node):
+    """Return the name of the outermost geometry-scaling wrapper on
+    ``node`` (Scale / Resize / MultMatrix), or ``None`` if there isn't
+    one. These wrappers can't safely recurse ``fuse_extend`` because
+    eps would scale with the geometry; the error message uses this
+    helper to point the user at a rebuild."""
+    from scadwright.ast.transforms import MultMatrix, Resize, Scale
+    if isinstance(node, (Scale, Resize, MultMatrix)):
+        return type(node).__name__
+    return None
+
+
+def _scale_wrapper_hint(self_node, host_node):
+    """Build a hint string for the 'no fuse_extend lever' error when
+    one or both sides is wrapped in a scale-style transform. Returns
+    an empty string when neither side qualifies.
+    """
+    self_wrap = _scale_style_wrapper_name(self_node)
+    host_wrap = _scale_style_wrapper_name(host_node)
+    if self_wrap is None and host_wrap is None:
+        return ""
+    parts = []
+    if self_wrap is not None:
+        parts.append(f"self is wrapped in {self_wrap}")
+    if host_wrap is not None:
+        parts.append(f"host is wrapped in {host_wrap}")
+    where = " and ".join(parts)
+    return (
+        f"\n  Note: {where} — fuse_extend doesn't recurse through "
+        f"scale-style transforms because eps would scale with the "
+        f"geometry. Rebuild the shape with the desired final "
+        f"dimensions, or use disable_eps_fuse() to skip eps."
+    )
+
+
+def _dispatch_curved_overlap(working_self, self_anchor, host, host_anchor, eps, loc):
+    """Asymmetric curved-contact dispatch (used by ``Node.fuse``).
+
+    ``self`` may be either the inner or outer side of the concentric
+    pair. The framework tries the ``inner=False`` side's ``fuse_extend``
+    first; if it returns ``None``, falls to the ``inner=True`` side; if
+    both return ``None``, raises.
+
+    Alignment is not applied here — concentric coaxial contact preserves
+    the user's placement (see ``_alignment_translate`` for the rule).
+    """
+    from scadwright.boolops import union as _union
+    from scadwright.errors import ValidationError
+
+    if not self_anchor.inner:
+        # self is outer; try it first
+        extended = working_self.fuse_extend(self_anchor, eps)
+        if extended is not None:
+            return _union(extended, host)
+        extended = host.fuse_extend(host_anchor, eps)
+        if extended is not None:
+            return _union(working_self, extended)
+    else:
+        # self is inner, host is outer — try host first
+        extended = host.fuse_extend(host_anchor, eps)
+        if extended is not None:
+            return _union(working_self, extended)
+        extended = working_self.fuse_extend(self_anchor, eps)
+        if extended is not None:
+            return _union(extended, host)
+
+    raise ValidationError(
+        f"fuse: neither side has a fuse_extend lever for this "
+        f"{self_anchor.kind} contact (self="
+        f"{type(working_self).__name__}, host={type(host).__name__}). "
+        f"Override fuse_extend on the relevant Component, or restructure "
+        f"so one side is a standard-library shape that carries the lever "
+        f"(Tube, Funnel, Barrel, Cylinder, Sphere)."
+        f"{_scale_wrapper_hint(working_self, host)}",
+        source_location=loc,
+    )
+
+
+def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor, loc):
+    """Resolve the contact ``Node.fuse`` / ``fuse(a,b)`` will dispatch on.
+
+    Handles the four explicit-override combinations:
+
+    - Both ``on=`` and ``from_anchor=`` → use those anchors directly,
+      validate kinds match.
+    - Only ``on=`` → host anchor named; auto-match self against it.
+    - Only ``from_anchor=`` → self anchor named; auto-match host against it.
+    - Neither → full ``find_contacts`` over both sides.
+
+    Raises ``ValidationError`` on zero matches (with cross-kind bridge
+    hint when applicable), multiple matches (naming each candidate),
+    or named-anchor lookup failures.
+    """
+    from scadwright.ast._surface_match import (
+        ContactMatch, _match_pair,
+        cross_kind_bridge_candidates, find_contacts,
+    )
+    from scadwright.errors import ValidationError
+
+    if on is not None and from_anchor is not None:
+        host_anchor = _resolve_attach_anchor(host, on, "host", loc)
+        self_anchor = _resolve_attach_anchor(self, from_anchor, "self", loc)
+        match_result = _match_pair(self_anchor, host_anchor)
+        if match_result is None:
+            raise ValidationError(
+                f"fuse: explicit on={on!r} and from_anchor={from_anchor!r} "
+                f"do not describe a coincident surface (self anchor kind="
+                f"{self_anchor.kind!r}/inner={self_anchor.inner}, host "
+                f"anchor kind={host_anchor.kind!r}/inner={host_anchor.inner}). "
+                f"For planar contact the positions must coincide and normals "
+                f"must oppose; for curved contact the axes must coincide and "
+                f"radii match with one inner=True and one inner=False.",
+                source_location=loc,
+            )
+        kind, concentric = match_result
+        return ContactMatch(
+            self_name=from_anchor, self_anchor=self_anchor,
+            host_name=on, host_anchor=host_anchor,
+            kind=kind, concentric=concentric,
+        )
+
+    if on is not None:
+        host_anchor = _resolve_attach_anchor(host, on, "host", loc)
+        # Match self anchors against just this host anchor.
+        partial_host = {on: host_anchor}
+        matches = find_contacts(self_anchors, partial_host)
+    elif from_anchor is not None:
+        self_anchor = _resolve_attach_anchor(self, from_anchor, "self", loc)
+        partial_self = {from_anchor: self_anchor}
+        matches = find_contacts(partial_self, host_anchors)
+    else:
+        matches = find_contacts(self_anchors, host_anchors)
+
+    if len(matches) == 1:
+        return matches[0]
+
+    if len(matches) > 1:
+        candidates = "\n  ".join(
+            f"self.{m.self_name} ↔ host.{m.host_name} ({m.kind})"
+            for m in matches
+        )
+        raise ValidationError(
+            f"fuse: matched multiple coincident-surface contacts; can't "
+            f"pick automatically. Candidates:\n  {candidates}\n"
+            f"Disambiguate with on=<host_anchor> and/or "
+            f"from_anchor=<self_anchor>.",
+            source_location=loc,
+        )
+
+    # Zero matches.
+    bridge_hints = cross_kind_bridge_candidates(self_anchors, host_anchors)
+    if bridge_hints:
+        outer_hits = [h for h in bridge_hints if not h[4]]
+        inner_hits = [h for h in bridge_hints if h[4]]
+        msg = (
+            f"fuse: found no coincident-surface contact, but self has "
+            f"planar face anchor(s) against host's curved wall — that's "
+            f"a bridge case, not a fuse case."
+        )
+        if outer_hits:
+            example = outer_hits[0]
+            msg += (
+                f"\n  For convex-outer bridge (peg merges into a curved "
+                f"surface): use "
+                f"self.attach(host, on={example[2]!r}, bridge=True, "
+                f"orient=True)."
+            )
+        if inner_hits:
+            example = inner_hits[0]
+            msg += (
+                f"\n  For concave-inner bridge (peg clipped to a bore): "
+                f"use self.attach(host, on={example[2]!r}, bridge=True, "
+                f"orient=True)."
+            )
+        raise ValidationError(msg, source_location=loc)
+
+    raise ValidationError(
+        f"fuse: found no coincident-surface contact between self "
+        f"({type(self).__name__}) and host ({type(host).__name__}).\n"
+        f"  Declared anchors on self: {sorted(self_anchors)}\n"
+        f"  Declared anchors on host: {sorted(host_anchors)}\n"
+        f"Next steps:\n"
+        f"  - Declare a contact anchor on your Component (see "
+        f"docs/anchors.md).\n"
+        f"  - Name the contact explicitly with on=<host_anchor> and "
+        f"from_anchor=<self_anchor>.\n"
+        f"  - For place-and-fuse, use self.attach(host, fuse=True).",
+        source_location=loc,
+    )
+
+
+def _alignment_translate(working_self, self_anchor, host_anchor, *, concentric, loc):
+    """Translate so ``working_self``'s anchor sits on ``host_anchor``'s
+    position. Used by ``Node.fuse`` and the standalone peer ``fuse()``
+    when explicit ``on=`` / ``from_anchor=`` overrides force a fuse at a
+    contact self hasn't been positioned against.
+
+    Returns ``working_self`` unchanged when:
+
+    - ``concentric=True`` — curved coaxial contact: the matched anchor
+      positions are reference points on the contact surfaces, not the
+      contact location. The axial offset between holder and host's
+      mid-wall is intentional placement, not misalignment.
+    - The shift magnitude is below ``coincidence_tol()`` — planar
+      contact where self is already at the host's anchor (the common
+      case for ``Node.fuse`` where matching required position
+      coincidence).
+
+    Otherwise wraps ``working_self`` in a ``Translate`` by
+    ``host_anchor.position - self_anchor.position``.
+    """
+    if concentric:
+        return working_self
+    import math
+    from scadwright.api.tolerances import coincidence_tol
+    shift = (
+        host_anchor.position[0] - self_anchor.position[0],
+        host_anchor.position[1] - self_anchor.position[1],
+        host_anchor.position[2] - self_anchor.position[2],
+    )
+    if math.sqrt(shift[0] ** 2 + shift[1] ** 2 + shift[2] ** 2) <= coincidence_tol():
+        return working_self
+    from scadwright.ast.transforms import Translate
+    return Translate(v=shift, child=working_self, source_location=loc)
+
+
+def _dispatch_curved_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc):
+    """Symmetric curved-contact dispatch (used by ``boolops.fuse(a, b)``).
+
+    Same ``inner=False``-first rule as the asymmetric form. The peer
+    semantics: either side may be the extending one; we don't move
+    either shape, just apply eps on the matched side.
+    """
+    from scadwright.boolops import union as _union
+    from scadwright.errors import ValidationError
+
+    if not a_anchor.inner:
+        outer_side, outer_anchor = a, a_anchor
+        inner_side, inner_anchor = b, b_anchor
+        outer_is_a = True
+    else:
+        outer_side, outer_anchor = b, b_anchor
+        inner_side, inner_anchor = a, a_anchor
+        outer_is_a = False
+
+    extended = outer_side.fuse_extend(outer_anchor, eps)
+    if extended is not None:
+        if outer_is_a:
+            return _union(extended, b)
+        return _union(a, extended)
+
+    extended = inner_side.fuse_extend(inner_anchor, eps)
+    if extended is not None:
+        if outer_is_a:
+            return _union(a, extended)
+        return _union(extended, b)
+
+    raise ValidationError(
+        f"fuse: neither side has a fuse_extend lever for this "
+        f"{a_anchor.kind} contact (a={type(a).__name__}, "
+        f"b={type(b).__name__}). Override fuse_extend on the relevant "
+        f"Component, or restructure so one side is a standard-library "
+        f"shape that carries the lever (Tube, Funnel, Barrel, Cylinder, "
+        f"Sphere)."
+        f"{_scale_wrapper_hint(a, b)}",
         source_location=loc,
     )

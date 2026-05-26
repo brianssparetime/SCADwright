@@ -97,6 +97,34 @@ class Sphere(Node):
     fa: float | None = None
     fs: float | None = None
 
+    def fuse_extend(self, anchor, eps: float):
+        """Locally extend this sphere radially by ``eps`` along
+        ``anchor``'s outward direction.
+
+        Supports ``kind="spherical"`` anchors. The sphere's radius
+        grows by ``+eps`` for outer contact (``inner=False``) or
+        shrinks by ``eps`` for inner contact (``inner=True``). Raises
+        if an inner extension would produce a non-positive radius.
+        """
+        if anchor.kind != "spherical":
+            return None
+        sign = -1 if anchor.inner else 1
+        new_r = self.r + sign * eps
+        if new_r <= 0:
+            from scadwright.errors import ValidationError
+            raise ValidationError(
+                f"fuse_extend: inner-wall extension on sphere with r="
+                f"{self.r} would produce r={new_r} (eps={eps}). The "
+                f"sphere can't shrink past zero radius."
+            )
+        return Sphere(
+            r=new_r,
+            fn=self.fn,
+            fa=self.fa,
+            fs=self.fs,
+            source_location=self.source_location,
+        )
+
 
 @dataclass(frozen=True)
 class Cylinder(Node):
@@ -129,7 +157,7 @@ class Cylinder(Node):
         from scadwright.ast._edge_fillets import cylinder_chamfer
         return cylinder_chamfer(self, rim, size=size)
 
-    def cross_section_extend(self, anchor, eps: float):
+    def cross_section_extend(self, anchor, eps: float, *, context: str = "cross-section fuse"):
         """Cross-section extension on a cylinder, with an explicit
         cone-apex check that the bbox-based detection can't catch.
 
@@ -145,30 +173,54 @@ class Cylinder(Node):
             from scadwright.errors import ValidationError
             side = "top" if sign > 0 else "bottom"
             raise ValidationError(
-                f"cross-section fuse: cone apex at {side} (radius=0); the "
+                f"{context}: cone apex at {side} (radius=0); the "
                 f"bbox face at that plane is the full base disc, but the "
                 f"actual material is a single point with no planar contact "
                 f"region to fuse onto. Workarounds: pass fuse=False on this "
                 f"attach, wrap the block in disable_eps_fuse(), or attach "
                 f"to the cone's non-degenerate end."
             )
-        return super().cross_section_extend(anchor, eps)
+        return super().cross_section_extend(anchor, eps, context=context)
 
     def fuse_extend(self, anchor, eps: float):
         """Locally extend this cylinder by ``eps`` along ``anchor``'s normal.
 
-        Supports the planar top and bottom disc anchors. Cylindrical
-        wall anchors (``kind="cylindrical"``) return ``None`` — there's
-        no parametric lever for radial extension here.
-
-        For a cone with ``r2=0`` (apex at top) extending the top is
-        meaningless (zero-area face); same for ``r1=0`` extending the
-        bottom. Both return ``None``.
-
-        For a cone with non-zero radii at both ends, bumping ``h`` makes
-        the cone slightly less steep — the apex angle changes by order
-        ``eps/h``, invisible inside the eps band where the union sits.
+        - **Planar cap anchors**: bump ``h`` along the cap normal. For
+          a cone with ``r2=0`` (apex at top) extending the top is
+          meaningless (zero-area face); same for ``r1=0`` extending the
+          bottom. Both return ``None``. For a cone with non-zero radii
+          at both ends, bumping ``h`` makes the cone slightly less
+          steep — the apex angle changes by order ``eps/h``, invisible
+          inside the eps band where the union sits.
+        - **Cylindrical / conical wall anchors**: bump ``r1`` and
+          ``r2`` by ``+eps`` (outer wall) or ``-eps`` (inner wall).
+          The wall grows radially outward (or inward) along the
+          axis. Raises if an inner extension would drop a radius
+          below zero.
         """
+        if anchor.kind in ("cylindrical", "conical"):
+            sign = -1 if anchor.inner else 1
+            new_r1 = self.r1 + sign * eps
+            new_r2 = self.r2 + sign * eps
+            if new_r1 < 0 or new_r2 < 0:
+                from scadwright.errors import ValidationError
+                raise ValidationError(
+                    f"fuse_extend: inner-wall extension on cylinder with "
+                    f"r1={self.r1}, r2={self.r2} would produce a negative "
+                    f"radius (eps={eps}). The wall material can't shrink "
+                    f"past the central axis."
+                )
+            return Cylinder(
+                h=self.h,
+                r1=new_r1,
+                r2=new_r2,
+                center=self.center,
+                fn=self.fn,
+                fa=self.fa,
+                fs=self.fs,
+                source_location=self.source_location,
+            )
+
         if anchor.kind != "planar":
             return None
         sign = 1 if anchor.normal[2] > 0 else -1
