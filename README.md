@@ -20,7 +20,6 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
  - ability to [add new transforms](#5-scadwright-lets-you-build-reusable-transforms-in-addition-to-reusable-objects) to the language
  - [smart centering](#10-centering-components-is-easy-and-straightforward) built into new components by default
  - separate [print/display/integration/debug arrangements](#7-clean-separation-between-variants-for-printing-display-integration-testing-etc) of your part, with [one-line animations](docs/morph.md) between them
- 
  - [python-style chaining](#11-transforms-chain-naturally-starting-with-the-object-being-affected) (e.g. `shape.linear_extrude(height=15).left(10)`, rather than OpenSCAD's transform-first and object-last notation)
  - scripts you can [parametrize from the command line](#13-scripts-can-declare-command-line-parameters-allowing-fully-programmatic-part-design) (including via json)
  - [real error messages](#12-error-types-and-messages-provide-detail-on-what-caused-the-error-and-where) with line numbers
