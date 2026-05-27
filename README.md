@@ -583,13 +583,13 @@ scadwright build tube.py --variant=print     # two halves, bed-ready
 
 ## Install
 
+Download the latest release from the [releases page](https://github.com/brianssparetime/SCADwright/releases) and unzip it, then from inside the unzipped directory:
+
 ```
-pip install -e '.[dev]'
-pytest                                 # unit + golden tests
-SCADWRIGHT_TEST_OPENSCAD=1 pytest        # also OpenSCAD round-trip tests
+pip install '.[lsp,curved-text]'
 ```
 
-The `scadwright` command becomes available.
+The `scadwright` command becomes available. `[lsp]` adds editor integration; `[curved-text]` adds proportional glyph spacing on curved surfaces. Both are optional, but recommended.
 
 ## Dependencies
 
