@@ -653,6 +653,11 @@ Pretty much every part of SCADwright has gone through at least 5-6 major revisio
 In parallel, I'm actually using this framework for my current 3d printing projects: the [Bronica S2 lens housing](/examples/lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) both leverage this 
 framework and motivated its completion.
 
+## Functional Programming
+
+I'm sure someone will accuse this project of pissing all over OpenSCAD's functional programming purity.  On the one hand, OpenSCAD isn't pure to begin with (Haskell syntax, but where's the type system and typeclasses?).  On the other hand, SCADwright's equations syntax is pretty fucking FP (at least in the ways that aren't annoying).  At bottom, I'm far more interested in making SCADwright easy and widely usable than I am in expanding your consciousness through FP indoctrination.  If that's pissing on FP, at least it's epsilon-free piss. And maybe OpenSCAD shouldn't so closely resemble a urinal...
+
+
 ## Documentation
 
 I've taken great care to produce excellent documentation that's easy to consume.  This is not an AI-generated afterthought, but rather carefully written docs for producing expressive and powerful code simply.
