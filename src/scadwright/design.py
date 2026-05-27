@@ -160,6 +160,39 @@ def _flatten_variants() -> list[tuple[type, str, _VariantMeta]]:
     ]
 
 
+def _primary_script_module() -> str | None:
+    """Return the name of the user's primary script module if it defines
+    any ``Design`` subclasses, else ``None``.
+
+    Variant selection prefers Designs declared in the script the user
+    explicitly ran over Designs pulled in transitively from imported
+    sibling modules (e.g., a helper Component class that happens to
+    live in another file's Design module). Two invocation paths cover
+    the user-facing cases:
+
+    - ``python foo.py`` — the script runs as ``__main__``.
+    - ``scadwright build foo.py`` — the CLI loads the script as
+      ``__scadwright_script__`` (see ``scadwright.cli._import_script``).
+
+    Returns the module name (``"__main__"`` / ``"__scadwright_script__"``)
+    when that module contains Designs defined in it (matched via
+    ``__module__``). Returns ``None`` when no such module is found
+    (pytest, REPL, embeddings) so callers fall back to global resolution.
+    """
+    import sys
+    for name in ("__scadwright_script__", "__main__"):
+        mod = sys.modules.get(name)
+        if mod is None:
+            continue
+        for attr in vars(mod).values():
+            if (isinstance(attr, type)
+                    and issubclass(attr, Design)
+                    and attr is not Design
+                    and attr.__module__ == name):
+                return name
+    return None
+
+
 def resolve_variants(
     variant_name: str | None,
     *,
@@ -167,16 +200,27 @@ def resolve_variants(
 ) -> list[tuple[type, str, _VariantMeta]]:
     """Apply the selection rules to pick variants to run.
 
-    Rules, in order:
-        1. If exactly one variant is registered across all designs:
-           - If `variant_name` is given and doesn't match, raise.
-           - Otherwise run that one variant.
-        2. If `variant_name` is given (multiple variants exist), run it;
-           raise if the named variant doesn't exist.
-        3. If exactly one variant is marked default=True, run it.
-        4. If multiple are marked default=True, raise.
-        5. Multiple, none default=True: `kind="build"` runs all; other
-           kinds (preview, render) raise.
+    Variant discovery is global (every Design registers at class-
+    definition time, including those in transitively-imported modules),
+    but selection prefers Designs defined in the user's primary script
+    module — the file they explicitly ran via ``python foo.py`` or
+    ``scadwright build foo.py``. Designs pulled in transitively (e.g.,
+    a helper Component class that happens to live in a sibling Design
+    module) are excluded from selection when the primary module itself
+    defines any Designs.
+
+    Rules, in order, applied to the primary module's variants when
+    detected, or the global set otherwise:
+
+        1. If exactly one variant exists:
+           - If ``variant_name`` is given and doesn't match, raise.
+           - Otherwise use that one variant.
+        2. If ``variant_name`` is given (multiple variants exist),
+           use the match; raise if not found or ambiguous.
+        3. If exactly one variant is marked ``default=True``, use it.
+        4. If multiple are marked ``default=True``, raise.
+        5. Multiple variants, none ``default=True``: ``kind="build"``
+           runs all; other kinds (preview, render) raise.
     """
     all_variants = _flatten_variants()
     if not all_variants:
@@ -184,6 +228,15 @@ def resolve_variants(
             "no variants registered; define a Design subclass with "
             "@variant-decorated methods."
         )
+
+    # Scope to the primary script module's Designs when detected; the
+    # global set is a fallback for embeddings (pytest, REPL) and for
+    # primary modules that don't define Designs of their own.
+    primary = _primary_script_module()
+    if primary is not None:
+        scoped = [v for v in all_variants if v[0].__module__ == primary]
+        if scoped:
+            all_variants = scoped
 
     if variant_name is not None:
         matches = [v for v in all_variants if v[1] == variant_name]

@@ -475,3 +475,124 @@ def test_variant_build_errors_fail_fast_no_output_file():
             "eager build should fail before any output file is written; "
             f"found leftover file at {out}"
         )
+
+
+# Primary-script-module scoping: when the user runs `python foo.py`,
+# Designs defined in foo.py take precedence over Designs in
+# transitively-imported modules. Without this, a helper Component class
+# imported from a sibling Design module would drag that sibling's
+# `default=True` variant into selection.
+
+
+def test_resolve_variants_scopes_to_primary_module(monkeypatch):
+    """Two Designs with default=True in different modules: the one in
+    the primary script module wins, the imported one is excluded."""
+    import sys
+    import types
+
+    class Primary(Design):
+        @variant(default=True)
+        def cap(self):
+            return cube(1)
+
+    class Imported(Design):
+        @variant(default=True)
+        def other(self):
+            return cube(2)
+
+    # Pretend Primary was defined in the user's script (__main__) and
+    # Imported was pulled in from a sibling module.
+    Primary.__module__ = "__main__"
+    Imported.__module__ = "somelib"
+
+    fake_main = types.ModuleType("__main__")
+    fake_main.Primary = Primary
+    monkeypatch.setitem(sys.modules, "__main__", fake_main)
+
+    selected = resolve_variants(None, kind="build")
+    assert len(selected) == 1
+    assert selected[0][0] is Primary
+    assert selected[0][1] == "cap"
+
+
+def test_resolve_variants_falls_back_to_global_when_no_primary_module(monkeypatch):
+    """If neither __main__ nor __scadwright_script__ contains Designs
+    (e.g., REPL, pytest), selection falls back to the global registry."""
+    import sys
+    import types
+
+    class A(Design):
+        @variant(default=True)
+        def go(self):
+            return cube(1)
+
+    # __main__ has no Design subclasses; primary detection returns None.
+    fake_main = types.ModuleType("__main__")
+    monkeypatch.setitem(sys.modules, "__main__", fake_main)
+    monkeypatch.delitem(sys.modules, "__scadwright_script__", raising=False)
+
+    selected = resolve_variants(None, kind="build")
+    assert len(selected) == 1
+    assert selected[0][0] is A
+
+
+def test_resolve_variants_scopes_via_scadwright_script_module(monkeypatch):
+    """The CLI loads scripts as `__scadwright_script__`. Scoping works
+    on that name too — not just `__main__`."""
+    import sys
+    import types
+
+    class Primary(Design):
+        @variant(default=True)
+        def cap(self):
+            return cube(1)
+
+    class Imported(Design):
+        @variant(default=True)
+        def other(self):
+            return cube(2)
+
+    Primary.__module__ = "__scadwright_script__"
+    Imported.__module__ = "somelib"
+
+    fake_script = types.ModuleType("__scadwright_script__")
+    fake_script.Primary = Primary
+    monkeypatch.setitem(sys.modules, "__scadwright_script__", fake_script)
+
+    selected = resolve_variants(None, kind="build")
+    assert len(selected) == 1
+    assert selected[0][0] is Primary
+
+
+def test_resolve_variants_explicit_variant_still_searches_primary_only(monkeypatch):
+    """An explicit variant name finds it within the primary module's
+    scope. A variant that exists only in a transitively-imported
+    module is not reachable by name."""
+    import sys
+    import types
+
+    class Primary(Design):
+        @variant()
+        def cap(self):
+            return cube(1)
+
+    class Imported(Design):
+        @variant()
+        def secret(self):
+            return cube(2)
+
+    Primary.__module__ = "__main__"
+    Imported.__module__ = "somelib"
+
+    fake_main = types.ModuleType("__main__")
+    fake_main.Primary = Primary
+    monkeypatch.setitem(sys.modules, "__main__", fake_main)
+
+    # The Imported.secret variant is not reachable by name.
+    with pytest.raises(SCADwrightError, match="no variant named 'secret'"):
+        resolve_variants("secret", kind="build")
+
+    # Primary.cap is reachable.
+    selected = resolve_variants("cap", kind="build")
+    assert len(selected) == 1
+    assert selected[0][0] is Primary
