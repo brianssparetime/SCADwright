@@ -41,15 +41,15 @@ having to re-write anything.
 **Core concepts**
 
 - [Components](components.md) — your own parametric parts as classes (replaces OpenSCAD modules)
-- [Specs](specs_and_adjustments.md#your-first-spec) — shared dimensions across parts in a single source of truth
+- [Composition helpers](composition_helpers.md) — `mirror_copy`, `rotate_copy`, `linear_copy`, `multi_hull`, `sequential_hull`
 - [Variants](variants.md) — print vs. display, multi-part assemblies, section views, resolution tiers
-- [Morph](morph.md) — one-line animations between two variants, exported as APNG for READMEs
 - [Shape library](shapes/README.md) — 50+ ready-made Components: tubes, gears, fasteners, bearings, infill panels, and more
+- [Anchors](anchors.md) — the data type (named attachment points), authoring custom anchors on Components
+- [Attaching shapes](attach.md) — `attach()` to position parts relative to each other
 - [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
-- [Attaching shapes](attach.md) — `attach()` to position parts relative to each other
-- [Anchors](anchors.md) — the data type (named attachment points), authoring custom anchors on Components
-- [Composition helpers](composition_helpers.md) — `mirror_copy`, `rotate_copy`, `linear_copy`, `multi_hull`, `sequential_hull`
+- [Specs](specs_and_adjustments.md#your-first-spec) — shared dimensions across parts in a single source of truth
+- [Morph](morph.md) — one-line animations between two variants, exported as APNG for READMEs
 
 **Workflow**
 
@@ -61,8 +61,8 @@ having to re-write anything.
 
 **Advanced**
 
-- [Bounding boxes and tests](introspection.md) — measuring parts and writing tests
 - [Adjustments](specs_and_adjustments.md#adjustments) — printer-error fudges recorded inline alongside the equations they correct
+- [Bounding boxes and tests](introspection.md) — measuring parts and writing tests
 - [Matrix](matrix.md) — 4×4 transform math for advanced placement calculations
 
 ### [Cheatsheet](cheatsheet.md)
