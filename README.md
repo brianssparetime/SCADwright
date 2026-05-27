@@ -263,7 +263,7 @@ class Widget(Design):
     box = MyBox()
     lid = MyLid(box=box)
 
-    @variant(fn=48, default=True)
+    @variant(fn=128, default=True)
     def print(self):
         return union(self.box, self.lid.right(80))
 
@@ -281,7 +281,7 @@ scadwright build widget.py --variant=display
 ```
 
 
-### 8. Positioning parts relative to each other easily without extra calculation
+### 8. Positioning parts relative to each other is easy without extra calculation
 
 In OpenSCAD, stacking a lid on a box means computing `translate([0, 0, box_height])` by hand. If you add a spacer or change a dimension, every downstream offset needs updating.
 
@@ -654,7 +654,11 @@ framework and motivated its completion.
 
 ## Functional Programming
 
-I'm sure someone will accuse this project of pissing all over OpenSCAD's functional programming purity.  On the one hand, OpenSCAD isn't pure to begin with (Haskell syntax, but where's the type system and typeclasses?).  On the other hand, SCADwright's equations syntax is pretty fucking FP (at least in the ways that aren't annoying).  At bottom, I'm far more interested in making SCADwright easy and widely usable than I am in expanding your consciousness through FP indoctrination.  If that's pissing on FP, at least it's epsilon-free piss. And maybe OpenSCAD shouldn't so closely resemble a urinal...
+I'm sure someone will accuse this project of pissing all over OpenSCAD's functional programming purity.  
+
+On the one hand, OpenSCAD isn't pure to begin with (Haskell syntax, but where's the type system and typeclasses?).  On the other hand, SCADwright's equations syntax is pretty fucking FP (at least in the ways that aren't annoying).
+
+At bottom, I'm far more interested in making SCADwright easy and widely usable than I am in expanding your consciousness through FP indoctrination.  
 
 
 ## Documentation
