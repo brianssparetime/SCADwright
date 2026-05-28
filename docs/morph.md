@@ -28,7 +28,7 @@ class BoxAndLid(Design):
 scadwright morph widget.py assemble out.apng
 ```
 
-`out.apng` lands next to the script. The lid swings from the print-bed pose into the display pose along a circular arc — the path of a single rotation about a virtual hinge. No ffmpeg required.
+`out.apng` is written next to the script. The lid swings from the print-bed pose into the display pose along a circular arc — the path of a single rotation about a virtual hinge. No ffmpeg required.
 
 ## How it works
 
@@ -77,8 +77,10 @@ Options:
 - `--fps N` — frame rate for `.apng` output (default `30`).
 - `--imgsize WxH` — image dimensions (default `800x600`).
 - `--loop` / `--no-loop` — APNG loop control (default `--loop`, plays forever).
+- `--colorscheme NAME` — OpenSCAD colorscheme (`Metallic`, `Cornfield`, `Tomorrow Night`, …).
 - `--keep-frames` — keep the intermediate PNG frames after encoding (path printed at end).
 - `--openscad PATH` — path to the OpenSCAD binary.
+- `--verbose` / `-v` — show INFO-level scadwright log output.
 
 ## Part identity
 
@@ -143,7 +145,7 @@ A part may animate in some legs and stay still in others — those legs simply d
 
 ## Pingpong
 
-`pingpong=True` makes the animation play forward then reverse over one timeline cycle. The first half visits every stage in order; the second half visits them in reverse, landing back on `stages[0]` at the end:
+`pingpong=True` makes the animation play forward then reverse over one timeline cycle. The first half visits every stage in order; the second half visits them in reverse, returning to `stages[0]` at the end:
 
 ```python
 assemble = morph(stages=["print", "display"], pingpong=True)
@@ -233,7 +235,7 @@ The class attribute can be a `Component`, a primitive (`cube(...)`, `sphere(...)
 
 ## Composing with viewpoint
 
-The morph inherits the **final stage's** viewpoint by default — the user usually wants to see the final pose framed in the OpenSCAD camera. To override, use the CLI's `--vpr` / `--vpt` / `--vpd` flags (where applicable) or set viewpoint on the final stage variant itself.
+The morph inherits the **final stage's** viewpoint by default — the user usually wants to see the final pose framed in the OpenSCAD camera. To override, set viewpoint on the final stage's `@variant` decorator (`rotation=`, `target=`, `distance=`, `fov=`).
 
 ## Troubleshooting
 

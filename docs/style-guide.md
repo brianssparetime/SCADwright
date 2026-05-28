@@ -494,7 +494,7 @@ python tools/lint_scadwright.py              # default: examples/ + src/scadwrig
 python tools/lint_scadwright.py path/to.py   # lint a specific file or directory
 ```
 
-Rules currently enforced:
+Rules enforced:
 
 - `no-module-eps` — module-level `EPS = ...` assignments. Prefer `.through(parent)` for cutters (including rotated cutters via `axis="local_z"`) or `.attach(fuse=True)` for joints; when a manual epsilon is genuinely unavoidable (rotated parents, hull-slab layer thickness, non-rectangular coincidence), scope it locally inside the function that needs it.
 - `no-param-float` — `Param(float)` with no `default=` argument. Floats belong in `equations` or `params=`. `Param(float, default=None)` is the deliberate opt-out pattern and is allowed.

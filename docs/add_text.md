@@ -180,7 +180,7 @@ When `on=` names an anchor with curved-surface geometry, `add_text()` wraps the 
 - `Funnel`: `outer_wall` and `inner_wall` (conical), plus the same on `top` and `bottom`.
 - `Barrel`: `outer_wall` and `inner_wall` (curved meridian), plus the same on `top` and `bottom`.
 
-See [attach.md's shape table](attach.md#shapes-with-extra-anchors) for the full list. Spherical anchors aren't yet supported by `add_text()`; if you need a label on a sphere, label a tangent cylinder.
+See [attach.md's shape table](attach.md#shapes-with-extra-anchors) for the full list. Spherical anchors aren't supported by `add_text()`; if you need a label on a sphere, label a tangent cylinder.
 
 The placement options (`angle=`, `at_z=`, `at_radial=`) mean the same things as in `attach()`. See [Placement on cylinders, cones, and spheres](attach.md#placement-on-cylinders-cones-and-spheres) for their canonical definitions. The sections below cover what's specific to text wrapping.
 
@@ -423,7 +423,7 @@ Curved walls (cylindrical, conical, meridional) and rim arcs are different. Each
 
 By default, scadwright uses a font-agnostic estimate (`0.6 * font_size * spacing`) for that advance, uniform across glyphs. With proportional fonts that looks wrong: a narrow `i` floats in a slot sized for a wide `M`. The optional `scadwright[curved-text]` extra brings in `freetype-py`, which queries the font for per-glyph advance widths at emit time. The output is still pure SCAD; the metrics drive *placement* only. OpenSCAD still rasterizes the glyphs.
 
-**Font lookup limitation.** `font=None` resolves Liberation Sans Regular from known install locations (the OpenSCAD app bundle on macOS and Windows; system locations on Linux). Absolute font paths are loaded directly. **Named-font lookup is not implemented**: passing `"DejaVu Sans"` or `"DejaVu Sans:style=Bold"` falls back to the heuristic (with a one-time warning) because scadwright doesn't ship a fontconfig-style index. Pass an absolute `.ttf` / `.otf` path for proportional spacing with a non-default font. OpenSCAD itself still renders the label in the requested font; the fallback only affects the per-glyph *placement* math.
+**Font lookup limitation.** `font=None` resolves Liberation Sans Regular from known install locations (the OpenSCAD app bundle on macOS and Windows; system locations on Linux). Absolute font paths are loaded directly. **Named-font lookup falls back to the heuristic.** Passing `"DejaVu Sans"` or `"DejaVu Sans:style=Bold"` runs the fallback (with a one-time warning) because scadwright doesn't ship a fontconfig-style index. Pass an absolute `.ttf` / `.otf` path for proportional spacing with a non-default font. OpenSCAD itself still renders the label in the requested font; the fallback only affects the per-glyph *placement* math.
 
 **Per-glyph baseline alignment.** Per-glyph `text()` calls on curved walls and rim arcs always emit with `valign="baseline"`, regardless of the user's `valign`. Mixed-height glyphs (a tall `t`, an `i` whose ink starts above zero, a `g` with a descender) all share a baseline this way. Per-glyph "center" alignment would jitter them at different visual heights. The user's `valign` still governs *block* placement on multi-line labels.
 

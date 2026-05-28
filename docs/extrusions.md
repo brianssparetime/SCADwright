@@ -64,7 +64,7 @@ The 2D profile must lie in the X≥0 half of the plane. Points with negative X c
 
 - `linear_extrude(scale=...)` doesn't pre-compute slices for you; passing a large `twist` without enough slices produces faceted, blocky output. Either set `slices=` explicitly or wrap the call in `with resolution(fn=...):`.
 - `rotate_extrude` accepts any 2D primitive but is most often used with `polygon` for non-trivial profiles.
-- For partial-angle `rotate_extrude` the bounding box currently treats the swept region as if it were a full disc (pessimistic but safe).
+- For partial-angle `rotate_extrude` the bounding box treats the swept region as if it were a full disc (pessimistic but safe).
 
 ### See also
 

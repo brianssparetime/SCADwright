@@ -200,7 +200,7 @@ Conventions:
 
 - **Origin at bed front-left corner** (0, 0). Matches typical slicer defaults (PrusaSlicer, Cura). For center-of-bed coordinate systems, translate the result by `[-plate[0]/2, -plate[1]/2, 0]`.
 - **Layout along +X**, in argument order. Pre-rotate parts to control orientation before passing them in.
-- **Single row only.** Multi-row packing is out of scope; use multiple `pack_on_bed` calls and translate them apart if you need it.
+- **Single row only.** Multi-row packing isn't supported; use multiple `pack_on_bed` calls and translate them apart.
 - **`lift_to_bed=True`** (the default) translates each part so its `bbox.min[2] = 0` — printing requires non-negative Z. Pass `lift_to_bed=False` for layouts where the parts already sit on the bed.
 - **`assert_fit=True`** (the default) raises `ValidationError` at construction time when the laid-out footprint exceeds `plate`, with the overflow magnitude in the message. Pass `assert_fit=False` to lay parts out anyway (useful when you want to inspect a too-large variant).
 

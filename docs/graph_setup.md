@@ -163,7 +163,7 @@ Variant build-target detection picks up the patterns scadwright projects actuall
 
 ## Limitations
 
-`scadwright graph` covers Component / Spec / Design class discovery, Param / equations / `build()` reads, composition, and variant analysis. The following are out of scope for now:
+`scadwright graph` covers Component / Spec / Design class discovery, Param / equations / `build()` reads, composition, and variant analysis. The following aren't covered:
 
 - **No abstract / concrete distinction.** All Components render with the same shape, regardless of whether they're directly instantiated anywhere.
 - **Cross-project imports aren't followed.** A class whose base is in a third-party scadwright extension is categorized as `unknown` and omitted.

@@ -212,7 +212,7 @@ The outline view (often a sidebar; `Ctrl+Shift+O` in some clients, `:lua vim.lsp
 
 ### Undeclared attribute-base warning
 
-When an equation reads an attribute off a name that isn't declared as a `Param` of the surrounding class — for example `x = b.outer_d` with no matching `b = Param(B)` — the LSP marks the offending name with a warning: *"`b.outer_d` reads an attribute of `b`, but `b` isn't declared as a Param of this Component. ..."*. The runtime currently only surfaces this at solve time as part of the `cannot solve...` error message; the LSP raises the same observation while you type.
+When an equation reads an attribute off a name that isn't declared as a `Param` of the surrounding class — for example `x = b.outer_d` with no matching `b = Param(B)` — the LSP marks the offending name with a warning: *"`b.outer_d` reads an attribute of `b`, but `b` isn't declared as a Param of this Component. ..."*. The runtime only surfaces this at solve time as part of the `cannot solve...` error message; the LSP raises the same observation while you type.
 
 ### Rename
 
@@ -227,7 +227,7 @@ Curated names (`sin`, `pi`, ...) and inline type-tag names (`bool`, `int`, ...) 
 ## Limitations
 
 - Only `equations` blocks are analyzed. Errors elsewhere in the file are not surfaced by `scadwright lsp` — your editor's regular Python server (Pyright, Pylance, ruff-lsp, etc.) handles those.
-- Cross-file attribute completion (typing `b.` to see B's Params) is same-file only — cross-file Param-type inference requires walking the project, similar to rename's cross-file pass, but isn't implemented yet.
+- Cross-file attribute completion (typing `b.` to see B's Params) is same-file only — cross-file Param-type inference would require walking the project (similar to rename's cross-file pass).
 - The LSP does not evaluate the iterative resolver, so runtime-only errors (`cannot solve…`, `equation violated`, supplied-vs-missing kwargs) only appear when the script actually runs.
 
 ## Troubleshooting

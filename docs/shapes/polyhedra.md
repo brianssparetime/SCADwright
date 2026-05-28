@@ -151,7 +151,7 @@ Paraboloid(radius=10, focal_length=3.125)   # depth solved (4·f·d = r²)
 
 Anchors: bbox-derived `bottom` is the vertex point (z=0). Declared `top` is the rim disk at z=`depth` with `rim_radius=radius`, so `add_text(on="top")` arc-on-rim works for labels around the dish edge.
 
-Solid only for v1 — a constant-thickness shell isn't a parabolic offset of itself, so hollow dishes need an explicit subtract: `difference(Paraboloid(...), Paraboloid(...).up(thk))`.
+Solid only — a constant-thickness shell isn't a parabolic offset of itself, so hollow dishes need an explicit subtract: `difference(Paraboloid(...), Paraboloid(...).up(thk))`.
 
 Distinct from [`Ogive(kind="parabolic")`](#ogivebase_r-length-kindtangent), which uses the same parabola but with the tip pointing up (a nose cone). Paraboloid has the vertex on the ground and opens upward (a bowl or dish).
 

@@ -280,6 +280,7 @@ scadwright build widget.py --variant=print
 scadwright build widget.py --variant=display
 ```
 
+Animating between variants is a one-liner using [morph](/docs/morph.md) (as long as same parts appear in the variants).
 
 ### 8. Positioning parts relative to each other is easy without extra calculation
 
