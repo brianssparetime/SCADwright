@@ -29,10 +29,15 @@ def _detect_through_axis(self_bb, parent_bb, explicit_axis: str | None, loc) -> 
     """Pick the cut axis for ``through()``.
 
     Returns the axis index (0/1/2). If ``explicit_axis`` is given, parses
-    it. Otherwise auto-detects: prefers axes where the cutter has a
-    face coincident with the parent (picking the most-spanning one if
-    several match), and falls back to the axis where the cutter's size
-    most closely matches the parent's.
+    it. Otherwise: counts how many of the cutter's faces (min/max) are
+    flush with the parent's on each axis, and picks the axis with the
+    most matches. Raises on a tie at the maximum count — the cut
+    direction is geometrically ambiguous and the user has to name it.
+
+    Falls back to the closest-size-match rule only when no face is flush
+    on any axis (the cutter sits fully inside the parent; eps-extension
+    is a no-op anyway). The fallback's axis pick is mostly cosmetic in
+    that case.
     """
     from scadwright.errors import ValidationError
 
@@ -47,34 +52,42 @@ def _detect_through_axis(self_bb, parent_bb, explicit_axis: str | None, loc) -> 
 
     from scadwright.api.tolerances import AXIS_LEN_DEGEN_TOL, coincidence_tol
     tol_detect = coincidence_tol()
-    candidates = [
-        i for i in range(3)
-        if abs(self_bb.min[i] - parent_bb.min[i]) < tol_detect
-        or abs(self_bb.max[i] - parent_bb.max[i]) < tol_detect
-    ]
-    parent_size = parent_bb.size
-    if len(candidates) == 1:
-        return candidates[0]
-    if len(candidates) > 1:
-        # Multiple coincident axes — pick the one where the cutter spans
-        # the most of the parent.
-        best = candidates[0]
-        best_ratio = 0.0
-        for i in candidates:
-            if parent_size[i] > AXIS_LEN_DEGEN_TOL:
-                r = self_bb.size[i] / parent_size[i]
-                if r > best_ratio:
-                    best_ratio = r
-                    best = i
-        return best
-    # No coincident faces — fall back to the closest size match.
-    self_size = self_bb.size
-    ratios = [
-        float("inf") if parent_size[i] < AXIS_LEN_DEGEN_TOL
-        else abs(self_size[i] / parent_size[i] - 1.0)
+    counts = [
+        int(abs(self_bb.min[i] - parent_bb.min[i]) < tol_detect)
+        + int(abs(self_bb.max[i] - parent_bb.max[i]) < tol_detect)
         for i in range(3)
     ]
-    return ratios.index(min(ratios))
+    max_count = max(counts)
+    if max_count == 0:
+        # No face is flush — cutter sits inside the parent. The axis
+        # pick doesn't change emit output (no faces get extended), so
+        # fall back to the closest-size-match rule for a sensible
+        # default.
+        self_size = self_bb.size
+        parent_size = parent_bb.size
+        ratios = [
+            float("inf") if parent_size[i] < AXIS_LEN_DEGEN_TOL
+            else abs(self_size[i] / parent_size[i] - 1.0)
+            for i in range(3)
+        ]
+        return ratios.index(min(ratios))
+
+    candidates = [i for i in range(3) if counts[i] == max_count]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    names = [["x", "y", "z"][i] for i in candidates]
+    raise ValidationError(
+        f"through: the cutter is flush with the parent on more than one "
+        f"axis ({names}); the cut direction can't be picked automatically. "
+        f"Pass axis='x', axis='y', or axis='z'.\n"
+        f"  If the cutter is intentionally wider than the parent in some "
+        f"directions — a fillet curve tangent to a side face, for example "
+        f"— the wider direction reads as 'flush' to through() even though "
+        f"no eps extension is wanted there. Pass the axis of the actual "
+        f"cut.",
+        source_location=loc,
+    )
 
 
 def _extend_through_faces(self, self_bb, parent_bb, ax: int, eps: float, loc):
