@@ -375,7 +375,7 @@ def _render_one(
         # components in cache; we don't re-enter resolution context here.
         end_meta = stage_metas[-1]
         from contextlib import ExitStack
-        from scadwright.animation import viewpoint as _viewpoint
+        from scadwright.animation import t as _t_var, viewpoint as _viewpoint
         with ExitStack() as stack:
             if _meta_has_viewpoint(end_meta):
                 stack.enter_context(_viewpoint(
@@ -384,6 +384,15 @@ def _render_one(
                 ))
             if cli_viewpoint:
                 stack.enter_context(_viewpoint(**cli_viewpoint))
+            if spec.michael_bay:
+                # 360° orbit around world z over the animation. Pitch
+                # of 60° gives a looking-down-from-above 3D shot;
+                # other viewpoint fields (target / distance / fov)
+                # fall through from the end-stage / CLI viewpoint via
+                # the nested-viewpoint merge rule.
+                stack.enter_context(_viewpoint(
+                    rotation=[60, 0, _t_var() * 360],
+                ))
             render(animated, out_path)
         return out_path
 

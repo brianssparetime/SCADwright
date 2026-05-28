@@ -713,6 +713,7 @@ class BoxAndLid(Design):
     #   order=["base", "body", "lid"]   per-leg slot order
     #   simultaneous=False              one part at a time per leg
     #   pingpong=False                  forward-then-reverse loop
+    #   michael_bay=False               360° camera orbit while morphing
 ```
 
 ```bash

@@ -49,6 +49,7 @@ morph(stages: list[str], *,
 - `order` (optional): list of class-attribute names specifying the order in which parts animate within each leg when `simultaneous=False`. Names not listed inherit the default order: ascending by destination z (parts that end up lower in the model animate first).
 - `simultaneous` (optional, default `False`): if `False`, parts animate one at a time inside each leg's slice. If `True`, all parts in a leg animate over that leg's full slice simultaneously.
 - `pingpong` (optional, default `False`): if `True`, the animation plays forward over the first half of the timeline and reverses back over the second half. The chain visits `stages[0] → … → stages[-1] → … → stages[0]` as `$t` runs from 0 to 1, ending exactly where it started — natural for looping APNGs. See [Pingpong](#pingpong) below.
+- `michael_bay` (optional, default `False`): if `True`, the camera orbits 360° around world z over the animation, overriding the final stage's rotation viewpoint. See [Michael Bay shot](#michael-bay-shot) below.
 
 The attribute name on the left of the assignment becomes the morph's variant name. You reference it from the CLI the same way as any other variant:
 
@@ -160,6 +161,18 @@ assemble = morph(stages=["print", "closing", "display"], pingpong=True)
 ```
 
 The pingpong reshape happens at the SCAD layer (a triangle wave on `$t`), so the same `.scad` previews correctly in OpenSCAD's animator and renders to an APNG with no extra frames — the file is the same size as the non-pingpong version. Useful when you want a looping animation that doesn't snap back to the start at the seam.
+
+## Michael Bay shot
+
+`michael_bay=True` orbits the camera 360° around world z over the animation. The model assembles (or whatever the morph is doing) while the camera swings around it.
+
+```python
+assemble = morph(stages=["print", "display"], michael_bay=True)
+```
+
+Combined with `pingpong=True`, the camera completes one full revolution while the model plays forward then back — the kind of one-second loop that draws eyes on a README.
+
+The orbit overrides the final stage's `rotation` viewpoint, but the stage's `target`, `distance`, and `fov` still apply if set — so framing carries through. The pitch is fixed at 60° (a looking-down-from-above 3D shot); if you need a different pitch, write the viewpoint by hand using `t()` math and leave `michael_bay=False`.
 
 ## What can't morph
 

@@ -232,3 +232,63 @@ def test_morph_render_via_cli_resolve_variants():
     with tempfile.TemporaryDirectory() as tmp:
         out_path = _render_one(design_cls, vname, meta, base_dir=Path(tmp))
         assert out_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# michael_bay: orbiting camera
+# ---------------------------------------------------------------------------
+
+
+def test_morph_michael_bay_emits_t_driven_vpr():
+    """michael_bay=True puts a $t-driven $vpr at the top of the SCAD,
+    so OpenSCAD spins the camera 360° over the animation."""
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def a(self):
+            return self.box
+
+        @variant(default=True)
+        def b(self):
+            return self.box.up(20)
+
+        anim = morph(stages=["a", "b"], michael_bay=True)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = _render_one(
+            D, "anim", D.__variants__["anim"],
+            base_dir=Path(tmp),
+        )
+        text = out_path.read_text()
+        # $vpr is set at the top of the file with a $t-driven yaw.
+        assert "$vpr" in text
+        assert "$t * 360" in text or "$t*360" in text
+
+
+def test_morph_without_michael_bay_no_t_in_vpr():
+    """Default morph (no michael_bay) emits no $t-driven $vpr — the
+    camera is static even though the geometry animates."""
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def a(self):
+            return self.box
+
+        @variant(default=True)
+        def b(self):
+            return self.box.up(20)
+
+        anim = morph(stages=["a", "b"])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = _render_one(
+            D, "anim", D.__variants__["anim"],
+            base_dir=Path(tmp),
+        )
+        text = out_path.read_text()
+        # The geometry has $t; $vpr (if present) must not.
+        for line in text.splitlines():
+            if line.strip().startswith("$vpr"):
+                assert "$t" not in line

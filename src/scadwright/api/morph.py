@@ -53,6 +53,7 @@ class _MorphSpec:
     order: tuple[str, ...] | None = None
     simultaneous: bool = False
     pingpong: bool = False
+    michael_bay: bool = False
 
     @property
     def _scadwright_morph(self) -> bool:
@@ -65,6 +66,7 @@ def morph(
     order: list[str] | None = None,
     simultaneous: bool = False,
     pingpong: bool = False,
+    michael_bay: bool = False,
 ) -> _MorphSpec:
     """Declare a morph across a sequence of two or more variants.
 
@@ -100,6 +102,11 @@ def morph(
             stages[-1] → … → stages[1] → stages[0] as ``$t`` runs from
             0 to 1, ending exactly where it started — natural for
             looping APNGs.
+        michael_bay: if True, the camera orbits 360° around world z
+            over the animation, overriding the final stage's
+            ``rotation`` viewpoint field. Pairs naturally with
+            ``pingpong=True``: the model plays forward then back
+            while the camera completes one full revolution.
 
     Validation happens eagerly: ``stages`` must be a list of non-empty
     strings of length >= 2, with no consecutive duplicates. Each stage
@@ -137,6 +144,7 @@ def morph(
         order=tuple(order) if order is not None else None,
         simultaneous=bool(simultaneous),
         pingpong=bool(pingpong),
+        michael_bay=bool(michael_bay),
     )
 
 
