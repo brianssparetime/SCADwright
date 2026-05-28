@@ -385,6 +385,67 @@ def extend_through_faces_local(
     return insert_at_leaf(self, leaf, new_leaf)
 
 
+def intrinsic_cut_axis(node) -> str | None:
+    """Return the cutter's intrinsic cut axis as a local-frame axis
+    string (``"local_z"``), or ``None`` if the cutter has no canonical
+    cut direction.
+
+    Cutters with a canonical orientation declare it intrinsically:
+
+    - ``Cylinder`` → ``"local_z"`` (the height axis is the bored direction).
+    - ``LinearExtrude`` → ``"local_z"`` (the extrusion axis).
+    - Transforms and decorations forward to their child.
+    - CSG nodes (Union, Difference, etc.) return the common axis of all
+      children whose intrinsic axis is non-None; if children disagree,
+      return ``None`` (ambiguous).
+    - Components consult their built tree.
+    - Everything else (Cube, Sphere, RotateExtrude, Polygon-based,
+      Polyhedron, …) has no intrinsic direction — returns ``None``.
+
+    Used by ``Node.through()`` to pick the cut axis before falling back
+    to bbox auto-detect. Shape authors who use a cylinder as a cutter
+    don't have to repeat ``axis="z"`` — the cylinder's type knowledge
+    already supplies it.
+    """
+    from scadwright.ast.csg import (
+        Difference, Hull, Intersection, Minkowski, Union,
+    )
+    from scadwright.ast.extrude import LinearExtrude
+    from scadwright.ast.primitives import Cylinder
+    from scadwright.ast.transforms import (
+        Color, Echo, ForceRender, Mirror, MultMatrix, Offset,
+        PreviewModifier, Projection, Resize, Rotate, Scale, Translate,
+        WithAnchor, WithBBox,
+    )
+    from scadwright.component.base import Component
+
+    if isinstance(node, Component):
+        return intrinsic_cut_axis(node._get_built_tree())
+
+    forward_through = (
+        Translate, Rotate, Scale, Mirror, MultMatrix,
+        Color, WithAnchor, WithBBox, PreviewModifier, ForceRender,
+        Resize, Projection, Offset, Echo,
+    )
+    if isinstance(node, forward_through):
+        return intrinsic_cut_axis(node.child)
+
+    if isinstance(node, (Cylinder, LinearExtrude)):
+        return "local_z"
+
+    if isinstance(node, (Union, Difference, Intersection, Hull, Minkowski)):
+        axes = [intrinsic_cut_axis(c) for c in node.children]
+        non_none = [a for a in axes if a is not None]
+        if not non_none:
+            return None
+        first = non_none[0]
+        if all(a == first for a in non_none):
+            return first
+        return None
+
+    return None
+
+
 def has_rotation(node) -> bool:
     """Does the cutter's cumulative transform contain a *non-axis-permuting*
     rotation?

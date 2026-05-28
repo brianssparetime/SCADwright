@@ -145,17 +145,37 @@ def test_through_local_z_mirror_raises():
 # --- auto-detect with rotated cutter raises pointing at local-axis ---
 
 
-def test_through_auto_detect_rotated_non_permuting_raises():
-    """Auto-detect on a non-axis-permuting rotation raises pointing at
-    the local-axis form."""
+def test_through_auto_detect_rotated_cylinder_uses_intrinsic_axis():
+    """A tilted cylinder doesn't require an explicit axis=. The cutter's
+    intrinsic cut axis (local-z, its height direction) flows through the
+    local-axis path automatically — the user writes the same
+    .through(parent) call as for an axis-aligned cutter."""
     plate = cube([20, 20, 2])
     cone = (
         cylinder(h=2, r=2)
         .rotate([0, 30, 0])
         .translate([10, 5, 0])
     )
+    # Should not raise; should extend the cylinder along its local-z.
+    result = cone.through(plate)
+    # The result is the cutter wrapped with a leaf-level eps extension.
+    # SCAD-emission sanity: the rotate is preserved.
+    scad = emit_str(result)
+    assert "rotate" in scad
+
+
+def test_through_auto_detect_rotated_non_cylindrical_raises():
+    """A rotated cutter with no intrinsic cut direction (a tilted cube,
+    say) can't be dispatched automatically — the user must spell out
+    axis="local_*". The error points them at the local-axis form."""
+    plate = cube([20, 20, 2])
+    tilted_cube = (
+        cube([2, 2, 2])
+        .rotate([0, 30, 0])
+        .translate([10, 10, 0])
+    )
     with pytest.raises(ValidationError, match="cutter-local space"):
-        cone.through(plate)
+        tilted_cube.through(plate)
 
 
 def test_through_auto_detect_axis_permuting_rotation_works():

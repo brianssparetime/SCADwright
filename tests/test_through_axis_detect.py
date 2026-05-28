@@ -75,6 +75,41 @@ def test_auto_detect_partial_penetration_picks_the_flush_axis():
     assert "translate([0, 0, -" in scad
 
 
+def test_intrinsic_axis_routes_tilted_cylinder_to_local_path():
+    """A tilted cylinder cutter (off-axis rotation) calling .through()
+    without an explicit axis= flows through the local-axis path via the
+    cylinder's intrinsic cut direction (local-z). The output should
+    contain a leaf-level translate(-eps in z) rather than raising."""
+    plate = cube([20, 20, 2])
+    drill = (
+        cylinder(h=2, r=2)
+        .rotate([0, 30, 0])  # non-axis-permuting → can't go world-axis
+        .translate([10, 10, 0])
+    )
+    result = drill.through(plate)
+    scad = emit_str(result)
+    # Local-axis dispatch wraps the leaf in a translate/scale inside
+    # the rotate chain; emitted SCAD keeps the original rotate.
+    assert "rotate" in scad
+    # And the bbox grew along the cylinder's local-z direction.
+    from scadwright.bbox import bbox as _bbox
+    assert _bbox(result).size != _bbox(drill).size
+
+
+def test_intrinsic_axis_doesnt_fire_on_unrotated_cutter():
+    """An axis-aligned cylinder cutter still goes through the
+    world-axis path — the intrinsic-axis dispatch is reserved for
+    rotated cutters where bbox detection can't find coincidence."""
+    plate = cube([20, 20, 3])
+    drill = cylinder(h=3, r=1.5).translate([10, 10, 0])
+    result = drill.through(plate)
+    scad = emit_str(result)
+    # World-axis path emits a top-level translate/scale on the WHOLE
+    # cutter (including its placement translate), not at the leaf.
+    # Sanity: there's a scale wrap somewhere.
+    assert "scale(" in scad
+
+
 def test_auto_detect_cutter_inside_parent_is_noop_no_raise():
     """When no face is flush (cutter sits fully inside the parent), the
     fallback rule picks an axis but nothing gets extended — the cutter

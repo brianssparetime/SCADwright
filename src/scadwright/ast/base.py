@@ -867,23 +867,30 @@ class Node(
         (within floating-point tolerance) on the cut axis. Faces that
         aren't coincident are left alone.
 
-        ``axis`` is auto-detected (the axis where the cutter most closely
-        spans the parent). Pass ``axis="x"``/``"y"``/``"z"`` to override
-        with a world axis.
+        Axis selection, in order:
 
-        For rotated cutters (angled drill holes, chamfered countersinks
-        on non-vertical faces, draft-angled inserts), pass
-        ``axis="local"`` (or ``"local_x"``/``"local_y"``/``"local_z"``)
-        to interpret the cut axis in cutter-local space. ``through()``
-        walks the cutter's outer rotations, projects the parent's bbox
-        into cutter-local frame, and extends the leaf in local space —
-        the rotates carry the extension correctly into world coordinates.
-        ``axis="local"`` is a synonym for ``"local_z"`` (the cylinder
-        convention).
+        1. **Explicit ``axis="x"``/``"y"``/``"z"``** — world-axis path
+           on the named axis. Use to override auto-detection.
+        2. **Explicit ``axis="local"``/``"local_x"``/``"local_y"``/
+           ``"local_z"``** — cutter-local-frame path. ``through()``
+           walks the cutter's outer rotations and extends the leaf in
+           local space; the rotates carry the extension correctly into
+           world coordinates.
+        3. **Intrinsic cut axis** (no ``axis=`` passed, cutter is
+           rotated off-axis): if the cutter is a Cylinder, LinearExtrude,
+           or composite of them, its height axis is treated as the
+           intrinsic cut direction and dispatched through the local
+           path automatically. A tilted cylinder ``cutter.through(parent)``
+           works without spelling out ``axis="local_z"``.
+        4. **Bbox auto-detect** (no ``axis=``, cutter axis-aligned):
+           picks the axis where the cutter has the most faces flush
+           with the parent's. Raises on a tie at the maximum count —
+           the cut direction is ambiguous and you have to name it.
 
-        With ``axis=None`` and a rotated cutter, ``through()`` raises
-        rather than guessing a local axis (cylinders use local_z, but
-        cubes and Components don't have a canonical cut direction).
+        When the cutter has a non-axis-permuting rotation and no
+        intrinsic axis (a tilted cube, say), ``through()`` raises
+        pointing at the local-axis form: cubes and Components don't
+        have a canonical cut direction, so the framework can't pick.
 
         Call ``through()`` after positioning the cutter (after any
         ``.up()``, ``.translate()``, ``.attach()`` calls).
@@ -891,6 +898,7 @@ class Node(
         from scadwright.ast._through_local import (
             extend_through_faces_local,
             has_rotation,
+            intrinsic_cut_axis,
             is_local_axis,
         )
         from scadwright.bbox import bbox as _bbox
@@ -904,9 +912,26 @@ class Node(
         if is_local_axis(axis):
             return extend_through_faces_local(self, parent, axis, eps, loc)
 
-        # World-axis path. Existing behavior preserved exactly for axis-aligned
-        # cutters and for rotations that happen to preserve world-axis alignment
-        # (90° permutations like FilletMask's `Rotate(0, 90, 0)`).
+        # When the cutter has a non-axis-permuting rotation in its
+        # transform stack, the world-axis bbox detector can't find
+        # coincidence (the inflated AABB doesn't sit on the parent's
+        # axis-aligned faces). For cutters with an intrinsic cut
+        # direction (Cylinder, LinearExtrude, composites of them), we
+        # can dispatch to the local-axis path automatically — the
+        # cutter's type already declares its cut axis. This means a
+        # tilted cylinder writes the same ``cutter.through(parent)`` as
+        # an axis-aligned one; the framework picks the right path.
+        # Axis-aligned and axis-permuted rotations (FilletMask's
+        # Rotate(0, 90, 0), etc.) still flow through the world-axis
+        # path — its AABB is aligned and the bbox detector handles it.
+        if axis is None and has_rotation(self):
+            intrinsic = intrinsic_cut_axis(self)
+            if intrinsic is not None:
+                return extend_through_faces_local(self, parent, intrinsic, eps, loc)
+
+        # World-axis path. Used when the user passes an explicit axis=
+        # override OR when the cutter has no non-axis-permuting rotation
+        # (the common axis-aligned case).
         self_bb = _bbox(self)
         parent_bb = _bbox(parent)
         ax = _detect_through_axis(self_bb, parent_bb, axis, loc)
