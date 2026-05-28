@@ -244,11 +244,17 @@ class BoxAndLid(Design):
 
     @variant(fn=48, default=True)
     def print(self):
-        # 179.99 ° (not exactly 180) breaks the screw-axis sign ambiguity
-        # so the morph picks the over-the-top arc rather than under.
+        # Rotation about Y (not X) is deliberate: the lid travels mostly
+        # along +X between the print and display poses, and the morph's
+        # screw axis lines up with the rotation axis. Rotating about Y
+        # puts the screw axis perpendicular to the translation, so the
+        # arc lives in the XZ plane and the lid lifts up and over the
+        # box. Rotating about X would put the axis parallel to the
+        # translation; the lid would swing sideways at box-mid-height
+        # and cut through the box on its way across.
         return union(
             self.box,
-            self.lid.rotate([179.99, 0, 0])
+            self.lid.rotate([0, 180, 0])
                 .up(self.lid.height)
                 .right(self.box.outer_w + 15),
         )

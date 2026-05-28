@@ -224,6 +224,24 @@ The morph inherits the **final stage's** viewpoint by default — the user usual
 
 ## Troubleshooting
 
+### The part swings through other geometry instead of arcing over it
+
+If the morph's arc passes through another part (a lid that crosses through the box on its way to seating, for example), the screw axis is parallel to the direction of translation. The arc plane is perpendicular to the screw axis — and the screw axis comes from the rotation. So if the rotation axis and translation direction are parallel, the arc lives in a plane that doesn't lift over the obstacle.
+
+**Fix:** change the rotation axis in the start pose to be perpendicular to the dominant translation direction.
+
+```python
+# Before — rotation about X aligns with the lid's +X translation;
+# arc lives in YZ, sweeps sideways at box-mid-height through the box.
+self.lid.rotate([180, 0, 0]).up(self.lid.height).right(80)
+
+# After — rotation about Y is perpendicular to the +X translation;
+# arc lives in XZ and lifts the lid up and over the box.
+self.lid.rotate([0, 180, 0]).up(self.lid.height).right(80)
+```
+
+For a part with rotational symmetry about its z-axis (a square lid, a cylinder, a centred fastener), the two rotation axes produce the same final pose, so you can pick whichever gives the natural arc. For an asymmetric part where the resulting orientation depends on which axis you flipped about, the simpler workaround is a chain morph with an explicit intermediate stage (e.g. `stages=["print", "midair", "display"]`) so you control the path directly.
+
 ### The lid (or hinged part) swings the wrong way
 
 If your morph contains a 180° rotation and the part traces an arc you didn't intend — over the back instead of over the front, or under the bottom instead of over the top — the cause is a sign ambiguity in the screw axis. A 180° rotation has two equally valid axis directions, and the heuristic picks one of them without knowing which feels right for your geometry.
