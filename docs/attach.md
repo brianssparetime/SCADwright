@@ -20,7 +20,7 @@ plate = cube([40, 40, 2])
 peg   = cube([10, 10, 5]).attach(plate)    # bottom of peg on top of plate
 ```
 
-`attach()` defaults to `on="top"` (the anchor on the other shape) and `using_anchor="bottom"` (the anchor on self), so `peg.attach(plate)` means "put my bottom on your top."
+`attach()` defaults to `on="top"` (the anchor on the other shape) and `using_anchor="bottom"` (the anchor on self), so `cardioid.attach(peg)` means "put my round bottom on top of your shaft."  Attach builds upwards by default; you should specify different anchors if you don't like cowgirl (or you want to choose another face for your peg to go on).
 
 ## Choosing faces
 

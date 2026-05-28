@@ -1,36 +1,17 @@
 # SCADwright style guide
 
-Conventions for writing Components, examples, and shape-library entries. This is the reference for how SCADwright code should look.
+Conventions for writing Components, examples, and shape-library entries.   This document is really aimed at non-human coders.
 
 SCADwright code should be as simple and expressive as possible, even if that means departing from standard python idiom.
 
 ---
 
-## Naming the project
+## Referring to the project
 
 - **SCADwright** — the project name. Use in prose: document titles, README and docs text, docstrings and comments that refer to the project, descriptions, marketing.
 - **scadwright** — the Python package. Use in code: imports (`from scadwright import ...`), CLI invocations (`scadwright build ...`), `pip install scadwright`, `pyproject.toml`, and anywhere the literal identifier must match the installed package.
 
 The dividing line is prose-vs-code: if it's a sentence *about* the project, write **SCADwright**; if it's something you'd type into an editor or a terminal, write **scadwright**.
-
----
-
-## Prose conventions
-
-### Em dashes
-
-The em-dash glyph `—` is allowed and preferred over `--`. The double-hyphen `--` renders as an em dash in markdown but reads poorly in source; use the real glyph.
-
-What's not allowed is the **double-em-dash bracketing style** — using a pair of em dashes to set off a parenthetical clause, like writing "the parser — which had been rewritten — finally worked." That construction reads as overwrought English prose. Use commas, parentheses, semicolons, or separate sentences instead.
-
-A single em dash is fine; it's the paired aside form that's the smell.
-
-```
-Good:    The parser, which had been rewritten, finally worked.
-Good:    The framework checks every line — that's the whole point.
-Bad:     The framework -- which checks every line -- is strict.
-Bad:     The framework — which checks every line — is strict.
-```
 
 ---
 
