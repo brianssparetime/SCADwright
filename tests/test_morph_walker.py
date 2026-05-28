@@ -1,9 +1,9 @@
 """Walker tests: parallel structure walk + per-leaf transform pairing.
 
-The walker descends both variant trees in lockstep, preserving CSG
+The walker descends every stage's tree in lockstep, preserving CSG
 structure and decoration wrappers, and identifies leaves (Components and
-inline primitives) whose transform stacks differ between variants. Those
-leaves end up in the MorphPlan as AnimatedLeaf entries.
+inline primitives) whose transform stacks differ between stages. Those
+leaves end up in the ChainPlan as AnimatedLeaf entries per leg.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pytest
 
 from scadwright import Component, Param, positive
 from scadwright.animation._morph_walker import (
-    AnimatedLeaf, MorphPlan, walk,
+    AnimatedLeaf, ChainPlan, walk,
 )
 from scadwright.boolops import difference, intersection, union, hull
 from scadwright.design import Design, _reset_for_testing, variant
@@ -61,8 +61,8 @@ def test_walker_static_part_produces_no_animation_entry():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert isinstance(plan, MorphPlan)
-    assert plan.leaves == ()
+    assert isinstance(plan, ChainPlan)
+    assert plan.legs[0].leaves == ()
 
 
 def test_walker_pairs_translated_part():
@@ -79,8 +79,8 @@ def test_walker_pairs_translated_part():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 1
-    leaf = plan.leaves[0]
+    assert len(plan.legs[0].leaves) == 1
+    leaf = plan.legs[0].leaves[0]
     assert leaf.leaf is D.box
     assert leaf.display_name == "box"
     assert leaf.M_a.is_identity
@@ -103,8 +103,8 @@ def test_walker_two_parts_in_union():
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
     # box is static (M_a == M_b == identity), so only lid is in leaves.
-    assert len(plan.leaves) == 1
-    lid_leaf = plan.leaves[0]
+    assert len(plan.legs[0].leaves) == 1
+    lid_leaf = plan.legs[0].leaves[0]
     assert lid_leaf.display_name == "lid"
     assert lid_leaf.M_a.translation == (0.0, 0.0, 10.0)
     assert lid_leaf.M_b.translation == (0.0, 0.0, 20.0)
@@ -131,8 +131,8 @@ def test_walker_substitution_root_at_topmost_spatial_wrapper():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 1
-    leaf = plan.leaves[0]
+    assert len(plan.legs[0].leaves) == 1
+    leaf = plan.legs[0].leaves[0]
     # The substitution root is the outer Translate of variant A.
     assert leaf.substitution_root is plan.tree_a
 
@@ -157,7 +157,7 @@ def test_walker_substitution_root_resets_at_csg_node():
     plan = walk(inst.a(), inst.b(), inst)
     # self.box animates from identity to translate(0,0,5) — the outer
     # Translate is preserved structurally and doesn't accumulate.
-    box_leaves = [l for l in plan.leaves if l.display_name == "box"]
+    box_leaves = [l for l in plan.legs[0].leaves if l.display_name == "box"]
     assert len(box_leaves) == 1
     assert box_leaves[0].M_a.is_identity
     assert box_leaves[0].M_b.translation == (0.0, 0.0, 5.0)
@@ -187,8 +187,8 @@ def test_walker_part_inside_difference_now_animates():
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
     # body is static; hole animates.
-    assert len(plan.leaves) == 1
-    hole_leaf = plan.leaves[0]
+    assert len(plan.legs[0].leaves) == 1
+    hole_leaf = plan.legs[0].leaves[0]
     assert hole_leaf.display_name == "hole"
     assert hole_leaf.M_a.translation == (0.0, 0.0, 5.0)
     assert hole_leaf.M_b.translation == (0.0, 0.0, 10.0)
@@ -209,8 +209,8 @@ def test_walker_part_inside_intersection_animates():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 1
-    assert plan.leaves[0].display_name == "cutter"
+    assert len(plan.legs[0].leaves) == 1
+    assert plan.legs[0].leaves[0].display_name == "cutter"
 
 
 def test_walker_difference_with_no_components_is_carried_in_tree_a():
@@ -229,11 +229,11 @@ def test_walker_difference_with_no_components_is_carried_in_tree_a():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    box_leaves = [l for l in plan.leaves if l.display_name == "box"]
+    box_leaves = [l for l in plan.legs[0].leaves if l.display_name == "box"]
     assert len(box_leaves) == 1
     # The diff-of-primitives is static; it pairs structurally because the
     # cubes/spheres tree-hash the same on both sides. No leaves entry.
-    assert all(l.display_name == "box" for l in plan.leaves)
+    assert all(l.display_name == "box" for l in plan.legs[0].leaves)
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ def test_walker_inline_primitive_can_animate():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    primitive_leaves = [l for l in plan.leaves if "inline" in l.display_name]
+    primitive_leaves = [l for l in plan.legs[0].leaves if "inline" in l.display_name]
     assert len(primitive_leaves) == 1
     assert primitive_leaves[0].M_a.translation == (0.0, 0.0, 20.0)
     assert primitive_leaves[0].M_b.translation == (0.0, 0.0, 30.0)
@@ -280,7 +280,7 @@ def test_walker_inline_primitive_static_doesnt_animate():
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
     # Only self.box animates; cube is static.
-    assert all(l.display_name == "box" for l in plan.leaves)
+    assert all(l.display_name == "box" for l in plan.legs[0].leaves)
 
 
 def test_walker_different_primitive_types_raises():
@@ -419,7 +419,7 @@ def test_walker_uniform_scale_change_ok():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 1
+    assert len(plan.legs[0].leaves) == 1
 
 
 def test_walker_non_uniform_scale_difference_raises():
@@ -462,7 +462,7 @@ def test_walker_color_preserved_and_matches_required():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 1
+    assert len(plan.legs[0].leaves) == 1
 
 
 def test_walker_color_in_one_variant_only_gives_specific_guidance():
@@ -485,7 +485,7 @@ def test_walker_color_in_one_variant_only_gives_specific_guidance():
     inst = D()
     with pytest.raises(
         ValidationError,
-        match=r"(?s)decoration wrapper present in one variant only.*Color",
+        match=r"(?s)decoration wrapper present in one stage only.*Color",
     ):
         walk(inst.a(), inst.b(), inst)
 
@@ -508,7 +508,7 @@ def test_walker_decoration_asymmetry_names_both_sides():
     inst = D()
     with pytest.raises(
         ValidationError,
-        match=r"(?s)end has: Color.*start has: the leaf with no wrapper",
+        match=r"(?s)stages\[1\] has: Color.*stages\[0\] has: the leaf with no wrapper",
     ):
         walk(inst.plain(), inst.colored(), inst)
 
@@ -589,7 +589,7 @@ def test_walker_same_preview_modifier_mode_passes():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 1
+    assert len(plan.legs[0].leaves) == 1
 
 
 def test_walker_different_force_render_convexity_raises():
@@ -702,8 +702,8 @@ def test_walker_resize_wrapping_static_content_is_fine():
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
     # Only box animates; decor (under Resize) is static, doesn't appear in leaves.
-    assert len(plan.leaves) == 1
-    assert plan.leaves[0].display_name == "box"
+    assert len(plan.legs[0].leaves) == 1
+    assert plan.legs[0].leaves[0].display_name == "box"
 
 
 def test_walker_resize_below_a_csg_still_catches_animation():
@@ -768,8 +768,8 @@ def test_walker_with_bbox_is_a_decoration():
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
     # box animates through the WithBBox wrapper; one leaf in the plan.
-    assert len(plan.leaves) == 1
-    assert plan.leaves[0].display_name == "box"
+    assert len(plan.legs[0].leaves) == 1
+    assert plan.legs[0].leaves[0].display_name == "box"
 
 
 def test_walker_with_bbox_different_sources_raises():
@@ -840,10 +840,10 @@ def test_walker_multiplicity_pairs_by_tree_position():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    assert len(plan.leaves) == 2
+    assert len(plan.legs[0].leaves) == 2
     z_pairs = sorted(
         (leaf.M_a.translation[2], leaf.M_b.translation[2])
-        for leaf in plan.leaves
+        for leaf in plan.legs[0].leaves
     )
     assert z_pairs == [(0.0, 50.0), (10.0, 60.0)]
 
@@ -868,5 +868,5 @@ def test_walker_part_inside_hull_animates():
 
     inst = D()
     plan = walk(inst.first(), inst.second(), inst)
-    assert len(plan.leaves) == 1
-    assert plan.leaves[0].display_name == "b_part"
+    assert len(plan.legs[0].leaves) == 1
+    assert plan.legs[0].leaves[0].display_name == "b_part"

@@ -13,7 +13,7 @@ Run:
 
 from collections import namedtuple
 
-from scadwright import Component, Param, bbox
+from scadwright import Component, Param, bbox, morph
 from scadwright.boolops import difference, hull, intersection, union
 from scadwright.design import Design, run, variant
 from scadwright.primitives import cube, cylinder
@@ -244,9 +244,13 @@ class BoxAndLid(Design):
 
     @variant(fn=48, default=True)
     def print(self):
+        # 179.99 ° (not exactly 180) breaks the screw-axis sign ambiguity
+        # so the morph picks the over-the-top arc rather than under.
         return union(
             self.box,
-            self.lid.flip("z").up(self.lid.height).right(self.box.outer_w + 15),
+            self.lid.rotate([179.99, 0, 0])
+                .up(self.lid.height)
+                .right(self.box.outer_w + 15),
         )
 
     @variant(fn=48)
@@ -257,6 +261,8 @@ class BoxAndLid(Design):
             self.box,
             self.lid.up(self.box.height + self.lid.height),
         )
+
+    assemble = morph(stages=["print", "display"])
 
 
 if __name__ == "__main__":

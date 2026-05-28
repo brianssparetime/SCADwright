@@ -138,7 +138,7 @@ def test_emit_no_animation_returns_tree_a_unchanged():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     assert out is plan.tree_a
 
@@ -162,7 +162,7 @@ def test_emit_pure_translation_endpoints():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
 
     # The animated chain replaces self.box (the substitution root). Find
@@ -188,7 +188,7 @@ def test_emit_pure_translation_intermediate_is_lerp():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b", simultaneous=True)
+    spec = morph(stages=["a", "b"], simultaneous=True)
     out = build_animated_tree(plan, spec)
     # At $t=0.5 the eased alpha smoothstep(0.5) = 0.5; translation should be (0, 0, 10).
     M_at_half = _chain_matrix(out, 0.5, D.box)
@@ -220,7 +220,7 @@ def test_emit_screw_180_endpoints():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
 
     M_at_0 = _chain_matrix(out, 0.0, D.lid)
@@ -245,7 +245,7 @@ def test_emit_screw_90_endpoints():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     M_at_0 = _chain_matrix(out, 0.0, D.part)
     M_at_1 = _chain_matrix(out, 1.0, D.part)
@@ -276,7 +276,7 @@ def test_emit_screw_180_traces_an_arc_not_a_straight_line():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     M_at_half = _chain_matrix(out, 0.5, D.lid)
     mid_pos = M_at_half.apply_point((0.0, 0.0, 0.0))
@@ -305,7 +305,7 @@ def test_emit_screw_180_sign_choice_is_deterministic():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out_1 = build_animated_tree(plan, spec)
     out_2 = build_animated_tree(plan, spec)
     mid_1 = _chain_matrix(out_1, 0.5, D.lid).apply_point((0.0, 0.0, 0.0))
@@ -338,7 +338,7 @@ def test_emit_srt_fallback_endpoints():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     M_at_0 = _chain_matrix(out, 0.0, D.part)
     M_at_1 = _chain_matrix(out, 1.0, D.part)
@@ -366,7 +366,7 @@ def test_emit_simultaneous_alpha_smoothstep_at_half():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b", simultaneous=True)
+    spec = morph(stages=["a", "b"], simultaneous=True)
     out = build_animated_tree(plan, spec)
     M_at_quarter = _chain_matrix(out, 0.25, D.box)
     # smoothstep(0.25) = 0.0625·(3 − 0.5) = 0.15625; translation should be ~1.5625.
@@ -399,7 +399,7 @@ def test_emit_one_at_a_time_slot_boundaries():
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
     spec = morph(
-        start="a", end="b",
+        stages=["a", "b"],
         order=["foo", "bar"],  # foo first, bar second
         simultaneous=False,
     )
@@ -442,7 +442,7 @@ def test_emit_default_order_destination_z_ascending():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     # At $t = 0.4, lo's slot [0, 0.5] is in its second half (eased), hi
     # hasn't started yet.
@@ -478,7 +478,7 @@ def test_emit_explicit_order_respected():
 
     inst = D()
     plan = walk(inst.first(), inst.second(), inst)
-    spec = morph(start="first", end="second", order=["a_part", "b_part"])
+    spec = morph(stages=["first", "second"], order=["a_part", "b_part"])
     out = build_animated_tree(plan, spec)
     # At $t = 0.4: a_part should already be moving (slot 0 of 2 runs [0, 0.5]).
     M_a_at_t = _chain_matrix(out.children[0], 0.4, D.a_part)
@@ -514,7 +514,7 @@ def test_emit_preserves_difference_structure():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     assert isinstance(out, Difference)
     # The first child is self.body (unchanged); the second child is the
@@ -544,7 +544,7 @@ def test_emit_preserves_color_decoration():
 
     inst = D()
     plan = walk(inst.a(), inst.b(), inst)
-    spec = morph(start="a", end="b")
+    spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     # Color stays at the root.
     assert isinstance(out, Color)

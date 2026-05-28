@@ -199,7 +199,7 @@ class BoxAndLid(Design):
     def display(self):
         return union(self.box, self.lid.up(50))
 
-    assemble = morph(start="print", end="display")
+    assemble = morph(stages=["print", "display"])
 ```
 
 `scadwright morph widget.py assemble out.apng` writes an animated PNG that swings the lid from its print-bed pose into its seated pose along a hinge-like arc. See [Morph](morph.md) for the full feature page (limitations, ordering knobs, error catalog).

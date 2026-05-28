@@ -14,7 +14,7 @@ Writes a class-attribute declaration inside a Design subclass:
         def display(self):
             return union(self.box, self.lid.up(self.box.height))
 
-        assemble = morph(start="print", end="display")
+        assemble = morph(stages=["print", "display"])
 
 The attribute name (``assemble``) becomes the morph's variant name. The
 ``Design.__init_subclass__`` scan picks up ``_MorphSpec`` instances from
@@ -25,8 +25,8 @@ existing variant resolution machinery (``resolve_variants``, CLI
 
 The morph render path itself lives in ``design.py:_render_one``: when the
 selected variant name appears in ``__morphs__``, ``_render_one`` invokes
-the start/end variants under their own contexts, walks the trees, and
-emits the animated tree. See `design_docs/variants-animate.md`.
+each stage variant under its own context, walks the trees, and emits the
+chained animated tree.
 """
 
 from __future__ import annotations
@@ -38,40 +38,40 @@ from scadwright.errors import ValidationError
 
 @dataclass(frozen=True)
 class _MorphSpec:
-    """Class-attribute declaration of a morph between two variants.
+    """Class-attribute declaration of a morph across a sequence of variants.
 
-    Carries the start/end variant names and the small set of optional
+    Carries the stage names (two or more) and the small set of optional
     knobs. ``Design.__init_subclass__`` recognizes ``_MorphSpec`` instances
-    by the ``_scadwright_morph`` sentinel attribute (set in ``__init__``).
+    by the ``_scadwright_morph`` sentinel attribute, mirroring the
+    ``_scadwright_variant`` marker on @variant-decorated methods so a
+    single class-body scan can pick up both kinds.
 
     Not intended for direct construction — use the ``morph()`` factory.
     """
 
-    start: str
-    end: str
+    stages: tuple[str, ...]
     order: tuple[str, ...] | None = None
     simultaneous: bool = False
+    pingpong: bool = False
 
     @property
     def _scadwright_morph(self) -> bool:
-        # Sentinel for Design.__init_subclass__'s scan. Mirrors the
-        # ``_scadwright_variant`` attribute that @variant-decorated methods
-        # carry, so the same scan pattern works for both.
         return True
 
 
 def morph(
-    start: str,
-    end: str,
+    stages: list[str],
     *,
     order: list[str] | None = None,
     simultaneous: bool = False,
+    pingpong: bool = False,
 ) -> _MorphSpec:
-    """Declare a morph between two variants of the enclosing Design.
+    """Declare a morph across a sequence of two or more variants.
 
     Use as a class-attribute assignment inside a Design subclass:
 
-        assemble = morph(start="print", end="display")
+        assemble = morph(stages=["print", "display"])
+        settle = morph(stages=["exploded", "loose", "seated"])
 
     The attribute name becomes the morph's variant name; both
     ``scadwright morph script.py assemble out.apng`` and
@@ -79,41 +79,64 @@ def morph(
     name.
 
     Arguments:
-        start: name of the start-pose variant (a method on the Design
-            class decorated with ``@variant``).
-        end: name of the end-pose variant.
+        stages: list of two or more variant names (methods decorated with
+            ``@variant`` on the same Design). The animation runs across
+            consecutive pairs ``(stages[0], stages[1])``,
+            ``(stages[1], stages[2])``, ..., each pair forming one "leg"
+            of the chain. Two-variant morphs are ``stages=["a", "b"]``;
+            three or more stages make a chain.
         order: optional list of class-attribute names specifying the
-            order in which parts animate when ``simultaneous=False``.
-            Names not listed inherit the default (destination-z
-            ascending). Listing a subset is fine — listed names go in
-            the listed order at the front, the rest fall in by default
-            order behind them.
+            order in which parts animate within each leg when
+            ``simultaneous=False``. Names not listed inherit the default
+            (destination-z ascending). Listing a subset is fine — listed
+            names go in the listed order at the front, the rest fall in
+            by default order behind them.
         simultaneous: if False (default), animate one part at a time
-            across the ``$t ∈ [0, 1]`` timeline. If True, all parts
-            animate over the full timeline simultaneously.
+            inside each leg's slice. If True, all parts in a leg animate
+            over that leg's full slice simultaneously.
+        pingpong: if True, the animation plays forward over the first
+            half of the timeline and reverses back over the second
+            half. The chain visits stages[0] → stages[1] → … →
+            stages[-1] → … → stages[1] → stages[0] as ``$t`` runs from
+            0 to 1, ending exactly where it started — natural for
+            looping APNGs.
 
-    Validation happens eagerly: ``start == end`` raises at class-
-    definition time, and ``start``/``end`` are checked against the
-    Design's registered variants in ``Design.__init_subclass__``.
+    Validation happens eagerly: ``stages`` must be a list of non-empty
+    strings of length >= 2, with no consecutive duplicates. Each stage
+    name is checked against the Design's registered variants in
+    ``Design.__init_subclass__``.
     """
-    if not isinstance(start, str) or not start:
-        raise ValidationError(f"morph: start must be a non-empty string, got {start!r}")
-    if not isinstance(end, str) or not end:
-        raise ValidationError(f"morph: end must be a non-empty string, got {end!r}")
-    if start == end:
+    if not isinstance(stages, list):
         raise ValidationError(
-            f"morph: start and end must be different variants (both are {start!r})"
+            f"morph: stages must be a list of variant names, got {stages!r}"
         )
+    if len(stages) < 2:
+        raise ValidationError(
+            f"morph: stages must have at least 2 entries, got {len(stages)}"
+        )
+    for i, name in enumerate(stages):
+        if not isinstance(name, str) or not name:
+            raise ValidationError(
+                f"morph: stages[{i}] must be a non-empty string, got {name!r}"
+            )
+    for i in range(len(stages) - 1):
+        if stages[i] == stages[i + 1]:
+            raise ValidationError(
+                f"morph: stages[{i}] and stages[{i + 1}] are both "
+                f"{stages[i]!r}; consecutive duplicates have no motion. "
+                f"To deliberately pause at a stage, structure your chain "
+                f"so adjacent entries differ."
+            )
     if order is not None:
         if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
             raise ValidationError(
                 f"morph: order must be a list of variant-part names, got {order!r}"
             )
     return _MorphSpec(
-        start=start,
-        end=end,
+        stages=tuple(stages),
         order=tuple(order) if order is not None else None,
         simultaneous=bool(simultaneous),
+        pingpong=bool(pingpong),
     )
 
 

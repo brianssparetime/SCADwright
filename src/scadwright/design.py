@@ -82,10 +82,10 @@ class Design:
 
     Subclasses should declare shared parts as class-body statements and
     variants as methods decorated with `@variant`. Morphs (declared with
-    ``name = morph(start=..., end=...)`` at class level) register as
-    variants in their own right — they appear in ``__variants__`` so the
-    existing CLI / resolver paths find them, with an extra ``__morphs__``
-    dict that the render path uses to detect and dispatch the morph case.
+    ``name = morph(stages=[...])`` at class level) register as variants in
+    their own right — they appear in ``__variants__`` so the existing
+    CLI / resolver paths find them, with an extra ``__morphs__`` dict
+    that the render path uses to detect and dispatch the morph case.
     """
 
     __variants__: dict[str, _VariantMeta] = {}
@@ -116,15 +116,16 @@ class Design:
         # never makes it into the namespace.
         for mname in morphs:
             variants[mname] = _VariantMeta()
-        # Validate that every morph's start/end references a real variant.
-        # Morphs can't reference other morphs (no chaining in v1).
+        # Validate that every stage in every morph references a real
+        # @variant method. Morphs may not reference other morphs — only
+        # @variant-decorated methods can appear in stages.
         real_variant_names = {n for n, m in variants.items() if n not in morphs}
         for mname, spec in morphs.items():
-            for role, ref in (("start", spec.start), ("end", spec.end)):
+            for i, ref in enumerate(spec.stages):
                 if ref not in real_variant_names:
                     raise ValidationError(
-                        f"{cls.__name__}: morph {mname!r} {role}={ref!r} does not "
-                        f"reference an @variant method. Available: "
+                        f"{cls.__name__}: morph {mname!r} stages[{i}]={ref!r} "
+                        f"does not reference an @variant method. Available: "
                         f"{sorted(real_variant_names)}"
                     )
 
@@ -347,29 +348,32 @@ def _render_one(
     # + build path instead of invoking a method (morphs have no method).
     if vname in getattr(design_cls, "__morphs__", {}):
         from scadwright.animation._morph_emit import build_animated_tree
-        from scadwright.animation._morph_walker import walk as _walk_morph
+        from scadwright.animation._morph_walker import walk_chain
 
         spec = design_cls.__morphs__[vname]
-        start_meta = design_cls.__variants__[spec.start]
-        end_meta = design_cls.__variants__[spec.end]
+        stage_metas = [design_cls.__variants__[s] for s in spec.stages]
         instance = design_cls()
 
-        # Capture end first, then start. Component _built_tree caches end
-        # up reflecting whichever variant was built most recently —
-        # capturing start last means components carry start's resolution
-        # snapshot through to the final render (matching the documented
-        # "fn inherits from start" rule).
-        tree_end = _capture_variant(design_cls, instance, spec.end, end_meta)
-        tree_start = _capture_variant(design_cls, instance, spec.start, start_meta)
+        # Capture all stages, with stages[0] captured LAST so its Component
+        # cache wins. Component _built_tree reflects whichever variant
+        # built it most recently; leaving stages[0]'s build last means
+        # components carry stages[0]'s resolution snapshot through to the
+        # final render. (The "fn inherits from the first stage" rule.)
+        trees = [None] * len(spec.stages)
+        for i in range(len(spec.stages) - 1, -1, -1):
+            trees[i] = _capture_variant(
+                design_cls, instance, spec.stages[i], stage_metas[i],
+            )
 
-        plan = _walk_morph(tree_start, tree_end, instance)
+        plan = walk_chain(tuple(trees), instance)
         animated = build_animated_tree(plan, spec)
 
-        # Render inside end variant's viewpoint context (so $vpr/$vpt/etc.
-        # in the output SCAD frame the end pose, which is what users
-        # typically want to look at) plus the CLI viewpoint override if
-        # any. Resolution is already pinned via start's components in
-        # cache; we don't re-enter resolution context here.
+        # Render inside the final stage's viewpoint context (so the
+        # output SCAD's $vpr/$vpt/etc. frame the end pose, which is what
+        # users typically want to look at) plus the CLI viewpoint
+        # override if any. Resolution is already pinned via stages[0]'s
+        # components in cache; we don't re-enter resolution context here.
+        end_meta = stage_metas[-1]
         from contextlib import ExitStack
         from scadwright.animation import viewpoint as _viewpoint
         with ExitStack() as stack:

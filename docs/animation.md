@@ -156,4 +156,4 @@ if __name__ == "__main__":
     run()
 ```
 
-For animations specifically between two existing variants (the print vs display case is the canonical example), see [Morph](morph.md) — a one-line declarative API that derives the animation from the variants you already have, rather than hand-rolling `t()` math.
+For animations specifically across existing variants (the print → display swing is the canonical case; chains of three or more stages also work), see [Morph](morph.md) — a one-line declarative API that derives the animation from the variants you already have, rather than hand-rolling `t()` math.

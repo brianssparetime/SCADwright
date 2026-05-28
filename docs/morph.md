@@ -1,6 +1,10 @@
 # Morph — variant-to-variant animation
 
-A morph turns two existing variants into a snazzy animation. Declare one line in your `Design` class, run a single CLI command, get an animated PNG ready to drop into a README:
+<p align="center">
+  <img src="../examples/images/BoxAndLid-assemble.apng" alt="BoxAndLid morph: lid swings from its print-bed pose into its seated pose" width="600">
+</p>
+
+A morph turns two or more existing variants into a snazzy animation. Declare one line in your `Design` class, run a single CLI command, get an animated PNG ready to drop into a README:
 
 ```python
 from scadwright import morph
@@ -17,7 +21,7 @@ class BoxAndLid(Design):
     def display(self):
         return union(self.box, self.lid.up(50))
 
-    assemble = morph(start="print", end="display")
+    assemble = morph(stages=["print", "display"])
 ```
 
 ```bash
@@ -28,20 +32,23 @@ scadwright morph widget.py assemble out.apng
 
 ## How it works
 
-The morph captures both variants' ASTs, identifies which parts (`self.box`, `self.lid`, ...) appear in both, and computes the transform difference between them. At animation time the start-pose transforms morph smoothly into the end-pose transforms using **Chasles' theorem**: any rigid motion in 3D is equivalent to a single rotation about a screw axis, plus an optional translation along that axis. For a 180° flip combined with a translation, this reads as a hinge swing rather than translating-and-rotating-in-midair.
+The morph captures every stage variant's AST, identifies which parts (`self.box`, `self.lid`, ...) appear in each, and computes the transform difference between consecutive stages. At animation time the transforms morph smoothly from one stage to the next using **Chasles' theorem**: any rigid motion in 3D is equivalent to a single rotation about a screw axis, plus an optional translation along that axis. For a 180° flip combined with a translation, this reads as a hinge swing rather than translating-and-rotating-in-midair.
 
-The CSG structure of both variants is preserved. If `print` uses `difference(self.body, self.hole.up(5))` and `display` uses `difference(self.body, self.hole.up(10))`, the morph's output keeps the `difference()` — only `self.hole`'s position animates.
+The CSG structure of every stage is preserved. If `print` uses `difference(self.body, self.hole.up(5))` and `display` uses `difference(self.body, self.hole.up(10))`, the morph's output keeps the `difference()` — only `self.hole`'s position animates.
 
 ## The `morph(...)` factory
 
 ```python
-morph(start: str, end: str, *, order: list[str] | None = None, simultaneous: bool = False) -> _MorphSpec
+morph(stages: list[str], *,
+      order: list[str] | None = None,
+      simultaneous: bool = False,
+      pingpong: bool = False) -> _MorphSpec
 ```
 
-- `start`: name of the start-pose variant (a method decorated with `@variant`).
-- `end`: name of the end-pose variant.
-- `order` (optional): list of class-attribute names specifying the order in which parts animate when `simultaneous=False`. Names not listed inherit the default order: ascending by destination z (parts that end up lower in the model animate first).
-- `simultaneous` (optional, default `False`): if `False`, parts animate one at a time across the `$t ∈ [0, 1]` timeline. If `True`, all parts animate over the full timeline together.
+- `stages`: list of two or more variant names (methods decorated with `@variant`). The animation runs through consecutive pairs `(stages[0], stages[1])`, `(stages[1], stages[2])`, …, each pair forming one "leg" of the chain. Two-stage morphs use `stages=["a", "b"]`; three or more entries make a chain (see [Chains](#chains) below).
+- `order` (optional): list of class-attribute names specifying the order in which parts animate within each leg when `simultaneous=False`. Names not listed inherit the default order: ascending by destination z (parts that end up lower in the model animate first).
+- `simultaneous` (optional, default `False`): if `False`, parts animate one at a time inside each leg's slice. If `True`, all parts in a leg animate over that leg's full slice simultaneously.
+- `pingpong` (optional, default `False`): if `True`, the animation plays forward over the first half of the timeline and reverses back over the second half. The chain visits `stages[0] → … → stages[-1] → … → stages[0]` as `$t` runs from 0 to 1, ending exactly where it started — natural for looping APNGs. See [Pingpong](#pingpong) below.
 
 The attribute name on the left of the assignment becomes the morph's variant name. You reference it from the CLI the same way as any other variant:
 
@@ -59,7 +66,7 @@ scadwright morph SCRIPT MORPH_NAME OUTPUT [options]
 
 The output extension picks the format:
 
-- **`.apng`** — animated PNG. Renders in every modern browser, on GitHub READMEs, Discord, Slack, Reddit. Default — uses the vendored APNG encoder, no external dependencies beyond OpenSCAD.
+- **`.apng`** — animated PNG. Renders in every modern browser, on GitHub READMEs, Discord, Slack, Reddit. Uses the vendored APNG encoder, no external dependencies beyond OpenSCAD.
 - **`.scad`** — animated SCAD only, no rendering. Open in OpenSCAD's View → Animate to scrub by hand.
 - **`.png`** — frame sequence; `OUTPUT` is treated as a prefix. Files are written as `PREFIX_0001.png`, `PREFIX_0002.png`, etc.
 
@@ -74,9 +81,9 @@ Options:
 
 ## Part identity
 
-Parts in a `Design` are class attributes (`box = MyBox()`, `lid = MyLid()`). The morph pairs parts across the two variants by **Python object identity** — both variants reference the same `Component` instance via `self.box`, so the morph knows they're the same part. No labels or names needed.
+Parts in a `Design` are class attributes (`box = MyBox()`, `lid = MyLid()`). The morph pairs parts across stages by **Python object identity** — every stage references the same `Component` instance via `self.box`, so the morph knows they're the same part. No labels or names needed.
 
-For inline geometry (a `cube(5)` or similar constructed in-place inside a variant body), the morph pairs by **structural position and `tree_hash`**: if both variants have a `cube(5)` at the same point in their CSG tree, they pair. Their transform stacks may differ — in which case the cube animates between the two positions.
+For inline geometry (a `cube(5)` or similar constructed in-place inside a variant body), the morph pairs by **structural position and `tree_hash`**: if every stage has a `cube(5)` at the same point in the CSG tree, they pair. Their transform stacks may differ — in which case the cube animates between the positions.
 
 ```python
 class Stack(Design):
@@ -96,28 +103,81 @@ class Stack(Design):
             self.lid.up(self.base.height + self.body.height),
         )
 
-    settle = morph(start="exploded", end="assembled")
+    settle = morph(stages=["exploded", "assembled"])
 ```
 
 Default order is destination-z ascending: `base` animates first (slot 0 of 3), then `body`, then `lid`. Override with `order=["lid", "body", "base"]` for a top-down "stack pulls apart" feel.
+
+## Chains
+
+A chain morph passes through three or more poses in sequence. Add intermediate stages between the start and end pose, and each consecutive pair becomes one **leg** of the chain:
+
+```python
+class BoxAndLid(Design):
+    box = MyBox()
+    lid = MyLid()
+
+    @variant
+    def print(self):
+        return union(self.box, self.lid.rotate([180, 0, 0]).right(80))
+
+    @variant
+    def closing(self):
+        # Lid hovering above the box, already right-side-up. Bridges the
+        # 180° hinge swing of leg 0 to the seated drop of leg 1.
+        return union(self.box, self.lid.up(self.box.height + 20))
+
+    @variant(default=True)
+    def display(self):
+        return union(self.box, self.lid.up(self.box.height))
+
+    assemble = morph(stages=["print", "closing", "display"])
+```
+
+Each leg is interpolated independently using the screw-motion path. At the boundary between legs the chain passes through the intermediate stage's pose exactly.
+
+**Leg timing** is auto-allocated by motion magnitude: legs with bigger motion get more of the timeline. A leg with no motion (a deliberately-static intermediate stage) still receives a brief slice so it reads as a pause rather than a snap.
+
+A part may animate in some legs and stay still in others — those legs simply don't include the part's chain. Parts that are part of every stage's CSG skeleton must remain in the same structural position; only the spatial transforms above them may differ from stage to stage.
+
+## Pingpong
+
+`pingpong=True` makes the animation play forward then reverse over one timeline cycle. The first half visits every stage in order; the second half visits them in reverse, landing back on `stages[0]` at the end:
+
+```python
+assemble = morph(stages=["print", "display"], pingpong=True)
+# $t = 0     → print
+# $t = 0.5   → display
+# $t = 1     → print (back to start, ready to loop)
+```
+
+For chains, the reversal applies symmetrically:
+
+```python
+assemble = morph(stages=["print", "closing", "display"], pingpong=True)
+# Forward over [0, 0.5]:  print → closing → display
+# Reverse over [0.5, 1]:  display → closing → print
+```
+
+The pingpong reshape happens at the SCAD layer (a triangle wave on `$t`), so the same `.scad` previews correctly in OpenSCAD's animator and renders to an APNG with no extra frames — the file is the same size as the non-pingpong version. Useful when you want a looping animation that doesn't snap back to the start at the seam.
 
 ## What can't morph
 
 The morph framework is intentionally "easy mode" — not infinitely extensible. These cases raise with clear error messages:
 
-- **Mirrors in the difference between variants.** `self.lid.flip("z")` in one variant and `self.lid` in the other can't be interpolated (the flip is a reflection, det = -1). Replace `flip("z")` with `rotate([180, 0, 0])` — same final pose, animatable, and the morph will trace the hinge swing.
+- **Mirrors in the difference between stages.** `self.lid.flip("z")` in one stage and `self.lid` in another can't be interpolated (the flip is a reflection, det = -1). Replace `flip("z")` with `rotate([180, 0, 0])` — same final pose, animatable, and the morph will trace the hinge swing.
 - **Non-uniform scale changes.** Uniform scale (the whole part grows) is fine; non-uniform scale (the part stretches in one direction) is not — that's shape morphing, which needs separate parts.
-- **Structurally different variants.** Both variants must share the same CSG skeleton: same `union`/`difference`/`intersection`/etc. structure, same decoration wrappers (colors, anchors). Only the *transforms above each leaf* may differ.
-- **Different parts in the two variants.** A part in one variant must appear in the other, in the same structural position. To add or remove parts, you need a chained morph (planned for later).
-- **`Resize` wrapping animated content.** `Resize` is bbox-dependent: its scale factor is recomputed from the child's bounding box at render time. If the child is animated (rotating, translating), the bbox changes per frame and the scale factor changes with it, producing visible size-jitter as the part moves. Move the `Resize` outside the morph (apply it to the final unioned result), or replace it with `Scale` using explicit factors so the scale is constant. A `Resize` over geometry that's identical in both variants — i.e., static decoration — is fine.
+- **Structurally different stages.** Every stage must share the same CSG skeleton: same `union`/`difference`/`intersection`/etc. structure, same decoration wrappers (colors, anchors). Only the *transforms above each leaf* may differ.
+- **Different parts in different stages.** A part in one stage must appear in every stage, in the same structural position.
+- **`Resize` wrapping animated content.** `Resize` is bbox-dependent: its scale factor is recomputed from the child's bounding box at render time. If the child is animated (rotating, translating), the bbox changes per frame and the scale factor changes with it, producing visible size-jitter as the part moves. Move the `Resize` outside the morph (apply it to the final unioned result), or replace it with `Scale` using explicit factors so the scale is constant. A `Resize` over geometry that's identical in every stage — i.e., static decoration — is fine.
 
-For the inline-primitive case where you want to animate a `cube(5)`-like piece between variants, lift it to a class attribute (`self.spacer = cube(5)`) so both variants reference the same instance.
+For the inline-primitive case where you want to animate a `cube(5)`-like piece between stages, lift it to a class attribute (`self.spacer = cube(5)`) so every stage references the same instance.
 
 ## Lifting inline parts
 
-If you see "inline primitive geometry differs at the same structural position," the morph is telling you that two variants have a `cube(...)` (or `sphere`, `cylinder`, etc.) at the same point in the CSG tree but with different transforms — and inline primitives can't pair across variants for animation.
+If you see "inline primitive geometry differs at the same structural position," the morph is telling you that two stages have a `cube(...)` (or `sphere`, `cylinder`, etc.) at the same point in the CSG tree but with different transforms — and inline primitives can't pair across stages for animation.
 
-**Why the rule exists.** A class-attribute Component (`self.spacer = MyPart()`) is a single Python object referenced from both variants; the morph pairs it across variants by `id()`. An inline `cube(10)` built inside the variant body is a fresh Python object on every call — there's no shared identity to pair with. To keep the rules simple, the morph requires the shared-identity pattern for animation.
+**Why the rule exists.** A class-attribute Component (`self.spacer = MyPart()`) is a single Python object referenced from every stage; the morph pairs it across stages by `id()`. An inline `cube(10)` built inside the variant body is a fresh Python object on every call — there's no shared identity to pair with. To keep the rules simple, the morph requires the shared-identity pattern for animation.
 
 **The fix: promote the inline part to a class attribute.** Before:
 
@@ -133,7 +193,7 @@ class Widget(Design):
     def high(self):
         return union(self.body, cube(10).up(20))       # different transform → mismatch error
 
-    open = morph(start="low", end="high")              # error
+    open = morph(stages=["low", "high"])               # error
 ```
 
 After:
@@ -151,16 +211,16 @@ class Widget(Design):
     def high(self):
         return union(self.body, self.spacer.up(20))    # ...via self.spacer
 
-    open = morph(start="low", end="high")              # works
+    open = morph(stages=["low", "high"])               # works
 ```
 
 The class attribute can be a `Component`, a primitive (`cube(...)`, `sphere(...)`, etc.), or any expression that yields a Node — they all become shared-identity values.
 
-**When you don't need to lift.** If the inline geometry is in the *same position* in both variants — same primitive, same parameters, same transforms — the morph sees it as static decoration and passes it through unchanged. You only need to lift when the inline thing should *move* between variants.
+**When you don't need to lift.** If the inline geometry is in the *same position* in every stage — same primitive, same parameters, same transforms — the morph sees it as static decoration and passes it through unchanged. You only need to lift when the inline thing should *move* between stages.
 
 ## Composing with viewpoint
 
-The morph inherits the **end variant's** viewpoint by default — the user usually wants to see the final pose framed in the OpenSCAD camera. To override, use the CLI's `--vpr` / `--vpt` / `--vpd` flags (where applicable) or set viewpoint on the end variant itself.
+The morph inherits the **final stage's** viewpoint by default — the user usually wants to see the final pose framed in the OpenSCAD camera. To override, use the CLI's `--vpr` / `--vpt` / `--vpd` flags (where applicable) or set viewpoint on the final stage variant itself.
 
 ## Troubleshooting
 
@@ -189,10 +249,3 @@ If a part inside your morph changes size frame-by-frame, the cause is a `Resize(
 ### "Inline primitive geometry differs"
 
 See [Lifting inline parts](#lifting-inline-parts) above.
-
-## Limitations and future work
-
-- **Chained morphs** (three-or-more-variant sequences) are out of scope for v1.
-- **Ping-pong playback** (forward, then reverse) is not yet supported — coming as a `pingpong=True` knob.
-- **MP4 / WebM output** requires a heavyweight encoder dependency (ffmpeg or Pillow) and is not in v1. The vendored APNG path covers the README and social-media use cases. For `.mp4` / `.gif`, output a PNG sequence and run ffmpeg yourself — the CLI's error message walks through this.
-- **Collision-aware ordering** of the default destination-z order isn't implemented; the heuristic is geometric, not physical.

@@ -38,7 +38,7 @@ def test_pow_emits_as_pow_func():
     assert (t() ** 2).emit() == "pow($t, 2)"
 
 
-# ---------- Phase 1: transforms accept SymbolicExpr ----------
+# ---------- Transforms accept SymbolicExpr ----------
 
 
 def test_translate_accepts_symbolic_in_vector():
@@ -71,7 +71,7 @@ def test_mirror_accepts_symbolic():
     assert "mirror([$t, 0, 1])" in out
 
 
-# ---------- Phase 2: primitive sizes accept SymbolicExpr ----------
+# ---------- Primitive sizes accept SymbolicExpr ----------
 
 
 def test_cube_accepts_symbolic_size():

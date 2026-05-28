@@ -707,8 +707,12 @@ class BoxAndLid(Design):
     def display(self):
         return union(self.box, self.lid.up(50))
 
-    assemble = morph(start="print", end="display")
-    # Optional kwargs: order=["base", "body", "lid"], simultaneous=False
+    assemble = morph(stages=["print", "display"])
+    # Three or more stages chain: morph(stages=["print", "closing", "display"])
+    # Optional kwargs:
+    #   order=["base", "body", "lid"]   per-leg slot order
+    #   simultaneous=False              one part at a time per leg
+    #   pingpong=False                  forward-then-reverse loop
 ```
 
 ```bash

@@ -1,31 +1,35 @@
-"""Parallel structure walker for morph(): pair animated leaves across two
+"""Parallel structure walker for morph(): pair animated leaves across N
 variant ASTs while preserving the variants' CSG structure.
 
-The walker descends both trees in lockstep. Structurally-equivalent nodes
-(same type, same arity for CSG containers) match; structural mismatches
-raise. As we descend:
+The walker descends every stage's tree in lockstep. Structurally-equivalent
+nodes (same type, same arity for CSG containers) match across all stages;
+structural mismatches raise. As we descend:
 
 - **Spatial transforms** (Translate, Rotate, Scale, Mirror, MultMatrix)
-  accumulate into a per-leaf transform matrix. They will be absorbed
-  into the animated chain at emit time, not preserved as bare transforms.
+  accumulate into a per-leaf, per-stage transform matrix on each side
+  independently. They will be absorbed into each leg's animated chain at
+  emit time, not preserved as bare transforms.
 - **Structural nodes** (Union, Difference, Intersection, Hull, Minkowski)
-  reset the accumulator for each child. They stay in the emit, with their
-  children replaced by animated subtrees.
+  reset the accumulators for each child. They stay in the emit, with
+  their children replaced by animated subtrees.
 - **Decorations** (Color, WithAnchor, PreviewModifier, ForceRender,
-  Resize, Projection, Offset, Echo) act as boundaries too — they preserve
-  themselves in the emit and reset the accumulator. ``Color(red,
-  Translate(a, self.box))`` becomes ``Color(red, animated_chain(box))``.
+  Resize, Projection, Offset, Echo) act as boundaries too — they
+  preserve themselves in the emit and reset the accumulator. Their
+  metadata must match across every stage.
 - **Components and primitives** are leaves. Components pair across
-  variants by Python ``id`` (the same instance backs both variants when
-  declared as a class attribute on the Design). Inline primitives (Cube,
-  Sphere, Cylinder, etc.) pair by ``tree_hash``; their transform stacks
-  may differ, in which case the primitive animates.
+  stages by Python ``id`` (the same instance backs every stage when
+  declared as a class attribute on the Design). Inline primitives
+  (Cube, Sphere, Cylinder, etc.) pair by ``tree_hash``; their transform
+  stacks may differ per stage, in which case the primitive animates on
+  the legs where its matrices differ.
 
-For each animated leaf, the walker records the deepest "substitution
-root" — the topmost spatial-transform ancestor in the unbroken transform
-chain directly above the leaf (or the leaf itself if there are no spatial
-transforms in that chain). At emit time, the substitution root in
-variant A's tree gets replaced with the animated chain.
+For each animated leaf, the walker records — per leg — an ``AnimatedLeaf``
+entry only if the leaf's transform stack differs between that leg's
+``(stage_k, stage_{k+1})`` pair. A leaf that's static in some legs and
+animates in others appears in the plan only for the legs where it
+moves. The substitution root is taken from stage 0's tree (the topmost
+spatial-transform ancestor in the unbroken transform chain above the
+leaf in stage 0, or the leaf itself if there are no such transforms).
 
 Errors raise ``ValidationError`` with the wording referenced by the
 user-facing docs for the morph feature's hard limits.
@@ -50,19 +54,18 @@ _MATRIX_EPS = 1e-9
 
 @dataclass(frozen=True)
 class AnimatedLeaf:
-    """One animated leaf — either a Component (paired by id) or an inline
-    primitive (paired by tree_hash + structural position).
+    """One animated leaf in one leg of a morph chain.
 
-    ``leaf`` is the original AST node from variant A; ``substitution_root``
-    is the topmost spatial-transform ancestor in variant A's tree (or
+    ``leaf`` is the original AST node from stage 0; ``substitution_root``
+    is the topmost spatial-transform ancestor in stage 0's tree (or
     ``leaf`` itself if no spatial wrapper sits directly above it). Emit
-    replaces ``substitution_root`` with the animated chain built from
-    ``M_a`` / ``M_b``.
+    replaces ``substitution_root`` with the chained animated subtree
+    once per leaf — every leg's entry for that leaf shares the same
+    substitution root and is composed into the same chain at build time.
 
-    ``M_a`` and ``M_b`` are the composed spatial transforms between the
-    substitution root's parent (a structural node or root) and the leaf
-    — i.e., the per-variant pose contribution that the animated chain
-    must reproduce at ``$t=0`` and ``$t=1``.
+    ``M_a`` and ``M_b`` are the composed spatial transforms for this leg
+    — the per-stage pose contributions that the animated chain must
+    reproduce at the leg's α=0 and α=1 boundaries respectively.
     """
 
     leaf: "Node"
@@ -73,17 +76,35 @@ class AnimatedLeaf:
 
 
 @dataclass(frozen=True)
-class MorphPlan:
-    """Walker output. ``tree_a`` is variant A's AST (the structural
-    template). ``leaves`` lists every animated leaf, each carrying the
-    information needed to build its animated chain.
+class LegPlan:
+    """The animated leaves for one consecutive pair of stages.
 
-    Static parts (Components or primitives whose ``M_a`` equals ``M_b``)
-    do not appear in ``leaves`` — they remain in ``tree_a`` unchanged.
+    ``leaves`` lists every leaf whose transform stack differs between
+    this leg's start and end stage. Static leaves (identical M_a and
+    M_b) do not appear — they remain in ``ChainPlan.tree_a`` unchanged.
+    """
+
+    leaves: tuple[AnimatedLeaf, ...]
+
+
+@dataclass(frozen=True)
+class ChainPlan:
+    """Walker output for a morph across N stages.
+
+    ``tree_a`` is stage 0's AST — the structural template that emit
+    substitutes into. ``legs`` has length ``N - 1``; ``legs[k]``
+    describes which leaves animate between ``stages[k]`` and
+    ``stages[k+1]``.
     """
 
     tree_a: "Node"
-    leaves: tuple[AnimatedLeaf, ...]
+    legs: tuple[LegPlan, ...]
+
+
+# Backwards-compatible alias for the 2-stage entry point. Older callers /
+# tests can still construct ``walk(tree_a, tree_b, inst)`` and get a plan
+# back; the plan now has a ``.legs[0].leaves`` shape instead of a flat
+# ``.leaves`` field. See ``walk_chain`` for the N-stage entry point.
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +166,7 @@ def _validate_pair(
         if not (_is_uniform_scale(s_a) and _is_uniform_scale(s_b)):
             raise ValidationError(
                 f"morph: part {display_name!r}{label_hint} has non-uniform "
-                f"scale that differs between variants.\n"
+                f"scale that differs between stages.\n"
                 f"  start scale: {tuple(round(v, 6) for v in s_a)}\n"
                 f"  end scale:   {tuple(round(v, 6) for v in s_b)}\n"
                 f"  Only uniform scale changes can be animated; for shape "
@@ -154,7 +175,7 @@ def _validate_pair(
 
 
 # Type sets for the walker. Decorations preserve themselves and act as
-# boundaries; spatial transforms accumulate into M_a.
+# boundaries; spatial transforms accumulate into M_k.
 
 def _import_ast_types():
     """Late import to avoid circular dependency at module-load time."""
@@ -236,27 +257,48 @@ def _decoration_matches(node_a, node_b) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Public entry points
 # ---------------------------------------------------------------------------
 
 
-def walk(tree_a, tree_b, design_instance) -> MorphPlan:
-    """Parallel-walk both variant trees; produce a MorphPlan describing
-    which leaves animate and at what transforms.
+def walk(tree_a, tree_b, design_instance) -> ChainPlan:
+    """Walk two trees and produce a single-leg ChainPlan.
 
-    Raises ``ValidationError`` for any structural mismatch or per-leaf
-    constraint violation (mirror, non-uniform scale change).
+    Thin convenience wrapper over :func:`walk_chain` for the common
+    two-stage case. The returned ChainPlan has ``len(legs) == 1``.
     """
+    return walk_chain((tree_a, tree_b), design_instance)
+
+
+def walk_chain(trees: tuple, design_instance) -> ChainPlan:
+    """Walk N>=2 variant trees in lockstep; produce a ChainPlan describing
+    which leaves animate per leg and at what transforms.
+
+    Each ``trees[k]`` must share the same CSG / decoration skeleton with
+    every other stage; only the spatial transforms above each leaf may
+    differ between stages. Structural mismatches between any pair of
+    stages raise ``ValidationError`` with the offending stage indices
+    named.
+    """
+    n = len(trees)
+    if n < 2:
+        raise ValidationError(
+            f"morph: walk_chain requires at least 2 stages, got {n}"
+        )
     types = _import_ast_types()
     id_to_name = _build_id_to_name(design_instance)
 
-    leaves: list[AnimatedLeaf] = []
+    legs_leaves: list[list[AnimatedLeaf]] = [[] for _ in range(n - 1)]
 
-    def _structural_mismatch(node_a, node_b, why: str):
-        # Detect the specific case of "one side has a decoration wrapper
-        # (Color, anchors, Resize, etc.) and the other side has the bare
-        # leaf at the same position." This is one of the easier mistakes
-        # to make and the generic error doesn't quite say how to fix it.
+    def _structural_mismatch(nodes, i_other, why: str):
+        """Build the right validation error for a structural mismatch
+        between stages[0] and stages[i_other]. Detects the specific case
+        of "one stage has a decoration wrapper at this position and the
+        other has the bare leaf" and gives a fix-it message; otherwise
+        falls through to the generic mismatch message.
+        """
+        node_a = nodes[0]
+        node_b = nodes[i_other]
         kind_a = _node_kind(node_a, types)
         kind_b = _node_kind(node_b, types)
         decoration_asymmetry = (
@@ -265,181 +307,211 @@ def walk(tree_a, tree_b, design_instance) -> MorphPlan:
         )
         if decoration_asymmetry:
             deco_node = node_a if kind_a == "decoration" else node_b
-            deco_side = "start" if kind_a == "decoration" else "end"
-            other_side = "end" if deco_side == "start" else "start"
+            deco_stage = 0 if kind_a == "decoration" else i_other
+            other_stage = i_other if deco_stage == 0 else 0
             deco_name = type(deco_node).__name__
             return ValidationError(
-                f"morph: decoration wrapper present in one variant only.\n"
-                f"  {deco_side} has: {deco_name}(...) wrapping the leaf\n"
-                f"  {other_side} has: the leaf with no wrapper\n"
+                f"morph: decoration wrapper present in one stage only.\n"
+                f"  stages[{deco_stage}] has: {deco_name}(...) wrapping "
+                f"the leaf\n"
+                f"  stages[{other_stage}] has: the leaf with no wrapper\n"
                 f"  Decorations (Color, WithAnchor, PreviewModifier, "
                 f"ForceRender, Resize, etc.) are preserved through the "
-                f"morph and must appear on both sides — they aren't "
+                f"morph and must appear in every stage — they aren't "
                 f"interpolated. Either add the same {deco_name}(...) "
-                f"wrapper to the {other_side} variant, or remove it from "
-                f"the {deco_side} variant."
+                f"wrapper to stages[{other_stage}], or remove it from "
+                f"stages[{deco_stage}]."
             )
         return ValidationError(
-            f"morph: variant ASTs differ in structure — {why}.\n"
-            f"  start has: {type(node_a).__name__}\n"
-            f"  end has:   {type(node_b).__name__}\n"
-            f"  morph requires both variants to share the same CSG / "
+            f"morph: variant ASTs differ in structure between stages[0] "
+            f"and stages[{i_other}] — {why}.\n"
+            f"  stages[0] has:        {type(node_a).__name__}\n"
+            f"  stages[{i_other}] has: {type(node_b).__name__}\n"
+            f"  morph requires every stage to share the same CSG / "
             f"decoration skeleton; only the transforms above leaves "
             f"(Components, primitives) may differ."
         )
 
     def _walk(
-        node_a, node_b,
-        t_a: Matrix, t_b: Matrix,
-        substitution_root_a,
+        nodes: tuple, ts: list, substitution_root_0,
         inside_resize: bool = False,
     ):
-        """Parallel descent.
+        """Parallel descent across all N stages.
 
-        ``t_a`` / ``t_b`` accumulate the composed spatial transform
-        between the most-recent structural-or-decoration boundary and
-        the current point. ``substitution_root_a`` is the topmost
-        spatial-transform ancestor in variant A within the current
-        contiguous transform chain (or None if the immediate parent is
-        a structural or decoration node).
+        ``ts[k]`` accumulates the composed spatial transform between the
+        most-recent structural-or-decoration boundary and the current
+        point in stage k. ``substitution_root_0`` is the topmost
+        spatial-transform ancestor in stage 0 within the current
+        contiguous transform chain (or None if the immediate parent in
+        stage 0 is a structural or decoration node).
 
-        ``inside_resize`` becomes True once descent crosses a ``Resize``
+        ``inside_resize`` becomes True once descent crosses a Resize
         wrapper; animated leaves below a Resize raise instead of being
-        recorded. Resize is bbox-dependent — its scale factor is computed
-        from the child's bbox at render time — so wrapping an animated
-        subtree would make every frame recompute the scale, producing
-        size-jitter as the part rotates / translates.
+        recorded. Resize is bbox-dependent — its scale factor is
+        computed from the child's bbox at render time — so wrapping an
+        animated subtree would make every frame recompute the scale,
+        producing size-jitter as the part rotates / translates.
         """
-        # Skip past spatial transforms on each side independently. This
-        # lets `self.box` align with `Translate(5, self.box)` — the
-        # transform on one side accumulates into t_b without requiring
-        # the other side to have a matching wrapper. Mirrors are
-        # spatial-transforms too; det < 0 in M_diff catches the mirror
-        # error per-pair in _validate_pair.
-        while isinstance(node_a, types["spatial_transforms"]):
-            t_a = t_a @ to_matrix(node_a)
-            if substitution_root_a is None:
-                substitution_root_a = node_a
-            node_a = node_a.child
-        while isinstance(node_b, types["spatial_transforms"]):
-            t_b = t_b @ to_matrix(node_b)
-            node_b = node_b.child
+        new_nodes = list(nodes)
+        new_ts = list(ts)
+        new_sub = substitution_root_0
 
-        kind_a = _node_kind(node_a, types)
-        kind_b = _node_kind(node_b, types)
-        if kind_a != kind_b:
-            raise _structural_mismatch(node_a, node_b, f"kind differs ({kind_a} vs {kind_b})")
+        # Absorb spatial transforms on each stage independently. Stage 0
+        # also seeds the substitution root for emit-time replacement.
+        for i in range(n):
+            while isinstance(new_nodes[i], types["spatial_transforms"]):
+                new_ts[i] = new_ts[i] @ to_matrix(new_nodes[i])
+                if i == 0 and new_sub is None:
+                    new_sub = new_nodes[i]
+                new_nodes[i] = new_nodes[i].child
 
-        if kind_a == "component":
-            # Same Component instance must back both sides.
-            if id(node_a) != id(node_b):
-                name_a = id_to_name.get(id(node_a), repr(node_a))
-                name_b = id_to_name.get(id(node_b), repr(node_b))
-                raise ValidationError(
-                    f"morph: Component leaves differ at the same structural "
-                    f"position. start has {name_a!r}, end has {name_b!r}. "
-                    f"Both variants must reference the same Component instance "
-                    f"(declared as a class attribute on the Design)."
+        kinds = [_node_kind(nd, types) for nd in new_nodes]
+        for i in range(1, n):
+            if kinds[i] != kinds[0]:
+                raise _structural_mismatch(
+                    new_nodes, i, f"kind differs ({kinds[0]} vs {kinds[i]})",
                 )
-            display = id_to_name.get(id(node_a), f"<{type(node_a).__name__} (inline)>")
-            sub_root = substitution_root_a if substitution_root_a is not None else node_a
-            # Only emit an entry if the part actually animates.
-            if not _matrices_close(t_a, t_b):
+
+        kind = kinds[0]
+
+        if kind == "component":
+            ids = [id(nd) for nd in new_nodes]
+            for i in range(1, n):
+                if ids[i] != ids[0]:
+                    name_0 = id_to_name.get(ids[0], repr(new_nodes[0]))
+                    name_i = id_to_name.get(ids[i], repr(new_nodes[i]))
+                    raise ValidationError(
+                        f"morph: Component leaves differ at the same "
+                        f"structural position. stages[0] has {name_0!r}, "
+                        f"stages[{i}] has {name_i!r}. Every stage must "
+                        f"reference the same Component instance (declared "
+                        f"as a class attribute on the Design)."
+                    )
+            display = id_to_name.get(
+                ids[0], f"<{type(new_nodes[0]).__name__} (inline)>",
+            )
+            sub_root = new_sub if new_sub is not None else new_nodes[0]
+            for k in range(n - 1):
+                M_k = new_ts[k]
+                M_kp1 = new_ts[k + 1]
+                if _matrices_close(M_k, M_kp1):
+                    continue
                 if inside_resize:
                     raise ValidationError(
-                        f"morph: part {display!r} animates inside a Resize() "
-                        f"wrapper. Resize is bbox-dependent — its scale factor "
-                        f"is computed from the child's bounding box at render "
-                        f"time, so a Resize wrapping an animated part would "
-                        f"recompute the scale every frame as the part rotates "
-                        f"and translates, producing visible size-jitter.\n"
-                        f"  Move the Resize outside the morph (apply it to the "
-                        f"final unioned result), or drop the Resize and use "
-                        f"Scale with explicit factors so the scale is constant."
+                        f"morph: part {display!r} animates inside a "
+                        f"Resize() wrapper between stages[{k}] and "
+                        f"stages[{k + 1}]. Resize is bbox-dependent — "
+                        f"its scale factor is computed from the child's "
+                        f"bounding box at render time, so a Resize "
+                        f"wrapping an animated part would recompute the "
+                        f"scale every frame as the part rotates and "
+                        f"translates, producing visible size-jitter.\n"
+                        f"  Move the Resize outside the morph (apply it "
+                        f"to the final unioned result), or drop the "
+                        f"Resize and use Scale with explicit factors so "
+                        f"the scale is constant."
                     )
-                _validate_pair(node_a, t_a, t_b, display)
-                leaves.append(AnimatedLeaf(
-                    leaf=node_a, substitution_root=sub_root,
-                    M_a=t_a, M_b=t_b, display_name=display,
-                ))
-            # else: static — original tree carries the leaf at its existing
-            # transform stack. No substitution needed.
-            return
-
-        if kind_a == "primitive":
-            # Inline primitive. Must match by tree_hash.
-            if tree_hash(node_a) != tree_hash(node_b):
-                raise ValidationError(
-                    f"morph: inline primitive geometry differs at the same "
-                    f"structural position.\n"
-                    f"  start: {type(node_a).__name__}\n"
-                    f"  end:   {type(node_b).__name__}\n"
-                    f"  Inline primitives pair by structural position and "
-                    f"tree_hash; their shape and parameters must match. "
-                    f"Either rewrite both variants to use the same primitive, "
-                    f"or lift to a Component class attribute for finer control.\n"
-                    f"  See docs/morph.md#inline-primitives."
+                _validate_pair(
+                    new_nodes[0], M_k, M_kp1, display,
+                    label_hint=f" between stages[{k}] and stages[{k + 1}]",
                 )
-            display = f"<inline {type(node_a).__name__}>"
-            sub_root = substitution_root_a if substitution_root_a is not None else node_a
-            if not _matrices_close(t_a, t_b):
-                if inside_resize:
-                    raise ValidationError(
-                        f"morph: inline {type(node_a).__name__} animates "
-                        f"inside a Resize() wrapper. Resize is bbox-dependent; "
-                        f"wrapping animated geometry would recompute the scale "
-                        f"factor every frame, producing visible size-jitter.\n"
-                        f"  Move the Resize outside the morph, or drop the "
-                        f"Resize and use Scale with explicit factors."
-                    )
-                _validate_pair(node_a, t_a, t_b, display)
-                leaves.append(AnimatedLeaf(
-                    leaf=node_a, substitution_root=sub_root,
-                    M_a=t_a, M_b=t_b, display_name=display,
+                legs_leaves[k].append(AnimatedLeaf(
+                    leaf=new_nodes[0], substitution_root=sub_root,
+                    M_a=M_k, M_b=M_kp1, display_name=display,
                 ))
             return
 
-        if kind_a == "structural":
-            # Same structural-node type and arity required.
-            if type(node_a) is not type(node_b):
-                raise _structural_mismatch(node_a, node_b, "different structural node type")
-            if len(node_a.children) != len(node_b.children):
-                raise ValidationError(
-                    f"morph: {type(node_a).__name__}() has {len(node_a.children)} "
-                    f"children in the start variant but {len(node_b.children)} "
-                    f"in the end variant. Structural arities must match — "
-                    f"both variants must compose the same CSG skeleton."
+        if kind == "primitive":
+            hashes = [tree_hash(nd) for nd in new_nodes]
+            for i in range(1, n):
+                if hashes[i] != hashes[0]:
+                    raise ValidationError(
+                        f"morph: inline primitive geometry differs at "
+                        f"the same structural position between stages[0] "
+                        f"and stages[{i}].\n"
+                        f"  stages[0]:  {type(new_nodes[0]).__name__}\n"
+                        f"  stages[{i}]: {type(new_nodes[i]).__name__}\n"
+                        f"  Inline primitives pair by structural position "
+                        f"and tree_hash; their shape and parameters must "
+                        f"match across every stage. Either rewrite the "
+                        f"stages to use the same primitive, or lift to a "
+                        f"Component class attribute for finer control.\n"
+                        f"  See docs/morph.md#inline-primitives."
+                    )
+            display = f"<inline {type(new_nodes[0]).__name__}>"
+            sub_root = new_sub if new_sub is not None else new_nodes[0]
+            for k in range(n - 1):
+                M_k = new_ts[k]
+                M_kp1 = new_ts[k + 1]
+                if _matrices_close(M_k, M_kp1):
+                    continue
+                if inside_resize:
+                    raise ValidationError(
+                        f"morph: inline {type(new_nodes[0]).__name__} "
+                        f"animates inside a Resize() wrapper between "
+                        f"stages[{k}] and stages[{k + 1}]. Resize is "
+                        f"bbox-dependent; wrapping animated geometry "
+                        f"would recompute the scale factor every frame, "
+                        f"producing visible size-jitter.\n"
+                        f"  Move the Resize outside the morph, or drop "
+                        f"the Resize and use Scale with explicit factors."
+                    )
+                _validate_pair(
+                    new_nodes[0], M_k, M_kp1, display,
+                    label_hint=f" between stages[{k}] and stages[{k + 1}]",
                 )
-            # Reset accumulators and substitution-root for each child.
-            # ``inside_resize`` propagates through structural nodes — a Union
-            # under a Resize keeps every leaf below it inside-Resize.
-            for child_a, child_b in zip(node_a.children, node_b.children):
+                legs_leaves[k].append(AnimatedLeaf(
+                    leaf=new_nodes[0], substitution_root=sub_root,
+                    M_a=M_k, M_b=M_kp1, display_name=display,
+                ))
+            return
+
+        if kind == "structural":
+            type0 = type(new_nodes[0])
+            for i in range(1, n):
+                if type(new_nodes[i]) is not type0:
+                    raise _structural_mismatch(
+                        new_nodes, i, "different structural node type",
+                    )
+            arity0 = len(new_nodes[0].children)
+            for i in range(1, n):
+                ai = len(new_nodes[i].children)
+                if ai != arity0:
+                    raise ValidationError(
+                        f"morph: {type0.__name__}() has {arity0} children "
+                        f"in stages[0] but {ai} in stages[{i}]. Structural "
+                        f"arities must match — every stage must compose "
+                        f"the same CSG skeleton."
+                    )
+            for child_idx in range(arity0):
+                child_nodes = tuple(
+                    new_nodes[i].children[child_idx] for i in range(n)
+                )
                 _walk(
-                    child_a, child_b,
-                    Matrix.identity(), Matrix.identity(),
+                    child_nodes,
+                    [Matrix.identity() for _ in range(n)],
                     None,
                     inside_resize=inside_resize,
                 )
             return
 
-        if kind_a == "decoration":
-            # Decoration must match metadata; child is recursed with reset
-            # accumulators and reset substitution-root.
-            matches, reason = _decoration_matches(node_a, node_b)
-            if not matches:
-                raise ValidationError(
-                    f"morph: decoration mismatch at the same structural "
-                    f"position — {reason}. Decorations (color, anchors, "
-                    f"highlight, etc.) are preserved in the morph output "
-                    f"and must agree across variants."
-                )
-            # Resize specifically marks descent into a bbox-dependent
-            # wrapper. Any animated leaf below this point will raise.
+        if kind == "decoration":
+            for i in range(1, n):
+                matches, reason = _decoration_matches(new_nodes[0], new_nodes[i])
+                if not matches:
+                    raise ValidationError(
+                        f"morph: decoration mismatch at the same "
+                        f"structural position between stages[0] and "
+                        f"stages[{i}] — {reason}. Decorations (color, "
+                        f"anchors, highlight, etc.) are preserved in the "
+                        f"morph output and must agree across every stage."
+                    )
             from scadwright.ast.transforms import Resize
-            child_inside_resize = inside_resize or isinstance(node_a, Resize)
+            child_inside_resize = inside_resize or isinstance(new_nodes[0], Resize)
+            child_nodes = tuple(nd.child for nd in new_nodes)
             _walk(
-                node_a.child, node_b.child,
-                Matrix.identity(), Matrix.identity(),
+                child_nodes,
+                [Matrix.identity() for _ in range(n)],
                 None,
                 inside_resize=child_inside_resize,
             )
@@ -450,9 +522,15 @@ def walk(tree_a, tree_b, design_instance) -> MorphPlan:
         # were absorbed in the loop at the top — control flow never
         # reaches here.
         raise AssertionError(
-            f"walker reached unreachable branch for node kind {kind_a!r}; "
-            f"node type was {type(node_a).__name__}"
+            f"walker reached unreachable branch for node kind {kind!r}; "
+            f"node type was {type(new_nodes[0]).__name__}"
         )
 
-    _walk(tree_a, tree_b, Matrix.identity(), Matrix.identity(), None)
-    return MorphPlan(tree_a=tree_a, leaves=tuple(leaves))
+    _walk(
+        tuple(trees),
+        [Matrix.identity() for _ in range(n)],
+        None,
+    )
+
+    legs = tuple(LegPlan(leaves=tuple(L)) for L in legs_leaves)
+    return ChainPlan(tree_a=trees[0], legs=legs)

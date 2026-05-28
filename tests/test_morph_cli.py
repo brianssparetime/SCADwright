@@ -43,7 +43,7 @@ class WidgetDesign(Design):
     def high(self):
         return self.box.up(30)
 
-    swing = morph(start='low', end='high')
+    swing = morph(stages=['low', 'high'])
 """
 
 

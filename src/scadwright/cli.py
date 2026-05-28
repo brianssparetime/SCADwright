@@ -174,6 +174,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help=".apng plays once and stops.",
     )
     morph.add_argument(
+        "--colorscheme", default=None,
+        help="OpenSCAD colorscheme name passed through to render (e.g. "
+             "Metallic, Cornfield, Tomorrow Night). Defaults to OpenSCAD's "
+             "current default.",
+    )
+    morph.add_argument(
         "--keep-frames", action="store_true",
         help="Don't delete intermediate PNG frames after encoding. The temp "
              "directory path is printed at the end.",
@@ -746,16 +752,15 @@ def _cmd_morph(args: argparse.Namespace, unknown: list[str]) -> int:
                 f"rendering {args.frames} frames at {width}x{height} via OpenSCAD...",
                 file=sys.stderr,
             )
-            result = subprocess.run(
-                [
-                    openscad,
-                    "--animate", str(args.frames),
-                    "--imgsize", f"{width},{height}",
-                    "-o", str(frame_prefix),
-                    str(scad_path),
-                ],
-                capture_output=True,
-            )
+            openscad_cmd = [
+                openscad,
+                "--animate", str(args.frames),
+                "--imgsize", f"{width},{height}",
+            ]
+            if args.colorscheme is not None:
+                openscad_cmd.append(f"--colorscheme={args.colorscheme}")
+            openscad_cmd += ["-o", str(frame_prefix), str(scad_path)]
+            result = subprocess.run(openscad_cmd, capture_output=True)
             if result.returncode != 0:
                 stderr = result.stderr.decode("utf-8", errors="replace")
                 raise SCADwrightError(

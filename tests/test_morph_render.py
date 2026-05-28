@@ -57,7 +57,7 @@ def test_morph_render_writes_scad_file():
         def display(self):
             return union(self.box, self.lid.up(15))
 
-        assemble = morph(start="print", end="display")
+        assemble = morph(stages=["print", "display"])
 
     with tempfile.TemporaryDirectory() as tmp:
         base_dir = Path(tmp)
@@ -85,7 +85,7 @@ def test_morph_render_with_rotation_emits_axis_angle_rotate():
         def flipped(self):
             return self.lid.rotate([180, 0, 0]).up(30)
 
-        swing = morph(start="upright", end="flipped")
+        swing = morph(stages=["upright", "flipped"])
 
     with tempfile.TemporaryDirectory() as tmp:
         out_path = _render_one(
@@ -112,7 +112,7 @@ def test_morph_render_preserves_difference_structure():
         def hole_high(self):
             return difference(self.body, self.hole.up(15))
 
-        slide = morph(start="hole_low", end="hole_high")
+        slide = morph(stages=["hole_low", "hole_high"])
 
     with tempfile.TemporaryDirectory() as tmp:
         out_path = _render_one(
@@ -144,7 +144,7 @@ def test_morph_render_output_path_defaults_to_classname_dash_morphname():
         def b(self):
             return self.box.up(10)
 
-        animate_it = morph(start="a", end="b")
+        animate_it = morph(stages=["a", "b"])
 
     with tempfile.TemporaryDirectory() as tmp:
         out_path = _render_one(
@@ -166,7 +166,7 @@ def test_morph_render_with_out_override():
         def b(self):
             return self.box.up(10)
 
-        anim = morph(start="a", end="b")
+        anim = morph(stages=["a", "b"])
 
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "custom-name.scad"
@@ -193,7 +193,7 @@ def test_morph_render_then_regular_variant_works():
         def b(self):
             return self.box.up(10)
 
-        anim = morph(start="a", end="b")
+        anim = morph(stages=["a", "b"])
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
@@ -222,7 +222,7 @@ def test_morph_render_via_cli_resolve_variants():
         def b(self):
             return self.box.up(10)
 
-        anim = morph(start="a", end="b")
+        anim = morph(stages=["a", "b"])
 
     selected = resolve_variants("anim", kind="build")
     assert len(selected) == 1
