@@ -49,7 +49,14 @@ class FilletMask(Component):
             block = cube([r, self.length, r])
             cutter = cylinder(h=self.length, r=r).rotate([90, 0, 0]).translate([r, self.length, r])
 
-        return difference(block, cutter.through(block))
+        # Pin the through() axis to the edge direction. Auto-detection
+        # otherwise picks x (or y) because the cutter is 2r wide vs the
+        # r-wide block — but that lateral overlap is geometric design
+        # (the quarter-cylinder is tangent to the block's outer faces),
+        # not a coincident face that needs extending. Extending along x
+        # turns the cutter into an ellipse and breaks the tangency,
+        # leaving a hair-thin sliver where the fillet meets the parent.
+        return difference(block, cutter.through(block, axis=ax))
 
     def tight_bbox(self):
         # The cutter carves out a quarter-cylinder from inside the
@@ -93,7 +100,10 @@ class ChamferMask(Component):
             block = cube([s, self.length, s])
             cutter = cube([diag, self.length, diag]).rotate([0, 45, 0])
 
-        return difference(block, cutter.through(block))
+        # Same reasoning as FilletMask: pin to the edge axis so through()
+        # extends along the edge, not laterally where the rotated cutter
+        # is wider than the block by design.
+        return difference(block, cutter.through(block, axis=ax))
 
     def tight_bbox(self):
         # The cutter chamfers one corner of the block; outer extents
