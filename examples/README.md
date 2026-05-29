@@ -79,7 +79,7 @@ equations = """
 
 *Left: display variant with three V-blocks, each holding a rod. Different specification pairs produce different angles, depths, and rod capacities. Right: print variant, a single V-block.*
 
-**Reference:** [the equations block](../docs/components.md#parameters-equations) · [through()](../docs/auto-eps_fuse_and_through.md) · [concrete subclasses](../docs/organizing_a_project.md#concrete-subclasses)
+**Reference:** [the equations block](../docs/components.md#parameters-equations) · [through()](../docs/auto-eps_fuse_and_through.md) · [concrete subclasses](../docs/organizing_a_project.md#stage-2-wrap-in-a-component)
 
 ---
 

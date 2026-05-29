@@ -422,7 +422,7 @@ Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and 
 
 See [Attaching shapes](attach.md) for the `attach()` reference and [Anchors](anchors.md) for the data type and authoring API.
 
-For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#putting-things-on-curved-surfaces-bridge-true).
+For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#putting-things-on-curved-surfaces-bridgetrue).
 
 SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. 
 

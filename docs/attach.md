@@ -187,7 +187,7 @@ peg.attach(hub, on="outer_wall", angle=30, orient=True, bridge=True, fuse=True)
 
 `bridge=True` and `bond=` can't combine. `bond=` is for the flat-face overlap mechanism; `bridge=True` is the curved-surface fill. Passing both gives an error.
 
-For how the bridge is built, what it checks, and the limitations to watch for, see [Putting things on curved surfaces](anchors.md#putting-things-on-curved-surfaces-bridge-true) in `anchors.md`.
+For how the bridge is built, what it checks, and the limitations to watch for, see [Putting things on curved surfaces](anchors.md#putting-things-on-curved-surfaces-bridgetrue) in `anchors.md`.
 
 ## Mating without placement: `node.fuse()`
 

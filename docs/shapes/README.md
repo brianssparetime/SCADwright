@@ -31,7 +31,7 @@ class PowerSupplyStandoff(Standoff):
 base.attach(PowerSupplyStandoff())
 ```
 
-See [Organizing a project](../organizing_a_project.md#concrete-subclasses) for the full REUSABLE / CONCRETE / DESIGN pattern.
+See [Organizing a project](../organizing_a_project.md#stage-2-wrap-in-a-component) for the full REUSABLE / CONCRETE / DESIGN pattern.
 
 Shapes work with all the same operations as primitives: transforms, booleans, `attach()`, `through()`, `center=`, and `bbox()`.
 
@@ -135,7 +135,7 @@ Involute tooth profiles; you can read pitch radii off each gear.
 - [`helix_path`](curves.md#helix_pathr-pitch-turns) — helical path generator
 - [`bezier_path`](curves.md#bezier_pathcontrol_points-steps32) — cubic-Bezier path through 4 control points
 - [`composite_bezier_path`](curves.md#composite_bezier_pathsegments-steps_per_segment32) — chained cubic-Bezier path through multiple segments
-- [`catmull_rom_path`](curves.md#catmull_rom_pathpoints-steps_per_segment16) — smooth path through a sequence of points (Catmull-Rom spline)
+- [`catmull_rom_path`](curves.md#catmull_rom_pathpoints-steps_per_segment16-closedfalse) — smooth path through a sequence of points (Catmull-Rom spline)
 - [`arc_path`](curves.md#arc_pathcenter-radius-start_angle-end_angle-normal001-steps32) — circular-arc path generator (any plane)
 - [`bezier_2d`](curves.md#bezier_2dsegments-closedfalse-steps_per_segment32) — 2D polygon traced by a chain of cubic Bezier segments
 - [`catmull_rom_2d`](curves.md#catmull_rom_2dpoints-closedfalse-steps_per_segment16) — 2D polygon traced by a Catmull-Rom spline

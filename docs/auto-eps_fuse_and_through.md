@@ -2,7 +2,7 @@
 
 OpenSCAD's F5 preview shows wavering or missing surfaces when two shapes share a face in a boolean operation. The fix is a tiny overlap (epsilon). SCADwright handles that overlap automatically: pass `fuse=True` to `attach()` for clean unions, or chain `through()` for clean cuts inside `difference()`. You don't have to define `eps` constants or manually adjust cutter sizes.
 
-Everything on this page works on flat-face contacts. For attaching things to the outside of a cylinder, cone, or sphere, see [`bridge=True`](anchors.md#putting-things-on-curved-surfaces-bridge-true) in `anchors.md`.
+Everything on this page works on flat-face contacts. For attaching things to the outside of a cylinder, cone, or sphere, see [`bridge=True`](anchors.md#putting-things-on-curved-surfaces-bridgetrue) in `anchors.md`.
 
 ## Quick reference
 
@@ -40,7 +40,7 @@ Tube(od=7, id=3, h=8).attach(floor, fuse=True, eps=0.05)
 
 The overlap goes at the contact face only. The rest of the moving shape stays exactly where you put it; only the contact face shifts by `eps`.
 
-`fuse=True` only applies to flat-face contact. On a cylinder, cone, or sphere it raises an error and points you at `bridge=True` instead (see [anchors.md](anchors.md#putting-things-on-curved-surfaces-bridge-true)). On other contact shapes that can't be cleanly extended, the error message suggests `bond="shift"` for a fallback or `fuse=False` for no overlap; see [Advanced notes](#advanced-notes) for the details.
+`fuse=True` only applies to flat-face contact. On a cylinder, cone, or sphere it raises an error and points you at `bridge=True` instead (see [anchors.md](anchors.md#putting-things-on-curved-surfaces-bridgetrue)). On other contact shapes that can't be cleanly extended, the error message suggests `bond="shift"` for a fallback or `fuse=False` for no overlap; see [Advanced notes](#advanced-notes) for the details.
 
 ## Clean cuts with `through()`
 

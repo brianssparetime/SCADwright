@@ -9,13 +9,13 @@ While OpenSCAD offers a straight-forward and easy path to programmatic 3d design
 **SCADwright keeps the basic OpenSCAD model and primitives, but SCADwright goes way beyond just a python wrapper,  offering additional functionality not easily possible with OpenSCAD**:
 
  - [Components](#1-components-make-what-they-know-accessible-externally-modules-cant) that 
-   - accept [any set of arguments](#2-define-a-component-once-call-it-with-any-set-of-sufficient-arguments-the-framework-handles-the-rest-by-solving-equations-and-no-boilerplate-to-achieve-this-components-are-as-nice-to-use-as-they-are-to-write) from which the rest can be calculated, using defined equations
-   - [enforce constraints](#2-define-a-component-once-call-it-with-any-set-of-sufficient-arguments-the-framework-handles-the-rest-by-solving-equations-and-no-boilerplate-to-achieve-this-components-are-as-nice-to-use-as-they-are-to-write) and validate arguments, also through the same equations
+   - accept [any set of arguments](#2-define-a-components-equations-once-call-it-with-any-combination-of-sufficient-arguments-the-framework-handles-the-rest-no-boilerplate-components-are-as-nice-to-write-as-they-are-to-call) from which the rest can be calculated, using defined equations
+   - [enforce constraints](#2-define-a-components-equations-once-call-it-with-any-combination-of-sufficient-arguments-the-framework-handles-the-rest-no-boilerplate-components-are-as-nice-to-write-as-they-are-to-call) and validate arguments, also through the same equations
    - expose their attributes, calculations, and bounding boxes (even attachment points) to other parts of your code
    - are about as easy to write as they are to call - virtually no boilerplate
  - a library of [reusable shapes](#4-scadwrights-component-library-lets-you-focus-on-your-part-not-the-parts-its-made-of) out of the box
  - [auto-EPS adjustment](#3-no-more-eps-on-every-uniondiff-the-framework-handles-it) on difference() and union()
- - [surface-based attachment](#8-positioning-parts-relative-to-each-other-easily-without-extra-calculation), in a single chaining command
+ - [surface-based attachment](#8-positioning-parts-relative-to-each-other-is-easy-without-extra-calculation), in a single chaining command
  - [placing text](#6-putting-text-on-a-plate-cylinder-cone-or-funnel-is-easy---one-operator) on geometric objects (plates, cylinders, cones) is easy
  - ability to [add new transforms](#5-scadwright-lets-you-build-reusable-transforms-in-addition-to-reusable-objects) to the language
  - [smart centering](#10-centering-components-is-easy-and-straightforward) built into new components by default
@@ -54,7 +54,7 @@ The [quick start / organizing a project guide](docs/organizing_a_project.md) is 
 
 ## SCADwright addresses 16 annoying limitations of OpenSCAD:
 
-### 1.  Components make what they know accessible externally; modules can't.
+### 1. Components make what they know accessible externally; modules can't.
 
 When you write a parametric module in OpenSCAD — say a bracket with mount-hole positions — the caller has no way to ask where those holes are. You are forced to compute the offsets outside the object, or in two places, or hard-code them.
 
@@ -74,7 +74,7 @@ b = Bracket(width=80, height=5)
 print(b.width)               # readable; no geometry built yet
 ```
 
-### 2. Define a component's equations once, call it with any combination of sufficient arguments, the framework handles the rest; no boilerplate.  Components are as nice to write as they are to call.
+### 2. Define a component's equations once, call it with any combination of sufficient arguments, the framework handles the rest; no boilerplate. Components are as nice to write as they are to call.
 
 Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od = id + 2*thk`. 
 
