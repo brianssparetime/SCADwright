@@ -4,6 +4,15 @@ A Component is a parametric part you define as a Python class. It behaves like a
 
 For when and why to introduce Components in a project, see [Organizing a project](organizing_a_project.md). For inline editor support on the equations DSL — diagnostics, completion, hover, goto-definition, and project-wide rename — see [LSP setup](lsp_setup.md).
 
+- [Your first Component](#your-first-component)
+- [Parameters: equations](#parameters-equations)
+- [`=` vs `==` in the equations block](#when-to-use--vs-)
+- [Other kinds of parameters](#other-kinds-of-parameters)
+- [Building the shape](#building-the-shape)
+- [Features every Component gets](#features-every-component-gets)
+- [Concrete subclasses](#concrete-subclasses)
+- [Reference](#reference)
+
 ## Your first Component
 
 A Component has two parts: parameters (the inputs the caller passes) and a `build()` method (the shape it produces).

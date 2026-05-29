@@ -7,6 +7,17 @@ from scadwright.primitives import cube
 from scadwright.shapes import Tube
 ```
 
+- [The 30-second version](#the-30-second-version)
+- [Where the text goes](#where-the-text-goes)
+- [Raised vs inset](#raised-vs-inset)
+- [Multi-line text](#multi-line-text)
+- [Chaining and `attach()` after `add_text()`](#chaining-and-attach-after-add_text)
+- [Other `text()` options](#other-text-options)
+- [Curved surfaces](#curved-surfaces)
+- [Argument reference](#argument-reference)
+- [Things that fail](#things-that-fail)
+- [Advanced notes](#advanced-notes)
+
 ## The 30-second version
 
 ```python
