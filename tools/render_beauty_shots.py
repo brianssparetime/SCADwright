@@ -99,16 +99,23 @@ def _resolve_opts(args: argparse.Namespace, override: dict | None) -> dict:
         "fn": args.fn if args.fn is not None else o.get("fn", FN),
         "viewall": o.get("viewall", True),
         "autocenter": o.get("autocenter", True),
+        "render": bool(args.render),
     }
 
 
 def _render_png(scad_path: Path, out_png: Path, openscad: str, opts: dict) -> None:
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    # Preview (throwntogether) rather than full CGAL render: respects color()
-    # directives, handles non-closed meshes (e.g. Helix), and renders faster.
-    cmd = [
-        openscad,
+    # Preview (Throwntogether) by default: respects the Metallic
+    # colorscheme's per-material shading (gold etc.) and renders in
+    # seconds. Tangent-edge geometry (a fillet curve meeting a side
+    # face, for example) renders as back-faces (pink). Pass --render
+    # to switch to F6/CGAL — clean tangent edges, but loses the
+    # colorscheme's metallic warmth.
+    cmd = [openscad]
+    if opts.get("render"):
+        cmd.append("--render")
+    cmd += [
         "-o", str(out_png),
         f"--camera={opts['camera']}",
         f"--imgsize={opts['imgsize']}",
@@ -276,6 +283,12 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"OpenSCAD colorscheme (default: {COLORSCHEME}, or per-entry)")
     parser.add_argument("--fn", type=int, default=None,
                         help=f"override $fn for smooth circles (default: {FN}, or per-entry)")
+    parser.add_argument("--render", action="store_true", default=False,
+                        help="use F6/CGAL render instead of the default F5 "
+                             "Throwntogether preview. Slower (minutes per "
+                             "shot for complex models) but renders tangent-"
+                             "edge geometry cleanly. Loses the colorscheme's "
+                             "metallic shading; flat per-material colors only.")
     parser.add_argument("--hero", action="store_true",
                         help=f"regenerate {HERO_OUTPUT} from the current shape-library PNGs and exit (no shot rendering)")
     args = parser.parse_args(argv)

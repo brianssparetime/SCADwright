@@ -10,6 +10,22 @@ from scadwright.component.params import Param
 from scadwright.primitives import cube, cylinder
 
 
+# Radial overshoot on FilletMask's cutter cylinder, scaled to the
+# fillet radius. With the cylinder sized to exactly r, its quarter-
+# circle is tangent to the block's two outer faces — a zero-width
+# coincident line that preview renderers (OpenCSG / Throwntogether)
+# flag as back-facing, showing pink streaks along the rounded edge in
+# F5. Nudging the cutter slightly bigger gives a real crossing of the
+# side faces.
+#
+# With nudge = RATIO·r, the taper where the fillet meets the side
+# face is √(2·r·nudge) = r·√(2·RATIO) — a constant fraction of the
+# fillet radius (5e-3 → ≈10% of r). The trade-off scales with the
+# fillet: a 2 mm fillet tapers 0.2 mm, a 10 mm fillet tapers 1 mm.
+# Constant proportional impact, no surprises at extremes.
+_TANGENT_NUDGE_RATIO = 5e-3
+
+
 class FilletMask(Component):
     """Quarter-cylinder fillet piece for axis-aligned edges.
 
@@ -38,16 +54,18 @@ class FilletMask(Component):
     def build(self):
         r = self.r
         ax = self.axis
+        # See _TANGENT_NUDGE_RATIO comment at the top of this module.
+        cutter_r = r * (1.0 + _TANGENT_NUDGE_RATIO)
 
         if ax == "z":
             block = cube([r, r, self.length])
-            cutter = cylinder(h=self.length, r=r).translate([r, r, 0])
+            cutter = cylinder(h=self.length, r=cutter_r).translate([r, r, 0])
         elif ax == "x":
             block = cube([self.length, r, r])
-            cutter = cylinder(h=self.length, r=r).rotate([0, 90, 0]).translate([0, r, r])
+            cutter = cylinder(h=self.length, r=cutter_r).rotate([0, 90, 0]).translate([0, r, r])
         else:  # y
             block = cube([r, self.length, r])
-            cutter = cylinder(h=self.length, r=r).rotate([90, 0, 0]).translate([r, self.length, r])
+            cutter = cylinder(h=self.length, r=cutter_r).rotate([90, 0, 0]).translate([r, self.length, r])
 
         return difference(block, cutter.through(block))
 
