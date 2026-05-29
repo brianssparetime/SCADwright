@@ -180,7 +180,7 @@ An M57-threaded optical lens barrel: holds three stacked lens elements in grip-l
 
 A 3D-printable model rocket on a coiled-spring stand: parabolic ogive nose, bulged body, three parabolic-swept fins with rounded edges, a flared nozzle, a tapered helicoid stem with an almond cross-section, and a filleted M2-counterbored baseplate. The body carries a horizontal `SCADwright` wordmark and an axial multi-line punchline, both engraved on a curved meridian. **59 lines of scadwright vs. ~360 of equivalent OpenSCAD** — most of the savings come from the helicoid (which OpenSCAD has to hand-roll as a polyhedron from explicit points and faces) and the engravings (which OpenSCAD has to compute per-glyph advances, place each glyph against the bulged surface's tangent frame, and rotate each glyph 90° for the axial punchline — all by hand).
 
-This is a flat script — no Components, no Design class — built from shape-library parts and the composition helpers earlier examples introduced. The one new surface is passing a custom 2D profile (`almond_profile(...)`) to a swept Component (`Helix`).
+This is a flat script — no Components, no Design class — built from shape-library parts and the composition helpers earlier examples introduced. The one new concept is passing a custom 2D profile (`almond_profile(...)`) to a swept Component (`Helix`).
 
 - `Helix(wire_profile=almond_profile(...), r=8, r_end=4, ...)` sweeps a custom 2D cross-section along a tapered helical path. `overhang=chord_r` extends the swept tube into the adjoining solids so the joints close cleanly, no manual `fuse=True` needed.
 - `Barrel` is used twice — once for the body's convex bulge, once for the nozzle's outward flare (the latter halved with `.halve(z=1)` to keep just the upper bell).
@@ -194,9 +194,3 @@ This is a flat script — no Components, no Design class — built from shape-li
 *Full rocket: parabolic nose, bulged body with engraved labels, three fins, flared nozzle, helicoid stem, and M2-counterbored baseplate.*
 
 **Reference:** [shape library](../docs/shapes/README.md) · [Helix](../docs/shapes/curves.md) · [Barrel](../docs/shapes/tubes_and_shells.md) · [counterbore_for_screw](../docs/shapes/fillets.md) · [linear_copy / rotate_copy](../docs/composition_helpers.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [add_text() on curved meridians](../docs/add_text.md) · [halve()](../docs/composition_helpers.md#halve)
-
----
-
-## Appendix: original source
-
-[`s2-lens-v2b.scad`](s2-lens-v2b.scad) is the pre-SCADwright OpenSCAD file that `lens-housing.py` was ported from. Useful as a side-by-side read: roughly the same geometry in 463 lines of SCAD vs. ~320 lines of Python.
