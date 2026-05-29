@@ -19,7 +19,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Intermediate | [`battery-holder.py`](battery-holder.py) | A `namedtuple` spec drives the design. A custom transform. One cradle per battery, via a list built inside `equations`. |
 | Intermediate | [`box-and-lid.py`](box-and-lid.py) | A `Lid` that reads values off a `Box` (the `Box` is a parameter on the `Lid`). `build()` written as a series of `yield` lines. `add_text()` labels the lid. |
 | Complex | [`electronics-case.py`](electronics-case.py) | `namedtuple` specs for the PCB and its ports. Three custom transforms. Separate variants for print vs. display. |
-| Complex | [`lens-housing.py`](lens-housing.py) | A helper that turns each lens element into a record with precomputed fields. A conditional that picks between two body shapes. A `halve()` section view in the print variant. |
+| Complex | [`simple-lens-housing.py`](simple-lens-housing.py) | A helper that turns each lens element into a record with precomputed fields. A conditional that picks between two body shapes. A `halve()` section view in the print variant. |
 | Complex | [`rocket.py`](rocket.py) | A wide cross-section of the shape library: `Helix` with a custom `almond_profile`, `Barrel`, `Ogive`, fins via `polygon` + `minkowski(sphere)`, M2 counterbores stamped in a 2x2 array, curved-meridian `add_text` engravings. 59 lines vs. ~360 of equivalent OpenSCAD. |
 
 ---
@@ -89,13 +89,14 @@ A wall-mount coat hook: a plate with two countersunk screw holes and a J-hook th
 
 - Both Components declare named anchors at class scope with `anchor(at=..., normal=...)`: `WallPlate.hook_mount` and `JHook.base`.
 - A second anchor (`WallPlate.top_edge`) is declared for future use, showing that a reusable Component can offer several attachment points.
-- `attach(parent, on="hook_mount", fuse=True)` picks the named anchor on the parent. The two anchors' normals already oppose, so no `orient=True` is needed.
+- `attach(parent, on="hook_mount", using_anchor="base", bond="shift")` picks the named anchor on each side. `using_anchor="base"` selects the hook's own anchor on the stem axis — the default would resolve to the bbox-bottom face anchor, which sits at the bbox center rather than over the stem.
+- The hook's stem extends below its `base` anchor as a short tenon that drops into a matching blind socket in the plate, keying the parts together on assembly.
 - `Torus(angle=90)` from the shape library makes a smooth quarter-toroid elbow between the stem and the tip.
 - `.through(parent, axis="z")` on both the screw-hole shafts and the countersink cutters extends them automatically with no manual EPS.
 
 ![Wall hook](images/CoatHook.png)
 
-*Left: display variant, plate with J-hook attached at `hook_mount`. Right: print variant, plate and hook laid flat on the bed.*
+*Left: display variant, hook seated in the plate's socket at `hook_mount`. Right: print variant, plate and hook laid flat with a clear gap; the central socket on the plate is visible.*
 
 **Reference:** [attach()](../docs/attach.md) · [anchors](../docs/anchors.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [variants](../docs/variants.md)
 
@@ -151,13 +152,13 @@ A parametric 3D-printable case for a Raspberry Pi 4. Base tray with standoffs at
 
 ![Project box](images/ProjectBox.png)
 
-*Left to right: display variant (assembled, PCB visible through the port cutouts), `print_base` (the tray alone, as it sits on the bed), `print_lid` (the lid flipped for the bed).*
+*Left to right: display variant (assembled, PCB visible through the port cutouts), `print_base` (the tray alone, as it sits on the bed), `print_lid` (the lid on the bed, counterbores facing up so they print without supports).*
 
 **Reference:** [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [variants](../docs/variants.md) · [organizing a project](../docs/organizing_a_project.md)
 
 ---
 
-## 7. [`lens-housing.py`](lens-housing.py)
+## 7. [`simple-lens-housing.py`](simple-lens-housing.py)
 
 An M57-threaded optical lens barrel: holds three stacked lens elements in grip-lip holders, with an expansion funnel for an element that's wider than the throat, and a front fillet that continues the cone angle of a matching clip-on hood.
 

@@ -7,9 +7,9 @@ M57-throat camera lives in the CONCRETE zone as thin subclasses that
 fill in measurements as class attributes.
 
 Run:
-    python examples/lens-housing.py                                  # print variant (default)
-    scadwright build examples/lens-housing.py --variant=display        # assembled view
-    scadwright build examples/lens-housing.py --variant=print          # split + spread for inspection
+    python examples/simple-lens-housing.py                                  # print variant (default)
+    scadwright build examples/simple-lens-housing.py --variant=display        # assembled view
+    scadwright build examples/simple-lens-housing.py --variant=print          # split + spread for inspection
 """
 
 from collections import namedtuple

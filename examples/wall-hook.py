@@ -1,10 +1,11 @@
 """Wall-mount coat hook: plate + J-hook assembled via named anchors.
 
 Both Components declare named anchors on the class. The Design joins
-them with `attach(parent, on="anchor_name", fuse=True)`, which picks
-a specific anchor on the parent. The plate offers two anchors (one for
-the hook, one for future use) and the hook offers one (its base), so
-the `attach()` call reads like plain English.
+them with `attach(parent, on=..., using_anchor=...)`, which picks
+a specific anchor on each side. The plate offers two anchors (one for
+the hook, one for future use); the hook offers `base` on the stem
+axis. A tenon at the bottom of the stem drops into a matching socket
+on the plate, keying the parts together.
 
 Run:
     python examples/wall-hook.py                     # display variant (default)
@@ -24,13 +25,16 @@ from scadwright.shapes import Torus, rounded_rect
 
 
 class WallPlate(Component):
-    """Rectangular wall mounting plate with two countersunk screw holes
-    and a front-face anchor where an accessory attaches."""
+    """Rectangular wall mounting plate with two countersunk screw holes,
+    a center socket that receives the hook's tenon, and a front-face
+    anchor where an accessory attaches."""
 
     equations = """
         w, h, thk, corner_r, screw_d, screw_head_d, screw_head_depth > 0
+        mount_d, mount_depth > 0
         screw_d < screw_head_d
         screw_head_depth < thk
+        mount_depth < thk
     """
 
     # Front-face anchor at the plate's center, pointing +Z. A hook, peg,
@@ -57,24 +61,39 @@ class WallPlate(Component):
                     .translate([0, y, self.thk - self.screw_head_depth])
                     .through(slab, axis="z")
             )
+        # Blind socket at the center of the plate's top face. The hook's
+        # tenon drops into this hole on assembly, keying the two parts
+        # together so the bend resists rotation as well as pull-out.
+        cutters.append(
+            cylinder(h=self.mount_depth, d=self.mount_d)
+                .up(self.thk - self.mount_depth)
+        )
         return difference(slab, *cutters)
 
 
 class JHook(Component):
-    """A J-hook: vertical stem, quarter-torus elbow, perpendicular tip."""
+    """A J-hook with a tenon stub at the base: vertical stem, quarter-torus
+    elbow, perpendicular tip. The tenon plugs into a matching socket in
+    the wall plate."""
 
     equations = """
-        stem_d, stem_len, tip_len, elbow_r > 0
+        stem_d, stem_len, tip_len, elbow_r, tenon_len > 0
         elbow_r > stem_d / 2                              # bend must clear the tube's inner edge
     """
 
-    # Base of the stem, pointing -Z so attach() mates cleanly with a +Z
-    # face anchor on the parent.
+    # Base of the stem at the top of the tenon. The tenon extends below
+    # z=0; the visible stem starts at z=0 and rises to z=stem_len. -Z
+    # normal so attach() mates cleanly with a +Z face anchor on the parent.
     base = anchor(at="0, 0, 0", normal=(0, 0, -1))
 
     def build(self):                                       # framework hook: required; returns the shape
         R = self.elbow_r
-        stem = cylinder(h=self.stem_len, d=self.stem_d)
+        # Stem extends below z=0 by `tenon_len`; that lower stub seats
+        # inside the plate's socket when the parts are assembled.
+        stem = (
+            cylinder(h=self.stem_len + self.tenon_len, d=self.stem_d)
+            .down(self.tenon_len)
+        )
         # Quarter-torus elbow: Torus natively sweeps in the XY plane, so
         # rotate it into the XZ plane and translate so its "stem" end lands
         # at the top of the stem.
@@ -106,6 +125,8 @@ class MyWallPlate(WallPlate):
     screw_d = 4
     screw_head_d = 8
     screw_head_depth = 2.0
+    mount_d = 6                 # matches MyJHook.stem_d
+    mount_depth = 2.5
 
 
 class MyJHook(JHook):
@@ -113,6 +134,7 @@ class MyJHook(JHook):
     stem_len = 25
     tip_len = 18
     elbow_r = 8
+    tenon_len = 2.5             # matches MyWallPlate.mount_depth
 
 
 # =============================================================================
@@ -126,25 +148,33 @@ class CoatHook(Design):
 
     @variant(fn=48, default=True)
     def display(self):                                  # user-chosen variant name
-        # Hook attaches at the plate's `hook_mount` anchor. The plate's
-        # anchor normal is +Z and the hook's `base` normal is -Z, so the
+        # Both anchors are named: `on="hook_mount"` picks the plate's
+        # mounting anchor, `using_anchor="base"` picks the hook's own
+        # base anchor (at the stem axis, not the bbox center). The
+        # plate's normal is +Z and the hook's `base` is -Z, so the
         # default `attach()` behavior (opposing normals) needs no
-        # `orient=True`; it just places the hook's origin at the plate's
-        # anchor point.
+        # `orient=True`. `bond="shift"` adds an eps overlap by shifting
+        # the hook into the plate — the regular `fuse=True` overlap
+        # path needs the anchor on the outermost face, and the tenon
+        # sits below the base anchor.
         return union(
             self.plate,
-            self.hook.attach(self.plate, on="hook_mount", fuse=True),
+            self.hook.attach(self.plate, on="hook_mount", using_anchor="base", bond="shift"),
         )
 
     @variant(fn=48)
     def print(self):                                    # user-chosen variant name
         # Plate's back face already sits at z=0. Lay the hook on its side
-        # (stem along -Y, tip along +X) and place it to the right of the
-        # plate so both parts print together.
-        plate_w = bbox(self.plate).size[0]
+        # and place it clear of the plate with a visible gap, so the two
+        # parts read as separate prints rather than an assembled hook
+        # sticking off the edge.
+        plate_bb = bbox(self.plate)
+        laid_hook = self.hook.rotate([90, 0, 0])
+        hook_min_x = bbox(laid_hook).min[0]
+        gap = 15
         return union(
             self.plate,
-            self.hook.rotate([90, 0, 0]).right(plate_w / 2 + 20),
+            laid_hook.right(plate_bb.max[0] + gap - hook_min_x),
         )
 
 

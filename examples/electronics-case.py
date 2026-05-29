@@ -267,7 +267,10 @@ class ProjectBox(Design):
 
     @variant(fn=48)
     def print_lid(self):
-        return self.lid.flip("z").up(self.lid.thk)
+        # Top face up: the countersunk recess widens upward, which prints
+        # without supports. Flipping would put the counterbore against the
+        # bed and demand supports inside each screw hole.
+        return self.lid
 
     @variant(fn=48, default=True)
     def display(self):

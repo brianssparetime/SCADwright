@@ -650,7 +650,7 @@ Is this one-shot-slop?  No.  It's the result of hundreds, maybe thousands, of in
 
 Pretty much every part of SCADwright has gone through at least 5-6 major revisions, reducing duplicate and boilerplate code, making the constructs intuitive and naively simple, and working through hard framework trade-offs, in detail through examples.  I've been writing code longer than Python has been a language (and I've been writing serious code longer than Python has been a serious language) - I wouldn't put my name on something that's dogshit or poorly thought out.   Hell, I even went to the effort to make the emitted SCAD human-readable.
 
-In parallel, I'm actually using this framework for my current 3d printing projects: the [Bronica S2 lens housing](/examples/lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) both leverage this 
+In parallel, I'm actually using this framework for my current 3d printing projects: the [Bronica S2 lens housing](/examples/simple-lens-housing.py) and [convex lens caliper attachment](/examples/convex-caliper.py) both leverage this 
 framework and motivated its completion.
 
 ## Functional Programming
