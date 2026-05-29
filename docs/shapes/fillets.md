@@ -99,16 +99,24 @@ part = difference(plate, hole.through(plate))
 
 *`Counterbore(shaft_d=4, head_d=7, head_depth=4, shaft_depth=12)` — the solid mask; subtract it from a part for a socket-head pocket.*
 
-## `counterbore_for_screw(size, shaft_depth, head="socket")` and `countersink_for_screw(...)`
+## `counterbore_for_screw(size, *, through | shaft_depth, head="socket")` and `countersink_for_screw(...)`
 
 Factories that build a `Counterbore` / `Countersink` sized for a standard ISO metric screw. Pulls `clearance_d`, `head_d`, and `head_h` from the [ScrewSpec](fasteners.md) for the given size.
+
+Pass exactly one of:
+
+- **`through=plate_thk`** — the thickness of the parent the screw goes through. The factory computes `shaft_depth = through − head_h` so the head bore sits *inside* the parent with its top face flush with the parent's top. The most common use; pair with `.through(parent)` for clean cuts at both faces.
+- **`shaft_depth=`** — the lower cylinder's height directly. Use when the counterbore isn't sized to a host thickness (blind holes, deliberately-protruding heads, custom stacks).
 
 ```python
 from scadwright.shapes import counterbore_for_screw, countersink_for_screw
 
-pocket = counterbore_for_screw("M3", shaft_depth=10)
-sink = countersink_for_screw("M5", shaft_depth=20, head="button")
+# Standard pattern: screw through a plate, head recessed into the top.
+pocket = counterbore_for_screw("M3", through=plate_thk)
 part = difference(plate, pocket.through(plate))
+
+# Blind hole or custom positioning:
+deep_pocket = counterbore_for_screw("M5", shaft_depth=20, head="button")
 ```
 
 ## `FilletRing(id, od, base_angle)`

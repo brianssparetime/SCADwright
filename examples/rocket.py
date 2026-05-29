@@ -48,9 +48,9 @@ with resolution(fn=32):
     # holes into a 2x2 corner array; through() flushes the cuts.
     plate_w, plate_thk, stem_h = 22, 3, 18
     plate_solid = cube([plate_w, plate_w, plate_thk], center="xy").fillet("vertical", r=2)
-    # shaft_depth is upper-bounded by .through(plate_solid) below — any
-    # value at least (plate_thk - head_h) cuts the same hole.
-    hole = counterbore_for_screw("M2", shaft_depth=plate_thk)
+    # through=plate_thk recesses the head bore inside the plate (head
+    # top flush with plate top); .through() then eps-extends both faces.
+    hole = counterbore_for_screw("M2", through=plate_thk)
     corner = plate_w/2 - 3
     holes = linear_copy(
         [0, 2*corner, 0], 2,

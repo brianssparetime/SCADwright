@@ -174,8 +174,55 @@ def test_countersink_for_screw_pulls_dims_from_spec():
 
 
 def test_factory_returns_correct_type():
-    assert isinstance(counterbore_for_screw("M3", 10), Counterbore)
-    assert isinstance(countersink_for_screw("M3", 10), Countersink)
+    assert isinstance(counterbore_for_screw("M3", shaft_depth=10), Counterbore)
+    assert isinstance(countersink_for_screw("M3", shaft_depth=10), Countersink)
+
+
+# --- through= kwarg: ergonomic depth-from-host-thickness ---
+
+
+def test_counterbore_for_screw_through_subtracts_head_h():
+    """through=plate_thk computes shaft_depth = plate_thk - head_h so
+    the head bore sits inside the parent. M3 socket head_h=3.0; passing
+    through=10 should yield shaft_depth=7."""
+    c = counterbore_for_screw("M3", through=10)
+    assert c.shaft_depth == pytest.approx(10 - 3.0)
+    # Full cutter length still equals plate_thk; head sits above shaft.
+    assert c.shaft_depth + c.head_depth == pytest.approx(10)
+
+
+def test_counterbore_for_screw_requires_exactly_one_depth_kwarg():
+    """Both kwargs together → ambiguous; neither → no information."""
+    from scadwright.errors import ValidationError
+    with pytest.raises(ValidationError, match="exactly one of through"):
+        counterbore_for_screw("M3", shaft_depth=10, through=10)
+    with pytest.raises(ValidationError, match="exactly one of through"):
+        counterbore_for_screw("M3")
+
+
+def test_counterbore_for_screw_through_too_small_raises():
+    """through < head_h means the head bore alone doesn't fit; the
+    factory raises rather than producing a degenerate negative-shaft
+    geometry."""
+    from scadwright.errors import ValidationError
+    # M3 head_h = 3.0; through=2 is shorter than head_h.
+    with pytest.raises(ValidationError, match="less than the head height"):
+        counterbore_for_screw("M3", through=2)
+
+
+def test_countersink_for_screw_through_subtracts_head_h():
+    """Same through= semantics on countersink_for_screw."""
+    c = countersink_for_screw("M5", through=12)
+    # M5 socket: head_h=5.0
+    assert c.shaft_depth == pytest.approx(12 - 5.0)
+
+
+def test_countersink_for_screw_requires_exactly_one_depth_kwarg():
+    from scadwright.errors import ValidationError
+    with pytest.raises(ValidationError, match="exactly one of through"):
+        countersink_for_screw("M3", shaft_depth=10, through=10)
+    with pytest.raises(ValidationError, match="exactly one of through"):
+        countersink_for_screw("M3")
 
 
 # --- tip anchor (consistency with Bolt.tip) ---
