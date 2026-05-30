@@ -1259,3 +1259,37 @@ def test_rename_self_attr_edit_after_accent(tmp_path) -> None:
     e = edit.changes[consumer_uri][0]
     build_line = consumer_body.splitlines()[5]
     assert build_line[e.range.start.character:e.range.end.character] == "outer_d"
+
+
+def test_definition_resolves_after_unicode_line_separator(tmp_path) -> None:
+    """A U+2028 inside a string literal must not shift line indexing.
+
+    str.splitlines() would break on U+2028 (ast does not), pointing
+    the byte->char lookup at the wrong line. The reference on the
+    following physical line must still resolve.
+    """
+    from scadwright.lsp.server import _definition_for
+
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "consumer.py"
+    # Line 1 carries a U+2028 inside a string; line 2 has the reference.
+    body = (
+        "from spec import CamSpec\n"
+        'NOTE = "a b"\n'
+        "x = CamSpec.outer_d\n"
+    )
+    consumer.write_text(body)
+    line = body.split("\n")[2]  # ast's line model
+    char_idx = line.index("outer_d")
+    out = _definition_for(
+        body, 2, char_idx + 1, consumer.as_uri(), project_root=tmp_path,
+    )
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    assert out.range.start.line == 3

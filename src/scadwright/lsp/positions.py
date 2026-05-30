@@ -87,6 +87,21 @@ def byte_col_to_char_col(line_text: str, byte_col: int) -> int:
     return len(line_text)
 
 
+def split_source_lines(source: str) -> list[str]:
+    """Split ``source`` into lines the way ``ast`` numbers them.
+
+    ``ast`` counts lines by ``\\n`` only (the source string reaches
+    it already universal-newline normalized), so ``node.lineno``
+    indexes into ``source.split("\\n")``. ``str.splitlines`` must
+    not be used here: it also breaks on form feeds and the Unicode
+    line separators (U+2028, U+2029, ...), which ``ast`` treats as
+    ordinary characters inside a token or string. Using it would
+    shift every line index after such a character, so a byte→char
+    lookup would read the wrong line.
+    """
+    return source.split("\n")
+
+
 def offset_to_line_col(text: str, offset: int) -> tuple[int, int]:
     """Return ``(line_delta, col)`` for ``text[offset]``.
 

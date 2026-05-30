@@ -60,6 +60,7 @@ from scadwright.lsp.analyze import (
 from scadwright.lsp.positions import (
     byte_col_to_char_col,
     map_cleaned_col_to_file,
+    split_source_lines,
 )
 from scadwright.project_index.analyze import _block_from_classdef
 from scadwright.project_index.extract import (
@@ -606,7 +607,7 @@ def _cross_file_method_edits(
     land correctly on non-ASCII lines. Lines are 1-based in the AST
     and 0-based in LSP.
     """
-    source_lines = file_info.source.splitlines()
+    source_lines = split_source_lines(file_info.source)
     out: list[TextEdit] = []
     for sub in ast.walk(cls.ast_node):
         if not isinstance(sub, ast.Attribute):
@@ -684,7 +685,7 @@ def _direct_class_attr_edits(
     """
     if scope_node is None:
         return []
-    source_lines = file_info.source.splitlines()
+    source_lines = split_source_lines(file_info.source)
     out: list[TextEdit] = []
     for sub in ast.walk(scope_node):
         if not isinstance(sub, ast.Attribute):

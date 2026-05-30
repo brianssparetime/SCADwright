@@ -27,7 +27,10 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from scadwright.lsp.positions import byte_col_to_char_col
+from scadwright.lsp.positions import (
+    byte_col_to_char_col,
+    split_source_lines,
+)
 from scadwright.project_index.registry import (
     ClassRegistry,
     ResolvedClass,
@@ -81,12 +84,14 @@ def find_python_attribute_at_cursor(
     """
     if file_info.tree is None:
         return None
-    source_lines = file_info.source.splitlines()
+    source_lines = split_source_lines(file_info.source)
     for sub in ast.walk(file_info.tree):
         if not isinstance(sub, ast.Attribute):
             continue
         attr_start_line = (sub.lineno or 1) - 1
         attr_end_line = (sub.end_lineno or sub.lineno) - 1
+        if file_line != attr_start_line or file_line != attr_end_line:
+            continue
         # ast columns are UTF-8 byte offsets; convert to character
         # indices so the cursor comparison and emitted span line up
         # with the LSP's character-based coordinates on non-ASCII lines.
@@ -98,8 +103,6 @@ def find_python_attribute_at_cursor(
             _line_at(source_lines, attr_end_line),
             sub.end_col_offset if sub.end_col_offset is not None else 0,
         )
-        if file_line != attr_start_line or file_line != attr_end_line:
-            continue
         if file_col < attr_start_col or file_col > attr_end_col:
             continue
         dotted = _value_chain_to_dotted_name(sub.value)
@@ -163,7 +166,7 @@ def find_python_class_at_cursor(
     """
     if file_info.tree is None:
         return None
-    source_lines = file_info.source.splitlines()
+    source_lines = split_source_lines(file_info.source)
     for sub in ast.walk(file_info.tree):
         span = _class_token_span_at(sub, file_line, file_col, source_lines)
         if span is None:
@@ -206,6 +209,8 @@ def _class_token_span_at(
     if isinstance(node, ast.Name):
         start_line = (node.lineno or 1) - 1
         end_line = (node.end_lineno or node.lineno) - 1
+        if file_line != start_line or file_line != end_line:
+            return None
         start_col = byte_col_to_char_col(
             _line_at(source_lines, start_line), node.col_offset,
         )
@@ -217,6 +222,8 @@ def _class_token_span_at(
     elif isinstance(node, ast.Attribute):
         start_line = (node.lineno or 1) - 1
         end_line = (node.end_lineno or node.lineno) - 1
+        if file_line != start_line or file_line != end_line:
+            return None
         start_col = byte_col_to_char_col(
             _line_at(source_lines, start_line),
             (node.value.end_col_offset or 0) + 1,
@@ -227,8 +234,6 @@ def _class_token_span_at(
             else (node.value.end_col_offset or 0) + 1,
         )
     else:
-        return None
-    if file_line != start_line or file_line != end_line:
         return None
     if file_col < start_col or file_col > end_col:
         return None
