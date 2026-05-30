@@ -790,3 +790,472 @@ def test_rename_for_direct_class_attribute_invocation(tmp_path) -> None:
     # The WorkspaceEdit's changes dict should include both files.
     assert edit.changes is not None
     assert len(edit.changes) == 2
+
+
+# =============================================================================
+# Unsaved editor changes: the cursor file is analyzed from the editor
+# source, not the on-disk copy
+# =============================================================================
+
+
+def test_hover_for_direct_attr_uses_editor_source_not_disk(tmp_path) -> None:
+    """The consumer file on disk has no reference to ``CamSpec.outer_d``.
+    The editor's live ``source`` adds the import and the reference.
+    Hover must resolve against the editor source, not the stale disk
+    copy.
+    """
+    from scadwright.lsp.server import _hover_for
+
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "housing.py"
+    # On disk: empty-ish, no reference.
+    consumer.write_text(
+        "from scadwright import Component\n"
+        "class Housing(Component):\n"
+        "    def build(self):\n"
+        "        return None\n"
+    )
+    # Editor buffer (unsaved): import + a module-level reference at line 2.
+    editor_source = (
+        "from scadwright import Component\n"
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+        "class Housing(Component):\n"
+        "    def build(self):\n"
+        "        return None\n"
+    )
+    # outer_d on line 2 (0-based); "BORE = CamSpec." is 15 chars, outer_d at 15.
+    out = _hover_for(
+        editor_source, 2, 17,
+        uri=consumer.as_uri(),
+        project_root=tmp_path,
+    )
+    assert out is not None
+    assert "outer_d" in out.contents.value
+
+
+def test_definition_for_direct_attr_uses_editor_source(tmp_path) -> None:
+    """Same unsaved-changes scenario, for goto-definition."""
+    from scadwright.lsp.server import _definition_for
+
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "housing.py"
+    consumer.write_text("# empty\n")
+    editor_source = (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    )
+    # Line 1 (0-based): "BORE = CamSpec.outer_d"; outer_d at col 15.
+    out = _definition_for(
+        editor_source, 1, 17,
+        consumer.as_uri(),
+        project_root=tmp_path,
+    )
+    assert out is not None
+    assert "spec.py" in out.uri
+
+
+def test_hover_for_self_reference_in_editor_source(tmp_path) -> None:
+    """When the cursor file IS the source class's file and the
+    reference is unsaved, the source block is parsed from the editor
+    source, not disk.
+    """
+    from scadwright.lsp.server import _hover_for
+
+    spec = tmp_path / "spec.py"
+    # On disk: the class with no module-level self-reference.
+    spec.write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    # Editor buffer: adds a module-level self-reference at the end.
+    editor_source = (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+        "BACKUP = CamSpec.outer_d\n"
+    )
+    # Line 5 (0-based): "BACKUP = CamSpec.outer_d"; outer_d at col 17.
+    out = _hover_for(
+        editor_source, 5, 19,
+        uri=spec.as_uri(),
+        project_root=tmp_path,
+    )
+    assert out is not None
+    assert "outer_d" in out.contents.value
+
+
+# =============================================================================
+# Open editor buffers threaded through _rename_for / _hover_for
+# =============================================================================
+
+
+def test_rename_for_threads_open_buffers(tmp_path) -> None:
+    """``_rename_for`` invoked from a consumer file's ``CamSpec.outer_d``
+    while another consumer file is open with unsaved edits: the edit
+    in that other file lands on its buffer position.
+    """
+    from scadwright.lsp.server import _rename_for
+
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    cursor_file = tmp_path / "a.py"
+    cursor_source = (
+        "from spec import CamSpec\n"
+        "A = CamSpec.outer_d\n"
+    )
+    cursor_file.write_text(cursor_source)
+    other = tmp_path / "b.py"
+    other.write_text(
+        "from spec import CamSpec\n"
+        "B = CamSpec.outer_d\n"
+    )
+    other_buffer = (
+        "from spec import CamSpec\n"
+        "\n"
+        "\n"
+        "B = CamSpec.outer_d\n"
+    )
+    # Cursor on outer_d in a.py line 1 (col 15); b.py open with edits.
+    edit = _rename_for(
+        cursor_source, 1, 17,
+        "outer_diameter",
+        cursor_file.as_uri(),
+        project_root=tmp_path,
+        source_overrides={other: other_buffer},
+    )
+    assert edit is not None
+    changes = edit.changes
+    other_edits = changes[other.as_uri()]
+    # The edit lands on b.py's buffer line 3, not its disk line 1.
+    assert other_edits[0].range.start.line == 3
+
+
+def test_hover_resolves_through_open_buffer_imports(tmp_path) -> None:
+    """The Spec file is open in the editor with an unsaved rename of
+    the class. Hover on a consumer reference resolves through the
+    open buffer's class name, not the stale disk name.
+    """
+    from scadwright.lsp.server import _hover_for
+
+    spec = tmp_path / "spec.py"
+    # Disk: class is named OldName.
+    spec.write_text(
+        "from scadwright import Spec\n"
+        "class OldName(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    # Editor buffer: class renamed to CamSpec (unsaved).
+    spec_buffer = (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "housing.py"
+    consumer_source = (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    )
+    consumer.write_text(consumer_source)
+    out = _hover_for(
+        consumer_source, 1, 17,
+        uri=consumer.as_uri(),
+        project_root=tmp_path,
+        source_overrides={spec: spec_buffer},
+    )
+    # Resolves only if the buffer's CamSpec name is used; the disk
+    # OldName wouldn't match the consumer's CamSpec import.
+    assert out is not None
+    assert "outer_d" in out.contents.value
+
+
+# =============================================================================
+# Goto-definition on a project class name (not an attribute)
+# =============================================================================
+
+
+def _spec_and_consumer(tmp_path, consumer_body: str) -> tuple[str, str]:
+    """Write a spec.py with CamSpec plus a consumer file whose body
+    is ``consumer_body``. Returns (consumer_uri, consumer_source)."""
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "consumer.py"
+    consumer.write_text(consumer_body)
+    return consumer.as_uri(), consumer_body
+
+
+def test_definition_on_class_name_in_attribute_access(tmp_path) -> None:
+    """Cursor on the class half of ``CamSpec.outer_d`` jumps to the
+    class definition, not the attribute's equation line."""
+    from scadwright.lsp.server import _definition_for
+
+    uri, source = _spec_and_consumer(tmp_path, (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    ))
+    # "BORE = CamSpec.outer_d"; CamSpec spans cols 7..13.
+    out = _definition_for(source, 1, 9, uri, project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    # CamSpec is defined on line 1 (0-based) of spec.py.
+    assert out.range.start.line == 1
+
+
+def test_definition_on_bare_class_reference(tmp_path) -> None:
+    """Cursor on a bare ``CamSpec`` (Param argument) jumps to the
+    class definition."""
+    from scadwright.lsp.server import _definition_for
+
+    uri, source = _spec_and_consumer(tmp_path, (
+        "from spec import CamSpec\n"
+        "from scadwright import Component, Param\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+    ))
+    # Line 3: "    spec = Param(CamSpec)"; CamSpec starts at col 18.
+    out = _definition_for(source, 3, 20, uri, project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    assert out.range.start.line == 1
+
+
+def test_definition_on_base_class_reference(tmp_path) -> None:
+    """Cursor on a base class in ``class Sub(CamSpec)`` jumps to the
+    base class definition."""
+    from scadwright.lsp.server import _definition_for
+
+    uri, source = _spec_and_consumer(tmp_path, (
+        "from spec import CamSpec\n"
+        "class Sub(CamSpec):\n"
+        "    pass\n"
+    ))
+    # Line 1: "class Sub(CamSpec):"; CamSpec starts at col 10.
+    out = _definition_for(source, 1, 12, uri, project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    assert out.range.start.line == 1
+
+
+def test_definition_on_attribute_still_jumps_to_equation_line(tmp_path) -> None:
+    """The attribute path is unchanged: cursor on ``outer_d`` jumps
+    to its equation line, not the class definition."""
+    from scadwright.lsp.server import _definition_for
+
+    uri, source = _spec_and_consumer(tmp_path, (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    ))
+    # outer_d starts at col 15.
+    out = _definition_for(source, 1, 17, uri, project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    # outer_d's equation is on line 3 of spec.py, not the class line (1).
+    assert out.range.start.line == 3
+
+
+def test_definition_on_module_name_returns_none(tmp_path) -> None:
+    """Cursor on the module part of a dotted reference (not a class)
+    yields nothing rather than a false jump."""
+    from scadwright.lsp.server import _definition_for
+
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "consumer.py"
+    source = (
+        "import spec\n"
+        "BORE = spec.CamSpec.outer_d\n"
+    )
+    consumer.write_text(source)
+    # Cursor on "spec" (the module) at col 7.
+    out = _definition_for(source, 1, 8, consumer.as_uri(), project_root=tmp_path)
+    assert out is None
+
+
+def test_definition_on_dotted_class_name(tmp_path) -> None:
+    """Cursor on the class part of ``spec.CamSpec`` jumps to the
+    class definition."""
+    from scadwright.lsp.server import _definition_for
+
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "consumer.py"
+    source = (
+        "import spec\n"
+        "x = spec.CamSpec\n"
+    )
+    consumer.write_text(source)
+    # Line 1: "x = spec.CamSpec"; CamSpec starts at col 9.
+    out = _definition_for(source, 1, 11, consumer.as_uri(), project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    assert out.range.start.line == 1
+
+
+def test_definition_on_non_class_name_returns_none(tmp_path) -> None:
+    """Cursor on a plain local variable resolves to nothing."""
+    from scadwright.lsp.server import _definition_for
+
+    uri, source = _spec_and_consumer(tmp_path, (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    ))
+    # Cursor on "BORE" (col 0..4).
+    out = _definition_for(source, 1, 1, uri, project_root=tmp_path)
+    assert out is None
+
+
+# =============================================================================
+# Non-ASCII columns: ast byte offsets vs character indices
+#
+# ast reports columns as UTF-8 byte offsets; the LSP counts characters.
+# A non-ASCII character before a token (a 2-byte accent, a 3-byte CJK
+# glyph) makes the two diverge. These pin the conversion so positions
+# land on the right characters.
+# =============================================================================
+
+
+def _nonascii_project(tmp_path, consumer_body: str) -> tuple[str, str]:
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "consumer.py"
+    consumer.write_text(consumer_body)
+    return consumer.as_uri(), consumer_body
+
+
+def test_definition_attribute_after_accent_on_same_line(tmp_path) -> None:
+    from scadwright.lsp.server import _definition_for
+
+    body = (
+        "from spec import CamSpec\n"
+        'L = "café"; B = CamSpec.outer_d\n'
+    )
+    uri, source = _nonascii_project(tmp_path, body)
+    line = source.splitlines()[1]
+    char_idx = line.index("outer_d")
+    # ast byte offset is char_idx + 1 (é is one extra byte); the fix
+    # must convert so a cursor at the character index resolves.
+    out = _definition_for(source, 1, char_idx + 1, uri, project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    assert out.range.start.line == 3  # outer_d's equation line
+
+
+def test_definition_class_name_after_cjk_on_same_line(tmp_path) -> None:
+    from scadwright.lsp.server import _definition_for
+
+    # CJK characters are 3 UTF-8 bytes each, 1 character each.
+    body = (
+        "from spec import CamSpec\n"
+        'name = "部品"; x = CamSpec\n'
+    )
+    uri, source = _nonascii_project(tmp_path, body)
+    line = source.splitlines()[1]
+    char_idx = line.index("CamSpec")
+    out = _definition_for(source, 1, char_idx + 2, uri, project_root=tmp_path)
+    assert out is not None
+    assert out.uri.endswith("spec.py")
+    assert out.range.start.line == 1  # class definition line
+
+
+def test_rename_edit_lands_on_char_position_after_accent(tmp_path) -> None:
+    from scadwright.lsp.server import _rename_for
+
+    body = (
+        "from spec import CamSpec\n"
+        'L = "café"; B = CamSpec.outer_d\n'
+    )
+    uri, source = _nonascii_project(tmp_path, body)
+    line = source.splitlines()[1]
+    char_idx = line.index("outer_d")
+    edit = _rename_for(
+        source, 1, char_idx + 1, "diameter", uri, project_root=tmp_path,
+    )
+    assert edit is not None
+    consumer_edits = edit.changes[uri]
+    e = consumer_edits[0]
+    # The edit range, in character coordinates, must cover exactly
+    # "outer_d" — not be shifted by the extra byte of é.
+    assert line[e.range.start.character:e.range.end.character] == "outer_d"
+
+
+def test_rename_self_attr_edit_after_accent(tmp_path) -> None:
+    """The ``self.<param>.<attr>`` edit path also converts byte→char."""
+    from scadwright.lsp.server import _rename_for
+
+    spec_src = (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+    )
+    (tmp_path / "spec.py").write_text(spec_src)
+    consumer = tmp_path / "holder.py"
+    consumer_body = (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        "    def build(self):\n"
+        '        note = "réf"; return self.spec.outer_d\n'
+    )
+    consumer.write_text(consumer_body)
+    # Invoke the rename from the equation reference on spec line 3
+    # (inside the equations block, the canonical invocation site).
+    spec_line = spec_src.splitlines()[3]
+    col = spec_line.index("outer_d") + 1
+    edit = _rename_for(
+        spec_src, 3, col, "diameter",
+        (tmp_path / "spec.py").as_uri(), project_root=tmp_path,
+    )
+    assert edit is not None
+    consumer_uri = consumer.as_uri()
+    assert consumer_uri in edit.changes
+    e = edit.changes[consumer_uri][0]
+    build_line = consumer_body.splitlines()[5]
+    assert build_line[e.range.start.character:e.range.end.character] == "outer_d"

@@ -49,6 +49,44 @@ from scadwright.component.equations import (
 from scadwright.lsp.analyze import EquationsBlock, EquationsHostString
 
 
+def byte_col_to_char_col(line_text: str, byte_col: int) -> int:
+    """Convert a UTF-8 byte column to a 0-based character index into
+    ``line_text``.
+
+    Python's ``ast`` reports ``col_offset`` / ``end_col_offset`` as
+    byte offsets into the UTF-8 encoding of the source line, while
+    the LSP and the rest of this package count positions in
+    characters (code points). The two agree for ASCII but diverge
+    once a line carries non-ASCII before the token: a ``é`` is one
+    character but two bytes, so an ast column past it overshoots by
+    one per such character. This converts back to a character index.
+
+    ``byte_col`` is clamped: a non-positive value maps to ``0`` and
+    a value past the line's end maps to ``len(line_text)``. ast
+    columns always land on character boundaries, so no split-
+    character case arises in practice.
+
+    The result is a character index (code points). That equals the
+    UTF-16 code-unit index the LSP uses by default for every
+    character in the Basic Multilingual Plane, which covers all
+    realistic source content: accents, CJK, and the like. Only
+    astral-plane characters (emoji, rare CJK extensions) take two
+    UTF-16 units, so a position past one would still be off by one
+    at the LSP boundary. Converting character indices to UTF-16
+    units at the boundary is intentionally not done; an emoji
+    sitting before a token on the same line as a scadwright
+    reference is not a case worth the per-file boundary plumbing.
+    """
+    if byte_col <= 0:
+        return 0
+    byte_count = 0
+    for char_index, ch in enumerate(line_text):
+        if byte_count >= byte_col:
+            return char_index
+        byte_count += len(ch.encode("utf-8"))
+    return len(line_text)
+
+
 def offset_to_line_col(text: str, offset: int) -> tuple[int, int]:
     """Return ``(line_delta, col)`` for ``text[offset]``.
 

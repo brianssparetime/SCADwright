@@ -937,3 +937,114 @@ def test_workspace_rename_catches_source_class_self_reference(
             found_module_level = True
             break
     assert found_module_level
+
+
+# =============================================================================
+# Open editor buffers: cross-file edits land on buffer positions, not
+# stale disk positions
+# =============================================================================
+
+
+def test_cross_file_rename_uses_open_buffer_over_disk(tmp_path) -> None:
+    """A consumer file open in the editor with unsaved edits — the
+    rename must compute the reference position from the buffer, not
+    the disk copy whose line numbers differ.
+    """
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    consumer = _write(tmp_path, "housing.py", (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    ))
+    # Editor buffer: a blank line inserted above shifts the reference
+    # from line 1 (disk) to line 3 (buffer).
+    buffer_text = (
+        "from spec import CamSpec\n"
+        "\n"
+        "\n"
+        "BORE = CamSpec.outer_d\n"
+    )
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+        source_overrides={consumer: buffer_text},
+    )
+    assert out is not None
+    assert consumer in out
+    edit = out[consumer][0]
+    # The edit targets the buffer's line 3, where outer_d actually sits.
+    assert edit.start_line == 3
+    buffer_line = buffer_text.splitlines()[edit.start_line]
+    assert buffer_line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_cross_file_rename_without_override_uses_disk(tmp_path) -> None:
+    """Sanity: with no override, the edit is computed against the disk
+    copy. Pairs with the test above to show the override path is what
+    moves the position."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    consumer = _write(tmp_path, "housing.py", (
+        "from spec import CamSpec\n"
+        "BORE = CamSpec.outer_d\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    edit = out[consumer][0]
+    # Disk has the reference on line 1.
+    assert edit.start_line == 1
+
+
+def test_cross_file_rename_closed_file_still_uses_disk(tmp_path) -> None:
+    """A consumer file NOT in the override map (closed in the editor)
+    is read from disk — the editor applies edits to disk content for
+    closed files, so disk positions are correct there."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    open_consumer = _write(tmp_path, "open.py", (
+        "from spec import CamSpec\n"
+        "A = CamSpec.outer_d\n"
+    ))
+    closed_consumer = _write(tmp_path, "closed.py", (
+        "from spec import CamSpec\n"
+        "B = CamSpec.outer_d\n"
+    ))
+    # Only the open file gets an override; closed stays disk-based.
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+        source_overrides={open_consumer: (
+            "from spec import CamSpec\n"
+            "\n"
+            "A = CamSpec.outer_d\n"
+        )},
+    )
+    assert out is not None
+    # Open file: override shifted the reference to line 2.
+    assert out[open_consumer][0].start_line == 2
+    # Closed file: disk position, line 1.
+    assert out[closed_consumer][0].start_line == 1

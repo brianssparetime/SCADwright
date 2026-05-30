@@ -923,3 +923,39 @@ def test_find_cursor_round_trip_against_forward_map() -> None:
         assert cursor.host_index == 0
         assert cursor.line_index == 0
         assert cursor.splitter_col == expected_splitter_col
+
+
+# =============================================================================
+# byte_col_to_char_col: UTF-8 byte offset -> character index
+# =============================================================================
+
+
+def test_byte_col_to_char_col_ascii_is_identity() -> None:
+    from scadwright.lsp.positions import byte_col_to_char_col
+    line = "x = foo.bar"
+    for i in range(len(line) + 1):
+        assert byte_col_to_char_col(line, i) == i
+
+
+def test_byte_col_to_char_col_after_two_byte_char() -> None:
+    from scadwright.lsp.positions import byte_col_to_char_col
+    # "é" is 1 char, 2 bytes. The char "x" after it is char index 1,
+    # byte index 2.
+    line = "éx"
+    assert byte_col_to_char_col(line, 0) == 0
+    assert byte_col_to_char_col(line, 2) == 1  # byte 2 -> char 1
+    assert byte_col_to_char_col(line, 3) == 2  # end
+
+
+def test_byte_col_to_char_col_after_three_byte_char() -> None:
+    from scadwright.lsp.positions import byte_col_to_char_col
+    # CJK glyph is 1 char, 3 bytes.
+    line = "部x"
+    assert byte_col_to_char_col(line, 3) == 1  # byte 3 -> char 1 (the x)
+
+
+def test_byte_col_to_char_col_clamps() -> None:
+    from scadwright.lsp.positions import byte_col_to_char_col
+    line = "abc"
+    assert byte_col_to_char_col(line, -5) == 0
+    assert byte_col_to_char_col(line, 999) == 3

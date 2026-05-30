@@ -37,6 +37,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 from urllib.parse import unquote, urlparse
 
 from lsprotocol import types as lsp
@@ -74,17 +76,18 @@ from scadwright.lsp.positions import CursorInBlock, find_cursor_in_block
 from scadwright.lsp.python_attribute_cursor import (
     PythonAttributeCursor,
     find_python_attribute_at_cursor,
+    find_python_class_at_cursor,
 )
 from scadwright.lsp.rename import (
     TextEdit as ScTextEdit,
     build_workspace_rename_edits,
 )
-from scadwright.project_index.registry import build_class_registry
-from scadwright.project_index.walk import walk_project
 from scadwright.lsp.symbols import (
     DocumentSymbol as ScDocumentSymbol,
     build_document_symbols,
 )
+from scadwright.project_index.registry import build_class_registry
+from scadwright.project_index.walk import analyze_source, walk_project
 
 
 _SERVER_NAME = "scadwright-ls"
@@ -361,6 +364,108 @@ def _locate_cursor(
 
 
 @dataclass(frozen=True)
+class _CursorProjectContext:
+    """The project state needed to resolve a Python cursor.
+
+    Built once per request from the editor's live buffers, then
+    reused by the attribute and class finders so a single
+    definition request walks the project only once.
+    """
+    registry: object
+    files_by_path: dict
+    cursor_file_info: object
+    overrides: dict
+    file_line: int
+    file_col: int
+    project_root: Path
+
+
+def _build_cursor_context(
+    uri: str | None,
+    project_root: Path | None,
+    source: str,
+    file_line: int,
+    file_col: int,
+    source_overrides: Mapping[Path, str],
+) -> _CursorProjectContext | None:
+    """Walk the project against live editor buffers and return the
+    state the cursor finders need, or ``None`` when resolution
+    can't proceed (no workspace folder, non-file URI).
+
+    ``source`` is the cursor file's editor text; ``source_overrides``
+    carries every other open buffer. Both feed the walk, so import
+    resolution and the cursor AST run against live content, not the
+    stale disk copy.
+
+    Walks the project on every call. The cost is acceptable because
+    this only fires when the equations-cursor pipeline returns
+    ``None`` — hovers and definitions inside equations blocks stay
+    fast.
+    """
+    if uri is None or project_root is None:
+        return None
+    file_path = _uri_to_path(uri)
+    if file_path is None:
+        return None
+
+    # The cursor file's editor text is the authority; merge it over
+    # the open-buffer map so the walk and registry see exactly the
+    # content the editor's cursor coordinates index.
+    overrides = dict(source_overrides)
+    overrides[file_path] = source
+
+    files = walk_project(project_root, source_overrides=overrides)
+    files_by_path = {f.path: f for f in files}
+    cursor_file_info = files_by_path.get(file_path)
+    if cursor_file_info is None:
+        # The cursor file isn't under the project root; analyze it
+        # standalone so resolution still sees its own imports.
+        cursor_file_info = analyze_source(file_path, source)
+        files.append(cursor_file_info)
+        files_by_path[file_path] = cursor_file_info
+
+    registry = build_class_registry(files, project_root)
+    return _CursorProjectContext(
+        registry=registry,
+        files_by_path=files_by_path,
+        cursor_file_info=cursor_file_info,
+        overrides=overrides,
+        file_line=file_line,
+        file_col=file_col,
+        project_root=project_root,
+    )
+
+
+def _resolve_source_block(
+    target, ctx: _CursorProjectContext,
+) -> EquationsBlock | None:
+    """Locate ``target``'s equations block from live content:
+    prefer the override buffer for the target file, then the
+    already-analyzed ``FileInfo`` source, then disk.
+    """
+    target_path = target.file_path
+    if target_path in ctx.overrides:
+        source_text = ctx.overrides[target_path]
+    else:
+        target_info = ctx.files_by_path.get(target_path)
+        if target_info is not None:
+            source_text = target_info.source
+        else:
+            try:
+                source_text = target_path.read_text()
+            except OSError:
+                return None
+    try:
+        blocks = find_equations_blocks(source_text)
+    except Exception:  # noqa: BLE001 - LSP boundary
+        return None
+    return next(
+        (b for b in blocks if b.class_name == target.name),
+        None,
+    )
+
+
+@dataclass(frozen=True)
 class _PythonAttributeContext:
     """Outcome of resolving a cursor on a direct ``ClassName.attr``
     access in Python code.
@@ -377,8 +482,10 @@ class _PythonAttributeContext:
 def _resolve_python_attribute(
     uri: str | None,
     project_root: Path | None,
+    source: str,
     file_line: int,
     file_col: int,
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> _PythonAttributeContext | None:
     """Walk the project and resolve the cursor to a class+attribute.
 
@@ -386,40 +493,19 @@ def _resolve_python_attribute(
     attribute access, when the LSP doesn't have a workspace folder
     (no project_root), when the URI is non-file, or when the
     source class's equations block can't be located.
-
-    Walks the project on every call. The cost is acceptable because
-    this only fires when the equations-cursor pipeline returns
-    ``None`` — hovers and definitions inside equations blocks stay
-    fast.
     """
-    if uri is None or project_root is None:
-        return None
-    file_path = _uri_to_path(uri)
-    if file_path is None:
-        return None
-    files = walk_project(project_root)
-    registry = build_class_registry(files, project_root)
-    files_by_path = {f.path: f for f in files}
-    file_info = files_by_path.get(file_path)
-    if file_info is None:
+    ctx = _build_cursor_context(
+        uri, project_root, source, file_line, file_col, source_overrides,
+    )
+    if ctx is None:
         return None
     cursor = find_python_attribute_at_cursor(
-        file_info, file_line, file_col, registry, project_root,
+        ctx.cursor_file_info, ctx.file_line, ctx.file_col,
+        ctx.registry, ctx.project_root,
     )
     if cursor is None:
         return None
-    try:
-        source_text = cursor.target.file_path.read_text()
-    except OSError:
-        return None
-    try:
-        blocks = find_equations_blocks(source_text)
-    except Exception:  # noqa: BLE001 - LSP boundary
-        return None
-    source_block = next(
-        (b for b in blocks if b.class_name == cursor.target.name),
-        None,
-    )
+    source_block = _resolve_source_block(cursor.target, ctx)
     if source_block is None:
         return None
     return _PythonAttributeContext(
@@ -465,6 +551,7 @@ def _hover_for(
     file_col: int,
     uri: str | None = None,
     project_root: Path | None = None,
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> lsp.Hover | None:
     """Compute the LSP hover response for the cursor at
     ``(file_line, file_col)`` in ``source``.
@@ -501,7 +588,9 @@ def _hover_for(
             return None
         return _to_lsp_hover(content)
 
-    ctx = _resolve_python_attribute(uri, project_root, file_line, file_col)
+    ctx = _resolve_python_attribute(
+        uri, project_root, source, file_line, file_col, source_overrides,
+    )
     if ctx is None:
         return None
     content = build_python_attribute_hover(ctx.cursor.attr_name, ctx.source_block)
@@ -516,15 +605,20 @@ def _definition_for(
     file_col: int,
     uri: str,
     project_root: Path | None = None,
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> lsp.Location | None:
     """Compute the LSP definition location for the cursor at
     ``(file_line, file_col)`` in ``source``.
 
-    First tries equations-block resolution. Falls through to
-    direct class-attribute access in Python code, jumping to the
-    line in the source class's equations block where the attribute
-    is declared. The fall-through requires ``project_root``;
-    without it the handler stays equations-only.
+    First tries equations-block resolution. Then falls through to
+    Python code outside any equations block: a cursor on a
+    ``SourceClass.attr`` reference jumps to the equation line where
+    the attribute is declared, and a cursor on a project class name
+    jumps to that class's definition. The fall-through requires
+    ``project_root``; without it the handler stays equations-only.
+
+    The two Python-code paths share one project walk: the context
+    is built once and both finders consult it.
     """
     located = _locate_cursor(source, file_line, file_col)
     if located is not None:
@@ -545,16 +639,54 @@ def _definition_for(
             return None
         return _to_lsp_location(sc_loc, uri)
 
-    ctx = _resolve_python_attribute(uri, project_root, file_line, file_col)
+    ctx = _build_cursor_context(
+        uri, project_root, source, file_line, file_col, source_overrides,
+    )
     if ctx is None:
         return None
-    sc_loc = build_definition_location(
-        ctx.cursor.attr_name, ContextKind.EXPRESSION, ctx.source_block,
+
+    # Cursor on an attribute token: jump to its equation line.
+    attr_cursor = find_python_attribute_at_cursor(
+        ctx.cursor_file_info, ctx.file_line, ctx.file_col,
+        ctx.registry, ctx.project_root,
     )
-    if sc_loc is None:
-        return None
-    source_uri = _path_to_uri(ctx.cursor.target.file_path)
-    return _to_lsp_location(sc_loc, source_uri)
+    if attr_cursor is not None:
+        block = _resolve_source_block(attr_cursor.target, ctx)
+        if block is None:
+            return None
+        sc_loc = build_definition_location(
+            attr_cursor.attr_name, ContextKind.EXPRESSION, block,
+        )
+        if sc_loc is None:
+            return None
+        return _to_lsp_location(
+            sc_loc, _path_to_uri(attr_cursor.target.file_path),
+        )
+
+    # Cursor on a class name: jump to the class definition.
+    class_cursor = find_python_class_at_cursor(
+        ctx.cursor_file_info, ctx.file_line, ctx.file_col,
+        ctx.registry, ctx.project_root,
+    )
+    if class_cursor is not None:
+        return _class_definition_location(class_cursor.target)
+    return None
+
+
+def _class_definition_location(target) -> lsp.Location:
+    """Build a :class:`lsp.Location` pointing at ``target``'s class
+    statement. The range covers ``class <Name>`` on the definition
+    line so the editor scrolls to and highlights the declaration.
+    """
+    node = target.ast_node
+    line = (node.lineno or 1) - 1
+    col = node.col_offset
+    end_col = col + len("class ") + len(target.name)
+    sc_loc = ScDefinitionLocation(
+        start_line=line, start_col=col,
+        end_line=line, end_col=end_col,
+    )
+    return _to_lsp_location(sc_loc, _path_to_uri(target.file_path))
 
 
 def _document_symbols_for(source: str) -> list[lsp.DocumentSymbol]:
@@ -577,6 +709,7 @@ def _rename_for(
     new_name: str,
     uri: str,
     project_root: Path | None = None,
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> lsp.WorkspaceEdit | None:
     """Compute the LSP WorkspaceEdit for a rename request.
 
@@ -600,16 +733,25 @@ def _rename_for(
     the cursor to the source class first, then routes through the
     same workspace-rename machinery.
     """
+    file_path = _uri_to_path(uri)
+    if file_path is None:
+        return None
+
+    # The cursor file's editor text is the authority over its disk
+    # copy; merge it into the open-buffer map so the cross-file walk
+    # computes edits against the same content the editor will apply
+    # them to.
+    overrides = dict(source_overrides)
+    overrides[file_path] = source
+
     located = _locate_cursor(source, file_line, file_col)
     if located is not None:
         word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
         if word is None:
             return None
-        file_path = _uri_to_path(uri)
-        if file_path is None:
-            return None
         edits_by_path = build_workspace_rename_edits(
             located.block, file_path, word, new_name, project_root,
+            source_overrides=overrides,
         )
         if edits_by_path is None:
             return None
@@ -619,7 +761,9 @@ def _rename_for(
         }
         return _to_lsp_workspace_edit(edits_by_uri)
 
-    ctx = _resolve_python_attribute(uri, project_root, file_line, file_col)
+    ctx = _resolve_python_attribute(
+        uri, project_root, source, file_line, file_col, source_overrides,
+    )
     if ctx is None:
         return None
     edits_by_path = build_workspace_rename_edits(
@@ -628,6 +772,7 @@ def _rename_for(
         ctx.cursor.attr_name,
         new_name,
         project_root,
+        source_overrides=overrides,
     )
     if edits_by_path is None:
         return None
@@ -690,6 +835,25 @@ def _workspace_root_for(
             best = folder_path
             best_len = length
     return best
+
+
+def _open_doc_overrides(ls: LanguageServer) -> dict[Path, str]:
+    """Snapshot every open editor document as a path → live-text map.
+
+    pygls' ``workspace.text_documents`` holds the editor's current
+    buffer for each open file, including unsaved edits. Cross-file
+    analysis consults this map so renames and lookups run against
+    the same content the editor will apply edits to. Non-``file://``
+    documents (untitled buffers) have no path and are skipped.
+    """
+    out: dict[Path, str] = {}
+    documents = getattr(ls.workspace, "text_documents", None) or {}
+    for doc_uri, document in documents.items():
+        path = _uri_to_path(doc_uri)
+        if path is None:
+            continue
+        out[path] = document.source
+    return out
 
 
 def build_server() -> LanguageServer:
@@ -772,6 +936,7 @@ def build_server() -> LanguageServer:
             params.position.character,
             uri=uri,
             project_root=_workspace_root_for(ls, uri),
+            source_overrides=_open_doc_overrides(ls),
         )
 
     @server.feature(lsp.TEXT_DOCUMENT_DEFINITION)
@@ -788,6 +953,7 @@ def build_server() -> LanguageServer:
             params.position.character,
             uri,
             project_root=_workspace_root_for(ls, uri),
+            source_overrides=_open_doc_overrides(ls),
         )
 
     @server.feature(lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
@@ -815,6 +981,7 @@ def build_server() -> LanguageServer:
             params.new_name,
             uri,
             project_root=_workspace_root_for(ls, uri),
+            source_overrides=_open_doc_overrides(ls),
         )
 
     return server

@@ -34,6 +34,8 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 from scadwright.component.equations import (
     LogicalLine,
@@ -55,7 +57,10 @@ from scadwright.lsp.analyze import (
     EquationsHostString,
     auto_declared_origins_in_block,
 )
-from scadwright.lsp.positions import map_cleaned_col_to_file
+from scadwright.lsp.positions import (
+    byte_col_to_char_col,
+    map_cleaned_col_to_file,
+)
 from scadwright.project_index.analyze import _block_from_classdef
 from scadwright.project_index.extract import (
     extract_params,
@@ -374,6 +379,8 @@ def build_workspace_rename_edits(
     target_name: str,
     new_name: str,
     project_root: Path | None,
+    *,
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> dict[Path, list[TextEdit]] | None:
     """Compute per-file TextEdits for a rename across the project.
 
@@ -387,6 +394,12 @@ def build_workspace_rename_edits(
     ``project_root=None`` degrades to same-file behavior — the
     LSP uses this when the editor hasn't supplied a workspace
     folder for the document being edited.
+
+    ``source_overrides`` maps file paths to the editor's live
+    buffer text. Cross-file edits are computed against these
+    buffers for any open file, so a rename lands on the exact
+    positions the editor will apply it to. Closed files (absent
+    from the map) are read from disk. See :func:`walk_project`.
 
     Returns ``None`` when same-file rename is unsafe (target not
     renameable, new name invalid, parser failure). Returns a dict
@@ -405,6 +418,7 @@ def build_workspace_rename_edits(
         old_attr_name=target_name,
         new_attr_name=new_name,
         project_root=project_root,
+        source_overrides=source_overrides,
     )
     for path, edits in cross.items():
         out.setdefault(path, []).extend(edits)
@@ -417,6 +431,8 @@ def build_cross_file_attr_rename_edits(
     old_attr_name: str,
     new_attr_name: str,
     project_root: Path,
+    *,
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> dict[Path, list[TextEdit]]:
     """Find references to ``<source_class_name>.<old_attr_name>``
     in other project files and emit TextEdits for each.
@@ -434,10 +450,13 @@ def build_cross_file_attr_rename_edits(
     silently; the caller's same-file pass already covered the user-
     facing error path.
 
+    ``source_overrides`` routes open editor buffers into the walk
+    so edits land on buffer positions rather than stale disk ones.
+
     Returns a (possibly empty) dict of path → edits, with empty
     edit lists pruned. Order within each list reflects source order.
     """
-    files = walk_project(project_root)
+    files = walk_project(project_root, source_overrides=source_overrides)
     registry = build_class_registry(files, project_root)
     files_by_path = {f.path: f for f in files}
 
@@ -484,7 +503,7 @@ def build_cross_file_attr_rename_edits(
             old_attr_name, new_attr_name,
         ))
         param_edits.extend(_cross_file_method_edits(
-            cls, matching_param_names,
+            cls, file_info, matching_param_names,
             old_attr_name, new_attr_name,
         ))
         if param_edits:
@@ -569,6 +588,7 @@ def _cross_file_equation_edits(
 
 def _cross_file_method_edits(
     cls,
+    file_info,
     matching_param_names: frozenset[str],
     old_attr_name: str,
     new_attr_name: str,
@@ -580,10 +600,13 @@ def _cross_file_method_edits(
     into every method body — ``build``, helper methods called from
     ``build``, properties, anything else on the class. Method-body
     AST nodes come from ``ast.parse(file_source)``, so their
-    ``lineno`` / ``col_offset`` values are already file-relative;
-    no colmap arithmetic is needed. Lines are 1-based in the AST
-    and 0-based in LSP; columns are 0-based in both.
+    ``lineno`` / ``col_offset`` values are already file-relative.
+    ast columns are UTF-8 byte offsets; they're converted to
+    character indices against ``file_info``'s source lines so edits
+    land correctly on non-ASCII lines. Lines are 1-based in the AST
+    and 0-based in LSP.
     """
+    source_lines = file_info.source.splitlines()
     out: list[TextEdit] = []
     for sub in ast.walk(cls.ast_node):
         if not isinstance(sub, ast.Attribute):
@@ -602,9 +625,15 @@ def _cross_file_method_edits(
         # The attr part starts right after outer_value's end + 1
         # (the dot before the attr name).
         attr_start_line = (sub.lineno or 1) - 1
-        attr_start_col = (outer_value.end_col_offset or 0) + 1
         attr_end_line = (sub.end_lineno or sub.lineno) - 1
-        attr_end_col = sub.end_col_offset or attr_start_col
+        attr_start_col = byte_col_to_char_col(
+            _line_at(source_lines, attr_start_line),
+            (outer_value.end_col_offset or 0) + 1,
+        )
+        attr_end_col = byte_col_to_char_col(
+            _line_at(source_lines, attr_end_line),
+            sub.end_col_offset if sub.end_col_offset is not None else 0,
+        )
         out.append(TextEdit(
             start_line=attr_start_line,
             start_col=attr_start_col,
@@ -649,10 +678,13 @@ def _direct_class_attr_edits(
     ending in the source class.
 
     AST positions come from ``ast.parse(file_source)`` and are
-    file-relative, so no colmap arithmetic is needed.
+    file-relative. ast columns are UTF-8 byte offsets; they're
+    converted to character indices against ``file_info``'s source
+    lines so edits land correctly on non-ASCII lines.
     """
     if scope_node is None:
         return []
+    source_lines = file_info.source.splitlines()
     out: list[TextEdit] = []
     for sub in ast.walk(scope_node):
         if not isinstance(sub, ast.Attribute):
@@ -674,9 +706,15 @@ def _direct_class_attr_edits(
         # The attr part starts right after the base's end + 1
         # (the dot before the attr name).
         attr_start_line = (sub.lineno or 1) - 1
-        attr_start_col = (sub.value.end_col_offset or 0) + 1
         attr_end_line = (sub.end_lineno or sub.lineno) - 1
-        attr_end_col = sub.end_col_offset or attr_start_col
+        attr_start_col = byte_col_to_char_col(
+            _line_at(source_lines, attr_start_line),
+            (sub.value.end_col_offset or 0) + 1,
+        )
+        attr_end_col = byte_col_to_char_col(
+            _line_at(source_lines, attr_end_line),
+            sub.end_col_offset if sub.end_col_offset is not None else 0,
+        )
         out.append(TextEdit(
             start_line=attr_start_line,
             start_col=attr_start_col,
@@ -685,6 +723,13 @@ def _direct_class_attr_edits(
             new_text=new_attr_name,
         ))
     return out
+
+
+def _line_at(source_lines: list[str], index: int) -> str:
+    """Return ``source_lines[index]`` or ``""`` when out of range."""
+    if 0 <= index < len(source_lines):
+        return source_lines[index]
+    return ""
 
 
 def _value_chain_to_dotted_name(node: ast.AST) -> str | None:

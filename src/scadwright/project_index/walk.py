@@ -28,7 +28,8 @@ import ast
 import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from types import MappingProxyType
+from typing import Iterable, Iterator, Mapping
 
 
 _SKIP_DIRS: frozenset[str] = frozenset({
@@ -111,6 +112,7 @@ def walk_project(
     path: str | Path,
     *,
     exclude: Iterable[str] = (),
+    source_overrides: Mapping[Path, str] = MappingProxyType({}),
 ) -> list[FileInfo]:
     """Discover and analyze every Python file under ``path``.
 
@@ -128,6 +130,13 @@ def walk_project(
     ``node_modules``, dotted directories) always applies and isn't
     affected by ``exclude``.
 
+    ``source_overrides`` maps a file path to text the walker should
+    analyze in place of that file's on-disk contents. The LSP
+    supplies the editor's live buffers here so that analysis runs
+    against unsaved edits, not the stale disk copy. Overrides apply
+    only to files the walk already discovers on disk; a buffer for
+    a file that doesn't exist yet on disk isn't injected.
+
     Output is sorted by path so consumers (the renderer in
     particular) produce deterministic output.
     """
@@ -136,10 +145,24 @@ def walk_project(
     if p.is_file():
         if p.suffix != ".py":
             return []
-        return [_analyze_file(p)]
+        return [_analyze_one(p, source_overrides)]
     if not p.is_dir():
         return []
-    return [_analyze_file(f) for f in _iter_py_files(p, patterns)]
+    return [
+        _analyze_one(f, source_overrides)
+        for f in _iter_py_files(p, patterns)
+    ]
+
+
+def _analyze_one(
+    path: Path, source_overrides: Mapping[Path, str],
+) -> FileInfo:
+    """Analyze ``path`` from its override text when present, else
+    from disk."""
+    override = source_overrides.get(path)
+    if override is not None:
+        return analyze_source(path, override)
+    return _analyze_file(path)
 
 
 def _iter_py_files(root: Path, exclude: tuple[str, ...]) -> Iterator[Path]:
@@ -201,11 +224,56 @@ def _matches_exclude(
     return False
 
 
-def _analyze_file(path: Path) -> FileInfo:
-    """Read and parse one file, capturing imports and class
-    declarations. Returns a ``FileInfo`` with ``parse_error`` set
-    when the file isn't parseable.
+# Disk-read memoization. The LSP rebuilds the project index on every
+# hover / definition / rename that falls outside an equations block;
+# without this, each request re-reads and re-parses every project
+# file. Entries are keyed by file identity plus a version stamp
+# ``(mtime_ns, size)``, so a file edited on disk invalidates its own
+# entry the next time it's read. Editor buffers never enter this
+# cache: ``_analyze_one`` routes open files through ``analyze_source``
+# instead, so the cache only ever holds on-disk content.
+#
+# The cache is process-global. It's pure memoization — the same
+# ``(path, mtime_ns, size)`` always maps to the same parse result —
+# so it changes nothing observable except speed, with one exception
+# handled by the version stamp: a file rewritten between reads. A
+# generous cap bounds memory; eviction is FIFO and effectively never
+# fires for a single project, whose file count is far below it.
+_CACHE_MAX = 4096
+_FILE_CACHE: dict[Path, tuple[int, int, FileInfo]] = {}
+
+
+def clear_walk_cache() -> None:
+    """Drop every memoized disk-read result.
+
+    Mostly for tests; production code relies on the ``(mtime_ns,
+    size)`` version stamp to invalidate stale entries automatically.
     """
+    _FILE_CACHE.clear()
+
+
+def _analyze_file(path: Path) -> FileInfo:
+    """Read and parse one file from disk, capturing imports and
+    class declarations. Returns a ``FileInfo`` with ``parse_error``
+    set when the file can't be read or parsed.
+
+    Memoized on ``(mtime_ns, size)``: an unchanged file is parsed
+    once and served from cache on later reads; a file changed on
+    disk is re-read because its version stamp no longer matches.
+    """
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        return FileInfo(
+            path=path, source="",
+            imports=(), classes=(),
+            parse_error=f"could not read file: {exc}",
+        )
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    cached = _FILE_CACHE.get(path)
+    if cached is not None and cached[0] == stamp[0] and cached[1] == stamp[1]:
+        return cached[2]
+
     try:
         source = path.read_text()
     except OSError as exc:
@@ -214,6 +282,25 @@ def _analyze_file(path: Path) -> FileInfo:
             imports=(), classes=(),
             parse_error=f"could not read file: {exc}",
         )
+    info = analyze_source(path, source)
+    if len(_FILE_CACHE) >= _CACHE_MAX:
+        # FIFO eviction: drop the oldest inserted entry.
+        _FILE_CACHE.pop(next(iter(_FILE_CACHE)), None)
+    _FILE_CACHE[path] = (stamp[0], stamp[1], info)
+    return info
+
+
+def analyze_source(path: Path, source: str) -> FileInfo:
+    """Parse ``source`` as the contents of ``path``, capturing
+    imports and class declarations.
+
+    This is the in-memory counterpart to the disk-reading
+    :func:`_analyze_file`. The LSP uses it to analyze the editor's
+    current (possibly unsaved) document text rather than the stale
+    on-disk copy, so cursor positions and the parsed AST stay in
+    sync. Returns a ``FileInfo`` with ``parse_error`` set when the
+    source doesn't parse.
+    """
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
