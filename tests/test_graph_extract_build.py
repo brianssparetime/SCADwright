@@ -258,3 +258,49 @@ def test_async_build_method_walked(tmp_path: Path) -> None:
     ))
     [r] = _build_reads(tmp_path, "Cam")
     assert r.attr == "outer_d"
+
+
+# =============================================================================
+# Helper-method scope (self.x.y outside the build method)
+# =============================================================================
+
+
+def test_self_attr_attr_read_inside_helper_method(tmp_path: Path) -> None:
+    """``self.spec.outer_d`` inside a helper method (not ``build``)
+    should still surface as an AttributeRead — the extractor scopes
+    to any method on the class.
+    """
+    _write(tmp_path, "widget.py", (
+        "from scadwright import Component, Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    pass\n"
+        "class Cam(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        "    def build(self):\n"
+        "        return self._cap()\n"
+        "    def _cap(self):\n"
+        "        return self.spec.outer_d\n"
+    ))
+    [r] = _build_reads(tmp_path, "Cam")
+    assert r.base_name == "spec"
+    assert r.attr == "outer_d"
+    assert r.target is not None
+    assert r.target.name == "CamSpec"
+
+
+def test_self_attr_attr_read_inside_property(tmp_path: Path) -> None:
+    """``self.spec.outer_d`` inside a property body — should surface."""
+    _write(tmp_path, "widget.py", (
+        "from scadwright import Component, Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    pass\n"
+        "class Cam(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        "    @property\n"
+        "    def thk(self):\n"
+        "        return self.spec.outer_d\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    [r] = _build_reads(tmp_path, "Cam")
+    assert r.attr == "outer_d"

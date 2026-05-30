@@ -12,6 +12,7 @@ Node shapes per category, mapped to Graphviz built-ins:
 - Component → ``box`` with rounded style.
 - Design → ``cylinder``.
 - Variant → ``hexagon``.
+- Transform → ``parallelogram``.
 
 Edge labels mirror the Mermaid renderer's labels so the two
 formats produce visually-equivalent graphs from the same model.
@@ -33,6 +34,7 @@ _NODE_ATTRS: dict[str, str] = {
     "component": 'shape=box, style=rounded',
     "design": 'shape=cylinder',
     "variant": 'shape=hexagon',
+    "transform": 'shape=parallelogram',
 }
 
 
@@ -88,6 +90,8 @@ def _edge_label(edge: Edge) -> str | None:
         return "variant"
     if edge.kind == "variant_builds":
         return "builds"
+    if edge.kind == "uses_transform":
+        return "uses"
     return None
 
 

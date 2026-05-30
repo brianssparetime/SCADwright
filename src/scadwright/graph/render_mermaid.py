@@ -11,6 +11,8 @@ Node shapes per category:
 - Component → rounded box (``(Label)``).
 - Design → cylinder (``[(Label)]``).
 - Variant → hexagon (``{{Label}}``), one per ``@variant`` method.
+- Transform → parallelogram (``[/Label/]``), one per project-
+  registered transform; label is the registered name.
 
 Edge labels per kind:
 
@@ -24,6 +26,8 @@ Edge labels per kind:
   variant sub-nodes.
 - ``variant_builds`` → ``"builds"`` linking a Variant to a
   Component it produces.
+- ``uses_transform`` → ``"uses"`` linking a Component, transform,
+  or variant to a project-registered transform it invokes.
 
 Mermaid identifiers can't contain ``.``, so the dotted node ids
 from :class:`Graph` are normalized: every non-alphanumeric is
@@ -44,6 +48,7 @@ _NODE_SHAPES: dict[str, tuple[str, str]] = {
     "component": ("(", ")"),
     "design": ("[(", ")]"),
     "variant": ("{{", "}}"),
+    "transform": ("[/", "/]"),
 }
 
 
@@ -115,6 +120,8 @@ def _edge_line(edge: Edge, id_map: dict[str, str]) -> str:
         return f'  {src} --"variant"--> {dst}'
     if edge.kind == "variant_builds":
         return f'  {src} --"builds"--> {dst}'
+    if edge.kind == "uses_transform":
+        return f'  {src} --"uses"--> {dst}'
     return f"  {src} --> {dst}"
 
 

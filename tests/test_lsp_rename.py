@@ -539,3 +539,401 @@ def test_workspace_rename_param_local_name_is_same_file_only(
     # whole point of cross-file rename.
     assert out is not None
     assert holder_file in out
+
+
+# =============================================================================
+# Direct class-attribute references (the s2-evolving pattern)
+# =============================================================================
+
+
+def test_workspace_rename_picks_up_direct_class_attr_in_class_scope(
+    tmp_path,
+) -> None:
+    """Renaming an attribute on the source class updates direct
+    ``<SourceClass>.<attr>`` references at consumer-class scope."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60.5\n"
+        "    '''\n"
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    barrel_d = CamSpec.outer_d\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert holder_file in out
+    holder_edits = out[holder_file]
+    assert len(holder_edits) == 1
+    edit = holder_edits[0]
+    assert edit.new_text == "outer_diameter"
+    line = holder_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_picks_up_direct_class_attr_in_method_body(
+    tmp_path,
+) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60.5\n"
+        "    '''\n"
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    def build(self):\n"
+        "        return CamSpec.outer_d * 2\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert holder_file in out
+    holder_edits = out[holder_file]
+    assert len(holder_edits) == 1
+
+
+def test_workspace_rename_handles_aliased_import(tmp_path) -> None:
+    """``from spec import CamSpec as C`` then ``C.outer_d`` —
+    rename should follow through the alias."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60.5\n"
+        "    '''\n"
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component\n"
+        "from spec import CamSpec as C\n"
+        "class Holder(Component):\n"
+        "    barrel_d = C.outer_d\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert holder_file in out
+    edit = out[holder_file][0]
+    line = holder_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_handles_chained_access_after_renamed_attr(
+    tmp_path,
+) -> None:
+    """``CamSpec.outer_d.bit_length()`` — rename ``outer_d`` but
+    leave ``bit_length`` alone (it isn't on the source class)."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    bits = CamSpec.outer_d.bit_length()\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    holder_edits = out.get(holder_file, [])
+    # Exactly one edit; it covers `outer_d`, not `bit_length`.
+    assert len(holder_edits) == 1
+    edit = holder_edits[0]
+    line = holder_file.read_text().splitlines[edit.start_line] if False else holder_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_does_not_touch_same_attr_on_different_class(
+    tmp_path,
+) -> None:
+    """A reference to ``OtherSpec.outer_d`` is left alone when
+    renaming ``outer_d`` on ``CamSpec``."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+        "class OtherSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 99\n"
+        "    '''\n"
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component\n"
+        "from spec import OtherSpec\n"
+        "class Holder(Component):\n"
+        "    d = OtherSpec.outer_d\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    spec_file = tmp_path / "spec.py"
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert holder_file not in out or out[holder_file] == []
+
+
+def test_workspace_rename_other_class_in_same_file(tmp_path) -> None:
+    """A class in the same file as the source class that
+    references ``SourceClass.attr`` gets the rename through the
+    cross-file pass (which walks every class but the source)."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    f = _write(tmp_path, "both.py", (
+        "from scadwright import Spec, Component\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+        "class Holder(Component):\n"
+        "    d = CamSpec.outer_d\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    block = _block_in(f, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, f, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    # Edits in the same file: source class equation + Holder's reference.
+    file_edits = out[f]
+    # Find the edit that targets `outer_d` after `CamSpec.`.
+    text = f.read_text()
+    found_direct = False
+    for edit in file_edits:
+        line = text.splitlines()[edit.start_line]
+        if line[edit.start_col:edit.end_col] == "outer_d" and "CamSpec." in line:
+            found_direct = True
+            break
+    assert found_direct
+
+
+def test_workspace_rename_combines_direct_and_param_refs(tmp_path) -> None:
+    """A consumer class with BOTH ``CamSpec.outer_d`` (direct) and
+    ``self.spec.outer_d`` (Param-mediated) should get both edits."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    default_d = CamSpec.outer_d\n"
+        "    spec = Param(CamSpec)\n"
+        "    def build(self):\n"
+        "        return self.spec.outer_d\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert holder_file in out
+    # Two edits: direct class-attr at class scope, Param-mediated in build.
+    assert len(out[holder_file]) == 2
+
+
+# =============================================================================
+# Helper-method scope (self.x.y in non-build methods)
+# =============================================================================
+
+
+def test_workspace_rename_follows_self_attr_into_helper_methods(
+    tmp_path,
+) -> None:
+    """A consumer class whose helper method (called from build)
+    uses ``self.spec.outer_d`` should also get the rename."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class CamSpec(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+    ))
+    holder_file = _write(tmp_path, "holder.py", (
+        "from scadwright import Component, Param\n"
+        "from spec import CamSpec\n"
+        "class Holder(Component):\n"
+        "    spec = Param(CamSpec)\n"
+        "    def build(self):\n"
+        "        return self._build_cap()\n"
+        "    def _build_cap(self):\n"
+        "        return self.spec.outer_d\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "ww", tmp_path,
+    )
+    assert out is not None
+    assert holder_file in out
+    # The helper method reference is the only ``outer_d`` site in
+    # holder.py — make sure it's renamed.
+    assert len(out[holder_file]) == 1
+    edit = out[holder_file][0]
+    line = holder_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+    assert "_build_cap" in holder_file.read_text().splitlines()[edit.start_line - 1] \
+        or "self.spec.outer_d" in line
+
+
+# =============================================================================
+# Module-level and function-level references — silent failures fixed
+# by the per-file walker
+# =============================================================================
+
+
+def test_workspace_rename_picks_up_module_level_constant_assignment(
+    tmp_path,
+) -> None:
+    """``MOUNT_OFFSET = SourceClass.attr`` at module scope — the
+    canonical s2-evolving pattern that the per-class walker missed.
+    """
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    consumer_file = _write(tmp_path, "housing.py", (
+        "from scadwright import Component\n"
+        "from spec import CamSpec\n"
+        "MOUNT_OFFSET = CamSpec.outer_d\n"
+        "class Housing(Component):\n"
+        "    def build(self):\n"
+        "        return None\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert consumer_file in out
+    edit = out[consumer_file][0]
+    line = consumer_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+    assert line.startswith("MOUNT_OFFSET")
+
+
+def test_workspace_rename_picks_up_module_level_function_body(
+    tmp_path,
+) -> None:
+    """References inside a module-level function (not a class
+    method) are caught by the per-file walker."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    ))
+    consumer_file = _write(tmp_path, "helpers.py", (
+        "from spec import CamSpec\n"
+        "def get_diameter():\n"
+        "    return CamSpec.outer_d + 1\n"
+    ))
+    block = _block_in(spec_file, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert consumer_file in out
+    edit = out[consumer_file][0]
+    line = consumer_file.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_catches_source_class_self_reference(
+    tmp_path,
+) -> None:
+    """A class with ``foo = SelfClass.bar`` in its body referencing
+    its own attribute via class name — the per-file walker visits
+    the source file too, so the reference gets caught."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    f = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+        "    # Self-reference outside the equations block.\n"
+        "    backup_outer_d = None\n"
+    ))
+    # Edit the file to add the self-reference; can't put SelfClass
+    # ref inside class body when class isn't fully defined yet, so
+    # use a separate assignment after the class.
+    f = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+        "BACKUP = CamSpec.outer_d\n"
+    ))
+    block = _block_in(f, "CamSpec")
+    out = build_workspace_rename_edits(
+        block, f, "outer_d", "outer_diameter", tmp_path,
+    )
+    assert out is not None
+    assert f in out
+    # The module-level BACKUP reference should be renamed in addition
+    # to the equation LHS.
+    text = f.read_text()
+    found_module_level = False
+    for edit in out[f]:
+        line = text.splitlines()[edit.start_line]
+        if "BACKUP" in line and line[edit.start_col:edit.end_col] == "outer_d":
+            found_module_level = True
+            break
+    assert found_module_level

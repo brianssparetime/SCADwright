@@ -1,9 +1,10 @@
 """High-level project-graph builder.
 
 :func:`build_graph` is the top-level entry: walk a project, build
-the class registry, run the per-class extractors, and emit a
-:class:`Graph` of nodes and edges. The CLI subcommand calls this
-once per invocation; renderers consume the result.
+the class and transform registries, run the per-class and
+per-transform extractors, and emit a :class:`Graph` of nodes and
+edges. The CLI subcommand calls this once per invocation;
+renderers consume the result.
 
 The builder skips classes whose category resolves to ``"unknown"``
 — third-party bases, generic-only inheritance, or unresolvable
@@ -13,15 +14,20 @@ the graph focused on the project's scadwright-derived structure.
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 from scadwright.graph.extract import (
     AttributeRead,
     extract_build_attribute_reads,
     extract_build_instantiations,
+    extract_class_attribute_reads,
+    extract_component_instantiations,
     extract_equations_attribute_reads,
     extract_params,
+    extract_transform_uses,
     extract_variants,
 )
 from scadwright.graph.model import Edge, Graph, Node
@@ -31,10 +37,19 @@ from scadwright.project_index.registry import (
     build_class_registry,
     resolve_name_in_file,
 )
+from scadwright.project_index.transforms import (
+    ResolvedTransform,
+    TransformRegistry,
+    build_transform_registry,
+)
 from scadwright.project_index.walk import FileInfo, walk_project
 
 
-def build_graph(project_root: str | Path) -> Graph:
+def build_graph(
+    project_root: str | Path,
+    *,
+    exclude: Iterable[str] = (),
+) -> Graph:
     """Walk a project and produce a :class:`Graph`.
 
     ``project_root`` may be a directory (recursed) or a single
@@ -42,34 +57,68 @@ def build_graph(project_root: str | Path) -> Graph:
     the implicit project root for module-path computation; the
     graph contains only the classes in that file.
 
+    ``exclude`` is a sequence of glob patterns passed through to
+    :func:`scadwright.project_index.walk.walk_project`; matched
+    files don't contribute classes, transforms, or edges to the
+    result. See that function's docstring for pattern semantics.
+
     Returns a graph with sorted nodes and edges so consumers
     (renderers, diff tooling) get deterministic output.
     """
     root = Path(project_root)
     base_root = root if root.is_dir() else root.parent
-    files = walk_project(root)
+    files = walk_project(root, exclude=exclude)
     registry = build_class_registry(files, base_root)
+    transforms = build_transform_registry(files, registry, base_root)
     files_by_path: dict[Path, FileInfo] = {f.path: f for f in files}
 
     nodes: list[Node] = []
     edges: list[Edge] = []
+    emitted_node_ids: set[str] = set()
+
+    def add_node(node: Node) -> None:
+        if node.id in emitted_node_ids:
+            return
+        emitted_node_ids.add(node.id)
+        nodes.append(node)
 
     for cls in registry.classes.values():
         if cls.category == "unknown":
             continue
-        nodes.append(_node_for(cls))
+        # Transform-category classes get their node emitted by the
+        # transform loop below (so the label is the registered name,
+        # not the class name). Edges still emit here — the class is
+        # in class_registry and its body is the scope we walk.
+        if cls.category != "transform":
+            add_node(_node_for(cls))
         file_info = files_by_path.get(cls.file_path)
         if file_info is None:
             continue
         edges.extend(_edges_for_class(
-            cls, file_info, registry, base_root,
+            cls, file_info, registry, transforms, base_root,
         ))
         if cls.category == "design":
             v_nodes, v_edges = _variant_nodes_and_edges(
-                cls, file_info, registry, base_root,
+                cls, file_info, registry, transforms, base_root,
             )
-            nodes.extend(v_nodes)
+            for n in v_nodes:
+                add_node(n)
             edges.extend(v_edges)
+
+    # Transform nodes + outgoing edges for decorator-form transforms.
+    # Subclass-form transforms emit their outgoing edges via the
+    # class loop above; register-call-form transforms have no body
+    # to walk and contribute only the node.
+    for transform in transforms.by_name.values():
+        add_node(_node_for_transform(transform))
+        if transform.kind != "decorator":
+            continue
+        file_info = files_by_path.get(transform.file_path)
+        if file_info is None:
+            continue
+        edges.extend(_edges_for_transform(
+            transform, file_info, registry, transforms, base_root,
+        ))
 
     parse_errors = tuple(sorted(
         (
@@ -78,101 +127,262 @@ def build_graph(project_root: str | Path) -> Graph:
         ),
         key=lambda pair: pair[0],
     ))
+    warnings = tuple(sorted(
+        transforms.warnings,
+        key=lambda pair: (str(pair[0]), pair[1]),
+    ))
     return Graph(
         nodes=tuple(sorted(nodes, key=lambda n: n.id)),
         edges=tuple(sorted(
             edges, key=lambda e: (e.source, e.target, e.kind),
         )),
         parse_errors=parse_errors,
+        warnings=warnings,
+        project_root=base_root,
     )
 
 
 def _node_for(cls: ResolvedClass) -> Node:
     """Build the :class:`Node` for one class. Id combines module
-    path and class name for global uniqueness."""
-    node_id = (
-        f"{cls.module_path}.{cls.name}"
-        if cls.module_path else cls.name
+    path and class name for global uniqueness; file_path and line
+    carry the source location. Transform-category classes are
+    emitted by :func:`_node_for_transform` instead, so the node
+    label can carry the registered name rather than the class
+    name."""
+    node_id = _node_id(cls)
+    return Node(
+        id=node_id,
+        label=cls.name,
+        kind=cls.category,
+        file_path=cls.file_path,
+        line=cls.line + 1,
     )
-    return Node(id=node_id, label=cls.name, kind=cls.category)
+
+
+def _node_for_transform(t: ResolvedTransform) -> Node:
+    """Build the :class:`Node` for one project-defined transform.
+
+    Node id is ``<module>.<identifier>`` for decorator and subclass
+    forms (parallel to class node ids) and a synthesized
+    ``<module>.register_<registered_name>`` for the bare
+    register-call form (which has no identifier of its own).
+    The label is always the registered name — the verb users invoke.
+    """
+    return Node(
+        id=_transform_node_id(t),
+        label=t.registered_name,
+        kind="transform",
+        file_path=t.file_path,
+        line=t.line + 1,
+    )
+
+
+def _transform_node_id(t: ResolvedTransform) -> str:
+    """Canonical node id for a :class:`ResolvedTransform`."""
+    if t.kind == "register_call":
+        identifier = f"register_{t.registered_name}"
+    else:
+        identifier = t.identifier_name
+    return f"{t.module_path}.{identifier}" if t.module_path else identifier
 
 
 def _edges_for_class(
     cls: ResolvedClass,
     file_info: FileInfo,
     registry: ClassRegistry,
+    transforms: TransformRegistry,
     project_root: Path,
 ) -> list[Edge]:
     """Emit every outgoing edge for a single class.
 
     Order: ``inherits`` edges first (one per resolved base), then
-    ``uses_param`` (one per Param whose type resolves to a known
-    Component or Spec), then ``reads_attr`` (one per (source, target)
-    pair, with attribute names from equations and build merged into
-    the label).
+    ``uses_param`` (one per Param whose type resolves to a project
+    Component or Spec), then ``reads_attr`` (merged from equations,
+    ``self.<param>.<attr>`` reads, and direct class-attribute reads
+    like ``SpecName.attr``), then ``contains`` (Component
+    instantiations), then ``uses_transform`` (chained calls into
+    project transforms).
     """
     out: list[Edge] = []
     source_id = _node_id(cls)
 
-    # Inheritance edges.
+    # Inheritance edges. Targets in any project category (Component,
+    # Spec, Design, transform-subclass) get an edge.
     for base_node in cls.ast_node.bases:
         target = _resolve_base_target(
             base_node, file_info, registry, project_root,
         )
         if target is None or target.category == "unknown":
             continue
-        if target.category not in ("component", "spec", "design"):
+        if target.category not in (
+            "component", "spec", "design", "transform",
+        ):
             continue
         out.append(Edge(
             source=source_id,
-            target=_node_id(target),
+            target=_target_node_id(target, transforms),
             kind="inherits",
         ))
 
-    # Param-driven and read-driven edges only fire on Components
-    # and Specs (Designs don't declare Params or equations directly).
-    if cls.category not in ("component", "spec"):
-        return out
+    # Param-driven edges fire only on Components and Specs — Designs
+    # compose Components via class attributes, transforms via free
+    # functions; neither uses Params.
+    params: tuple = ()
+    if cls.category in ("component", "spec"):
+        params = extract_params(cls, file_info, registry, project_root)
+        for p in params:
+            if (
+                p.type_resolves_to is not None
+                and p.type_resolves_to.category in ("component", "spec")
+            ):
+                out.append(Edge(
+                    source=source_id,
+                    target=_target_node_id(p.type_resolves_to, transforms),
+                    kind="uses_param",
+                    via_param=p.name,
+                ))
 
-    params = extract_params(cls, file_info, registry, project_root)
+    # reads_attr edges, merged across equations, self.<param>.<attr>,
+    # and direct ClassName.<attr> reads. The exclude set keeps the
+    # last source from double-emitting reads the first two already
+    # handled. Param-mediated reads have priority for the Component/Spec
+    # case (their AttributeRead carries the Param's resolved target);
+    # bare ``self`` references and own-Param names skip the class-attr
+    # extractor regardless of category.
+    eq_reads = ()
+    build_reads = ()
+    if cls.category in ("component", "spec"):
+        eq_reads = extract_equations_attribute_reads(
+            cls, file_info, params,
+        )
+        build_reads = extract_build_attribute_reads(cls, params)
+    exclude_names = frozenset({"self"} | {p.name for p in params})
+    class_reads = extract_class_attribute_reads(
+        cls.ast_node, file_info, registry, project_root, exclude_names,
+    )
+    out.extend(_collapsed_attr_edges(
+        source_id, eq_reads + build_reads + class_reads, transforms,
+    ))
 
-    # uses_param edges.
-    for p in params:
-        if (
-            p.type_resolves_to is not None
-            and p.type_resolves_to.category in ("component", "spec")
-        ):
-            out.append(Edge(
-                source=source_id,
-                target=_node_id(p.type_resolves_to),
-                kind="uses_param",
-                via_param=p.name,
-            ))
-
-    # reads_attr edges, merged across equations + build paths.
-    eq_reads = extract_equations_attribute_reads(cls, file_info, params)
-    build_reads = extract_build_attribute_reads(cls, params)
-    out.extend(_collapsed_attr_edges(source_id, eq_reads + build_reads))
-
-    # contains edges from OtherComponent(...) instantiation in
-    # build(). Components only — Specs don't have build() methods.
+    # contains edges from OtherComponent(...) instantiation. Components
+    # use the build()-method-aware extractor (also picks up class-level
+    # composition shapes); transforms walk the whole class body.
     if cls.category == "component":
         for ref in extract_build_instantiations(
             cls, file_info, registry, project_root,
         ):
             out.append(Edge(
                 source=source_id,
-                target=_node_id(ref.target),
+                target=_target_node_id(ref.target, transforms),
+                kind="contains",
+            ))
+    elif cls.category == "transform":
+        for target in extract_component_instantiations(
+            cls.ast_node, file_info, registry, project_root,
+        ):
+            out.append(Edge(
+                source=source_id,
+                target=_target_node_id(target, transforms),
                 kind="contains",
             ))
 
+    # uses_transform edges from chained `.X(...)` calls where X is a
+    # project-registered transform. All class categories participate —
+    # Components, Specs (rare), Designs (uncommon at class scope),
+    # and subclass-form transforms calling other transforms.
+    for target in extract_transform_uses(cls.ast_node, transforms):
+        out.append(Edge(
+            source=source_id,
+            target=_transform_node_id(target),
+            kind="uses_transform",
+        ))
+
     return out
+
+
+def _edges_for_transform(
+    t: ResolvedTransform,
+    file_info: FileInfo,
+    registry: ClassRegistry,
+    transforms: TransformRegistry,
+    project_root: Path,
+) -> list[Edge]:
+    """Emit outgoing edges for a decorator-form transform.
+
+    Subclass-form transforms get their edges through
+    :func:`_edges_for_class` since they have a class entry in the
+    class registry; register-call-form transforms have no body to
+    walk and emit no outgoing edges. This helper handles the
+    decorator-form free-function body.
+
+    Edge kinds: ``reads_attr`` (project-class attribute access in
+    the function body), ``contains`` (Component instantiations),
+    ``uses_transform`` (chained calls into other project transforms).
+    """
+    out: list[Edge] = []
+    source_id = _transform_node_id(t)
+    scope = t.ast_node  # the FunctionDef
+
+    class_reads = extract_class_attribute_reads(
+        scope, file_info, registry, project_root,
+    )
+    out.extend(_collapsed_attr_edges(source_id, class_reads, transforms))
+
+    for target in extract_component_instantiations(
+        scope, file_info, registry, project_root,
+    ):
+        out.append(Edge(
+            source=source_id,
+            target=_target_node_id(target, transforms),
+            kind="contains",
+        ))
+
+    for target in extract_transform_uses(scope, transforms):
+        if _transform_node_id(target) == source_id:
+            # Don't emit self-loops from a transform that recursively
+            # invokes itself (rare, but the chained-call walk would
+            # otherwise produce a noisy self-edge).
+            continue
+        out.append(Edge(
+            source=source_id,
+            target=_transform_node_id(target),
+            kind="uses_transform",
+        ))
+
+    return out
+
+
+def _target_node_id(
+    target: ResolvedClass,
+    transforms: TransformRegistry,
+) -> str:
+    """Compute the node id for a target ResolvedClass, taking
+    transform-category classes through the transform-node-id path
+    so subclass-form transforms get the same id whether referenced
+    via inherits, contains, or the transform registry.
+    """
+    if target.category != "transform":
+        return _node_id(target)
+    # Look up the corresponding transform entry; subclass-form
+    # transforms register under their class name as identifier.
+    for t in transforms.by_name.values():
+        if (
+            t.kind == "subclass"
+            and t.file_path == target.file_path
+            and t.identifier_name == target.name
+        ):
+            return _transform_node_id(t)
+    # A transform-category class without a discoverable registration
+    # (no string-literal ``name``) still gets a node id parallel to
+    # other classes; the transform registry just won't have it.
+    return _node_id(target)
 
 
 def _variant_nodes_and_edges(
     cls: ResolvedClass,
     file_info: FileInfo,
     registry: ClassRegistry,
+    transforms: TransformRegistry,
     project_root: Path,
 ) -> tuple[list[Node], list[Edge]]:
     """Build the Variant sub-nodes and their edges for one Design.
@@ -181,7 +391,15 @@ def _variant_nodes_and_edges(
     Variant node (id ``<design_id>.<method>``, kind ``"variant"``)
     and a ``has_variant`` edge linking the Design to the Variant.
     For each Component the variant builds, emit one
-    ``variant_builds`` edge from the Variant to the Component.
+    ``variant_builds`` edge from the Variant to the Component;
+    direct ``ProjectClass.attr`` reads in the variant body emit
+    ``reads_attr`` edges; chained calls into project transforms
+    emit ``uses_transform`` edges.
+
+    Variants are full participants in the graph — when a variant
+    body reads a Spec's class attribute or calls a transform, that
+    dependency surfaces from the variant sub-node rather than
+    being rolled up into the parent Design.
 
     Designs with no variants produce empty lists; the surrounding
     builder handles that gracefully.
@@ -191,8 +409,11 @@ def _variant_nodes_and_edges(
     edges: list[Edge] = []
     for v in extract_variants(cls, file_info, registry, project_root):
         variant_id = f"{design_id}.{v.method_name}"
+        method = _find_variant_method(cls.ast_node, v.method_name)
+        variant_line = method.lineno if method is not None else cls.line + 1
         nodes.append(Node(
             id=variant_id, label=v.method_name, kind="variant",
+            file_path=cls.file_path, line=variant_line,
         ))
         edges.append(Edge(
             source=design_id, target=variant_id, kind="has_variant",
@@ -200,15 +421,47 @@ def _variant_nodes_and_edges(
         for target in v.builds:
             edges.append(Edge(
                 source=variant_id,
-                target=_node_id(target),
+                target=_target_node_id(target, transforms),
                 kind="variant_builds",
+            ))
+
+        # Walk the variant method body for reads_attr and uses_transform.
+        if method is None:
+            continue
+        class_reads = extract_class_attribute_reads(
+            method, file_info, registry, project_root,
+            exclude_names=frozenset({"self"}),
+        )
+        edges.extend(
+            _collapsed_attr_edges(variant_id, class_reads, transforms),
+        )
+        for target in extract_transform_uses(method, transforms):
+            edges.append(Edge(
+                source=variant_id,
+                target=_transform_node_id(target),
+                kind="uses_transform",
             ))
     return nodes, edges
 
 
+def _find_variant_method(
+    class_node, method_name: str,
+):
+    """Return the ``FunctionDef`` for a named method on a class, or
+    ``None`` if not present. Used to scope variant-body extraction
+    to the right method.
+    """
+    for stmt in class_node.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if stmt.name == method_name:
+                return stmt
+    return None
+
+
 def _collapsed_attr_edges(
     source_id: str,
-    reads: tuple[AttributeRead, ...],
+    reads: tuple[AttributeRead, ...] | list[AttributeRead],
+    transforms: TransformRegistry,
 ) -> list[Edge]:
     """Collapse multiple ``AttributeRead`` entries with the same
     target into one ``reads_attr`` edge whose ``attrs_read`` is the
@@ -216,13 +469,17 @@ def _collapsed_attr_edges(
 
     Reads with ``target=None`` (primitive Params, unresolvable
     bases) are dropped — they don't correspond to a node in the
-    graph.
+    graph. Self-reads (source and target the same node) drop too:
+    a class reading its own class attributes isn't a cross-class
+    dependency.
     """
     by_target: dict[str, set[str]] = {}
     for read in reads:
         if read.target is None:
             continue
-        target_id = _node_id(read.target)
+        target_id = _target_node_id(read.target, transforms)
+        if target_id == source_id:
+            continue
         by_target.setdefault(target_id, set()).add(read.attr)
     out: list[Edge] = []
     for target_id, attrs in by_target.items():

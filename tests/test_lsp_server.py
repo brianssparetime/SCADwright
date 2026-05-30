@@ -691,3 +691,102 @@ def test_rename_for_outside_block_returns_none() -> None:
     src = "x = 1\n"
     edit = _rename_for(src, 0, 0, "y", "file:///t.py")
     assert edit is None
+
+
+# =============================================================================
+# Direct class-attribute access in Python code (outside equations blocks)
+# =============================================================================
+
+
+def _setup_project(tmp_path) -> tuple[str, str]:
+    """Write a two-file project (spec + consumer) under tmp_path.
+
+    Returns the consumer file's URI (file://) and the consumer
+    source text — both already prepared with a ``CamSpec.outer_d``
+    reference at the start of line 3.
+    """
+    (tmp_path / "spec.py").write_text(
+        "from scadwright import Spec\n"
+        "class CamSpec(Spec):\n"
+        "    equations = '''\n"
+        "        outer_d = 60\n"
+        "    '''\n"
+    )
+    consumer = tmp_path / "housing.py"
+    consumer_text = (
+        "from spec import CamSpec\n"
+        "from scadwright import Component\n"
+        "BORE = CamSpec.outer_d + 1\n"
+        "class Housing(Component):\n"
+        "    def build(self):\n"
+        "        return None\n"
+    )
+    consumer.write_text(consumer_text)
+    return consumer.as_uri(), consumer_text
+
+
+def test_hover_for_direct_class_attribute_in_python_code(tmp_path) -> None:
+    """Cursor on ``CamSpec.outer_d`` at module scope of a consumer
+    file: hover surfaces the attribute's auto-declared origin from
+    the source class's equations block.
+    """
+    from scadwright.lsp.server import _hover_for
+
+    uri, source = _setup_project(tmp_path)
+    # Line 2 (0-based) is "BORE = CamSpec.outer_d + 1"; outer_d starts at col 15.
+    out = _hover_for(
+        source, 2, 17,
+        uri=uri,
+        project_root=tmp_path,
+    )
+    assert out is not None
+    assert "outer_d" in out.contents.value
+
+
+def test_hover_for_direct_class_attribute_no_project_root_returns_none(
+    tmp_path,
+) -> None:
+    """Without a workspace folder, the Python-attribute fall-through
+    is disabled; the editor falls back to its standard Python LSP.
+    """
+    from scadwright.lsp.server import _hover_for
+
+    _uri, source = _setup_project(tmp_path)
+    out = _hover_for(source, 2, 17)
+    assert out is None
+
+
+def test_definition_for_direct_class_attribute_in_python_code(
+    tmp_path,
+) -> None:
+    """Goto-definition on ``CamSpec.outer_d`` jumps to the equation
+    line in the source class's equations block."""
+    from scadwright.lsp.server import _definition_for
+
+    uri, source = _setup_project(tmp_path)
+    out = _definition_for(
+        source, 2, 17, uri, project_root=tmp_path,
+    )
+    assert out is not None
+    # Definition should be in spec.py, not the consumer file.
+    assert "spec.py" in out.uri
+
+
+def test_rename_for_direct_class_attribute_invocation(tmp_path) -> None:
+    """Rename invoked with cursor on a consumer file's ``CamSpec.outer_d``
+    routes through to the existing workspace-rename machinery and
+    produces edits in both the source file and the consumer file.
+    """
+    from scadwright.lsp.server import _rename_for
+
+    uri, source = _setup_project(tmp_path)
+    edit = _rename_for(
+        source, 2, 17,
+        "outer_diameter",
+        uri,
+        project_root=tmp_path,
+    )
+    assert edit is not None
+    # The WorkspaceEdit's changes dict should include both files.
+    assert edit.changes is not None
+    assert len(edit.changes) == 2

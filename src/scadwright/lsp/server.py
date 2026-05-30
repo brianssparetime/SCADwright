@@ -67,13 +67,20 @@ from scadwright.lsp.diagnostics import (
 from scadwright.lsp.hover import (
     HoverContent as ScHoverContent,
     build_hover_content,
+    build_python_attribute_hover,
     extract_word_at,
 )
 from scadwright.lsp.positions import CursorInBlock, find_cursor_in_block
+from scadwright.lsp.python_attribute_cursor import (
+    PythonAttributeCursor,
+    find_python_attribute_at_cursor,
+)
 from scadwright.lsp.rename import (
     TextEdit as ScTextEdit,
     build_workspace_rename_edits,
 )
+from scadwright.project_index.registry import build_class_registry
+from scadwright.project_index.walk import walk_project
 from scadwright.lsp.symbols import (
     DocumentSymbol as ScDocumentSymbol,
     build_document_symbols,
@@ -353,6 +360,73 @@ def _locate_cursor(
     return None
 
 
+@dataclass(frozen=True)
+class _PythonAttributeContext:
+    """Outcome of resolving a cursor on a direct ``ClassName.attr``
+    access in Python code.
+
+    Carries the resolved cursor info plus the source class's
+    equations block (already located by parsing the source file),
+    so hover / definition / rename handlers can route through the
+    same machinery they use for in-block cursors.
+    """
+    cursor: PythonAttributeCursor
+    source_block: EquationsBlock
+
+
+def _resolve_python_attribute(
+    uri: str | None,
+    project_root: Path | None,
+    file_line: int,
+    file_col: int,
+) -> _PythonAttributeContext | None:
+    """Walk the project and resolve the cursor to a class+attribute.
+
+    Returns ``None`` when the cursor isn't on a direct class-
+    attribute access, when the LSP doesn't have a workspace folder
+    (no project_root), when the URI is non-file, or when the
+    source class's equations block can't be located.
+
+    Walks the project on every call. The cost is acceptable because
+    this only fires when the equations-cursor pipeline returns
+    ``None`` — hovers and definitions inside equations blocks stay
+    fast.
+    """
+    if uri is None or project_root is None:
+        return None
+    file_path = _uri_to_path(uri)
+    if file_path is None:
+        return None
+    files = walk_project(project_root)
+    registry = build_class_registry(files, project_root)
+    files_by_path = {f.path: f for f in files}
+    file_info = files_by_path.get(file_path)
+    if file_info is None:
+        return None
+    cursor = find_python_attribute_at_cursor(
+        file_info, file_line, file_col, registry, project_root,
+    )
+    if cursor is None:
+        return None
+    try:
+        source_text = cursor.target.file_path.read_text()
+    except OSError:
+        return None
+    try:
+        blocks = find_equations_blocks(source_text)
+    except Exception:  # noqa: BLE001 - LSP boundary
+        return None
+    source_block = next(
+        (b for b in blocks if b.class_name == cursor.target.name),
+        None,
+    )
+    if source_block is None:
+        return None
+    return _PythonAttributeContext(
+        cursor=cursor, source_block=source_block,
+    )
+
+
 def _completion_items_for(
     source: str, file_line: int, file_col: int,
 ) -> list[lsp.CompletionItem]:
@@ -386,65 +460,101 @@ def _completion_items_for(
 
 
 def _hover_for(
-    source: str, file_line: int, file_col: int,
+    source: str,
+    file_line: int,
+    file_col: int,
+    uri: str | None = None,
+    project_root: Path | None = None,
 ) -> lsp.Hover | None:
     """Compute the LSP hover response for the cursor at
-    ``(file_line, file_col)`` in ``source``. Returns ``None`` when
-    the cursor isn't in any equations block, isn't on an
-    identifier, or no static doc is available for that name.
+    ``(file_line, file_col)`` in ``source``.
+
+    First tries equations-block resolution. If the cursor isn't in
+    any equations block, falls through to direct class-attribute
+    access in Python code: ``BronicaS2Bayonet.cam_barrel_od`` and
+    similar patterns resolve through the project's class registry
+    to the source class's equations block, and hover content for
+    the attribute comes from that block. The fall-through requires
+    both ``uri`` and ``project_root``; without them it returns
+    ``None``.
     """
     located = _locate_cursor(source, file_line, file_col)
-    if located is None:
-        return None
-    word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
-    if word is None:
-        return None
-    attribute_chain: list[str] | None = None
-    if located.context_kind == ContextKind.ATTRIBUTE:
-        attribute_chain = extract_attribute_chain(
-            located.line.cleaned, located.cursor.splitter_col,
+    if located is not None:
+        word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
+        if word is None:
+            return None
+        attribute_chain: list[str] | None = None
+        if located.context_kind == ContextKind.ATTRIBUTE:
+            attribute_chain = extract_attribute_chain(
+                located.line.cleaned, located.cursor.splitter_col,
+            )
+        content = build_hover_content(
+            word,
+            located.context_kind,
+            block=located.block,
+            host_index=located.cursor.host_index,
+            line_index=located.cursor.line_index,
+            attribute_chain=attribute_chain,
+            sibling_blocks=located.sibling_blocks,
         )
-    content = build_hover_content(
-        word,
-        located.context_kind,
-        block=located.block,
-        host_index=located.cursor.host_index,
-        line_index=located.cursor.line_index,
-        attribute_chain=attribute_chain,
-        sibling_blocks=located.sibling_blocks,
-    )
+        if content is None:
+            return None
+        return _to_lsp_hover(content)
+
+    ctx = _resolve_python_attribute(uri, project_root, file_line, file_col)
+    if ctx is None:
+        return None
+    content = build_python_attribute_hover(ctx.cursor.attr_name, ctx.source_block)
     if content is None:
         return None
     return _to_lsp_hover(content)
 
 
 def _definition_for(
-    source: str, file_line: int, file_col: int, uri: str,
+    source: str,
+    file_line: int,
+    file_col: int,
+    uri: str,
+    project_root: Path | None = None,
 ) -> lsp.Location | None:
     """Compute the LSP definition location for the cursor at
-    ``(file_line, file_col)`` in ``source``. Returns ``None`` when
-    the cursor isn't on a name resolvable inside the equations
-    block (curated names, unknowns, type-tag positions, etc.).
+    ``(file_line, file_col)`` in ``source``.
+
+    First tries equations-block resolution. Falls through to
+    direct class-attribute access in Python code, jumping to the
+    line in the source class's equations block where the attribute
+    is declared. The fall-through requires ``project_root``;
+    without it the handler stays equations-only.
     """
     located = _locate_cursor(source, file_line, file_col)
-    if located is None:
-        return None
-    word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
-    if word is None:
-        return None
-    attribute_chain: list[str] | None = None
-    if located.context_kind == ContextKind.ATTRIBUTE:
-        attribute_chain = extract_attribute_chain(
-            located.line.cleaned, located.cursor.splitter_col,
+    if located is not None:
+        word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
+        if word is None:
+            return None
+        attribute_chain: list[str] | None = None
+        if located.context_kind == ContextKind.ATTRIBUTE:
+            attribute_chain = extract_attribute_chain(
+                located.line.cleaned, located.cursor.splitter_col,
+            )
+        sc_loc = build_definition_location(
+            word, located.context_kind, located.block,
+            attribute_chain=attribute_chain,
+            sibling_blocks=located.sibling_blocks,
         )
+        if sc_loc is None:
+            return None
+        return _to_lsp_location(sc_loc, uri)
+
+    ctx = _resolve_python_attribute(uri, project_root, file_line, file_col)
+    if ctx is None:
+        return None
     sc_loc = build_definition_location(
-        word, located.context_kind, located.block,
-        attribute_chain=attribute_chain,
-        sibling_blocks=located.sibling_blocks,
+        ctx.cursor.attr_name, ContextKind.EXPRESSION, ctx.source_block,
     )
     if sc_loc is None:
         return None
-    return _to_lsp_location(sc_loc, uri)
+    source_uri = _path_to_uri(ctx.cursor.target.file_path)
+    return _to_lsp_location(sc_loc, source_uri)
 
 
 def _document_symbols_for(source: str) -> list[lsp.DocumentSymbol]:
@@ -477,21 +587,47 @@ def _rename_for(
 
     When ``project_root`` is supplied, the rename extends across
     every project file that holds a ``Param`` of the source class
-    and references the target attribute. Without a project root
-    the rename stays same-file (the editor passes ``None`` when no
-    workspace folder applies).
+    and references the target attribute, plus every file with
+    direct ``SourceClass.<attr>`` references. Without a project
+    root the rename stays same-file (the editor passes ``None``
+    when no workspace folder applies).
+
+    The handler accepts rename invocations from two cursor
+    positions: inside the source class's equations block (the
+    canonical case), and on a direct ``SourceClass.<attr>``
+    reference in any Python file (a consumer file that reads the
+    attribute via class-attribute access). The latter resolves
+    the cursor to the source class first, then routes through the
+    same workspace-rename machinery.
     """
     located = _locate_cursor(source, file_line, file_col)
-    if located is None:
-        return None
-    word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
-    if word is None:
-        return None
-    file_path = _uri_to_path(uri)
-    if file_path is None:
+    if located is not None:
+        word = extract_word_at(located.line.cleaned, located.cursor.splitter_col)
+        if word is None:
+            return None
+        file_path = _uri_to_path(uri)
+        if file_path is None:
+            return None
+        edits_by_path = build_workspace_rename_edits(
+            located.block, file_path, word, new_name, project_root,
+        )
+        if edits_by_path is None:
+            return None
+        edits_by_uri = {
+            _path_to_uri(path): edits
+            for path, edits in edits_by_path.items()
+        }
+        return _to_lsp_workspace_edit(edits_by_uri)
+
+    ctx = _resolve_python_attribute(uri, project_root, file_line, file_col)
+    if ctx is None:
         return None
     edits_by_path = build_workspace_rename_edits(
-        located.block, file_path, word, new_name, project_root,
+        ctx.source_block,
+        ctx.cursor.target.file_path,
+        ctx.cursor.attr_name,
+        new_name,
+        project_root,
     )
     if edits_by_path is None:
         return None
@@ -634,6 +770,8 @@ def build_server() -> LanguageServer:
             document.source,
             params.position.line,
             params.position.character,
+            uri=uri,
+            project_root=_workspace_root_for(ls, uri),
         )
 
     @server.feature(lsp.TEXT_DOCUMENT_DEFINITION)
@@ -649,6 +787,7 @@ def build_server() -> LanguageServer:
             params.position.line,
             params.position.character,
             uri,
+            project_root=_workspace_root_for(ls, uri),
         )
 
     @server.feature(lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL)

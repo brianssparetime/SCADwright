@@ -25,9 +25,10 @@ skipped during recursion. The user's project tree is everything else.
 from __future__ import annotations
 
 import ast
+import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 
 _SKIP_DIRS: frozenset[str] = frozenset({
@@ -89,17 +90,28 @@ class FileInfo:
 
     ``parse_error`` is ``None`` on success and the formatted
     ``SyntaxError`` message on failure. Successful files have
-    populated ``imports`` and ``classes``; failed files have empty
-    tuples for both.
+    populated ``imports``, ``classes``, and ``tree``; failed files
+    have empty tuples for the first two and ``None`` for ``tree``.
+
+    ``tree`` is the parsed module AST, retained so later passes
+    (transform discovery, register-call detection) can re-walk the
+    module without re-parsing. The ``ast_node`` fields on
+    ``ClassDefInfo`` are part of this same tree, so keeping the
+    root reference adds no real memory cost.
     """
     path: Path
     source: str
     imports: tuple[ImportInfo, ...]
     classes: tuple[ClassDefInfo, ...]
     parse_error: str | None
+    tree: ast.Module | None = None
 
 
-def walk_project(path: str | Path) -> list[FileInfo]:
+def walk_project(
+    path: str | Path,
+    *,
+    exclude: Iterable[str] = (),
+) -> list[FileInfo]:
     """Discover and analyze every Python file under ``path``.
 
     ``path`` may be a directory (recursed) or a single ``.py`` file.
@@ -107,27 +119,39 @@ def walk_project(path: str | Path) -> list[FileInfo]:
     don't exist also return ``[]`` — the caller can decide whether
     that's an error.
 
+    ``exclude`` is a sequence of glob patterns. Patterns without a
+    ``/`` match any path segment, so ``exclude=("OLD",)`` skips
+    every file under a directory named ``OLD``. Patterns with a
+    ``/`` match the file's relative path as a glob —
+    ``exclude=("OLD/2026-*",)`` skips only the dated snapshot
+    subdirs. The built-in skip set (``__pycache__``,
+    ``node_modules``, dotted directories) always applies and isn't
+    affected by ``exclude``.
+
     Output is sorted by path so consumers (the renderer in
     particular) produce deterministic output.
     """
     p = Path(path)
+    patterns = tuple(exclude)
     if p.is_file():
         if p.suffix != ".py":
             return []
         return [_analyze_file(p)]
     if not p.is_dir():
         return []
-    return [_analyze_file(f) for f in _iter_py_files(p)]
+    return [_analyze_file(f) for f in _iter_py_files(p, patterns)]
 
 
-def _iter_py_files(root: Path) -> Iterator[Path]:
+def _iter_py_files(root: Path, exclude: tuple[str, ...]) -> Iterator[Path]:
     """Yield every ``.py`` path under ``root`` in sorted order, skipping
-    ``__pycache__``, ``node_modules``, and any directory whose name
-    starts with ``.`` (typical for VCS, editor, and venv folders).
+    ``__pycache__``, ``node_modules``, any directory whose name
+    starts with ``.``, and any path matched by ``exclude``.
     """
     candidates: list[Path] = []
     for candidate in root.rglob("*.py"):
         if any(_should_skip_dir(part) for part in candidate.parts):
+            continue
+        if exclude and _matches_exclude(candidate, root, exclude):
             continue
         candidates.append(candidate)
     candidates.sort()
@@ -139,6 +163,42 @@ def _should_skip_dir(part: str) -> bool:
         return True
     # Hidden dirs (``.venv``, ``.git``, ``.idea``, ``.tox``, ...).
     return len(part) > 1 and part.startswith(".")
+
+
+def _matches_exclude(
+    path: Path, root: Path, patterns: tuple[str, ...],
+) -> bool:
+    """Whether ``path`` matches any of the user-supplied exclude
+    patterns.
+
+    Pattern semantics:
+
+    - A pattern containing ``/`` matches the file's path relative
+      to ``root`` (POSIX-style) as a single glob via
+      :func:`fnmatch.fnmatch`. Example: ``OLD/2026-*`` matches
+      ``OLD/2026-05-13/foo.py`` but not ``OLD/foo.py``.
+    - A pattern without ``/`` matches if any single path segment
+      matches it. Example: ``OLD`` matches any path containing a
+      segment named ``OLD``; ``*.test.py`` matches any file segment
+      ending in ``.test.py``.
+    """
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return False
+    rel_str = rel.as_posix()
+    for pattern in patterns:
+        # fnmatchcase (case-sensitive) over fnmatch so behavior is
+        # consistent across platforms: fnmatch case-normalizes on
+        # case-insensitive filesystems, which would make `--exclude
+        # OLD` match `Old/` on macOS or Windows but not on Linux.
+        if "/" in pattern:
+            if fnmatch.fnmatchcase(rel_str, pattern):
+                return True
+        else:
+            if any(fnmatch.fnmatchcase(part, pattern) for part in rel.parts):
+                return True
+    return False
 
 
 def _analyze_file(path: Path) -> FileInfo:
@@ -168,6 +228,7 @@ def _analyze_file(path: Path) -> FileInfo:
         path=path, source=source,
         imports=imports, classes=classes,
         parse_error=None,
+        tree=tree,
     )
 
 

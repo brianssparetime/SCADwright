@@ -15,11 +15,15 @@ surrounding class:
 
 When called with a ``project_root``,
 :func:`build_workspace_rename_edits` extends the rename to other
-project files. For each Component / Spec elsewhere in the project
-that has a ``Param`` whose type resolves to the source class,
-references of the form ``<param_name>.<old_name>`` (in equations)
-or ``self.<param_name>.<old_name>`` (in ``build()`` bodies) are
-located via the project index and rewritten.
+project files. Every class across the project is walked for
+references to the source attribute. Direct
+``<SourceClass>.<old_name>`` references at class scope or in any
+method body are rewritten via import-aware name resolution;
+aliased and dotted imports both surface. Param-mediated
+references (``<param_name>.<old_name>`` in equations,
+``self.<param_name>.<old_name>`` anywhere in a method body) are
+rewritten in classes that hold a ``Param`` whose type resolves
+to the source class.
 
 Both names must avoid the curated namespace and the inline-type
 allowlist; the helper returns ``None`` when the rename is unsafe.
@@ -54,10 +58,12 @@ from scadwright.lsp.analyze import (
 from scadwright.lsp.positions import map_cleaned_col_to_file
 from scadwright.project_index.analyze import _block_from_classdef
 from scadwright.project_index.extract import (
-    _find_build_method,
     extract_params,
 )
-from scadwright.project_index.registry import build_class_registry
+from scadwright.project_index.registry import (
+    build_class_registry,
+    resolve_name_in_file,
+)
 from scadwright.project_index.walk import walk_project
 
 
@@ -436,6 +442,27 @@ def build_cross_file_attr_rename_edits(
     files_by_path = {f.path: f for f in files}
 
     out: dict[Path, list[TextEdit]] = {}
+
+    # Pass 1 — direct ``ClassName.attr`` references, per file.
+    # Walks each file's full module AST so the rename catches
+    # references at class scope, in any method body, at module
+    # scope (``MOUNT_OFFSET = SourceClass.attr``), and inside
+    # module-level functions. The source file is walked too: a
+    # self-reference inside the source class's Python body
+    # (outside its equations block) is rewritten the same way.
+    for file_info in files:
+        direct = _direct_class_attr_edits(
+            file_info.tree, file_info, registry, project_root,
+            source_file_path, source_class_name,
+            old_attr_name, new_attr_name,
+        )
+        if direct:
+            out[file_info.path] = list(direct)
+
+    # Pass 2 — Param-mediated references, per class. Only fires for
+    # classes whose ``Param`` declarations resolve to the source
+    # class. The source class itself is excluded; its same-file
+    # edits are handled by ``build_rename_edits``.
     for cls in registry.classes.values():
         if cls.file_path == source_file_path and cls.name == source_class_name:
             continue
@@ -451,17 +478,18 @@ def build_cross_file_attr_rename_edits(
         )
         if not matching_param_names:
             continue
-        edits: list[TextEdit] = []
-        edits.extend(_cross_file_equation_edits(
+        param_edits: list[TextEdit] = []
+        param_edits.extend(_cross_file_equation_edits(
             cls, file_info, matching_param_names,
             old_attr_name, new_attr_name,
         ))
-        edits.extend(_cross_file_build_edits(
+        param_edits.extend(_cross_file_method_edits(
             cls, matching_param_names,
             old_attr_name, new_attr_name,
         ))
-        if edits:
-            out[cls.file_path] = edits
+        if param_edits:
+            out.setdefault(cls.file_path, []).extend(param_edits)
+
     return out
 
 
@@ -539,25 +567,25 @@ def _cross_file_equation_edits(
     return out
 
 
-def _cross_file_build_edits(
+def _cross_file_method_edits(
     cls,
     matching_param_names: frozenset[str],
     old_attr_name: str,
     new_attr_name: str,
 ) -> list[TextEdit]:
-    """Find ``self.<param>.<old_attr>`` references inside ``cls``'s
-    ``build`` method and emit TextEdits replacing the attr name.
+    """Find ``self.<param>.<old_attr>`` references inside any method
+    on ``cls`` and emit TextEdits replacing the attr name.
 
-    Build-body AST nodes come from ``ast.parse(file_source)`` so
-    their lineno / col_offset values are already file-relative —
-    no colmap arithmetic needed. Lines are 1-based in the AST and
-    0-based in LSP; columns are 0-based in both.
+    Walks the entire class body via ``ast.walk``, which descends
+    into every method body — ``build``, helper methods called from
+    ``build``, properties, anything else on the class. Method-body
+    AST nodes come from ``ast.parse(file_source)``, so their
+    ``lineno`` / ``col_offset`` values are already file-relative;
+    no colmap arithmetic is needed. Lines are 1-based in the AST
+    and 0-based in LSP; columns are 0-based in both.
     """
-    method = _find_build_method(cls.ast_node)
-    if method is None:
-        return []
     out: list[TextEdit] = []
-    for sub in ast.walk(method):
+    for sub in ast.walk(cls.ast_node):
         if not isinstance(sub, ast.Attribute):
             continue
         if sub.attr != old_attr_name:
@@ -585,3 +613,100 @@ def _cross_file_build_edits(
             new_text=new_attr_name,
         ))
     return out
+
+
+def _direct_class_attr_edits(
+    scope_node,
+    file_info,
+    registry,
+    project_root: Path,
+    source_file_path: Path,
+    source_class_name: str,
+    old_attr_name: str,
+    new_attr_name: str,
+) -> list[TextEdit]:
+    """Find direct ``<SourceClass>.<old_attr>`` references inside
+    ``scope_node`` and emit TextEdits replacing the attr name.
+
+    ``scope_node`` is typically a file's module AST
+    (``file_info.tree``), making the walker cover class bodies,
+    method bodies, module-scope statements, and module-level
+    function bodies in one pass.
+
+    Matches ``Attribute`` nodes whose ``attr == old_attr`` and
+    whose value chain reduces to a dotted name resolving (through
+    the file's imports) to the source class. Catches class-scope
+    assignments like ``lower_outer_d = BronicaS2Bayonet.outer_d``,
+    method-body expressions like ``return BronicaS2Bayonet.outer_d * 2``,
+    module-level constants like ``MOUNT_OFFSET = SourceClass.attr``,
+    and references through aliased or dotted imports.
+
+    Chained access on the renamed attribute is handled correctly:
+    ``BronicaS2Bayonet.outer_d.bit_length()`` renames only the
+    inner ``outer_d``. The outer ``Attribute`` (``attr =
+    bit_length``) has a base that doesn't resolve to the source
+    class — its value is the inner Attribute, not a Name chain
+    ending in the source class.
+
+    AST positions come from ``ast.parse(file_source)`` and are
+    file-relative, so no colmap arithmetic is needed.
+    """
+    if scope_node is None:
+        return []
+    out: list[TextEdit] = []
+    for sub in ast.walk(scope_node):
+        if not isinstance(sub, ast.Attribute):
+            continue
+        if sub.attr != old_attr_name:
+            continue
+        dotted = _value_chain_to_dotted_name(sub.value)
+        if dotted is None:
+            continue
+        target = resolve_name_in_file(
+            dotted, file_info, registry, project_root,
+        )
+        if target is None:
+            continue
+        if target.file_path != source_file_path:
+            continue
+        if target.name != source_class_name:
+            continue
+        # The attr part starts right after the base's end + 1
+        # (the dot before the attr name).
+        attr_start_line = (sub.lineno or 1) - 1
+        attr_start_col = (sub.value.end_col_offset or 0) + 1
+        attr_end_line = (sub.end_lineno or sub.lineno) - 1
+        attr_end_col = sub.end_col_offset or attr_start_col
+        out.append(TextEdit(
+            start_line=attr_start_line,
+            start_col=attr_start_col,
+            end_line=attr_end_line,
+            end_col=attr_end_col,
+            new_text=new_attr_name,
+        ))
+    return out
+
+
+def _value_chain_to_dotted_name(node: ast.AST) -> str | None:
+    """Reduce a ``Name`` or chained ``Attribute`` expression to its
+    dotted string form, or return ``None`` for other shapes.
+
+    Handles bare ``Name(X)`` → ``"X"``, single ``Attribute(value=
+    Name(X), attr=Y)`` → ``"X.Y"``, and deeper chains like
+    ``Attribute(value=Attribute(value=Name(X), attr=Y), attr=Z)``
+    → ``"X.Y.Z"``. Calls, subscripts, or other non-name shapes in
+    the chain produce ``None``.
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parts: list[str] = []
+        cur: ast.AST = node
+        while isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+        if not isinstance(cur, ast.Name):
+            return None
+        parts.append(cur.id)
+        return ".".join(reversed(parts))
+    return None

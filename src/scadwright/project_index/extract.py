@@ -244,34 +244,97 @@ def _iter_walked_nodes(equations, constraints, adjustments):
 # =============================================================================
 
 
+def extract_class_attribute_reads(
+    scope_node: ast.AST,
+    file_info: FileInfo,
+    registry: ClassRegistry,
+    project_root: Path,
+    exclude_names: frozenset[str] = frozenset(),
+) -> tuple[AttributeRead, ...]:
+    """Find every ``X.Y`` access in ``scope_node`` where ``X``
+    resolves through the file's imports to a project-local class.
+
+    The "scope node" is any AST node whose subtree should be
+    walked — a class body for class-attribute reads at class
+    scope, a method body for reads inside a method, or a free
+    function body for reads inside a transform. ``ast.walk`` is
+    used so all nested expressions surface.
+
+    ``exclude_names`` is the set of bare names the extractor should
+    not resolve. Callers pass ``{"self"}`` plus the names of any
+    Params on an enclosing class so that ``self.x.y`` reads (handled
+    by :func:`extract_build_attribute_reads`) and equation-style
+    Param-mediated reads (handled by
+    :func:`extract_equations_attribute_reads`) don't double-emit
+    through this extractor too.
+
+    Matches the same one-level shape the other read extractors use:
+    ``Attribute(value=Name(X), attr=Y)``. Deeper chains
+    (``X.y.z``) still emit ``(X, y)`` via the inner attribute and
+    stop; ``Y.z`` doesn't produce its own edge because Spec
+    attributes are scalars, not other classes.
+
+    Reads are deduplicated by ``(base_name, attr)``. Reads whose
+    base name resolves to something that isn't a project class
+    (third-party imports, primitive aliases, unresolvable names)
+    drop silently — those aren't a project dependency.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[AttributeRead] = []
+    for sub in ast.walk(scope_node):
+        if not isinstance(sub, ast.Attribute):
+            continue
+        base = sub.value
+        if not isinstance(base, ast.Name):
+            continue
+        if base.id in exclude_names:
+            continue
+        key = (base.id, sub.attr)
+        if key in seen:
+            continue
+        target = resolve_name_in_file(
+            base.id, file_info, registry, project_root,
+        )
+        if target is None:
+            continue
+        seen.add(key)
+        out.append(AttributeRead(
+            base_name=base.id,
+            attr=sub.attr,
+            target=target,
+        ))
+    return tuple(out)
+
+
 def extract_build_attribute_reads(
     cls: ResolvedClass,
     params: tuple[ParamRef, ...],
 ) -> tuple[AttributeRead, ...]:
-    """Find every ``self.x.y`` read in ``cls``'s ``build`` method
+    """Find every ``self.x.y`` read in ``cls``'s method bodies
     where ``x`` is a Param of ``cls``.
 
-    Walks the method body via ``ast.walk`` and matches the two-deep
-    pattern ``Attribute(value=Attribute(value=Name("self"), attr=x),
-    attr=y)``. Bare ``self.x`` reads (own-Param uses) aren't
-    recorded — they're not cross-Component references. Deeper chains
-    like ``self.x.y.z`` record ``(x, y)`` and stop, matching the
+    Walks the entire class body via ``ast.walk`` and matches the
+    two-deep pattern ``Attribute(value=Attribute(value=Name("self"),
+    attr=x), attr=y)`` anywhere it appears: inside ``build``,
+    inside helper methods called from ``build``, inside properties,
+    or any other method on the class. The function name keeps
+    ``build_`` for compatibility but the scope covers every method.
+
+    Bare ``self.x`` reads (own-Param uses) aren't recorded — they
+    aren't cross-Component references. Deeper chains like
+    ``self.x.y.z`` record ``(x, y)`` and stop, matching the
     equations extractor's same-shape behavior.
 
-    Returns ``()`` for classes with no ``build`` method or no
-    Params.
+    Returns ``()`` for classes with no Params.
     """
     if not params:
-        return ()
-    method = _find_build_method(cls.ast_node)
-    if method is None:
         return ()
     param_targets: dict[str, ResolvedClass | None] = {
         p.name: p.type_resolves_to for p in params
     }
     seen: set[tuple[str, str]] = set()
     out: list[AttributeRead] = []
-    for sub in ast.walk(method):
+    for sub in ast.walk(cls.ast_node):
         if not isinstance(sub, ast.Attribute):
             continue
         outer_value = sub.value
@@ -296,17 +359,3 @@ def extract_build_attribute_reads(
     return tuple(out)
 
 
-def _find_build_method(class_node: ast.ClassDef) -> ast.FunctionDef | None:
-    """Return the class's ``build`` method (or ``None``).
-
-    Both regular and async ``build`` methods match — though async
-    Components aren't standard practice, the static walker stays
-    indifferent to it.
-    """
-    for stmt in class_node.body:
-        if (
-            isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and stmt.name == "build"
-        ):
-            return stmt
-    return None

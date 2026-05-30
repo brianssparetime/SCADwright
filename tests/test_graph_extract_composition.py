@@ -321,3 +321,27 @@ def test_composition_ref_immutable() -> None:
     except Exception:
         return
     raise AssertionError("CompositionRef should be frozen")
+
+
+# =============================================================================
+# Helper-method scope (Component instantiation outside build())
+# =============================================================================
+
+
+def test_instantiation_in_helper_method_surfaces(tmp_path: Path) -> None:
+    """Component instantiation in a helper method (not ``build``)
+    should still surface as composition.
+    """
+    _write(tmp_path, "widget.py", (
+        "from scadwright import Component\n"
+        "class Inner(Component):\n"
+        "    pass\n"
+        "class Outer(Component):\n"
+        "    def build(self):\n"
+        "        return self._make()\n"
+        "    def _make(self):\n"
+        "        return Inner()\n"
+    ))
+    refs = _refs(tmp_path, "Outer")
+    targets = {r.target.name for r in refs}
+    assert targets == {"Inner"}

@@ -21,16 +21,18 @@ Subcommands:
         the `[lsp]` extra (`pip install 'scadwright[lsp]'`); without
         it the subcommand exits non-zero with an install hint.
 
-    graph PATH [--format mermaid|json|dot] [--filter NAME] [--depth N]
+    graph PATH [--format ascii|mermaid|json|dot] [--filter NAME] [--depth N]
         Emit a dependency graph for a scadwright project. PATH may be
         a directory (recursed) or a single Python file. Default
-        ``--format mermaid`` writes Mermaid ``graph TD`` source — pipe
-        into a renderer or embed in a README. ``--format json`` writes
-        a structured representation for downstream tooling.
-        ``--format dot`` writes Graphviz DOT source — pipe into ``dot
-        -Tsvg`` for projects too large for Mermaid layout. ``--filter
-        NAME`` focuses the graph on one class (with optional ``--depth
-        N`` to limit the radius).
+        ``--format ascii`` writes a section-structured plain-text
+        representation, easy to scan in a terminal and grep, and
+        compact for AI assistants. ``--format mermaid`` writes
+        Mermaid ``graph TD`` source for Markdown / GitHub embedding.
+        ``--format json`` writes a structured representation for
+        programmatic consumers. ``--format dot`` writes Graphviz DOT
+        source — pipe into ``dot -Tsvg`` for projects too large for
+        Mermaid layout. ``--filter NAME`` focuses the graph on one
+        class (with optional ``--depth N`` to limit the radius).
 """
 
 from __future__ import annotations
@@ -212,12 +214,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     graph.add_argument(
         "--format",
-        choices=["mermaid", "json", "dot"],
-        default="mermaid",
+        choices=["ascii", "mermaid", "json", "dot"],
+        default="ascii",
         help=(
-            "Output format: 'mermaid' (default) for Markdown / "
-            "GitHub embedding, 'json' for downstream tooling, "
-            "'dot' for Graphviz layout on larger projects."
+            "Output format: 'ascii' (default) for terminal / "
+            "structured text / AI consumption, 'mermaid' for "
+            "Markdown / GitHub embedding, 'json' for programmatic "
+            "/ diff tooling, 'dot' for Graphviz layout on larger "
+            "projects."
         ),
     )
     graph.add_argument(
@@ -240,6 +244,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "extends (hop count in either direction). 0 shows "
             "only the focus node; 1 shows direct neighbours; "
             "default is unlimited. Requires --filter."
+        ),
+    )
+    graph.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help=(
+            "Skip files matching this pattern. Patterns without "
+            "a '/' match any path segment (so '--exclude OLD' "
+            "skips every file under a directory named OLD). "
+            "Patterns with a '/' match the file's project-"
+            "relative path as a glob. Repeatable."
         ),
     )
 
@@ -580,12 +597,14 @@ def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
             file=sys.stderr,
         )
         return 2
-    graph = build_graph(target)
+    graph = build_graph(target, exclude=args.exclude)
     for err_path, err_msg in graph.parse_errors:
         print(
             f"warning: skipped {err_path}: {err_msg}",
             file=sys.stderr,
         )
+    for warn_path, warn_msg in graph.warnings:
+        print(f"warning: {warn_path}: {warn_msg}", file=sys.stderr)
     if args.focus is not None:
         from scadwright.graph.filter import FocusNotFound, filter_graph
         try:
@@ -599,9 +618,12 @@ def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
     elif args.format == "dot":
         from scadwright.graph.render_dot import render_dot
         sys.stdout.write(render_dot(graph))
-    else:
+    elif args.format == "mermaid":
         from scadwright.graph.render_mermaid import render_mermaid
         sys.stdout.write(render_mermaid(graph))
+    else:
+        from scadwright.graph.render_ascii import render_ascii
+        sys.stdout.write(render_ascii(graph))
     return 0
 
 

@@ -39,6 +39,7 @@ _SCADWRIGHT_BASE_CATEGORY: dict[str, str] = {
     "Component": "component",
     "Spec": "spec",
     "Design": "design",
+    "Transform": "transform",
 }
 
 
@@ -420,6 +421,49 @@ def _is_scadwright_module(module: str) -> bool:
     counts.
     """
     return module == "scadwright" or module.startswith("scadwright.")
+
+
+def resolves_to_scadwright_name(
+    name: str,
+    file_info: FileInfo,
+    expected_attr: str,
+    expected_modules: tuple[str, ...],
+) -> bool:
+    """Whether ``name`` resolves through ``file_info``'s imports to
+    one of ``expected_modules``.``expected_attr``.
+
+    ``name`` is a dotted name as it appears in source: ``"transform"``
+    from ``@transform(...)``, ``"sc.transform"`` from
+    ``@sc.transform(...)``. The head segment is matched against
+    import bindings; the remaining dotted segments become the target
+    attribute path.
+
+    Used by both decorator-resolution callers (variant, transform)
+    and free-call resolution callers (register). The expected-module
+    tuple lists every source module the framework exposes the name
+    from; canonical project-facing path first, internal paths after.
+    """
+    head = name.split(".", 1)[0]
+    rest = name[len(head) + 1:] if "." in name else None
+    for imp in file_info.imports:
+        if imp.local_name != head:
+            continue
+        if rest is None:
+            target_module = imp.source_module
+            target_attr = imp.source_attr
+        else:
+            target_module = imp.source_module
+            if imp.source_attr is not None:
+                target_module = (
+                    f"{imp.source_module}.{imp.source_attr}"
+                    if imp.source_module else imp.source_attr
+                )
+            target_attr = rest
+        if target_attr != expected_attr:
+            continue
+        if target_module in expected_modules:
+            return True
+    return False
 
 
 def resolve_name_in_file(

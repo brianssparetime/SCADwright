@@ -1,7 +1,8 @@
 """Tests for the ``scadwright graph`` subcommand.
 
-Covers help-output listing, end-to-end Mermaid generation on a
-synthetic project, single-file inputs, and the
+Covers help-output listing, end-to-end output generation on a
+synthetic project across all four formats (ascii default,
+mermaid, json, dot), single-file inputs, and the
 nonexistent-path error case.
 """
 
@@ -32,7 +33,7 @@ def test_graph_emits_mermaid_for_synthetic_project(
         "    spec = Param(BatterySpec)\n"
         '    equations = "x = spec.outer_d"\n'
     )
-    rc = cli.main(["graph", str(tmp_path)])
+    rc = cli.main(["graph", str(tmp_path), "--format", "mermaid"])
     out = capsys.readouterr().out
     assert rc == 0
     assert out.startswith("graph TD\n")
@@ -52,14 +53,16 @@ def test_graph_on_single_file(tmp_path: Path, capsys) -> None:
     rc = cli.main(["graph", str(f)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "Bracket(Bracket)" in out
+    assert "component  widget.Bracket" in out
 
 
 def test_graph_on_empty_project(tmp_path: Path, capsys) -> None:
     rc = cli.main(["graph", str(tmp_path)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert out.strip() == "graph TD"
+    assert "# scadwright graph" in out
+    assert "## nodes\n(none)" in out
+    assert "## edges\n(none)" in out
 
 
 def test_graph_nonexistent_path_returns_error(
@@ -91,7 +94,7 @@ def test_graph_format_json(tmp_path: Path, capsys) -> None:
     assert edge_kinds == {"uses_param"}
 
 
-def test_graph_default_format_is_mermaid(
+def test_graph_default_format_is_ascii(
     tmp_path: Path, capsys,
 ) -> None:
     (tmp_path / "main.py").write_text(
@@ -102,7 +105,9 @@ def test_graph_default_format_is_mermaid(
     rc = cli.main(["graph", str(tmp_path)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert out.startswith("graph TD\n")
+    assert out.startswith("# scadwright graph:")
+    assert "## nodes" in out
+    assert "component  main.Bracket" in out
 
 
 def test_graph_invalid_format_rejected(
@@ -144,7 +149,7 @@ def test_graph_warns_on_parse_errors(tmp_path: Path, capsys) -> None:
     # Warning surfaces on stderr; good file's class still in stdout.
     assert "warning" in out_err.err
     assert "broken.py" in out_err.err
-    assert "good_Bracket" in out_err.out
+    assert "good.Bracket" in out_err.out
 
 
 def test_graph_filter_focuses_subgraph(tmp_path: Path, capsys) -> None:
@@ -162,9 +167,9 @@ def test_graph_filter_focuses_subgraph(tmp_path: Path, capsys) -> None:
     out = capsys.readouterr().out
     assert rc == 0
     # A and B (direct relationship) survive; C is disconnected and drops.
-    assert "main_A(A)" in out
-    assert "main_B(B)" in out
-    assert "main_C(C)" not in out
+    assert "component  main.A" in out
+    assert "component  main.B" in out
+    assert "component  main.C" not in out
 
 
 def test_graph_filter_with_depth_zero(tmp_path: Path, capsys) -> None:
@@ -181,8 +186,8 @@ def test_graph_filter_with_depth_zero(tmp_path: Path, capsys) -> None:
     ])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "main_A(A)" in out
-    assert "main_B(B)" not in out
+    assert "component  main.A" in out
+    assert "component  main.B" not in out
 
 
 def test_graph_filter_unknown_returns_error(

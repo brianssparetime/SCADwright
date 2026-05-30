@@ -32,6 +32,7 @@ from scadwright.lsp.analyze import (
     EquationsBlock,
     ParamInfo,
     auto_declared_origins_before,
+    auto_declared_origins_in_block,
 )
 from scadwright.lsp.context import ContextKind
 from scadwright.lsp.resolve import resolve_chain_to_block
@@ -101,6 +102,38 @@ def build_hover_content(
                 return HoverContent(markdown=md)
         body = _CURATED_DOCS.get(name)
         return HoverContent(markdown=body) if body is not None else None
+    return None
+
+
+def build_python_attribute_hover(
+    attr_name: str,
+    source_block: EquationsBlock,
+) -> HoverContent | None:
+    """Hover content for ``attr_name`` accessed externally as
+    ``SourceClass.attr_name`` from Python code outside an equations
+    block. Returns ``None`` when the source class doesn't declare
+    ``attr_name``.
+
+    Resolves Params first, then auto-declared targets anywhere in
+    the source block. The cursor-relative auto-declared constraint
+    used by ``build_hover_content``'s expression branch doesn't
+    apply here — the access is external, so visibility is the
+    whole block.
+    """
+    md = _param_hover_markdown(attr_name, source_block)
+    if md is not None:
+        return HoverContent(markdown=md)
+    origins = auto_declared_origins_in_block(source_block)
+    if attr_name in origins:
+        origin_host_index, origin_line_index = origins[attr_name]
+        flat_index = _flat_logical_line_index(
+            source_block, origin_host_index, origin_line_index,
+        )
+        return HoverContent(markdown=(
+            f"**`{attr_name}`** *(auto-declared)*\n\n"
+            f"Introduced as an equation target on equations line "
+            f"{flat_index} of `{source_block.class_name}`."
+        ))
     return None
 
 

@@ -61,6 +61,8 @@ def filter_graph(
     return Graph(
         nodes=nodes, edges=edges,
         parse_errors=graph.parse_errors,
+        warnings=graph.warnings,
+        project_root=graph.project_root,
     )
 
 

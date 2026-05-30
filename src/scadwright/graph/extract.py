@@ -1,11 +1,14 @@
-"""Graph-specific extractors: composition (build()-body and class-
-attribute Component instantiation) and ``@variant`` build targets.
+"""Graph-specific extractors: composition (project Component
+instantiation anywhere in the class body) and ``@variant`` build
+targets.
 
 The neutral per-class extractors — ``extract_params``,
-``extract_equations_attribute_reads``, ``extract_build_attribute_reads``
-plus ``ParamRef`` / ``AttributeRead`` / ``_find_build_method`` —
-live in :mod:`scadwright.project_index.extract` so the LSP layer
-can use them without depending on the graph package. This module
+``extract_equations_attribute_reads``,
+``extract_build_attribute_reads``,
+``extract_class_attribute_reads`` plus ``ParamRef`` /
+``AttributeRead`` — live in
+:mod:`scadwright.project_index.extract` so the LSP layer can use
+them without depending on the graph package. This module
 re-exports them for graph consumers and adds graph-only
 extractors on top.
 """
@@ -19,10 +22,10 @@ from pathlib import Path
 from scadwright.project_index.extract import (
     AttributeRead,
     ParamRef,
-    _find_build_method,
     _iter_walked_nodes,
     _try_build_param_info,
     extract_build_attribute_reads,
+    extract_class_attribute_reads,
     extract_equations_attribute_reads,
     extract_params,
 )
@@ -30,6 +33,10 @@ from scadwright.project_index.registry import (
     ClassRegistry,
     ResolvedClass,
     resolve_name_in_file,
+    resolves_to_scadwright_name,
+)
+from scadwright.project_index.transforms import (
+    extract_transform_uses,
 )
 from scadwright.project_index.walk import FileInfo
 
@@ -42,8 +49,11 @@ __all__ = [
     "extract_build_attribute_reads",
     "extract_build_instantiations",
     "extract_class_attr_components",
+    "extract_class_attribute_reads",
+    "extract_component_instantiations",
     "extract_equations_attribute_reads",
     "extract_params",
+    "extract_transform_uses",
     "extract_variants",
 ]
 
@@ -77,54 +87,39 @@ def extract_build_instantiations(
     registry: ClassRegistry,
     project_root: Path,
 ) -> tuple[CompositionRef, ...]:
-    """Find every project-Component instantiation in ``cls`` —
-    both inside the ``build`` method body and at class scope.
+    """Find every project-Component instantiation in ``cls``.
 
-    Two surfacing rules:
+    Walks the entire class body via ``ast.walk`` and matches
+    ``Call`` nodes whose callee resolves through the file's imports
+    to a project Component. The walker descends into every method
+    body — ``build``, helper methods called from ``build``,
+    properties, anything else on the class — and into class-scope
+    expressions like ``inner = Inner()`` attribute assignments.
+    Curated primitives (``cube``, ``cylinder``, boolean ops,
+    transforms) resolve to ``None`` because they aren't in the
+    class registry and drop silently.
 
-    - Class-attribute instantiation (``inner = Inner()`` at the
-      class body): one ``CompositionRef`` per resolved Component.
-    - ``build()``-body instantiation (``return Inner()`` etc.):
-      walks the method body via ``ast.walk`` and matches ``Call``
-      nodes whose callee resolves through the file's imports to a
-      project Component. Curated primitives (``cube``, ``cylinder``,
-      boolean ops, transforms) resolve to ``None`` because they
-      aren't in the class registry — those calls drop silently.
+    Calls are deduplicated by ``(file_path, name)``, so a class
+    that instantiates the same child Component from multiple
+    places produces one :class:`CompositionRef`.
 
-    The two paths share a dedupe set keyed on the target's
-    ``(file_path, name)``, so a class that both class-instantiates
-    and build-instantiates the same child Component produces one
-    edge.
-
-    Returns ``()`` for classes with neither shape.
+    Returns ``()`` for classes with no Component instantiations.
     """
     seen: set[tuple[Path, str]] = set()
     out: list[CompositionRef] = []
-
-    def add(target: ResolvedClass) -> None:
+    for sub in ast.walk(cls.ast_node):
+        if not isinstance(sub, ast.Call):
+            continue
+        target = _resolve_callee(
+            sub.func, file_info, registry, project_root,
+        )
+        if target is None or target.category != "component":
+            continue
         key = (target.file_path, target.name)
         if key in seen:
-            return
+            continue
         seen.add(key)
         out.append(CompositionRef(target=target))
-
-    class_attrs = extract_class_attr_components(
-        cls, file_info, registry, project_root,
-    )
-    for target in class_attrs.values():
-        add(target)
-
-    method = _find_build_method(cls.ast_node)
-    if method is not None:
-        for sub in ast.walk(method):
-            if not isinstance(sub, ast.Call):
-                continue
-            target = _resolve_callee(
-                sub.func, file_info, registry, project_root,
-            )
-            if target is None or target.category != "component":
-                continue
-            add(target)
     return tuple(out)
 
 
@@ -282,9 +277,7 @@ def extract_variants(
             stmt, (ast.FunctionDef, ast.AsyncFunctionDef),
         ):
             continue
-        if not _is_variant_decorated(
-            stmt, file_info, registry, project_root,
-        ):
+        if not _is_variant_decorated(stmt, file_info):
             continue
         builds = _variant_build_targets(
             stmt, class_attrs, file_info, registry, project_root,
@@ -300,8 +293,6 @@ def extract_variants(
 def _is_variant_decorated(
     method: ast.FunctionDef | ast.AsyncFunctionDef,
     file_info: FileInfo,
-    registry: ClassRegistry,
-    project_root: Path,
 ) -> bool:
     """Return ``True`` when one of the method's decorators resolves
     to ``scadwright.variant`` (or ``scadwright.design.variant``).
@@ -318,8 +309,9 @@ def _is_variant_decorated(
         name = _decorator_name(target)
         if name is None:
             continue
-        if _resolves_to_scadwright_variant(
-            name, file_info, registry, project_root,
+        if resolves_to_scadwright_name(
+            name, file_info, "variant",
+            ("scadwright", "scadwright.design"),
         ):
             return True
     return False
@@ -334,45 +326,6 @@ def _decorator_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
         return f"{node.value.id}.{node.attr}"
     return None
-
-
-def _resolves_to_scadwright_variant(
-    name: str,
-    file_info: FileInfo,
-    registry: ClassRegistry,
-    project_root: Path,
-) -> bool:
-    """Whether ``name`` resolves through the file's imports to the
-    scadwright ``variant`` decorator.
-
-    The registry handles classes, not free functions, so this does
-    a small bespoke resolution: if the local name binds to an
-    import whose original spelling is ``scadwright.variant`` or
-    ``scadwright.design.variant`` (or any alias of those), say
-    yes. The shape is parallel to how the registry resolves
-    ``Component``/``Spec``/``Design`` re-exports.
-    """
-    head = name.split(".", 1)[0]
-    rest = name[len(head) + 1:] if "." in name else None
-    for imp in file_info.imports:
-        if imp.local_name != head:
-            continue
-        if rest is None:
-            target_module = imp.source_module
-            target_attr = imp.source_attr
-        else:
-            target_module = imp.source_module
-            if imp.source_attr is not None:
-                target_module = (
-                    f"{imp.source_module}.{imp.source_attr}"
-                    if imp.source_module else imp.source_attr
-                )
-            target_attr = rest
-        if target_attr != "variant":
-            continue
-        if target_module in ("scadwright", "scadwright.design"):
-            return True
-    return False
 
 
 def _variant_is_default(
@@ -441,3 +394,49 @@ def _variant_build_targets(
                 add(target)
     out.sort(key=lambda c: (c.module_path or "", c.name))
     return tuple(out)
+
+
+# =============================================================================
+# Generic-scope component-instantiation walker
+# =============================================================================
+
+
+def extract_component_instantiations(
+    scope_node: ast.AST,
+    file_info: FileInfo,
+    registry: ClassRegistry,
+    project_root: Path,
+) -> tuple[ResolvedClass, ...]:
+    """Walk ``scope_node`` for every project-Component instantiation
+    call and return the deduplicated Components.
+
+    The generic-scope counterpart to :func:`extract_build_instantiations`,
+    used for transform function bodies and class-style transform
+    bodies (anywhere a Component might be instantiated outside a
+    Component's ``build`` method or class scope). Matches ``Call``
+    nodes whose callee resolves through the file's imports to a
+    project Component; non-Component callees, curated primitives,
+    and unresolvable names drop silently.
+
+    Returns Components sorted by ``(module_path, name)`` for
+    deterministic edge ordering downstream.
+    """
+    seen: set[tuple[Path, str]] = set()
+    out: list[ResolvedClass] = []
+    for sub in ast.walk(scope_node):
+        if not isinstance(sub, ast.Call):
+            continue
+        target = _resolve_callee(
+            sub.func, file_info, registry, project_root,
+        )
+        if target is None or target.category != "component":
+            continue
+        key = (target.file_path, target.name)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(target)
+    out.sort(key=lambda c: (c.module_path or "", c.name))
+    return tuple(out)
+
+

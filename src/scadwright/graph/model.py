@@ -19,26 +19,39 @@ from pathlib import Path
 from typing import Literal
 
 
-NodeKind = Literal["component", "spec", "design", "variant"]
+NodeKind = Literal["component", "spec", "design", "variant", "transform"]
 EdgeKind = Literal[
     "uses_param", "reads_attr", "inherits", "contains",
-    "has_variant", "variant_builds",
+    "has_variant", "variant_builds", "uses_transform",
 ]
 
 
 @dataclass(frozen=True)
 class Node:
-    """A graph node — one per Component / Spec / Design class, plus
-    one per ``@variant`` method on each Design.
+    """A graph node — one per Component / Spec / Design / Transform
+    class, plus one per ``@variant`` method on each Design and one
+    per project-defined transform.
 
-    ``id`` is the dotted module path joined with the class name
-    (and, for variants, the method name appended:
-    ``"main.BatteryBox.print"``). ``label`` is the display name
-    (the class name, or just the variant method name).
+    ``id`` is the dotted module path joined with the class or
+    function name (and, for variants, the method name appended:
+    ``"main.BatteryBox.print"``). ``label`` is the display name —
+    the class name, the variant method name, or for transforms the
+    registered name (which may differ from the function/class
+    identifier).
+
+    ``file_path`` and ``line`` carry the source location: the
+    absolute path to the defining ``.py`` file and the 1-based
+    line number where the class, function, variant method, or
+    ``register(...)`` call begins. Both are optional so tests and
+    callers that don't care about locations can construct Nodes
+    without them; renderers that surface source positions (ASCII,
+    JSON) read them and omit gracefully when absent.
     """
     id: str
     label: str
     kind: NodeKind
+    file_path: Path | None = None
+    line: int | None = None
 
 
 @dataclass(frozen=True)
@@ -89,9 +102,23 @@ class Graph:
     machine-readable signal that the graph may be missing classes
     a CLI / downstream tool should warn about. Sorted by path for
     determinism.
+
+    ``warnings`` carries non-fatal diagnostics — transform name
+    collisions, ambiguous registrations — that don't drop a file
+    from the graph but that the user should hear about. Sorted by
+    path then message for determinism.
+
+    ``project_root`` is the directory the build walked, retained
+    so renderers (ASCII especially) can relativize source paths
+    for display. ``None`` for graphs constructed by hand in tests
+    or other consumers that don't go through ``build_graph()``.
     """
     nodes: tuple[Node, ...]
     edges: tuple[Edge, ...]
     parse_errors: tuple[tuple[Path, str], ...] = field(
         default_factory=tuple,
     )
+    warnings: tuple[tuple[Path, str], ...] = field(
+        default_factory=tuple,
+    )
+    project_root: Path | None = None
