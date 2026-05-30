@@ -56,6 +56,7 @@ having to re-write anything.
 - [Resolution](resolution.md) — controlling smoothness (`fn`/`fa`/`fs`), precedence rules
 - [Errors and logging](errors_and_logging.md) — what SCADwright does when something's wrong
 - [Command line](cli_and_args.md) — `scadwright build`/`preview`/`render`, script parameters
+- [Project dependency graph](graph_setup.md) — `scadwright graph` emits a Mermaid/JSON/DOT graph of how Components, Specs, and Designs relate
 - [Debug helpers](debug.md) — `force_render`, `echo` for SCAD-side diagnostics (niche)
 - [Testing](testing.md) — `tree_hash` for regression pinning, geometry assertions, golden-file patterns
 
