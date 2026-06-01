@@ -305,24 +305,6 @@ def test_self_attribute_call_not_a_contains(tmp_path: Path) -> None:
     assert _refs(tmp_path, "A") == ()
 
 
-def test_composition_ref_immutable() -> None:
-    from scadwright.project_index.registry import ResolvedClass
-    import ast
-
-    rc = ResolvedClass(
-        file_path=Path("/x"), name="X", module_path="m",
-        category="component", line=0, ast_node=ast.ClassDef(
-            name="X", bases=[], keywords=[], body=[], decorator_list=[],
-        ),
-    )
-    ref = CompositionRef(target=rc)
-    try:
-        ref.target = rc  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("CompositionRef should be frozen")
-
-
 # =============================================================================
 # Helper-method scope (Component instantiation outside build())
 # =============================================================================

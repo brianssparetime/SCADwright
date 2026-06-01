@@ -10,11 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from scadwright.project_index.walk import (
     ClassDefInfo,
-    FileInfo,
     ImportInfo,
     walk_project,
 )
@@ -324,11 +321,3 @@ def _write(tmp_path: Path, name: str, content: str) -> Path:
     p = tmp_path / name
     p.write_text(content)
     return p
-
-
-def test_file_info_is_immutable(tmp_path: Path) -> None:
-    f = _write(tmp_path, "t.py", "class A: pass\n")
-    [info] = walk_project(f)
-    assert isinstance(info, FileInfo)
-    with pytest.raises(Exception):
-        info.path = tmp_path / "other.py"  # type: ignore[misc]

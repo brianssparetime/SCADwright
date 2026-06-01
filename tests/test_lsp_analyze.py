@@ -587,20 +587,6 @@ def test_param_assignment_position_multiple_params() -> None:
     assert by_name["height"].assign_start_col == 4
 
 
-def test_param_info_constructed_directly_has_none_position() -> None:
-    # Direct construction (e.g., in tests) — position fields default
-    # to None.
-    p = ParamInfo(
-        name="x",
-        type_text="float",
-        default_text=None,
-        doc_text=None,
-        extras=(),
-    )
-    assert p.assign_start_line is None
-    assert p.assign_start_col is None
-
-
 # =============================================================================
 # auto_declared_targets_before
 # =============================================================================

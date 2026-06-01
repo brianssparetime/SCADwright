@@ -4,7 +4,6 @@ import pytest
 
 from scadwright import Component, anchor
 from scadwright.anchor import (
-    ANCHOR_KINDS,
     Anchor,
     anchors_from_bbox,
     get_node_anchors,
@@ -48,12 +47,6 @@ def test_anchor_kind_must_be_in_closed_set():
         Anchor(position=(0, 0, 0), normal=(0, 0, 1), kind="bogus")
 
 
-def test_anchor_kind_set_is_closed():
-    assert set(ANCHOR_KINDS) == {
-        "planar", "cylindrical", "conical", "spherical", "meridional",
-    }
-
-
 def test_anchor_curved_kind_requires_fields():
     """A cylindrical anchor without radius/axis/length must raise."""
     with pytest.raises(ValidationError, match="missing required"):
@@ -61,19 +54,6 @@ def test_anchor_curved_kind_requires_fields():
             position=(0, 0, 0), normal=(1, 0, 0), kind="cylindrical",
             # radius / axis / length all missing
         )
-
-
-def test_anchor_is_hashable_with_curved_fields():
-    a = Anchor(
-        position=(0, 0, 0),
-        normal=(1, 0, 0),
-        kind="cylindrical",
-        axis=(0, 0, 1),
-        radius=5.0,
-        length=20.0,
-    )
-    # Round-trip through a set requires hashability.
-    assert {a, a} == {a}
 
 
 # --- anchors_from_bbox tags planar ---

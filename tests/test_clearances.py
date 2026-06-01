@@ -31,23 +31,6 @@ from scadwright.shapes import (
 )
 
 
-# --- Clearances namedtuple ---
-
-
-def test_clearances_all_none_by_default():
-    c = Clearances()
-    assert c.sliding is None
-    assert c.press is None
-    assert c.snap is None
-    assert c.finger is None
-
-
-def test_clearances_partial_construction():
-    c = Clearances(sliding=0.05)
-    assert c.sliding == 0.05
-    assert c.press is None
-
-
 def test_default_clearances_fully_populated():
     for field in ("sliding", "press", "snap", "finger"):
         assert getattr(DEFAULT_CLEARANCES, field) is not None

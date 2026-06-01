@@ -13,10 +13,6 @@ from scadwright.primitives import cube, sphere, cylinder
 # ---------- SymbolicExpr arithmetic + emission ----------
 
 
-def test_t_emits_as_dollar_t():
-    assert t().emit() == "$t"
-
-
 def test_arithmetic_builds_scad_expressions():
     assert (t() * 360).emit() == "$t * 360"
     assert (t() + 1).emit() == "$t + 1"

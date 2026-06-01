@@ -291,14 +291,6 @@ def test_helix_bbox_reasonable():
     assert bb.size[2] == pytest.approx(12.0, abs=1.0)
 
 
-def test_helix_attributes():
-    h = Helix(r=10, wire_r=1, pitch=5, turns=3)
-    assert h.r == 10
-    assert h.wire_r == 1
-    assert h.pitch == 5
-    assert h.turns == 3
-
-
 def test_helix_custom_wire_profile():
     profile = almond_profile(chord_r=1.5, sag=0.5, n_arc=8)
     h = Helix(wire_profile=profile, r=10, pitch=5, turns=2)

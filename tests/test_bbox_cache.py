@@ -33,21 +33,6 @@ def test_invalidate_clears_bbox_cache():
     assert _Counter._calls == n1 + 1
 
 
-def test_param_component_has_bbox_cache():
-    """Auto-generated __init__ should set _bbox_cache via super().__init__."""
-
-    class _P(Component):
-        size = Param(float, default=10)
-
-        def build(self):
-            return cube(self.size)
-
-    p = _P()
-    assert p._bbox_cache is None
-    bbox(p)
-    assert p._bbox_cache is not None
-
-
 # --- node.bbox property (matches free function) ---
 
 

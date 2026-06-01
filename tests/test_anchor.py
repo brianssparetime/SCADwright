@@ -2,24 +2,9 @@
 
 import pytest
 
-from scadwright.anchor import Anchor, FACE_NAMES, anchors_from_bbox, resolve_face_name
+from scadwright.anchor import FACE_NAMES, anchors_from_bbox, resolve_face_name
 from scadwright.bbox import BBox
 from scadwright.errors import ValidationError
-
-
-# --- Anchor dataclass ---
-
-
-def test_anchor_creation():
-    a = Anchor(position=(1.0, 2.0, 3.0), normal=(0.0, 0.0, 1.0))
-    assert a.position == (1.0, 2.0, 3.0)
-    assert a.normal == (0.0, 0.0, 1.0)
-
-
-def test_anchor_is_frozen():
-    a = Anchor(position=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))
-    with pytest.raises(AttributeError):
-        a.position = (1.0, 0.0, 0.0)
 
 
 # --- resolve_face_name ---

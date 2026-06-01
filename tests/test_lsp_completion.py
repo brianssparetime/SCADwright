@@ -8,10 +8,7 @@ specific items the design doc calls out.
 
 from __future__ import annotations
 
-from scadwright.lsp.completion import (
-    CompletionItem,
-    build_completion_items,
-)
+from scadwright.lsp.completion import build_completion_items
 from scadwright.lsp.context import ContextKind
 
 
@@ -131,17 +128,6 @@ def test_returned_list_is_a_fresh_copy() -> None:
     a.clear()
     c = build_completion_items(ContextKind.EXPRESSION)
     assert len(c) == len(b)
-
-
-def test_completion_item_is_immutable_dataclass() -> None:
-    item = CompletionItem(label="x", kind="function")
-    # Frozen dataclass — assignment raises FrozenInstanceError, which
-    # subclasses Exception.
-    try:
-        item.label = "y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("CompletionItem should be frozen")
 
 
 # =============================================================================

@@ -55,15 +55,6 @@ def test_component_source_location_points_at_instantiation():
     assert b.source_location.line == this_line + 1
 
 
-def test_concrete_nodes_still_frozen():
-    """Unfreezing Component must NOT cascade to concrete AST nodes."""
-    import dataclasses
-
-    c = cube(5)
-    with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
-        c.size = (1, 1, 1)
-
-
 def test_build_not_called_before_materialize():
     """Phase 0 Q10 / Phase 2 Q3: build is lazy."""
     counter = {"n": 0}

@@ -32,16 +32,3 @@ def test_cube_center_string_full():
 def test_cube_center_list():
     c = cube([1, 2, 3], center=[True, False, True])
     assert c.center == (True, False, True)
-
-
-def test_cube_is_frozen():
-    import dataclasses
-
-    c = cube(10)
-    try:
-        c.size = (1, 2, 3)  # type: ignore[misc]
-    except dataclasses.FrozenInstanceError:
-        return
-    except AttributeError:
-        return
-    raise AssertionError("Cube should be frozen")

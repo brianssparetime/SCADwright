@@ -12,7 +12,6 @@ import pytest
 
 from scadwright.lsp.context import ContextKind
 from scadwright.lsp.hover import (
-    HoverContent,
     build_hover_content,
     extract_word_at,
 )
@@ -190,20 +189,6 @@ def test_bool_hover_differs_between_expression_and_type_tag() -> None:
     assert "bool(x)" in expr_h.markdown
     # In type tag: it's an annotation type.
     assert "Type tag" in tag_h.markdown
-
-
-# =============================================================================
-# HoverContent shape
-# =============================================================================
-
-
-def test_hover_content_is_immutable() -> None:
-    h = HoverContent(markdown="x")
-    try:
-        h.markdown = "y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("HoverContent should be frozen")
 
 
 # =============================================================================

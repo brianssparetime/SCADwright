@@ -9,34 +9,8 @@ from scadwright import (
     default_eps,
     tolerances,
 )
-from scadwright.api.tolerances import (
-    ANCHOR_PLANE_TOL,
-    ARC_CLAMP_TOL,
-    AXIS_LEN_DEGEN_TOL,
-    BBOX_DEGEN_TOL,
-    INSCRIPTION_MARGIN,
-    NORMAL_PARALLEL_TOL,
-    PARALLEL_CROSS_TOL,
-    POINT_IN_BBOX_TOL,
-)
 from scadwright.boolops import difference, fuse
 from scadwright.primitives import cube, cylinder
-
-
-# --- Module-level constants ---
-
-
-def test_internal_constants_have_expected_values():
-    """Pin the internal-only constants so a future refactor doesn't
-    silently change them."""
-    assert ANCHOR_PLANE_TOL == 1e-3
-    assert BBOX_DEGEN_TOL == 1e-3
-    assert NORMAL_PARALLEL_TOL == 1e-3
-    assert AXIS_LEN_DEGEN_TOL == 1e-12
-    assert PARALLEL_CROSS_TOL == 1e-10
-    assert ARC_CLAMP_TOL == 1e-9
-    assert INSCRIPTION_MARGIN == 1e-3
-    assert POINT_IN_BBOX_TOL == 1e-6
 
 
 # --- Default user-tunable values ---

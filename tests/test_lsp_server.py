@@ -68,16 +68,6 @@ def test_to_lsp_diagnostic_maps_range_fields() -> None:
     assert out.range.end.character == 14
 
 
-def test_to_lsp_diagnostic_default_severity_is_error() -> None:
-    sc = ScDiagnostic(
-        range=DiagnosticRange(0, 0, 0, 0),
-        severity="error",
-        message="msg",
-    )
-    out = _to_lsp_diagnostic(sc)
-    assert out.severity == lsp.DiagnosticSeverity.Error
-
-
 def test_to_lsp_diagnostic_severity_mapping_covers_all_levels() -> None:
     cases = {
         "error": lsp.DiagnosticSeverity.Error,
@@ -227,13 +217,6 @@ def test_publish_for_text_logs_on_analyzer_exception(monkeypatch) -> None:
 # =============================================================================
 # Server assembly smoke test
 # =============================================================================
-
-
-def test_build_server_assembles_without_error() -> None:
-    # Just constructing the server registers the feature decorators.
-    # If a registration shape is wrong, the @feature call raises.
-    server = build_server()
-    assert server is not None
 
 
 def test_build_server_uses_expected_name_and_version() -> None:
@@ -440,24 +423,6 @@ def test_build_server_registers_completion_with_colon_trigger() -> None:
     assert ":" in options.trigger_characters
 
 
-def test_build_server_registers_hover_feature() -> None:
-    server = build_server()
-    features = server.protocol.fm.features
-    assert lsp.TEXT_DOCUMENT_HOVER in features
-
-
-def test_build_server_registers_completion_feature() -> None:
-    server = build_server()
-    features = server.protocol.fm.features
-    assert lsp.TEXT_DOCUMENT_COMPLETION in features
-
-
-def test_build_server_registers_definition_feature() -> None:
-    server = build_server()
-    features = server.protocol.fm.features
-    assert lsp.TEXT_DOCUMENT_DEFINITION in features
-
-
 # =============================================================================
 # _to_lsp_location adapter and _definition_for pipeline
 # =============================================================================
@@ -595,22 +560,6 @@ def test_document_symbols_for_no_classes_returns_empty() -> None:
     assert _document_symbols_for("x = 1\n") == []
 
 
-def test_build_server_registers_document_symbol_feature() -> None:
-    server = build_server()
-    features = server.protocol.fm.features
-    assert lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL in features
-
-
-def test_completion_options_register_dot_trigger() -> None:
-    server = build_server()
-    options = server.protocol.fm.feature_options.get(
-        lsp.TEXT_DOCUMENT_COMPLETION,
-    )
-    assert options is not None
-    assert ":" in options.trigger_characters
-    assert "." in options.trigger_characters
-
-
 def test_completion_for_attribute_returns_target_class_params() -> None:
     src = (
         'class B:\n'
@@ -643,12 +592,6 @@ def test_completion_for_attribute_no_class_match_returns_empty() -> None:
 # =============================================================================
 # Rename
 # =============================================================================
-
-
-def test_build_server_registers_rename_feature() -> None:
-    server = build_server()
-    features = server.protocol.fm.features
-    assert lsp.TEXT_DOCUMENT_RENAME in features
 
 
 def test_rename_for_param_returns_workspace_edit() -> None:

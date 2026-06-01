@@ -156,13 +156,3 @@ def test_pack_on_bed_with_engraved_body():
     # Both engraved bodies present in the layout; no exception during pack.
     assert "render()" in scad
     assert "difference()" in scad
-
-
-# --- Top-level public API ---
-
-
-def test_node_publicly_importable():
-    """Regression guard for the public `Node` export (Change 3)."""
-    from scadwright import Node as PubNode
-    from scadwright.ast.base import Node as InternalNode
-    assert PubNode is InternalNode

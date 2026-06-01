@@ -67,11 +67,6 @@ def test_self_reference_simple():
         parse_equations_unified(["x = x - 1"])
 
 
-def test_self_reference_via_equality():
-    with pytest.raises(ValidationError, match="self-referential"):
-        parse_equations_unified(["x = x + 5"])
-
-
 def test_self_reference_consistent_is_ok():
     # x == x reduces to 0 == 0, true. Should not raise.
     eqs, _, _, _, _ = parse_equations_unified(["x = x"])

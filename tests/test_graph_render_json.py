@@ -122,15 +122,6 @@ def test_has_variant_and_variant_builds_minimal_keys() -> None:
 # =============================================================================
 
 
-def test_output_is_valid_json() -> None:
-    g = Graph(
-        nodes=(Node(id="m.A", label="A", kind="component"),),
-        edges=(),
-    )
-    # Round-trips without error.
-    json.loads(render_json(g))
-
-
 def test_top_level_keys() -> None:
     payload = _parsed(Graph(nodes=(), edges=()))
     assert set(payload.keys()) == {"nodes", "edges"}

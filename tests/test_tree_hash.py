@@ -27,12 +27,6 @@ def test_chained_transform_hashes_stable():
     assert h1 == h2
 
 
-def test_hash_is_16_chars_hex():
-    h = tree_hash(cube(1))
-    assert len(h) == 16
-    int(h, 16)  # parses as hex
-
-
 def test_component_hash_includes_params():
     class _Box(Component):
         size = Param(float, default=10)

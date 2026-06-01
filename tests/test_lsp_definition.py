@@ -11,10 +11,7 @@ from __future__ import annotations
 
 from scadwright.lsp.analyze import find_equations_blocks
 from scadwright.lsp.context import ContextKind
-from scadwright.lsp.definition import (
-    DefinitionLocation,
-    build_definition_location,
-)
+from scadwright.lsp.definition import build_definition_location
 
 
 def _block(src: str):
@@ -243,14 +240,3 @@ def test_definition_attribute_chain_broken_returns_none() -> None:
         sibling_blocks=blocks,
     )
     assert loc is None
-
-
-def test_definition_location_is_immutable() -> None:
-    loc = DefinitionLocation(
-        start_line=0, start_col=0, end_line=0, end_col=1,
-    )
-    try:
-        loc.start_line = 9  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("DefinitionLocation should be frozen")

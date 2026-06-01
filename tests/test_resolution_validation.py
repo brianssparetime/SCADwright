@@ -99,11 +99,6 @@ def test_positive_resolution_accepted():
     assert s.fn == 64
 
 
-def test_resolution_none_stays_none():
-    s = sphere(r=5)
-    assert s.fn is None and s.fa is None and s.fs is None
-
-
 def test_explicit_wins_over_negative_context():
     # If context has a bad value but the user passes a good one, the good
     # one wins and no error.

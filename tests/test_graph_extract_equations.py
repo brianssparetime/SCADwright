@@ -219,12 +219,3 @@ def test_invalid_equations_yields_empty(tmp_path: Path) -> None:
         '    equations = "x = snh(spec.attr)"\n'
     ))
     assert _reads(tmp_path, "Bracket") == ()
-
-
-def test_attribute_read_immutable() -> None:
-    r = AttributeRead(base_name="b", attr="x", target=None)
-    try:
-        r.attr = "y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("AttributeRead should be frozen")

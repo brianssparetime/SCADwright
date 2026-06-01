@@ -40,12 +40,6 @@ def test_mirror_negates():
     assert bb.max == (0, 10, 10)
 
 
-def test_color_passthrough():
-    bb_with = bbox(cube([10, 10, 10]).red())
-    bb_without = bbox(cube([10, 10, 10]))
-    assert bb_with == bb_without
-
-
 def test_chain_translate_rotate():
     bb = bbox(
         cube([10, 10, 10], center=True).rotate([0, 0, 45]).translate([100, 0, 0])

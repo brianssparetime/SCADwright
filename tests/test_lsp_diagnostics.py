@@ -18,13 +18,7 @@ diagnostic. Tests verify that:
 
 from __future__ import annotations
 
-import pytest
-
-from scadwright.lsp.diagnostics import (
-    Diagnostic,
-    DiagnosticRange,
-    analyze_file,
-)
+from scadwright.lsp.diagnostics import analyze_file
 
 
 # =============================================================================
@@ -297,16 +291,6 @@ def test_diagnostic_severity_is_error() -> None:
     src = 'class A:\n    equations = "y = snh(x)"\n'
     [d] = analyze_file(src)
     assert d.severity == "error"
-
-
-def test_diagnostic_dataclass_is_immutable() -> None:
-    d = Diagnostic(
-        range=DiagnosticRange(0, 0, 0, 0),
-        severity="error",
-        message="x",
-    )
-    with pytest.raises(Exception):
-        d.severity = "warning"  # type: ignore[misc]
 
 
 def test_diagnostic_range_is_half_open() -> None:

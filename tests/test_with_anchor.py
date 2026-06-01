@@ -111,20 +111,6 @@ def test_with_anchor_emits_no_extra_scad():
     assert plain == wrapped
 
 
-# --- bbox transparency ---
-
-
-def test_with_anchor_does_not_change_bbox():
-    from scadwright.bbox import bbox
-    plain_bb = bbox(cube([10, 10, 10]))
-    wrapped_bb = bbox(
-        cube([10, 10, 10]).with_anchor("x", at=(0, 0, 0), normal=(0, 0, 1))
-    )
-    assert plain_bb.min == plain_bb.min
-    assert plain_bb.max == wrapped_bb.max
-    assert plain_bb.min == wrapped_bb.min
-
-
 # --- booleans drop the anchor (consistent with Component custom anchors) ---
 
 

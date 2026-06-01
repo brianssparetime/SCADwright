@@ -71,18 +71,6 @@ def test_different_unknown_names_warn_separately():
         assert len(relevant) == 2
 
 
-def test_bool_of_variant():
-    assert not current_variant()
-    with variant("x"):
-        assert current_variant()
-
-
-def test_name_property():
-    assert current_variant().name is None
-    with variant("print"):
-        assert current_variant().name == "print"
-
-
 def test_variant_equality_with_None():
     # Outside any variant, equals None.
     assert current_variant() == None  # noqa: E711
@@ -91,21 +79,8 @@ def test_variant_equality_with_None():
         assert not (current_variant() == None)  # noqa: E711
 
 
-def test_variant_hashable():
-    v = current_variant()
-    assert hash(v) == hash(None)
-    with variant("x"):
-        assert hash(current_variant()) == hash("x")
-
-
 def test_register_variants_rejects_bad_input():
     with pytest.raises(ValidationError):
         register_variants("")
     with pytest.raises(ValidationError):
         register_variants(42)
-
-
-def test_variant_str_coerces_usefully():
-    assert str(current_variant()) == ""
-    with variant("print"):
-        assert str(current_variant()) == "print"

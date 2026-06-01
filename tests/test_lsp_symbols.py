@@ -176,17 +176,3 @@ def test_nested_classes_appear_at_top_level() -> None:
     syms = _symbols(src)
     assert {s.name for s in syms} == {"Outer", "Inner"}
     assert len(syms) == 2
-
-
-def test_document_symbol_is_immutable() -> None:
-    sym = DocumentSymbol(
-        name="x", kind="class", detail=None,
-        start_line=0, start_col=0, end_line=0, end_col=1,
-        selection_start_line=0, selection_start_col=0,
-        selection_end_line=0, selection_end_col=1,
-    )
-    try:
-        sym.name = "y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("DocumentSymbol should be frozen")

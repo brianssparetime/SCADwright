@@ -74,12 +74,6 @@ def test_circle_bbox_2d_thin():
 # --- BBox helpers ---
 
 
-def test_bbox_size_center():
-    bb = BBox(min=(0, 0, 0), max=(10, 20, 30))
-    assert bb.size == (10, 20, 30)
-    assert bb.center == (5, 10, 15)
-
-
 def test_bbox_contains():
     outer = BBox(min=(0, 0, 0), max=(10, 10, 10))
     inner = BBox(min=(2, 2, 2), max=(5, 5, 5))

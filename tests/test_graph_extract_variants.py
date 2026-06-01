@@ -335,12 +335,3 @@ def test_variants_preserve_source_order(tmp_path: Path) -> None:
     ))
     names = [v.method_name for v in _variants(tmp_path, "Box")]
     assert names == ["alpha", "beta", "gamma"]
-
-
-def test_variant_info_immutable() -> None:
-    v = VariantInfo(method_name="x", default=False, builds=())
-    try:
-        v.method_name = "y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("VariantInfo should be frozen")

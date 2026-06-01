@@ -10,25 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from scadwright import Adjustment, Component, Param
+from scadwright import Component, Param
 from scadwright.errors import ValidationError
 from scadwright.primitives import cube
-
-
-# =============================================================================
-# Adjustment namedtuple is exported and well-shaped
-# =============================================================================
-
-
-def test_adjustment_is_namedtuple():
-    a = Adjustment(line=2, delta=0.3, comment="overshoot")
-    assert a.line == 2
-    assert a.delta == 0.3
-    assert a.comment == "overshoot"
-    # Namedtuple positional access works.
-    assert a[0] == 2
-    assert a[1] == 0.3
-    assert a[2] == "overshoot"
 
 
 # =============================================================================

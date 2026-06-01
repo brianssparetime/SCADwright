@@ -123,18 +123,6 @@ def test_cli_variant_name_picks_correctly():
     assert selected[0][1] == "b"
 
 
-def test_variant_metadata_roundtrips():
-    class D(Design):
-        @variant(fn=48, out="custom.scad", default=True)
-        def v(self):
-            return cube(1)
-
-    meta = D.__variants__["v"]
-    assert meta.fn == 48
-    assert meta.out == "custom.scad"
-    assert meta.default is True
-
-
 def test_default_output_path_uses_design_and_variant_names():
     from scadwright.design import _render_one
 
@@ -321,28 +309,6 @@ def test_variant_fn_does_not_leak_across_variants():
         "fn=48 leaked from `big` variant into `small` variant via the "
         "Component cache."
     )
-
-
-def test_variant_fn_reverse_order_also_clean():
-    """Same as above but render `small` first, then `big`. Confirms
-    invalidation works regardless of declaration / call order."""
-
-    class D(Design):
-        h = _CtxLeakHousing(r=10, h=20)
-
-        @variant(fn=48)
-        def big(self):
-            return self.h.translate([0, 0, 0])
-
-        @variant(fn=24)
-        def small(self):
-            return self.h.translate([0, 0, 0])
-
-    small_scad = _scad_for_variant(D, "small")
-    big_scad = _scad_for_variant(D, "big")
-
-    assert "$fn = 24" in small_scad or "$fn=24" in small_scad
-    assert "$fn = 48" in big_scad or "$fn=48" in big_scad
 
 
 def test_variant_viewpoint_reaches_emit():

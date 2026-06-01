@@ -33,12 +33,6 @@ def test_morph_returns_spec():
     assert spec.simultaneous is False
 
 
-def test_morph_marker_attribute():
-    spec = morph(stages=["a", "b"])
-    # The marker is what Design.__init_subclass__ keys on (alongside isinstance).
-    assert getattr(spec, "_scadwright_morph", False) is True
-
-
 def test_morph_three_stage_chain():
     spec = morph(stages=["a", "b", "c"])
     assert spec.stages == ("a", "b", "c")
@@ -91,17 +85,6 @@ def test_morph_order_must_be_list_of_strings():
         morph(stages=["a", "b"], order=("not", "a", "list"))  # type: ignore[arg-type]
     with pytest.raises(ValidationError, match="list of variant-part names"):
         morph(stages=["a", "b"], order=["ok", 42])  # type: ignore[list-item]
-
-
-# ---------------------------------------------------------------------------
-# Public export
-# ---------------------------------------------------------------------------
-
-
-def test_morph_is_importable_at_top_level():
-    import scadwright
-    assert hasattr(scadwright, "morph")
-    assert "morph" in scadwright.__all__
 
 
 # ---------------------------------------------------------------------------

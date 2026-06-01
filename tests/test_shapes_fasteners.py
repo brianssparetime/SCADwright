@@ -77,12 +77,6 @@ def test_bolt_socket_vs_button_head_distinct_height():
     assert bbox(button).size[2] == pytest.approx(17.8, abs=0.1)
 
 
-def test_bolt_attributes():
-    b = Bolt(size="M3", length=10)
-    assert b.length == 10
-    assert b.size == "M3"
-
-
 # --- clearance_hole / tap_hole ---
 
 

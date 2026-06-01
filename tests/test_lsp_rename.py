@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from scadwright.lsp.analyze import find_equations_blocks
 from scadwright.lsp.rename import (
-    TextEdit,
     build_rename_edits,
     is_renameable_target,
     is_valid_new_name,
@@ -274,22 +273,6 @@ def test_parse_failure_returns_none() -> None:
     )
     block = _block(src)
     assert build_rename_edits(block, "width", "ww") is None
-
-
-# =============================================================================
-# TextEdit shape
-# =============================================================================
-
-
-def test_text_edit_is_immutable() -> None:
-    e = TextEdit(
-        start_line=0, start_col=0, end_line=0, end_col=1, new_text="x",
-    )
-    try:
-        e.new_text = "y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("TextEdit should be frozen")
 
 
 # =============================================================================

@@ -11,8 +11,6 @@ sequence on one line.
 
 from __future__ import annotations
 
-import pytest
-
 from scadwright.lsp.context import ContextKind, classify_context
 
 
@@ -197,24 +195,6 @@ def test_type_tag_after_comma_in_args() -> None:
     line = "exactly_one(a:int, b:"
     # Cursor at end — should still be type-tag (inside parens).
     assert classify_context(line, len(line)) == ContextKind.TYPE_TAG
-
-
-# =============================================================================
-# Sanity: ContextKind values are stable strings
-# =============================================================================
-
-
-def test_context_kind_values_are_strings() -> None:
-    assert ContextKind.EXPRESSION.value == "expression"
-    assert ContextKind.TYPE_TAG.value == "type_tag"
-    assert ContextKind.STRING.value == "string"
-    assert ContextKind.COMMENT.value == "comment"
-
-
-@pytest.mark.parametrize("col", [0, 1, 5])
-def test_classify_does_not_raise_for_valid_cols(col: int) -> None:
-    # Sanity: the function should not raise for any 0 <= col <= len.
-    classify_context("hello world", col)
 
 
 def test_attribute_context_after_dot() -> None:

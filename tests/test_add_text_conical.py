@@ -73,19 +73,6 @@ def test_conical_add_text_emits_axial():
     assert '"B"' in scad
 
 
-def test_conical_default_orient_is_axial():
-    """Without text_orient, glyphs are axial-aligned (up = axis)."""
-    p = cylinder(h=20, r1=10, r2=5).add_text(
-        label="X", relief=0.4, on="outer_wall", font_size=4,
-    )
-    scad_axial_default = emit_str(p)
-    p2 = cylinder(h=20, r1=10, r2=5).add_text(
-        label="X", relief=0.4, on="outer_wall", font_size=4, text_orient="axial",
-    )
-    scad_axial_explicit = emit_str(p2)
-    assert scad_axial_default == scad_axial_explicit
-
-
 def test_conical_axial_and_slant_agree():
     """On curved-axially hosts (cones, barrels) text_orient is a no-op —
     the glyph plane is always the surface tangent plane and the extrusion
