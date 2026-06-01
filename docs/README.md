@@ -33,7 +33,7 @@ having to re-write anything.
 - [Boolean operations](csg.md) — combining shapes (`union`, `difference`, `intersection`, `hull`, `minkowski`)
 - [Extrusions](extrusions.md) — turning 2D shapes into 3D (`linear_extrude`, `rotate_extrude`)
 - [Math](math.md) — `scadwright.math` SCAD trig (in degrees).  Python trig works fine too.
-- [Animation and viewpoints](animation.md) — `t()` for `$t`-driven shapes, `cond()` for ternary, `viewpoint()` for the default camera
+- [Animation and viewpoints](animation.md) — `t()` for `$t`-driven shapes, `cond()` for ternary, `viewpoint()` for the default camera. See also [Morph](morph.md) for one-line animation between variants.
 - [Integrating legacy SCAD code](scad_interop.md) — emitting `use <...>` / `include <...>` at the boundary to an existing SCAD codebase
 
 ### SCADwright extended functionality:
@@ -49,7 +49,7 @@ having to re-write anything.
 - [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
 - [Specs](specs_and_adjustments.md#your-first-spec) — shared dimensions across parts in a single source of truth
-- [Morph](morph.md) — one-line animations between two variants, exported as APNG for READMEs
+- [Morph](morph.md) — one-line animations between two variants, exported as APNG for READMEs. See also [Animation and viewpoints](animation.md) for the lower-level `$t` toolkit.
 
 **Workflow**
 

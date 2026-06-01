@@ -30,6 +30,8 @@ scadwright morph widget.py assemble out.apng
 
 `out.apng` is written next to the script. The lid swings from the print-bed pose into the display pose along a circular arc — the path of a single rotation about a virtual hinge. No ffmpeg required.
 
+If instead you want a single model to change continuously over the timeline (a turntable, a sweeping dimension), or to hand-build the motion with `$t`, see [Animation and viewpoints](animation.md).
+
 ## How it works
 
 The morph captures every stage variant's AST, identifies which parts (`self.box`, `self.lid`, ...) appear in each, and computes the transform difference between consecutive stages. At animation time the transforms morph smoothly from one stage to the next using **Chasles' theorem**: any rigid motion in 3D is equivalent to a single rotation about a screw axis, plus an optional translation along that axis. For a 180° flip combined with a translation, this reads as a hinge swing rather than translating-and-rotating-in-midair.
@@ -174,7 +176,7 @@ assemble = morph(stages=["print", "display"], michael_bay=True)
 
 Combined with `pingpong=True`, the camera completes one full revolution while the model plays forward then back — the kind of one-second loop that draws eyes on a README.
 
-The orbit overrides the final stage's `rotation` viewpoint, but the stage's `target`, `distance`, and `fov` still apply if set — so framing carries through. The pitch is fixed at 60° (a looking-down-from-above 3D shot); if you need a different pitch, write the viewpoint by hand using `t()` math and leave `michael_bay=False`.
+The orbit overrides the final stage's `rotation` viewpoint, but the stage's `target`, `distance`, and `fov` still apply if set — so framing carries through. The pitch is fixed at 60° (a looking-down-from-above 3D shot); if you need a different pitch, write the viewpoint by hand using [`t()` math](animation.md) and leave `michael_bay=False`.
 
 ## What can't morph
 
@@ -235,7 +237,7 @@ The class attribute can be a `Component`, a primitive (`cube(...)`, `sphere(...)
 
 ## Composing with viewpoint
 
-The morph inherits the **final stage's** viewpoint by default — the user usually wants to see the final pose framed in the OpenSCAD camera. To override, set viewpoint on the final stage's `@variant` decorator (`rotation=`, `target=`, `distance=`, `fov=`).
+The morph inherits the **final stage's** viewpoint by default — the user usually wants to see the final pose framed in the OpenSCAD camera. To override, set the viewpoint fields on the final stage's `@variant` decorator (`rotation=`, `target=`, `distance=`, `fov=` — the same fields documented under [viewpoint()](animation.md)).
 
 ## Troubleshooting
 

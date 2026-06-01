@@ -2,6 +2,8 @@
 
 OpenSCAD's animation feature drives a special variable `$t` from 0 to 1 over a configurable timeline; you reference `$t` inside transforms and sizes to make geometry change frame-by-frame. OpenSCAD's view also reads top-of-file `$vpr`/`$vpt`/`$vpd`/`$vpf` globals as the default camera.
 
+If you already have two or more variants and just want the motion between them (an assembly drop, an open/close swing), reach for [Morph](morph.md): one line, no `$t` math. The tools here are for making a single model change continuously over the timeline, or for a path morph can't express.
+
 SCADwright exposes both via `scadwright.animation`:
 
 ```python
@@ -134,7 +136,7 @@ with viewpoint(rotation=[60, 0, 30], distance=100):
 
 ## Combining with variants
 
-Animation pairs naturally with variants -- render an animated `display` variant alongside a static `print` variant:
+`t()` works inside a variant body, so an animated `display` variant can render alongside a static `print`:
 
 ```python
 from scadwright.animation import t, viewpoint
