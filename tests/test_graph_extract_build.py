@@ -13,8 +13,8 @@ from pathlib import Path
 
 from scadwright.graph.extract import (
     AttributeRead,
+    build_params_by_class,
     extract_build_attribute_reads,
-    extract_params,
 )
 from scadwright.project_index.registry import build_class_registry
 from scadwright.project_index.walk import walk_project
@@ -23,10 +23,10 @@ from scadwright.project_index.walk import walk_project
 def _setup(tmp_path: Path, class_name: str):
     files = walk_project(tmp_path)
     registry = build_class_registry(files, tmp_path)
+    files_by_path = {f.path: f for f in files}
     cls = next(c for c in registry.classes.values() if c.name == class_name)
-    file_info = next(f for f in files if f.path == cls.file_path)
-    params = extract_params(cls, file_info, registry, tmp_path)
-    return cls, params
+    params_by_class = build_params_by_class(registry, files_by_path, tmp_path)
+    return cls, params_by_class
 
 
 def _write(tmp_path: Path, name: str, content: str) -> Path:
@@ -37,8 +37,8 @@ def _write(tmp_path: Path, name: str, content: str) -> Path:
 
 
 def _build_reads(tmp_path: Path, class_name: str) -> tuple[AttributeRead, ...]:
-    cls, params = _setup(tmp_path, class_name)
-    return extract_build_attribute_reads(cls, params)
+    cls, params_by_class = _setup(tmp_path, class_name)
+    return extract_build_attribute_reads(cls, params_by_class)
 
 
 # =============================================================================
@@ -115,13 +115,14 @@ def test_bare_self_attr_not_recorded(tmp_path: Path) -> None:
 
 
 # =============================================================================
-# Deeper chains stop at the first hop
+# Chains resolve as far as declared Param types reach
 # =============================================================================
 
 
-def test_deep_chain_records_only_first_hop(tmp_path: Path) -> None:
-    # ``self.spec.inner.attr`` records (spec, inner) only — going
-    # deeper would need cross-class type inference (deferred).
+def test_deep_chain_stops_at_non_param_hop(tmp_path: Path) -> None:
+    # ``self.spec.inner.attr`` records ``inner`` off CamSpec, then
+    # stops: ``inner`` isn't a declared Param of CamSpec, so its type
+    # is unknown and ``attr`` can't be attributed to a class.
     _write(tmp_path, "widget.py", (
         "from scadwright import Component, Spec, Param\n"
         "class CamSpec(Spec):\n"
@@ -141,7 +142,9 @@ def test_deep_chain_records_only_first_hop(tmp_path: Path) -> None:
 # =============================================================================
 
 
-def test_self_attr_read_on_primitive_param_target_none(tmp_path: Path) -> None:
+def test_self_attr_read_on_primitive_param_not_recorded(tmp_path: Path) -> None:
+    # ``self.width.real`` where width is a primitive Param doesn't
+    # resolve to a project class, so it isn't a cross-class read.
     _write(tmp_path, "widget.py", (
         "from scadwright import Component, Param\n"
         "class Bracket(Component):\n"
@@ -149,10 +152,7 @@ def test_self_attr_read_on_primitive_param_target_none(tmp_path: Path) -> None:
         "    def build(self):\n"
         "        return self.width.real\n"
     ))
-    [r] = _build_reads(tmp_path, "Bracket")
-    assert r.base_name == "width"
-    assert r.attr == "real"
-    assert r.target is None
+    assert _build_reads(tmp_path, "Bracket") == ()
 
 
 # =============================================================================
@@ -304,3 +304,30 @@ def test_self_attr_attr_read_inside_property(tmp_path: Path) -> None:
     ))
     [r] = _build_reads(tmp_path, "Cam")
     assert r.attr == "outer_d"
+
+
+# =============================================================================
+# Multi-hop chains: self.a.b.attr resolves through declared Param types
+# =============================================================================
+
+
+def test_two_hop_self_chain_resolves_to_deepest_class(tmp_path: Path) -> None:
+    _write(tmp_path, "widget.py", (
+        "from scadwright import Component, Spec, Param\n"
+        "class Inner(Spec):\n"
+        "    pass\n"
+        "class Mid(Spec):\n"
+        "    inner = Param(Inner)\n"
+        "class Outer(Component):\n"
+        "    mid = Param(Mid)\n"
+        "    def build(self):\n"
+        "        return self.mid.inner.depth\n"
+    ))
+    reads = _build_reads(tmp_path, "Outer")
+    by = {(r.attr): r.target.name for r in reads}
+    # self.mid.inner -> reads `inner` off Mid; self.mid.inner.depth ->
+    # reads `depth` off Inner.
+    assert by["inner"] == "Mid"
+    assert by["depth"] == "Inner"
+
+

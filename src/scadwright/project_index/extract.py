@@ -135,6 +135,139 @@ def _try_build_param_info(stmt: ast.stmt) -> ParamInfo | None:
 
 
 # =============================================================================
+# Attribute-chain type resolution
+# =============================================================================
+#
+# A reference like ``self.a.b.outer_d`` (or the equations form
+# ``a.b.outer_d``) reads ``outer_d`` off the class that ``self.a.b``
+# evaluates to. Resolving which class that is means walking the
+# value chain hop by hop through declared Param types: ``a`` is a
+# Param of the enclosing class whose type is some class A, ``b`` is
+# a Param of A whose type is class B, so ``self.a.b`` is a B. The
+# read extractors and the LSP rename both need this, so it lives
+# here as one resolver over a precomputed class -> params map.
+
+# Sentinel returned for the ``self`` expression: it isn't a class,
+# but attribute access on it resolves against the enclosing class's
+# Params.
+_SELF = object()
+
+# Key into the params map: a class's (file_path, name), matching the
+# registry's own index so lookups are O(1) and identity-stable.
+ClassKey = tuple[Path, str]
+
+
+def _class_key(cls: ResolvedClass) -> ClassKey:
+    return (cls.file_path, cls.name)
+
+
+def build_params_by_class(
+    registry: ClassRegistry,
+    files_by_path: dict[Path, FileInfo],
+    project_root: Path,
+) -> dict[ClassKey, tuple[ParamRef, ...]]:
+    """Extract every project class's Params once, keyed for chain
+    resolution.
+
+    Building this up front lets :func:`_resolve_chain_type` resolve
+    an arbitrarily deep attribute chain with plain dict lookups
+    instead of re-parsing a class body at each hop. Classes whose
+    file isn't in ``files_by_path`` (couldn't be read) contribute
+    an empty tuple.
+    """
+    out: dict[ClassKey, tuple[ParamRef, ...]] = {}
+    for cls in registry.classes.values():
+        file_info = files_by_path.get(cls.file_path)
+        if file_info is None:
+            out[_class_key(cls)] = ()
+            continue
+        out[_class_key(cls)] = extract_params(
+            cls, file_info, registry, project_root,
+        )
+    return out
+
+
+def _param_type(
+    cls: ResolvedClass,
+    name: str,
+    params_by_class: dict[ClassKey, tuple[ParamRef, ...]],
+) -> ResolvedClass | None:
+    """Return the resolved class type of Param ``name`` on ``cls``,
+    or ``None`` when ``cls`` has no such Param or its type isn't a
+    project class."""
+    for p in params_by_class.get(_class_key(cls), ()):
+        if p.name == name:
+            return p.type_resolves_to
+    return None
+
+
+def resolve_chain_type(
+    node: ast.AST,
+    enclosing_class: ResolvedClass,
+    params_by_class: dict[ClassKey, tuple[ParamRef, ...]],
+):
+    """Resolve the class an expression evaluates to, or ``_SELF`` /
+    ``None``.
+
+    Handles ``self``, a bare Param name on the enclosing class, and
+    chained attribute access through declared Param types to any
+    depth. Recurses over the (finite) expression AST, so a Param
+    whose type is its own class can't loop. Anything outside this
+    shape — a local variable, a call, a subscript, a non-Param
+    attribute — yields ``None``, which is the honest "can't know"
+    answer.
+
+    The return value is a :class:`ResolvedClass`, the ``_SELF``
+    sentinel (the current instance), or ``None``. Callers that only
+    want "is this a class" test ``isinstance(result, ResolvedClass)``,
+    which excludes ``_SELF`` naturally.
+    """
+    if isinstance(node, ast.Name):
+        if node.id == "self":
+            return _SELF
+        return _param_type(enclosing_class, node.id, params_by_class)
+    if isinstance(node, ast.Attribute):
+        base = resolve_chain_type(
+            node.value, enclosing_class, params_by_class,
+        )
+        if base is _SELF:
+            return _param_type(enclosing_class, node.attr, params_by_class)
+        if isinstance(base, ResolvedClass):
+            return _param_type(base, node.attr, params_by_class)
+        return None
+    return None
+
+
+def _attr_owner(
+    attr_node: ast.Attribute,
+    enclosing_class: ResolvedClass,
+    params_by_class: dict[ClassKey, tuple[ParamRef, ...]],
+) -> ResolvedClass | None:
+    """Return the class that ``attr_node.attr`` is read off, or
+    ``None``.
+
+    The owner is the type the node's *value* resolves to. ``_SELF``
+    (a bare ``self.x`` own-Param read) and unresolvable chains both
+    yield ``None`` — neither is a cross-class reference.
+    """
+    owner = resolve_chain_type(
+        attr_node.value, enclosing_class, params_by_class,
+    )
+    return owner if isinstance(owner, ResolvedClass) else None
+
+
+def _immediate_base_name(value_node: ast.AST) -> str:
+    """The trailing identifier of an attribute chain's base, used as
+    ``AttributeRead.base_name``. ``self.spec`` -> ``"spec"``;
+    ``a.b`` -> ``"b"``; a bare ``Name`` -> its id."""
+    if isinstance(value_node, ast.Attribute):
+        return value_node.attr
+    if isinstance(value_node, ast.Name):
+        return value_node.id
+    return ""
+
+
+# =============================================================================
 # Equations attribute-read extraction
 # =============================================================================
 
@@ -161,27 +294,28 @@ class AttributeRead:
 def extract_equations_attribute_reads(
     cls: ResolvedClass,
     file_info: FileInfo,
-    params: tuple[ParamRef, ...],
+    params_by_class: dict[ClassKey, tuple[ParamRef, ...]],
 ) -> tuple[AttributeRead, ...]:
-    """Find every ``b.attr`` read in ``cls``'s equations where ``b``
-    is a Param of ``cls``.
+    """Find every ``b.attr`` (or deeper ``a.b.attr``) read in
+    ``cls``'s equations, resolving the base chain through declared
+    Param types to the class the attribute is read off.
 
-    Walks every equation, constraint, and adjustment AST on the
-    class. Reads on non-Param bases are skipped — those are either
-    typos (the LSP's undeclared-attribute warning catches them) or
-    references to names this extractor doesn't model. Reads on
-    primitive-typed Params are kept with ``target=None`` so callers
-    can choose whether to surface them.
+    Walks every equation, constraint, and adjustment AST. For each
+    attribute access, the value chain is resolved hop by hop: a
+    one-hop ``spec.outer_d`` reads ``outer_d`` off ``spec``'s type;
+    a deeper ``a.b.outer_d`` reads it off ``a.b``'s type. Reads
+    whose base doesn't resolve to a project class (a non-Param name,
+    a primitive-typed Param, a chain that breaks) are skipped.
 
-    Returns ``()`` when the class has no equations block, no
-    Params, fails parser validation, or when the equations parser
-    can't be loaded (sympy isn't installed). The empty result keeps
-    a surrounding graph build / rename pass robust on real projects
+    Returns ``()`` when the class has no equations block, no Params,
+    fails parser validation, or when the equations parser can't be
+    loaded (sympy isn't installed). The empty result keeps a
+    surrounding graph build / rename pass robust on real projects
     where one bad block shouldn't drop the class, and on base
     installs without the ``[equations]`` extra where a graph-only
     workflow shouldn't crash.
     """
-    if not params:
+    if not params_by_class.get(_class_key(cls)):
         return ()
     block = _block_from_classdef(cls.ast_node, file_info.source)
     if block is None:
@@ -199,28 +333,23 @@ def extract_equations_attribute_reads(
     except (ValidationError, ImportError):
         return ()
 
-    param_targets: dict[str, ResolvedClass | None] = {
-        p.name: p.type_resolves_to for p in params
-    }
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[ClassKey, str]] = set()
     out: list[AttributeRead] = []
     for node in _iter_walked_nodes(equations, constraints, adjustments):
         for sub in ast.walk(node):
             if not isinstance(sub, ast.Attribute):
                 continue
-            base = sub.value
-            if not isinstance(base, ast.Name):
+            owner = _attr_owner(sub, cls, params_by_class)
+            if owner is None:
                 continue
-            if base.id not in param_targets:
-                continue
-            key = (base.id, sub.attr)
+            key = (_class_key(owner), sub.attr)
             if key in seen:
                 continue
             seen.add(key)
             out.append(AttributeRead(
-                base_name=base.id,
+                base_name=_immediate_base_name(sub.value),
                 attr=sub.attr,
-                target=param_targets[base.id],
+                target=owner,
             ))
     return tuple(out)
 
@@ -308,53 +437,41 @@ def extract_class_attribute_reads(
 
 def extract_build_attribute_reads(
     cls: ResolvedClass,
-    params: tuple[ParamRef, ...],
+    params_by_class: dict[ClassKey, tuple[ParamRef, ...]],
 ) -> tuple[AttributeRead, ...]:
-    """Find every ``self.x.y`` read in ``cls``'s method bodies
-    where ``x`` is a Param of ``cls``.
+    """Find every ``self.<chain>.attr`` read in ``cls``'s method
+    bodies, resolving the chain through declared Param types to the
+    class the attribute is read off.
 
-    Walks the entire class body via ``ast.walk`` and matches the
-    two-deep pattern ``Attribute(value=Attribute(value=Name("self"),
-    attr=x), attr=y)`` anywhere it appears: inside ``build``,
-    inside helper methods called from ``build``, inside properties,
-    or any other method on the class. The function name keeps
-    ``build_`` for compatibility but the scope covers every method.
-
-    Bare ``self.x`` reads (own-Param uses) aren't recorded — they
-    aren't cross-Component references. Deeper chains like
-    ``self.x.y.z`` record ``(x, y)`` and stop, matching the
-    equations extractor's same-shape behavior.
+    Walks the entire class body via ``ast.walk`` (every method:
+    ``build``, helpers it calls, properties, anything else). For
+    each attribute access, the value chain is resolved hop by hop:
+    ``self.spec.outer_d`` reads ``outer_d`` off ``spec``'s type; a
+    deeper ``self.a.b.outer_d`` reads it off ``a.b``'s type. Bare
+    ``self.x`` reads (own-Param uses) and chains that don't resolve
+    to a project class are skipped — neither is a cross-class
+    reference.
 
     Returns ``()`` for classes with no Params.
     """
-    if not params:
+    if not params_by_class.get(_class_key(cls)):
         return ()
-    param_targets: dict[str, ResolvedClass | None] = {
-        p.name: p.type_resolves_to for p in params
-    }
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[ClassKey, str]] = set()
     out: list[AttributeRead] = []
     for sub in ast.walk(cls.ast_node):
         if not isinstance(sub, ast.Attribute):
             continue
-        outer_value = sub.value
-        if not isinstance(outer_value, ast.Attribute):
+        owner = _attr_owner(sub, cls, params_by_class)
+        if owner is None:
             continue
-        if not isinstance(outer_value.value, ast.Name):
-            continue
-        if outer_value.value.id != "self":
-            continue
-        x = outer_value.attr
-        if x not in param_targets:
-            continue
-        key = (x, sub.attr)
+        key = (_class_key(owner), sub.attr)
         if key in seen:
             continue
         seen.add(key)
         out.append(AttributeRead(
-            base_name=x,
+            base_name=_immediate_base_name(sub.value),
             attr=sub.attr,
-            target=param_targets[x],
+            target=owner,
         ))
     return tuple(out)
 

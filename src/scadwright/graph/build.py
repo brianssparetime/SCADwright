@@ -21,6 +21,7 @@ from typing import Iterable
 
 from scadwright.graph.extract import (
     AttributeRead,
+    build_params_by_class,
     extract_build_attribute_reads,
     extract_build_instantiations,
     extract_class_attribute_reads,
@@ -71,6 +72,7 @@ def build_graph(
     registry = build_class_registry(files, base_root)
     transforms = build_transform_registry(files, registry, base_root)
     files_by_path: dict[Path, FileInfo] = {f.path: f for f in files}
+    params_by_class = build_params_by_class(registry, files_by_path, base_root)
 
     nodes: list[Node] = []
     edges: list[Edge] = []
@@ -95,7 +97,7 @@ def build_graph(
         if file_info is None:
             continue
         edges.extend(_edges_for_class(
-            cls, file_info, registry, transforms, base_root,
+            cls, file_info, registry, transforms, base_root, params_by_class,
         ))
         if cls.category == "design":
             v_nodes, v_edges = _variant_nodes_and_edges(
@@ -192,6 +194,7 @@ def _edges_for_class(
     registry: ClassRegistry,
     transforms: TransformRegistry,
     project_root: Path,
+    params_by_class: dict,
 ) -> list[Edge]:
     """Emit every outgoing edge for a single class.
 
@@ -229,7 +232,7 @@ def _edges_for_class(
     # functions; neither uses Params.
     params: tuple = ()
     if cls.category in ("component", "spec"):
-        params = extract_params(cls, file_info, registry, project_root)
+        params = params_by_class.get((cls.file_path, cls.name), ())
         for p in params:
             if (
                 p.type_resolves_to is not None
@@ -242,20 +245,20 @@ def _edges_for_class(
                     via_param=p.name,
                 ))
 
-    # reads_attr edges, merged across equations, self.<param>.<attr>,
+    # reads_attr edges, merged across equations, self.<chain>.<attr>,
     # and direct ClassName.<attr> reads. The exclude set keeps the
     # last source from double-emitting reads the first two already
     # handled. Param-mediated reads have priority for the Component/Spec
-    # case (their AttributeRead carries the Param's resolved target);
+    # case (their AttributeRead carries the resolved target class);
     # bare ``self`` references and own-Param names skip the class-attr
     # extractor regardless of category.
     eq_reads = ()
     build_reads = ()
     if cls.category in ("component", "spec"):
         eq_reads = extract_equations_attribute_reads(
-            cls, file_info, params,
+            cls, file_info, params_by_class,
         )
-        build_reads = extract_build_attribute_reads(cls, params)
+        build_reads = extract_build_attribute_reads(cls, params_by_class)
     exclude_names = frozenset({"self"} | {p.name for p in params})
     class_reads = extract_class_attribute_reads(
         cls.ast_node, file_info, registry, project_root, exclude_names,

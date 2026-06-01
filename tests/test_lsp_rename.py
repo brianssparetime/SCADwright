@@ -1048,3 +1048,193 @@ def test_cross_file_rename_closed_file_still_uses_disk(tmp_path) -> None:
     assert out[open_consumer][0].start_line == 2
     # Closed file: disk position, line 1.
     assert out[closed_consumer][0].start_line == 1
+
+
+# =============================================================================
+# Multi-hop chains: references that reach the source class through a
+# nested Component-typed Param, resolved hop by hop
+# =============================================================================
+
+
+def test_workspace_rename_two_hop_self_chain(tmp_path) -> None:
+    """``self.a.b.outer_d`` where ``a`` is Param(A) and ``A.b`` is
+    Param(B=source) — the deep reference is rewritten even though the
+    consumer holds no direct Param of the source class."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class B(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+    ))
+    _write(tmp_path, "mid.py", (
+        "from scadwright import Spec, Param\n"
+        "from spec import B\n"
+        "class A(Spec):\n"
+        "    b = Param(B)\n"
+    ))
+    consumer = _write(tmp_path, "consumer.py", (
+        "from scadwright import Component, Param\n"
+        "from mid import A\n"
+        "class Consumer(Component):\n"
+        "    a = Param(A)\n"
+        "    def build(self):\n"
+        "        return self.a.b.outer_d\n"
+    ))
+    block = _block_in(spec_file, "B")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "diameter", tmp_path,
+    )
+    assert out is not None
+    assert consumer in out
+    edit = out[consumer][0]
+    line = consumer.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+    assert "self.a.b" in line
+
+
+def test_workspace_rename_three_hop_self_chain(tmp_path) -> None:
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class C(Spec):\n"
+        "    leaf = Param(float)\n"
+        '    equations = "x = leaf"\n'
+    ))
+    _write(tmp_path, "chain.py", (
+        "from scadwright import Spec, Param\n"
+        "from spec import C\n"
+        "class B(Spec):\n"
+        "    c = Param(C)\n"
+        "class A(Spec):\n"
+        "    b = Param(B)\n"
+    ))
+    consumer = _write(tmp_path, "consumer.py", (
+        "from scadwright import Component, Param\n"
+        "from chain import A\n"
+        "class Consumer(Component):\n"
+        "    a = Param(A)\n"
+        "    def build(self):\n"
+        "        return self.a.b.c.leaf\n"
+    ))
+    block = _block_in(spec_file, "C")
+    out = build_workspace_rename_edits(
+        block, spec_file, "leaf", "tip", tmp_path,
+    )
+    assert out is not None
+    assert consumer in out
+    edit = out[consumer][0]
+    line = consumer.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "leaf"
+
+
+def test_workspace_rename_two_hop_equation_chain(tmp_path) -> None:
+    """``a.b.outer_d`` in an equations block resolves through Param
+    types the same way."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class B(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+    ))
+    _write(tmp_path, "mid.py", (
+        "from scadwright import Spec, Param\n"
+        "from spec import B\n"
+        "class A(Spec):\n"
+        "    b = Param(B)\n"
+    ))
+    consumer = _write(tmp_path, "consumer.py", (
+        "from scadwright import Component, Param\n"
+        "from mid import A\n"
+        "class Consumer(Component):\n"
+        "    a = Param(A)\n"
+        '    equations = "y = a.b.outer_d + 1"\n'
+    ))
+    block = _block_in(spec_file, "B")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "diameter", tmp_path,
+    )
+    assert out is not None
+    assert consumer in out
+    edit = out[consumer][0]
+    line = consumer.read_text().splitlines()[edit.start_line]
+    assert line[edit.start_col:edit.end_col] == "outer_d"
+
+
+def test_workspace_rename_chain_through_local_is_not_matched(tmp_path) -> None:
+    """A reference through a local variable can't be resolved
+    statically, so it's an honest miss (no false edit on the wrong
+    spot, no crash)."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class B(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+    ))
+    _write(tmp_path, "mid.py", (
+        "from scadwright import Spec, Param\n"
+        "from spec import B\n"
+        "class A(Spec):\n"
+        "    b = Param(B)\n"
+    ))
+    consumer = _write(tmp_path, "consumer.py", (
+        "from scadwright import Component, Param\n"
+        "from mid import A\n"
+        "class Consumer(Component):\n"
+        "    a = Param(A)\n"
+        "    def build(self):\n"
+        "        inner = self.a.b\n"
+        "        return inner.outer_d\n"
+    ))
+    block = _block_in(spec_file, "B")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "diameter", tmp_path,
+    )
+    assert out is not None
+    # `inner.outer_d` is not matched (inner is a local). The consumer
+    # gets no edit; the rename doesn't corrupt the wrong position.
+    assert consumer not in out or out[consumer] == []
+
+
+def test_workspace_rename_chain_breaks_on_unrelated_class(tmp_path) -> None:
+    """A same-named attr reached through a chain that resolves to a
+    DIFFERENT class is left alone."""
+    from scadwright.lsp.rename import build_workspace_rename_edits
+
+    spec_file = _write(tmp_path, "spec.py", (
+        "from scadwright import Spec, Param\n"
+        "class B(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "x = outer_d"\n'
+        "class Other(Spec):\n"
+        "    outer_d = Param(float)\n"
+        '    equations = "z = outer_d"\n'
+    ))
+    _write(tmp_path, "mid.py", (
+        "from scadwright import Spec, Param\n"
+        "from spec import Other\n"
+        "class A(Spec):\n"
+        "    b = Param(Other)\n"
+    ))
+    consumer = _write(tmp_path, "consumer.py", (
+        "from scadwright import Component, Param\n"
+        "from mid import A\n"
+        "class Consumer(Component):\n"
+        "    a = Param(A)\n"
+        "    def build(self):\n"
+        "        return self.a.b.outer_d\n"
+    ))
+    block = _block_in(spec_file, "B")
+    out = build_workspace_rename_edits(
+        block, spec_file, "outer_d", "diameter", tmp_path,
+    )
+    assert out is not None
+    # self.a.b resolves to Other, not B; renaming B.outer_d must not
+    # touch consumer.py.
+    assert consumer not in out or out[consumer] == []

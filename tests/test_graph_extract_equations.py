@@ -12,8 +12,8 @@ from pathlib import Path
 
 from scadwright.graph.extract import (
     AttributeRead,
+    build_params_by_class,
     extract_equations_attribute_reads,
-    extract_params,
 )
 from scadwright.project_index.registry import build_class_registry
 from scadwright.project_index.walk import walk_project
@@ -22,10 +22,11 @@ from scadwright.project_index.walk import walk_project
 def _setup(tmp_path: Path, class_name: str):
     files = walk_project(tmp_path)
     registry = build_class_registry(files, tmp_path)
+    files_by_path = {f.path: f for f in files}
     cls = next(c for c in registry.classes.values() if c.name == class_name)
     file_info = next(f for f in files if f.path == cls.file_path)
-    params = extract_params(cls, file_info, registry, tmp_path)
-    return cls, file_info, params
+    params_by_class = build_params_by_class(registry, files_by_path, tmp_path)
+    return cls, file_info, params_by_class
 
 
 def _write(tmp_path: Path, name: str, content: str) -> Path:
@@ -36,8 +37,8 @@ def _write(tmp_path: Path, name: str, content: str) -> Path:
 
 
 def _reads(tmp_path: Path, class_name: str) -> tuple[AttributeRead, ...]:
-    cls, file_info, params = _setup(tmp_path, class_name)
-    return extract_equations_attribute_reads(cls, file_info, params)
+    cls, file_info, params_by_class = _setup(tmp_path, class_name)
+    return extract_equations_attribute_reads(cls, file_info, params_by_class)
 
 
 # =============================================================================
@@ -116,19 +117,16 @@ def test_repeated_read_deduplicated(tmp_path: Path) -> None:
 # =============================================================================
 
 
-def test_attribute_read_on_primitive_param_target_none(tmp_path: Path) -> None:
-    # Reads on a float-typed Param are unusual but the extractor
-    # surfaces them with target=None for the builder to interpret.
+def test_attribute_read_on_primitive_param_not_recorded(tmp_path: Path) -> None:
+    # ``width.real`` where width is a primitive Param doesn't resolve
+    # to a project class, so it isn't a cross-class read.
     _write(tmp_path, "widget.py", (
         "from scadwright import Component, Param\n"
         "class Bracket(Component):\n"
         "    width = Param(float)\n"
         '    equations = "x = width.real"\n'
     ))
-    [r] = _reads(tmp_path, "Bracket")
-    assert r.base_name == "width"
-    assert r.attr == "real"
-    assert r.target is None
+    assert _reads(tmp_path, "Bracket") == ()
 
 
 # =============================================================================

@@ -64,9 +64,11 @@ from scadwright.lsp.positions import (
 )
 from scadwright.project_index.analyze import _block_from_classdef
 from scadwright.project_index.extract import (
-    extract_params,
+    build_params_by_class,
+    resolve_chain_type,
 )
 from scadwright.project_index.registry import (
+    ResolvedClass,
     build_class_registry,
     resolve_name_in_file,
 )
@@ -438,18 +440,29 @@ def build_cross_file_attr_rename_edits(
     """Find references to ``<source_class_name>.<old_attr_name>``
     in other project files and emit TextEdits for each.
 
-    Walks every ``.py`` under ``project_root`` via the project
-    index, builds the class registry, and visits each class whose
-    ``Param`` declarations resolve to the source class. For each
-    such Param, equations references (``<param_name>.<old_attr>``)
-    and ``build()`` references (``self.<param_name>.<old_attr>``)
-    become per-file TextEdits.
+    Three reference shapes are caught, all resolving to the source
+    class:
 
-    The source file itself is excluded — same-file edits are the
-    caller's job (``build_rename_edits``). Files that fail to
-    parse, or classes whose equations can't be parsed, drop
-    silently; the caller's same-file pass already covered the user-
-    facing error path.
+    - Direct ``SourceClass.<old_attr>`` at class scope, in any
+      method, at module scope, or in a module-level function.
+    - ``self.<chain>.<old_attr>`` in any method body, where the
+      chain resolves through declared Param types to the source
+      class (one hop ``self.spec.x``, or deeper ``self.a.b.x``).
+    - ``<chain>.<old_attr>`` in an equations block, same chain
+      resolution from a Param base.
+
+    The chain resolution walks declared Param types hop by hop, so
+    a consumer that reaches the source class transitively (its
+    Param's type holds a Param of the source class) is caught even
+    though it has no direct Param of the source class. References
+    through a local variable, ``getattr``, or a function return
+    can't be resolved statically and are not rewritten; that broken
+    reference surfaces on the next solve or run.
+
+    The source file's own equations references are the caller's job
+    (``build_rename_edits``); this pass excludes the source class
+    from the chain walks but still rewrites direct ``SourceClass.x``
+    self-references in the source file's Python body.
 
     ``source_overrides`` routes open editor buffers into the walk
     so edits land on buffer positions rather than stale disk ones.
@@ -460,55 +473,60 @@ def build_cross_file_attr_rename_edits(
     files = walk_project(project_root, source_overrides=source_overrides)
     registry = build_class_registry(files, project_root)
     files_by_path = {f.path: f for f in files}
+    params_by_class = build_params_by_class(
+        registry, files_by_path, project_root,
+    )
+    source_class = registry.classes.get(
+        (source_file_path, source_class_name),
+    )
+
+    # A file that doesn't contain the attribute token anywhere can't
+    # hold a reference; skipping it bounds the per-class chain walk
+    # on large projects without affecting the result.
+    files_with_token = {
+        f.path for f in files if old_attr_name in f.source
+    }
 
     out: dict[Path, list[TextEdit]] = {}
 
     # Pass 1 — direct ``ClassName.attr`` references, per file.
-    # Walks each file's full module AST so the rename catches
-    # references at class scope, in any method body, at module
-    # scope (``MOUNT_OFFSET = SourceClass.attr``), and inside
-    # module-level functions. The source file is walked too: a
-    # self-reference inside the source class's Python body
-    # (outside its equations block) is rewritten the same way.
     for file_info in files:
+        if file_info.path not in files_with_token:
+            continue
         direct = _direct_class_attr_edits(
             file_info.tree, file_info, registry, project_root,
             source_file_path, source_class_name,
             old_attr_name, new_attr_name,
         )
         if direct:
-            out[file_info.path] = list(direct)
+            out.setdefault(file_info.path, []).extend(direct)
 
-    # Pass 2 — Param-mediated references, per class. Only fires for
-    # classes whose ``Param`` declarations resolve to the source
-    # class. The source class itself is excluded; its same-file
-    # edits are handled by ``build_rename_edits``.
-    for cls in registry.classes.values():
-        if cls.file_path == source_file_path and cls.name == source_class_name:
-            continue
-        file_info = files_by_path.get(cls.file_path)
-        if file_info is None:
-            continue
-        params = extract_params(cls, file_info, registry, project_root)
-        matching_param_names = frozenset(
-            p.name for p in params
-            if p.type_resolves_to is not None
-            and p.type_resolves_to.file_path == source_file_path
-            and p.type_resolves_to.name == source_class_name
-        )
-        if not matching_param_names:
-            continue
-        param_edits: list[TextEdit] = []
-        param_edits.extend(_cross_file_equation_edits(
-            cls, file_info, matching_param_names,
-            old_attr_name, new_attr_name,
-        ))
-        param_edits.extend(_cross_file_method_edits(
-            cls, file_info, matching_param_names,
-            old_attr_name, new_attr_name,
-        ))
-        if param_edits:
-            out.setdefault(cls.file_path, []).extend(param_edits)
+    # Pass 2 — chained references through declared Param types
+    # (``self.<chain>.attr`` in methods, ``<chain>.attr`` in
+    # equations). Visits every class except the source class; the
+    # chain resolver determines whether each chain reaches the
+    # source class, so transitively-reaching classes are covered
+    # without a direct-Param gate.
+    if source_class is not None:
+        for cls in registry.classes.values():
+            if cls is source_class:
+                continue
+            if cls.file_path not in files_with_token:
+                continue
+            file_info = files_by_path.get(cls.file_path)
+            if file_info is None:
+                continue
+            chain_edits: list[TextEdit] = []
+            chain_edits.extend(_cross_file_method_edits(
+                cls, file_info, source_class,
+                old_attr_name, new_attr_name, params_by_class,
+            ))
+            chain_edits.extend(_cross_file_equation_edits(
+                cls, file_info, source_class,
+                old_attr_name, new_attr_name, params_by_class,
+            ))
+            if chain_edits:
+                out.setdefault(cls.file_path, []).extend(chain_edits)
 
     return out
 
@@ -516,16 +534,20 @@ def build_cross_file_attr_rename_edits(
 def _cross_file_equation_edits(
     cls,
     file_info,
-    matching_param_names: frozenset[str],
+    source_class,
     old_attr_name: str,
     new_attr_name: str,
+    params_by_class,
 ) -> list[TextEdit]:
-    """Find ``<param>.<old_attr>`` references inside ``cls``'s
-    equations block and emit TextEdits replacing the attr name.
+    """Find ``<chain>.<old_attr>`` references inside ``cls``'s
+    equations block whose chain resolves to ``source_class``, and
+    emit TextEdits replacing the attr name.
 
-    The Attribute AST nodes from ``parse_equations_unified`` carry
-    cleaned-line column offsets; the colmap maps cleaned to raw,
-    and ``map_cleaned_col_to_file`` projects raw columns back into
+    The base chain is resolved through declared Param types, so a
+    one-hop ``spec.x`` and a deeper ``a.b.x`` are both handled. The
+    Attribute AST nodes from ``parse_equations_unified`` carry
+    cleaned-line column offsets; the colmap maps cleaned to raw, and
+    ``map_cleaned_col_to_file`` projects raw columns back into
     file-line / file-column space.
     """
     block = _block_from_classdef(cls.ast_node, file_info.source)
@@ -563,12 +585,10 @@ def _cross_file_equation_edits(
                 continue
             if sub.attr != old_attr_name:
                 continue
-            base = sub.value
-            if not isinstance(base, ast.Name):
+            owner = resolve_chain_type(sub.value, cls, params_by_class)
+            if not _is_source_class(owner, source_class):
                 continue
-            if base.id not in matching_param_names:
-                continue
-            attr_start = base.end_col_offset + 1  # skip the dot
+            attr_start = sub.value.end_col_offset + 1  # skip the dot
             attr_end = sub.end_col_offset
             edit = _edit_from_name(
                 attr_start, attr_end,
@@ -590,22 +610,28 @@ def _cross_file_equation_edits(
 def _cross_file_method_edits(
     cls,
     file_info,
-    matching_param_names: frozenset[str],
+    source_class,
     old_attr_name: str,
     new_attr_name: str,
+    params_by_class,
 ) -> list[TextEdit]:
-    """Find ``self.<param>.<old_attr>`` references inside any method
-    on ``cls`` and emit TextEdits replacing the attr name.
+    """Find ``self.<chain>.<old_attr>`` references inside any method
+    on ``cls`` whose chain resolves to ``source_class``, and emit
+    TextEdits replacing the attr name.
 
     Walks the entire class body via ``ast.walk``, which descends
-    into every method body — ``build``, helper methods called from
-    ``build``, properties, anything else on the class. Method-body
-    AST nodes come from ``ast.parse(file_source)``, so their
-    ``lineno`` / ``col_offset`` values are already file-relative.
-    ast columns are UTF-8 byte offsets; they're converted to
-    character indices against ``file_info``'s source lines so edits
-    land correctly on non-ASCII lines. Lines are 1-based in the AST
-    and 0-based in LSP.
+    into every method body — ``build``, helper methods, properties,
+    anything else. For each ``Attribute(attr=old_attr)`` node, the
+    value chain (``self.p1.p2…``) is resolved through declared Param
+    types; the edit fires when it resolves to ``source_class``. This
+    handles one hop (``self.spec.x``) and deeper (``self.a.b.x``)
+    uniformly.
+
+    Method-body AST nodes come from ``ast.parse(file_source)``, so
+    their ``lineno`` / ``col_offset`` are file-relative. ast columns
+    are UTF-8 byte offsets, converted to character indices against
+    ``file_info``'s source lines so edits land correctly on
+    non-ASCII lines. Lines are 1-based in the AST and 0-based in LSP.
     """
     source_lines = split_source_lines(file_info.source)
     out: list[TextEdit] = []
@@ -614,22 +640,16 @@ def _cross_file_method_edits(
             continue
         if sub.attr != old_attr_name:
             continue
-        outer_value = sub.value
-        if not isinstance(outer_value, ast.Attribute):
+        owner = resolve_chain_type(sub.value, cls, params_by_class)
+        if not _is_source_class(owner, source_class):
             continue
-        if not isinstance(outer_value.value, ast.Name):
-            continue
-        if outer_value.value.id != "self":
-            continue
-        if outer_value.attr not in matching_param_names:
-            continue
-        # The attr part starts right after outer_value's end + 1
+        # The attr part starts right after the value's end + 1
         # (the dot before the attr name).
         attr_start_line = (sub.lineno or 1) - 1
         attr_end_line = (sub.end_lineno or sub.lineno) - 1
         attr_start_col = byte_col_to_char_col(
             _line_at(source_lines, attr_start_line),
-            (outer_value.end_col_offset or 0) + 1,
+            (sub.value.end_col_offset or 0) + 1,
         )
         attr_end_col = byte_col_to_char_col(
             _line_at(source_lines, attr_end_line),
@@ -731,6 +751,18 @@ def _line_at(source_lines: list[str], index: int) -> str:
     if 0 <= index < len(source_lines):
         return source_lines[index]
     return ""
+
+
+def _is_source_class(owner, source_class) -> bool:
+    """True when a chain-resolution result ``owner`` is the source
+    class. The ``_SELF`` sentinel and ``None`` (unresolvable) both
+    fail the ``ResolvedClass`` check, so only a resolved class that
+    matches the source by ``(file_path, name)`` qualifies."""
+    return (
+        isinstance(owner, ResolvedClass)
+        and owner.file_path == source_class.file_path
+        and owner.name == source_class.name
+    )
 
 
 def _value_chain_to_dotted_name(node: ast.AST) -> str | None:
