@@ -15,7 +15,7 @@ class BoxAndLid(Design):
 
     @variant
     def print(self):
-        return union(self.box, self.lid.rotate([180, 0, 0]).up(2).right(80))
+        return union(self.box, self.lid.rotate([0, 180, 0]).up(2).right(80))
 
     @variant(default=True)
     def display(self):
@@ -122,7 +122,7 @@ class BoxAndLid(Design):
 
     @variant
     def print(self):
-        return union(self.box, self.lid.rotate([180, 0, 0]).right(80))
+        return union(self.box, self.lid.rotate([0, 180, 0]).right(80))
 
     @variant
     def closing(self):
@@ -257,19 +257,19 @@ For parts with rotational symmetry about z — a square lid, a centered cylinder
 
 ### The lid (or hinged part) swings the wrong way
 
-If your morph contains a 180° rotation and the part traces an arc you didn't intend — over the back instead of over the front, or under the bottom instead of over the top — the cause is a sign ambiguity in the screw axis. A 180° rotation has two equally valid axis directions, and the heuristic picks one of them without knowing which feels right for your geometry.
+If your morph contains a 180° rotation and the part traces an arc you didn't intend, swinging under the bottom instead of up over the top, the cause is a sign ambiguity in the screw axis. A 180° rotation has two equally valid axis directions, and the heuristic picks one of them without knowing which feels right for your geometry.
 
 **Fix:** break the symmetry by writing the rotation as something slightly off 180°, so the axis becomes uniquely determined:
 
 ```python
 # Before — both arc directions are valid; heuristic guesses:
-self.lid.rotate([180, 0, 0]).up(self.lid.thk).right(80)
+self.lid.rotate([0, 180, 0]).up(self.lid.thk).right(80)
 
 # After — 179.99° has a unique axis; the morph picks that arc:
-self.lid.rotate([179.99, 0, 0]).up(self.lid.thk).right(80)
+self.lid.rotate([0, 179.99, 0]).up(self.lid.thk).right(80)
 ```
 
-The 0.01° offset is visually imperceptible in the final pose but enough to disambiguate the screw axis. The morph will now consistently pick the arc whose mid-point traces through positive y; flip the sign (`179.99° → 180.01°`, or rotate about `-X` instead of `+X`) to trace through negative y.
+The 0.01° offset is visually imperceptible in the final pose but enough to disambiguate the screw axis. The morph will now consistently pick the arc whose mid-point traces through positive z; flip the sign (`179.99° → 180.01°`, or rotate about `-Y` instead of `+Y`) to trace through negative z.
 
 ### The animation pulses or jitters in size
 

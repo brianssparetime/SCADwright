@@ -131,12 +131,13 @@ A snap-on enclosure: a rounded-corner box with chamfered bottom edges and four i
 - The `equations` list combines an equation (`inner_w = outer_w - 2*wall_thk`), bounds on several dimensions, and a comparison between dimensions (`lip_thk < wall_thk`).
 - `.through(parent)` on the lip cutout and the lid recess extends them automatically with no manual EPS.
 - `.add_text()` puts a raised `LID` label centered on the lid's top face — one chained call, no manual extrude or transform.
+- `assemble = morph(...)` turns the print and display variants into an assembly animation in a single line.
 
 ![Box and lid](images/BoxAndLid.png)
 
 *Left: display variant, lid floated above the box with the centering lip and pylons visible through the gap. Right: print variant, box and inverted lid laid out on the bed.*
 
-**Reference:** [Param(Component)](../docs/components.md#param-for-custom-types) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [add_text()](../docs/add_text.md)
+**Reference:** [Param(Component)](../docs/components.md#param-for-custom-types) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [add_text()](../docs/add_text.md) · [morph](../docs/morph.md)
 
 ---
 

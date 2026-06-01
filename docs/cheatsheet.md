@@ -701,7 +701,7 @@ class BoxAndLid(Design):
 
     @variant
     def print(self):
-        return union(self.box, self.lid.rotate([180, 0, 0]).up(2).right(80))
+        return union(self.box, self.lid.rotate([0, 180, 0]).up(2).right(80))
 
     @variant(default=True)
     def display(self):
