@@ -133,9 +133,9 @@ A snap-on enclosure: a rounded-corner box with chamfered bottom edges and four i
 - `.add_text()` puts a raised `LID` label centered on the lid's top face — one chained call, no manual extrude or transform.
 - `assemble = morph(...)` turns the print and display variants into an assembly animation in a single line.
 
-![Box and lid](images/BoxAndLid.png)
+![Box and lid assembly animation](images/BoxAndLid-assemble.apng)
 
-*Left: display variant, lid floated above the box with the centering lip and pylons visible through the gap. Right: print variant, box and inverted lid laid out on the bed.*
+*The `assemble` morph swings the lid from its print-bed pose up and over into its seated display pose.*
 
 **Reference:** [Param(Component)](../docs/components.md#param-for-custom-types) · [yielding pieces](../docs/components.md#yielding-pieces) · [custom transforms](../docs/custom_transforms.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [bbox()](../docs/introspection.md#bounding-boxes) · [add_text()](../docs/add_text.md) · [morph](../docs/morph.md)
 
