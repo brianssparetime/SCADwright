@@ -109,21 +109,25 @@ from scadwright.composition_helpers import hole_grid
 from scadwright.shapes import clearance_hole
 
 # Flight-controller stack mount (4 holes in a 30.5×30.5 mm square).
-plate = cube([60, 60, 3])
+plate = cube([60, 60, 3], center="xy")
 cutter = hole_grid(
     rows=2, cols=2,
     row_spacing=30.5, col_spacing=30.5,
-    hole=clearance_hole("M3", depth=5),
-)
+    hole=clearance_hole("M3", depth=3),
+).through(plate, axis="z")          # break through both faces, no coincident seam
 result = difference(plate, cutter)
 
 # A 3×4 vent array on a panel.
+panel = cube([60, 50, 3], center="xy")
 vents = hole_grid(
     rows=3, cols=4,
     row_spacing=10, col_spacing=10,
     hole=cylinder(h=3, r=2.5),
-)
+).through(panel, axis="z")
+result = difference(panel, vents)
 ```
+
+The grid centers on the origin, so center the parent on it too (`center="xy"`). Call `.through()` on the grid before the `difference()`: it extends each hole past the coincident faces by a hair, so the cut breaks cleanly through instead of leaving a zero-thickness surface that flickers in preview and can fail to render. `hole_grid` adds no overlap on its own.
 
 **Parameters (all kwarg-only):**
 

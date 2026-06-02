@@ -100,17 +100,20 @@ def hole_grid(
 
     Pass any cutter shape as ``hole`` — a clearance hole, counterbore,
     countersink, or any custom cutter. The result is intended for use
-    as a cutter in ``difference()``::
+    as a cutter in ``difference()``. Center the parent on the origin to
+    match the grid, and call ``.through()`` on the grid so each hole
+    breaks cleanly through both faces (``hole_grid`` adds no overlap of
+    its own)::
 
         from scadwright.shapes import clearance_hole
         from scadwright.composition_helpers import hole_grid
 
-        plate = cube([60, 60, 3])
+        plate = cube([60, 60, 3], center="xy")
         cutter = hole_grid(
             rows=2, cols=2,
             row_spacing=30.5, col_spacing=30.5,
-            hole=clearance_hole("M3", depth=5),
-        )
+            hole=clearance_hole("M3", depth=3),
+        ).through(plate, axis="z")
         result = difference(plate, cutter)
 
     Common patterns: flight-controller stack holes (16×16, 20×20,
