@@ -8,7 +8,7 @@ One-page reference. Each section links to its full docs page for details.
 from scadwright import (
     Component, Param, Spec, Adjustment, materialize,
     positive, non_negative, minimum, maximum, in_range, one_of,
-    BBox, bbox, tight_bbox, with_bbox_from, tree_hash, Matrix, Node, SourceLocation,
+    BBox, bbox, tight_bbox, with_bbox_from, tree_hash, resolved_transform, Matrix, Node, SourceLocation,
     emit, emit_str, render,
     resolution,
     clearances, Clearances, DEFAULT_CLEARANCES,
@@ -29,7 +29,7 @@ from scadwright.transforms import (
 from scadwright.extrusions import linear_extrude, rotate_extrude
 from scadwright.composition_helpers import (
     linear_copy, rotate_copy, mirror_copy, halve,
-    hole_grid, multi_hull, sequential_hull, pack_on_bed,
+    hole_grid, multi_hull, sequential_hull, arrange_on_bed,
 )
 from scadwright.shapes import (
     Tube, Funnel, SphericalShell, RoundedBox, UShapeChannel, FilletRing,
@@ -168,8 +168,9 @@ part.halve([1, 1, 0])                               # keep +x,+y quadrant
 part.halve(y=1)                                     # kwarg form (auto-sized cutter)
 part.halve(y=1, size=200)                           # explicit cutter size override
 
-pack_on_bed(part_a, part_b, plate=(220, 220), gap=8)   # lay out + lift to z=0 + fit-check
-pack_on_bed(*parts, plate=(256, 256), assert_fit=False)  # overflow OK
+arrange_on_bed(part_a, part_b, plate=(220, 220), gap=8)  # row-pack + lift to z=0 + fit-check
+arrange_on_bed(*parts, plate=(256, 256), sort="depth")   # sort deepest-first to pack rows tighter
+arrange_on_bed(*parts, plate=(256, 256), assert_fit=False)  # overflow OK
 ```
 
 ## Extrusions &nbsp; &nbsp;[→ full](extrusions.md)
@@ -199,6 +200,7 @@ circle_profile(r=5, segments=16)
 square_profile(10)                                  # or (w, h); center=False available
 polygon_profile(sides=6, r=5, rotate=0.0)           # n-gon, first vertex on +X
 rounded_rect_profile(x=20, y=10, r=2)               # centered, sharp at r=0
+almond_profile(chord_r=3, sag=1)                    # lens / vesica; full width 2*chord_r, thickness 2*sag
 resample_profile(profile, n=16)                     # evenly-spaced points, for loft
 
 # Path generators (return (x, y, z) point lists):
@@ -567,6 +569,7 @@ PieSlice(r=10, angles=(0, 90), h=5)               # cylindrical sector
 # Fillets:
 ChamferedBox(size=(30, 20, 10), fillet=2)         # rounded edges (or chamfer=)
 FilletMask(r=3, length=20)                        # subtractable edge fillet
+ChamferMask(size=2, length=20)                    # subtractable edge chamfer
 FilletRing(id=20, od=30, base_angle=30)           # flange fillet ring
 cube([10, 20, 30]).fillet("top", r=2)             # sugar (cube + cylinder only)
 cylinder(h=10, r=5).chamfer("top_rim", size=1)    # 12 cube edges or 2 cylinder rims
@@ -617,6 +620,8 @@ Keyhole(r_big=5, r_slot=2, slot_length=10)        # wall-mount keyhole
 Annulus(id=8, od=12)                              # flat 2D ring (2D sibling of Tube)
 Star(points=5, r_outer=10, r_inner=4)             # n-pointed star (one tip up by default)
 ```
+
+The inline list is a sample. Full lists by category: [tubes & shells](shapes/tubes_and_shells.md), [polyhedra & solids](shapes/polyhedra.md), [fillets & chamfers](shapes/fillets.md), [fasteners](shapes/fasteners.md), [joints](shapes/joints.md), [gears](shapes/gears.md), [mechanical](shapes/mechanical.md), [print](shapes/print.md), [2D profiles](shapes/profiles_2d.md), [curves & sweeps](shapes/curves.md), [ecosystem: Gridfinity](shapes/ecosystem.md).
 
 ## Resolution (smoothness) &nbsp; &nbsp;[→ full](resolution.md)
 
@@ -800,6 +805,7 @@ def lap_split_x(node, *, side, overlap):
     ...                                      # body may use difference()
 
 h = tree_hash(shape)                        # 16-char hex, ignores source_location
+m = resolved_transform(shape)               # world-space transform (Matrix) at a node; identity at top level
 
 from scadwright.asserts import *
 assert_fits_in(part, ((0,0,0), (200,200,50)))

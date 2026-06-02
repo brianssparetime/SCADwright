@@ -1,6 +1,8 @@
-"""Higher-order composition helpers: multi_hull, sequential_hull, linear/rotate/mirror_copy, halve, pack_on_bed."""
+"""Higher-order composition helpers: multi_hull, sequential_hull, linear/rotate/mirror_copy, halve, arrange_on_bed."""
 
 from __future__ import annotations
+
+from typing import NamedTuple
 
 from scadwright.api._vectors import _as_vec3
 from scadwright.ast.base import Node, SourceLocation
@@ -8,6 +10,18 @@ from scadwright.ast.csg import Hull, Union
 from scadwright.ast.transforms import Mirror, Rotate, Translate
 from scadwright.boolops import _flatten_csg_args
 from scadwright.errors import ValidationError
+
+
+class _Measured(NamedTuple):
+    """A part plus the extents `arrange_on_bed` lays out by: its bbox-min
+    corner, the Z lift onto the bed, and its X/Y footprint."""
+
+    part: Node
+    min_x: float
+    min_y: float
+    dz: float
+    ext_x: float
+    ext_y: float
 
 
 def mirror_copy(*args, normal=None) -> Union:
@@ -197,75 +211,89 @@ def halve(node: Node, v=None, *, x: float = 0, y: float = 0, z: float = 0, size:
     return node.halve(v, x=x, y=y, z=z, size=size)
 
 
-def pack_on_bed(
+def arrange_on_bed(
     *parts,
     gap: float = 5.0,
     plate: tuple[float, float] = (256.0, 256.0),
     lift_to_bed: bool = True,
     assert_fit: bool = True,
+    sort: str | None = None,
 ) -> Union:
-    """Lay parts out left-to-right on the print bed and return their union.
+    """Pack parts onto the print bed in rows and return their union.
 
-    Each part is translated so its bbox starts at the current X cursor on
-    the bed front-left corner (origin = (0, 0)), with `lift_to_bed=True`
-    additionally pulling each part down so its bbox.min[2] == 0 — printing
-    requires non-negative Z. The X cursor advances by the part's X extent
-    plus `gap`. Layout is along +X; total Y extent is the max bbox depth
-    among all parts.
+    Parts fill the bed left-to-right along +X; when the next part would
+    cross the plate width, the layout wraps to a new row, advancing +Y by
+    the finished row's depth plus `gap`. Parts that all fit in one line
+    come out as a single row, so simple layouts are unchanged. The bed
+    origin is its front-left corner, ``(0, 0)``; within a row each part is
+    centered across the row's depth (the deepest part sets the band). With
+    `lift_to_bed=True` each part is also pulled down so its
+    ``bbox.min[2] == 0``, because printing requires non-negative Z.
 
         # Replaces the usual ~15 lines of bbox→translate boilerplate
         # in print variants:
-        return pack_on_bed(housing_left, housing_right, mating_disc,
-                           plate=(256, 256), gap=8)
+        return arrange_on_bed(housing_left, housing_right, mating_disc,
+                              plate=(256, 256), gap=8)
 
     With `assert_fit=True` (the default), raises `ValidationError` at
-    construction time when the laid-out footprint would exceed `plate`,
-    so a too-large variant fails during build instead of silently
-    producing geometry off the bed. Pass `assert_fit=False` to lay parts
-    out anyway (useful when you know it overflows and want to inspect).
+    construction time when the wrapped layout would exceed `plate`, so a
+    too-large variant fails during build instead of silently producing
+    geometry off the bed. The error reports the row count and the layout's
+    width and depth. Pass `assert_fit=False` to lay parts out anyway.
+
+    `sort=None` (the default) packs in argument order. `sort="depth"`
+    sorts parts by depth (Y extent) descending before packing, which
+    keeps rows uniform and tends to waste less bed; any other value
+    raises.
+
+    This fills the bed in rows, not optimal nesting: parts are packed as
+    axis-aligned rectangles, so an interlocking or triangular arrangement
+    is out of scope. Pre-rotate or reorder parts to pack tighter.
 
     Conventions:
       - Origin at bed front-left corner (0, 0); matches typical slicer
         defaults (PrusaSlicer, Cura). For center-of-bed layouts, translate
         the result by ``[-plate[0]/2, -plate[1]/2, 0]``.
-      - Layout along +X in argument order; pre-rotate parts to control
-        orientation before passing them in.
-      - Single row only; multi-row packing is out of scope.
+      - Rows advance along +X, wrapping along +Y; pre-rotate parts to
+        control orientation before passing them in.
 
     Iterables in the args flatten one level, matching the CSG-arg
-    convention: ``pack_on_bed([a, b], c)`` works.
+    convention: ``arrange_on_bed([a, b], c)`` works.
     """
     loc = SourceLocation.from_caller()
-    flat = _flatten_csg_args(parts, "pack_on_bed")
+    flat = _flatten_csg_args(parts, "arrange_on_bed")
     if gap < 0:
         raise ValidationError(
-            f"pack_on_bed: gap must be non-negative, got {gap}",
+            f"arrange_on_bed: gap must be non-negative, got {gap}",
             source_location=loc,
         )
     if plate[0] <= 0 or plate[1] <= 0:
         raise ValidationError(
-            f"pack_on_bed: plate dimensions must be positive, got {plate}",
+            f"arrange_on_bed: plate dimensions must be positive, got {plate}",
+            source_location=loc,
+        )
+    if sort not in (None, "depth"):
+        raise ValidationError(
+            f'arrange_on_bed: sort must be None or "depth", got {sort!r}',
             source_location=loc,
         )
 
     from scadwright.bbox import tight_bbox as _tight_bbox
 
-    placed: list[Node] = []
-    x_cursor = 0.0
-    max_y_extent = 0.0
+    # Resolve each part's extents up front. Use tight_bbox so the layout
+    # (and especially the lift to z=0) uses the part's actual extents
+    # rather than the conservative bbox. Conservative bbox lies for parts
+    # whose top-level operator is Difference: the part would silently
+    # float above the bed by the gap between the conservative and tight
+    # z-min. Surfacing that as an explicit error here is what the user
+    # actually wants.
+    measured: list[_Measured] = []
     for part in flat:
-        # Use tight_bbox so the layout (and especially the lift to z=0)
-        # uses the part's actual extents rather than the conservative
-        # bbox. Conservative bbox lies for parts whose top-level
-        # operator is Difference: pack_on_bed would silently float the
-        # part above the bed by the difference between the conservative
-        # and tight z-min. Surfacing that as an explicit error here is
-        # what the user actually wants.
         try:
             bb = _tight_bbox(part)
         except NotImplementedError as exc:
             raise ValidationError(
-                f"pack_on_bed: cannot lay out `{type(part).__name__}` "
+                f"arrange_on_bed: cannot lay out `{type(part).__name__}` "
                 f"because its tight bbox can't be computed. "
                 f"Adjustments: (1) override `Component.tight_bbox` on "
                 f"the offending Component to declare its true extents "
@@ -277,26 +305,76 @@ def pack_on_bed(
                 f"Underlying: {exc}",
                 source_location=loc,
             ) from exc
-        ext_x = bb.max[0] - bb.min[0]
-        ext_y = bb.max[1] - bb.min[1]
-        dx = -bb.min[0] + x_cursor
-        dy = -bb.min[1]
         dz = -bb.min[2] if lift_to_bed else 0.0
-        placed.append(
-            Translate(v=(dx, dy, dz), child=part, source_location=loc)
+        measured.append(
+            _Measured(
+                part=part,
+                min_x=bb.min[0],
+                min_y=bb.min[1],
+                dz=dz,
+                ext_x=bb.max[0] - bb.min[0],
+                ext_y=bb.max[1] - bb.min[1],
+            )
         )
-        x_cursor += ext_x + gap
-        if ext_y > max_y_extent:
-            max_y_extent = ext_y
 
-    total_x = x_cursor - gap  # drop the trailing gap
+    if sort == "depth":
+        # Stable sort by depth descending: parts of equal depth keep
+        # argument order so the layout stays predictable.
+        measured.sort(key=lambda m: m.ext_y, reverse=True)
+
+    # Pass 1: assign parts to rows, recording each part's X start. A part
+    # wraps to a new row when it would cross the plate width, unless its
+    # row is empty (an over-wide part stands alone and is caught by the
+    # fit-check rather than looping forever).
+    rows_of_parts: list[list[tuple[int, float]]] = []
+    current_row: list[tuple[int, float]] = []
+    x_cursor = 0.0
+    for idx, m in enumerate(measured):
+        if current_row and x_cursor + m.ext_x > plate[0]:
+            rows_of_parts.append(current_row)
+            current_row = []
+            x_cursor = 0.0
+        current_row.append((idx, x_cursor))
+        x_cursor += m.ext_x + gap
+    if current_row:
+        rows_of_parts.append(current_row)
+
+    # Pass 2: place each part. Within a row, center it across the row's
+    # depth band (the deepest part sets the band); centering is the free
+    # cross-axis choice and keeps shallow parts off the row's front edge.
+    placed: list[Node] = []
+    y_cursor = 0.0
+    max_row_width = 0.0
+    for row in rows_of_parts:
+        row_depth = max(measured[idx].ext_y for idx, _x in row)
+        last_idx, last_x = row[-1]
+        row_width = last_x + measured[last_idx].ext_x
+        if row_width > max_row_width:
+            max_row_width = row_width
+        for idx, x_start in row:
+            m = measured[idx]
+            dx = -m.min_x + x_start
+            dy = -m.min_y + y_cursor + (row_depth - m.ext_y) / 2.0
+            placed.append(
+                Translate(v=(dx, dy, m.dz), child=m.part, source_location=loc)
+            )
+        y_cursor += row_depth + gap
+
+    rows = len(rows_of_parts)
+    total_x = max_row_width
+    total_y = y_cursor - gap if rows_of_parts else 0.0  # drop trailing gap
     if assert_fit:
-        if total_x > plate[0] or max_y_extent > plate[1]:
+        if total_x > plate[0] or total_y > plate[1]:
             raise ValidationError(
-                f"pack_on_bed: footprint {total_x:g} x {max_y_extent:g} mm "
-                f"exceeds plate {plate[0]:g} x {plate[1]:g} mm "
-                f"(overflow X={max(0, total_x - plate[0]):g}, "
-                f"Y={max(0, max_y_extent - plate[1]):g})",
+                f"arrange_on_bed: parts laid out across {rows} "
+                f"row{'s' if rows != 1 else ''}; layout is "
+                f"{total_x:g} x {total_y:g} mm, which exceeds plate "
+                f"{plate[0]:g} x {plate[1]:g} mm "
+                f"(overflow X={max(0.0, total_x - plate[0]):g}, "
+                f"Y={max(0.0, total_y - plate[1]):g}). Reorder or "
+                f'pre-rotate parts, pass sort="depth", increase plate=, '
+                f"or pass assert_fit=False to lay out anyway. This fills "
+                f"the bed in rows, not optimal nesting.",
                 source_location=loc,
             )
 
@@ -304,12 +382,12 @@ def pack_on_bed(
 
 
 __all__ = [
+    "arrange_on_bed",
     "halve",
     "hole_grid",
     "linear_copy",
     "mirror_copy",
     "multi_hull",
-    "pack_on_bed",
     "rotate_copy",
     "sequential_hull",
 ]

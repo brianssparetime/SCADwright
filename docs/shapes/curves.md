@@ -102,6 +102,15 @@ rounded_rect_profile(20, 10, 2)      # 20 × 10, 2 mm corners
 rounded_rect_profile(20, 10, 0)      # plain rectangle
 ```
 
+### `almond_profile(chord_r, sag, n_arc=8)`
+
+Almond (lens / vesica) cross-section: two circular arcs bowing out above and below a shared chord on the x-axis, meeting at a point on each end. `chord_r` is the half-chord, so the full width is `2*chord_r`; `sag` is each arc's height above the chord, so the full thickness is `2*sag`. `n_arc` sets the points per arc. Good for leaf springs, teardrop ribs, and pointed-oval wire used in a swept coil.
+
+```python
+almond_profile(3, 1)                 # 6 wide × 2 thick lens
+almond_profile(3, 1, n_arc=16)       # smoother arcs
+```
+
 ### `resample_profile(profile, n)`
 
 Resample a closed 2D profile to `n` evenly-spaced points along its perimeter. Use it to align profiles of different native point counts so they can be lofted together — `loft` requires every section to have the same vertex count.
