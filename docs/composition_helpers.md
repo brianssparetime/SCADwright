@@ -127,7 +127,9 @@ vents = hole_grid(
 result = difference(panel, vents)
 ```
 
-The grid centers on the origin, so center the parent on it too (`center="xy"`). Call `.through()` on the grid before the `difference()`: it extends each hole past the coincident faces by a hair, so the cut breaks cleanly through instead of leaving a zero-thickness surface that flickers in preview and can fail to render. `hole_grid` adds no overlap on its own.
+The grid centers on the origin, so center the parent on it too with `center="xy"`.
+
+Call `.through()` on the grid before the `difference()`. `hole_grid` adds no overlap of its own, and `.through()` extends each hole a hair past the faces it meets, so the cut breaks cleanly through instead of leaving a zero-thickness surface that flickers in preview and can fail to render.
 
 **Parameters (all kwarg-only):**
 
@@ -188,29 +190,22 @@ By default the kept-region box is sized to just enclose the shape's world-space 
 
 ## `arrange_on_bed`
 
-Packs parts onto the print bed in rows, lifts each onto z=0, fit-checks against the plate, and returns the union. Replaces the bbox-→-translate-→-assert boilerplate that print variants accumulate.
+Lays several parts out on the print bed and returns their union, ready to export and print together. Useful when a design splits into pieces and you want them placed side by side instead of stacked at the origin.
 
 ```python
-return arrange_on_bed(housing_left, housing_right, mating_disc,
-                      plate=(256, 256), gap=8)
+layout = arrange_on_bed(cube(40), cube([60, 30, 20]), cube(50),
+                        plate=(256, 256), gap=8)
 ```
 
-```python
-def arrange_on_bed(*parts, gap=5.0, plate=(256, 256),
-                   lift_to_bed=True, assert_fit=True, sort=None) -> Union: ...
-```
+Parts go left-to-right starting at the bed's front-left corner. When the next part would run past the plate width, it starts a new row behind the ones already placed, so a set that wouldn't fit in a single line still fills the bed. Within a row, parts are centered front-to-back, and each is dropped so its lowest point sits at z=0. `gap` is the minimum spacing left between parts and between rows.
 
-Conventions:
+By default the parts are checked against `plate`, and a design too big for the bed raises when you build it, naming the row count and how far it runs over. That turns an off-the-bed layout into an error you see at build time instead of a surprise in the slicer. Pass `assert_fit=False` to lay an oversized set out anyway for inspection, or `lift_to_bed=False` to keep each part's own Z.
 
-- **Origin at bed front-left corner** (0, 0). Matches typical slicer defaults (PrusaSlicer, Cura). For center-of-bed coordinate systems, translate the result by `[-plate[0]/2, -plate[1]/2, 0]`.
-- **Rows along +X, wrapping along +Y.** Parts fill left-to-right; when one would cross the plate width, the layout starts a new row past the previous row's deepest part. Within a row, parts are centered across the row's depth. Parts that all fit in one line stay a single row.
-- **`sort=None`** (the default) packs in argument order. **`sort="depth"`** sorts parts deepest-first, which keeps rows uniform and wastes less bed.
-- **`lift_to_bed=True`** (the default) translates each part so its `bbox.min[2] = 0` — printing requires non-negative Z. Pass `lift_to_bed=False` for layouts where the parts already sit on the bed.
-- **`assert_fit=True`** (the default) raises `ValidationError` at construction time when the wrapped layout exceeds `plate`, naming the row count and overflow magnitude. Pass `assert_fit=False` to lay parts out anyway (useful when you want to inspect a too-large variant).
+Parts are placed in the order you pass them. Passing `sort="depth"` places the deepest parts first instead, which lines the rows up more evenly and usually frees bed space.
 
-This fills the bed in rows, not optimal nesting: parts are packed as axis-aligned rectangles, so an interlocking or triangular arrangement is out of scope. Pre-rotate or reorder parts to pack tighter.
+The bed origin is its front-left corner, matching PrusaSlicer and Cura. For a center-of-bed coordinate system, translate the result by `[-plate[0]/2, -plate[1]/2, 0]`. Rotate a part before passing it in to turn it on the bed.
 
-Iterables in the args flatten one level, matching the CSG-arg convention: `arrange_on_bed([a, b], c)` works the same as `arrange_on_bed(a, b, c)`.
+Parts are packed as rectangular footprints in rows, not nested together, so an interlocking or triangular arrangement is out of scope; rotate or reorder parts to pack them tighter. Lists in the arguments flatten one level, so `arrange_on_bed([a, b], c)` works the same as `arrange_on_bed(a, b, c)`.
 
 ---
 

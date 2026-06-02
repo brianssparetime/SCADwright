@@ -219,46 +219,35 @@ def arrange_on_bed(
     assert_fit: bool = True,
     sort: str | None = None,
 ) -> Union:
-    """Pack parts onto the print bed in rows and return their union.
+    """Lay parts out on the print bed in rows and return their union.
 
-    Parts fill the bed left-to-right along +X; when the next part would
-    cross the plate width, the layout wraps to a new row, advancing +Y by
-    the finished row's depth plus `gap`. Parts that all fit in one line
-    come out as a single row, so simple layouts are unchanged. The bed
-    origin is its front-left corner, ``(0, 0)``; within a row each part is
-    centered across the row's depth (the deepest part sets the band). With
-    `lift_to_bed=True` each part is also pulled down so its
-    ``bbox.min[2] == 0``, because printing requires non-negative Z.
+    Parts go left-to-right from the bed's front-left corner. When the next
+    part would run past the plate width, it starts a new row behind the
+    parts already placed, so a set that wouldn't fit in a single line still
+    fills the bed. Within a row, parts are centered front-to-back, and each
+    is dropped so its lowest point sits at z=0 (pass `lift_to_bed=False` to
+    keep its own Z). `gap` is the minimum spacing between parts and rows.
 
-        # Replaces the usual ~15 lines of bbox→translate boilerplate
-        # in print variants:
-        return arrange_on_bed(housing_left, housing_right, mating_disc,
-                              plate=(256, 256), gap=8)
+        layout = arrange_on_bed(cube(40), cube([60, 30, 20]), cube(50),
+                                plate=(256, 256), gap=8)
 
-    With `assert_fit=True` (the default), raises `ValidationError` at
-    construction time when the wrapped layout would exceed `plate`, so a
-    too-large variant fails during build instead of silently producing
-    geometry off the bed. The error reports the row count and the layout's
-    width and depth. Pass `assert_fit=False` to lay parts out anyway.
+    By default the parts are checked against `plate` and a too-large set
+    raises when you build it, naming the row count and how far it runs
+    over, rather than sliding off the bed unnoticed. Pass
+    `assert_fit=False` to lay them out anyway.
 
-    `sort=None` (the default) packs in argument order. `sort="depth"`
-    sorts parts by depth (Y extent) descending before packing, which
-    keeps rows uniform and tends to waste less bed; any other value
-    raises.
+    Parts are placed in the order given. Pass `sort="depth"` to place the
+    deepest first, which lines rows up more evenly and usually frees bed
+    space.
 
-    This fills the bed in rows, not optimal nesting: parts are packed as
-    axis-aligned rectangles, so an interlocking or triangular arrangement
-    is out of scope. Pre-rotate or reorder parts to pack tighter.
+    The bed origin is its front-left corner, matching PrusaSlicer and
+    Cura; for a center-of-bed coordinate system, translate the result by
+    ``[-plate[0]/2, -plate[1]/2, 0]``. Rotate a part before passing it in
+    to turn it on the bed.
 
-    Conventions:
-      - Origin at bed front-left corner (0, 0); matches typical slicer
-        defaults (PrusaSlicer, Cura). For center-of-bed layouts, translate
-        the result by ``[-plate[0]/2, -plate[1]/2, 0]``.
-      - Rows advance along +X, wrapping along +Y; pre-rotate parts to
-        control orientation before passing them in.
-
-    Iterables in the args flatten one level, matching the CSG-arg
-    convention: ``arrange_on_bed([a, b], c)`` works.
+    Parts are packed as rectangular footprints in rows, not nested, so an
+    interlocking or triangular arrangement is out of scope. Lists in the
+    arguments flatten one level, so ``arrange_on_bed([a, b], c)`` works.
     """
     loc = SourceLocation.from_caller()
     flat = _flatten_csg_args(parts, "arrange_on_bed")

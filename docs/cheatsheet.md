@@ -168,9 +168,9 @@ part.halve([1, 1, 0])                               # keep +x,+y quadrant
 part.halve(y=1)                                     # kwarg form (auto-sized cutter)
 part.halve(y=1, size=200)                           # explicit cutter size override
 
-arrange_on_bed(part_a, part_b, plate=(220, 220), gap=8)  # row-pack + lift to z=0 + fit-check
-arrange_on_bed(*parts, plate=(256, 256), sort="depth")   # sort deepest-first to pack rows tighter
-arrange_on_bed(*parts, plate=(256, 256), assert_fit=False)  # overflow OK
+arrange_on_bed(part_a, part_b, plate=(220, 220), gap=8)  # lay parts out in rows, drop to z=0, check they fit
+arrange_on_bed(*parts, sort="depth")                     # place deepest parts first to pack rows tighter
+arrange_on_bed(*parts, assert_fit=False)                 # lay out even if it overflows the plate
 ```
 
 ## Extrusions &nbsp; &nbsp;[→ full](extrusions.md)
