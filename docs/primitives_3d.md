@@ -115,7 +115,7 @@ terrain = surface("heightmap.png", center=True, invert=False, convexity=5)
 - `invert` — for PNG input, inverts the brightness-to-height mapping. Ignored for DAT files.
 - `convexity` — optional render-complexity hint.
 
-**Bounding box note:** because the surface's extent depends on the file contents (which SCADwright doesn't parse), `bbox(surface(...))` returns a degenerate zero-bbox. If you need a real bbox for assembly checks, wrap the surface with a known container (e.g. `intersection(surface(...), cube([W, H, Z], center=True))`) so the intersection's bbox reflects your intended bounds.
+**Bounding box note:** because the surface's extent depends on the file contents (which SCADwright doesn't read), `bbox(surface(...))` returns a degenerate zero-bbox. If you need a real bbox for assembly checks, or to place the surface with `arrange_on_bed`, declare the size with [`with_bbox_from`](introspection.md#overriding-bbox-with_bbox_from): `surface("heightmap.png").with_bbox_from(cube([W, D, H]))`. Intersecting the surface with a cube does not help — the intersected bbox stays degenerate.
 
 ## `scad_import`
 

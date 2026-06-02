@@ -295,14 +295,26 @@ def arrange_on_bed(
                 source_location=loc,
             ) from exc
         dz = -bb.min[2] if lift_to_bed else 0.0
+        ext_x = bb.max[0] - bb.min[0]
+        ext_y = bb.max[1] - bb.min[1]
+        if ext_x <= 0 or ext_y <= 0:
+            raise ValidationError(
+                f"arrange_on_bed: `{type(part).__name__}` has no bed "
+                f"footprint (its tight bbox measures {ext_x:g} x {ext_y:g} "
+                f"mm), so it can't be placed or fit-checked. A part's extent "
+                f"can be unknowable from its tree, most often with "
+                f"`surface()`. Declare the real size with `with_bbox_from`, "
+                f'e.g. `surface("h.png").with_bbox_from(cube([w, d, h]))`.',
+                source_location=loc,
+            )
         measured.append(
             _Measured(
                 part=part,
                 min_x=bb.min[0],
                 min_y=bb.min[1],
                 dz=dz,
-                ext_x=bb.max[0] - bb.min[0],
-                ext_y=bb.max[1] - bb.min[1],
+                ext_x=ext_x,
+                ext_y=ext_y,
             )
         )
 

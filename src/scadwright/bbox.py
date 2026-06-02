@@ -225,8 +225,9 @@ def _local_bbox(node) -> BBox:
 
     if isinstance(node, Surface):
         # File extent unknown without reading it. Return degenerate; users
-        # can wrap with a known container (e.g. intersection with a cube)
-        # if they need a real bbox for placement checks.
+        # who need a real bbox for placement checks declare one with
+        # `surface(...).with_bbox_from(<known-size node>)` (intersecting with
+        # a cube does not help — the intersected bbox stays degenerate).
         return BBox(min=(0.0, 0.0, 0.0), max=(0.0, 0.0, 0.0))
 
     if isinstance(node, ScadImport):

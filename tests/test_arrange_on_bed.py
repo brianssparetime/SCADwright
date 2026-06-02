@@ -208,6 +208,31 @@ def test_invalid_sort_raises():
 
 
 # =============================================================================
+# Degenerate footprint
+# =============================================================================
+
+
+def test_degenerate_footprint_raises():
+    """A part whose extent can't be known from its tree (`surface()`) has a
+    zero footprint. Laying it out would place a zero-size point at the
+    origin and report a false fit, so it raises instead."""
+    from scadwright.primitives import surface
+
+    with pytest.raises(ValidationError, match="no bed footprint"):
+        arrange_on_bed(surface("heightmap.png"))
+
+
+def test_declared_bbox_makes_zero_footprint_part_placeable():
+    """`with_bbox_from` gives the part a real footprint, so it lays out."""
+    from scadwright.primitives import surface
+
+    sized = surface("heightmap.png").with_bbox_from(cube([40, 30, 10]))
+    bb = bbox(arrange_on_bed(sized))
+    assert bb.max[0] == 40.0
+    assert bb.max[1] == 30.0
+
+
+# =============================================================================
 # Misc invariants
 # =============================================================================
 
