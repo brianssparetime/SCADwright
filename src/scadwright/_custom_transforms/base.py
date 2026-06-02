@@ -104,7 +104,7 @@ def transform(
     result. The framework cannot tighten the bbox of a Difference by
     AST analysis, so transforms that use ``difference()`` internally
     need this hook for :func:`tight_bbox` (and downstream helpers like
-    :func:`pack_on_bed`) to succeed. The hook signature is
+    :func:`arrange_on_bed`) to succeed. The hook signature is
     ``hook(child, **kwargs) -> BBox`` — same kwargs as the transform
     function. See :meth:`Transform.tight_bbox` for the full contract.
     """

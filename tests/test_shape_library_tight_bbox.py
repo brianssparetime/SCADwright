@@ -1,6 +1,6 @@
 """Stock shape library: every Component whose ``build()`` uses
 ``difference()`` overrides ``tight_bbox`` to keep ``tight_bbox()`` and
-downstream helpers like ``pack_on_bed`` working.
+downstream helpers like ``arrange_on_bed`` working.
 
 For 18 of the 19 affected shapes, the conservative bbox IS tight (the
 Difference creates an interior void, hole, or notch — outer extents
@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from scadwright import bbox, tight_bbox
-from scadwright.composition_helpers import pack_on_bed
+from scadwright.composition_helpers import arrange_on_bed
 
 
 # =============================================================================
@@ -210,26 +210,26 @@ def test_dshaft_tight_is_strictly_tighter_than_bbox():
 
 
 # =============================================================================
-# pack_on_bed integration: the user's failing case is the smoke test
+# arrange_on_bed integration: the user's failing case is the smoke test
 # =============================================================================
 
 
-def test_pack_on_bed_with_tube():
-    """The original failure mode: pack_on_bed of a Tube raises because
+def test_arrange_on_bed_with_tube():
+    """The original failure mode: arrange_on_bed of a Tube raises because
     tight_bbox couldn't tighten through Difference. With the override,
     it works."""
     from scadwright.shapes import Tube
-    out = pack_on_bed(Tube(h=10, id=8, thk=1))
+    out = arrange_on_bed(Tube(h=10, id=8, thk=1))
     bb = bbox(out)
     assert bb.min == (0, 0, 0)
 
 
-def test_pack_on_bed_with_mixed_difference_shapes():
+def test_arrange_on_bed_with_mixed_difference_shapes():
     """A more complex layout: several stock shapes that all use
     Difference internally, packed together. None of them should raise
     after the overrides."""
     from scadwright.shapes import GridfinityBase, HexNut, Tube
-    out = pack_on_bed(
+    out = arrange_on_bed(
         Tube(h=10, id=8, thk=1),
         HexNut.of("M3"),
         GridfinityBase(grid_x=1, grid_y=1),

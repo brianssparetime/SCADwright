@@ -13,7 +13,7 @@ from scadwright import BBox, Node, bbox, tight_bbox, with_bbox_from
 from scadwright.anchor import Anchor, get_node_anchors
 from scadwright.ast.transforms import WithBBox
 from scadwright.boolops import difference
-from scadwright.composition_helpers import pack_on_bed
+from scadwright.composition_helpers import arrange_on_bed
 from scadwright.emit import emit_str
 from scadwright.primitives import cube
 
@@ -129,7 +129,7 @@ def test_standalone_form_matches_method():
     assert bbox(via_method) == bbox(via_function)
 
 
-# --- Motivating pattern: force_render + late-diff + pack_on_bed ---
+# --- Motivating pattern: force_render + late-diff + arrange_on_bed ---
 
 
 def test_force_render_late_diff_emits_correctly():
@@ -142,16 +142,16 @@ def test_force_render_late_diff_emits_correctly():
     assert "difference()" in scad
 
 
-def test_pack_on_bed_with_engraved_body():
+def test_arrange_on_bed_with_engraved_body():
     """End-to-end: a body whose tight_bbox would otherwise be unknowable
-    (difference + force_render) lays out via pack_on_bed once we declare
+    (difference + force_render) lays out via arrange_on_bed once we declare
     its bbox via with_bbox_from."""
     body_a = cube([20, 20, 5])
     body_b = cube([15, 15, 5])
     cutter = cube([1, 1, 1])
     engraved_a = difference(body_a.force_render(), cutter).with_bbox_from(body_a)
     engraved_b = difference(body_b.force_render(), cutter).with_bbox_from(body_b)
-    layout = pack_on_bed(engraved_a, engraved_b, gap=5.0, assert_fit=False)
+    layout = arrange_on_bed(engraved_a, engraved_b, gap=5.0, assert_fit=False)
     scad = emit_str(layout)
     # Both engraved bodies present in the layout; no exception during pack.
     assert "render()" in scad

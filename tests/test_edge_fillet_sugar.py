@@ -191,17 +191,17 @@ def test_cylinder_fillet_tight_bbox_matches_cylinder_bbox():
     assert tb.size == pytest.approx((10.0, 10.0, 10.0))
 
 
-def test_filleted_shapes_compose_with_pack_on_bed():
-    """pack_on_bed uses tight_bbox; filleted shapes must support it."""
-    from scadwright.composition_helpers import pack_on_bed
-    packed = pack_on_bed(
+def test_filleted_shapes_compose_with_arrange_on_bed():
+    """arrange_on_bed uses tight_bbox; filleted shapes must support it."""
+    from scadwright.composition_helpers import arrange_on_bed
+    packed = arrange_on_bed(
         cube([10, 20, 5]).fillet("top", r=1),
         cube([15, 10, 5]).chamfer("vertical", size=1),
         cylinder(h=5, r=4).fillet("top_rim", r=1),
         plate=(200, 200),
     )
     bb = bbox(packed)
-    # Smoke check: pack_on_bed produced a reasonable composite without raising.
+    # Smoke check: arrange_on_bed produced a reasonable composite without raising.
     assert bb.size[2] == pytest.approx(5.0)
 
 

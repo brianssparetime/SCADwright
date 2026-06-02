@@ -46,7 +46,7 @@ The 12 cube edges are named by face-pair (same vocabulary as the framework's anc
 
 This is sugar — scoped to the cases where edge identity is well-defined. Out of scope: edges of composed shapes (`union`/`difference` results), rotated primitives (`cube(...).rotate(...)` no longer has the method by design), cone cylinders (`r1 != r2`), and inside-corner concave fillets. For those, use `FilletMask` / `ChamferMask` directly.
 
-Result preserves `tight_bbox()` — a fillet only carves inward, so a filleted cube/cylinder is interchangeable with the original in `pack_on_bed`, `assert_fits_in`, and other tight-bbox-consuming helpers.
+Result preserves `tight_bbox()` — a fillet only carves inward, so a filleted cube/cylinder is interchangeable with the original in `arrange_on_bed`, `assert_fits_in`, and other tight-bbox-consuming helpers.
 
 ## `FilletMask(r, length, axis="z")`
 

@@ -207,7 +207,7 @@ class Node(
         analysis can't tighten a Difference (the canonical case is a
         small cutter against a much larger host where you know the
         cutter doesn't move the bbox), and downstream consumers like
-        ``pack_on_bed`` need the host's extents.
+        ``arrange_on_bed`` need the host's extents.
 
         ``source`` is a :class:`Node` (its bbox / tight_bbox is queried
         lazily, so spatial transforms applied after this call propagate

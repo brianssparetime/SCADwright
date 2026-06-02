@@ -46,7 +46,7 @@ def _carved_tight_bbox(child, **_kw):
 
     Without this hook, ``tight_bbox()`` on the inner Difference would
     raise (the framework can't tighten a Difference by AST analysis),
-    breaking ``pack_on_bed`` and other tight-bbox-consuming helpers.
+    breaking ``arrange_on_bed`` and other tight-bbox-consuming helpers.
     """
     from scadwright.bbox import bbox as _bbox
     return _bbox(child)
