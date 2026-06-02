@@ -23,7 +23,7 @@ from scadwright import Component, Param, bbox
 from scadwright.boolops import difference, union
 from scadwright.design import Design, run, variant
 from scadwright.primitives import cube, cylinder
-from scadwright.shapes import Tube, rounded_rect
+from scadwright.shapes import Standoff, rounded_rect
 from scadwright.transforms import transform
 
 
@@ -163,7 +163,7 @@ class CaseBase(Component):
         shell = difference(outer, inner)
 
         standoffs = union(*[
-            Tube(
+            Standoff(
                 h=self.standoff_h,
                 od=self.standoff_outer_d,
                 id=self.pcb.mount_hole_d,
