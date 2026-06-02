@@ -11,7 +11,7 @@ By component (scadwright / openscad):
 - Helicoid (Helix + almond_profile):         7  / ~120
 - Base plate (filleted cube):                3  / ~10
 - Bolt-holes (M2 counterbores from ISO
-  spec + 2x2 linear_copy + through()):       6  / ~25
+  spec + 2x2 hole_grid + through()):         6  / ~25
 - Engravings (two curved-meridian add_text
   calls; per-glyph proportional spacing
   and surface-tangent rotation; SCAD-1 +
@@ -23,7 +23,7 @@ Average: 6x reduction.
 
 from scadwright import bbox, render, resolution
 from scadwright.boolops import difference, minkowski, union
-from scadwright.composition_helpers import linear_copy
+from scadwright.composition_helpers import hole_grid
 from scadwright.primitives import cube, polygon, sphere
 from scadwright.shapes import (
     Barrel, Helix, Ogive, almond_profile, counterbore_for_screw,
@@ -44,17 +44,18 @@ with resolution(fn=32):
     nose = Ogive(base_r=body_r, length=18, kind="parabolic", fn=64).attach(
         body, on="top",
     )
-    # Filleted M2-counterbored baseplate; nested linear_copy spreads the
-    # holes into a 2x2 corner array; through() flushes the cuts.
+    # Filleted M2-counterbored baseplate; hole_grid spreads the holes
+    # into a centered 2x2 corner array; through() flushes the cuts.
     plate_w, plate_thk, stem_h = 22, 3, 18
     plate_solid = cube([plate_w, plate_w, plate_thk], center="xy").fillet("vertical", r=2)
     # through=plate_thk recesses the head bore inside the plate (head
     # top flush with plate top); .through() then eps-extends both faces.
     hole = counterbore_for_screw("M2", through=plate_thk)
     corner = plate_w/2 - 3
-    holes = linear_copy(
-        [0, 2*corner, 0], 2,
-        linear_copy([2*corner, 0, 0], 2, hole.translate([-corner, -corner, 0])),
+    holes = hole_grid(
+        rows=2, cols=2,
+        row_spacing=2*corner, col_spacing=2*corner,
+        hole=hole,
     )
     plate = difference(plate_solid, holes.through(plate_solid, axis="z"))
 
