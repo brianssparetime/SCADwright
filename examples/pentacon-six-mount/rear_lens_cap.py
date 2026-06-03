@@ -11,12 +11,12 @@ pins its dimensions to the shared `spec.py`, so the channels here are cut
 from the same lug spec the body cap renders as solid tabs.
 
 Run:
-    python examples/pentacon6-mount/rear_lens_cap.py
+    python examples/pentacon-six-mount/rear_lens_cap.py
 """
 
 import math
 
-from scadwright import Component
+from scadwright import Component, Param
 from scadwright.api.tolerances import default_eps
 from scadwright.boolops import difference, union
 from scadwright.design import Design, run, variant
@@ -37,40 +37,54 @@ class RearLensCap(Component):
     the wall left below is the floor the lug rests on.
     """
 
+    # The shared bayonet spec flows in as one parameter; the equations read
+    # its values (including its derived `bore_r` and `lug_tip_r`) with a
+    # `spec.` prefix.
+    spec = Param()
+
     equations = """
-        bore_dia, lug_radial, lug_axial, lug_span_deg, lug_step_deg, lock_twist_deg > 0
-        cap_wall, disc_thk, roof_thk, axial_clear, lead_in, fit_clearance > 0
-        lug_count >= 1
-        bore_r = bore_dia / 2
-        bore_cut_r = bore_r + fit_clearance
-        lug_tip_r = bore_r + lug_radial
-        channel_outer_r = lug_tip_r + fit_clearance
+        cap_wall, disc_thk, roof_thk, axial_clear, lead_in > 0
+        bore_cut_r = spec.bore_r + spec.fit_clearance
+        channel_outer_r = spec.lug_tip_r + spec.fit_clearance
         channel_mid_r = (bore_cut_r + channel_outer_r) / 2
         channel_band = channel_outer_r - bore_cut_r
         channel_band > 0
         cap_od = 2 * (channel_outer_r + cap_wall)
-        cap_h = disc_thk + lug_axial + axial_clear + roof_thk + lead_in
+        cap_h = disc_thk + spec.lug_axial + axial_clear + roof_thk + lead_in
     """
+
+    # Maker's mark raised on the closed-back (z = 0) face.
+    label_relief = 0.6
+    label_size = 7.0
+
+    def tight_bbox(self):                                  # framework hook: declare extents past the Difference
+        # build() ends in a difference(), which the framework can't measure
+        # without evaluating the CSG. The channels and bore all sit inside
+        # the blank cup; the only thing past it is the raised back-face
+        # label, which stands `label_relief` proud below z = 0.
+        from scadwright import BBox
+        r = self.cap_od / 2
+        return BBox(min=(-r, -r, -self.label_relief), max=(r, r, self.cap_h))
 
     def build(self):                                       # framework hook: required; returns the shape
         eps = default_eps()
         floor = self.disc_thk
         # Angular half-width of an entry slot: the lug's own half-width
         # plus the fit gap, converted from mm to degrees at the channel.
-        half = self.lug_span_deg / 2 + math.degrees(self.fit_clearance / self.channel_mid_r)
-        twist = self.lock_twist_deg
+        half = self.spec.lug_span_deg / 2 + math.degrees(self.spec.fit_clearance / self.channel_mid_r)
+        twist = self.spec.lock_twist_deg
 
         # Cup: a wall whose bore admits the lens barrel, closed at the
         # bottom by a solid disc.
         solid = union(
-            Tube(h=self.cap_h, od=self.cap_od, id=self.bore_dia + 2 * self.fit_clearance),
+            Tube(h=self.cap_h, od=self.cap_od, id=self.spec.bore_dia + 2 * self.spec.fit_clearance),
             cylinder(h=self.disc_thk, r=self.cap_od / 2),
         )
 
         band = dict(r=self.channel_mid_r, width=self.channel_band)
         cutters = []
-        for k in range(int(self.lug_count)):
-            center = k * self.lug_step_deg
+        for k in range(int(self.spec.lug_count)):
+            center = k * self.spec.lug_step_deg
             # Entry slot: full height above the floor, so a lug drops in.
             cutters.append(
                 Arc(angles=(center - half, center + half), **band)
@@ -82,29 +96,25 @@ class RearLensCap(Component):
             # roof; the intact wall past its far end is the stop.
             cutters.append(
                 Arc(angles=(center - half, center + half + twist), **band)
-                .linear_extrude(height=self.lug_axial + self.axial_clear)
+                .linear_extrude(height=self.spec.lug_axial + self.axial_clear)
                 .up(floor)
             )
-        yield difference(solid, *cutters)
+        # Raised maker's mark on the closed-back (z = 0) face.
+        yield difference(solid, *cutters).add_text(
+            label="Pentacon Six", on="bottom",
+            relief=self.label_relief, font_size=self.label_size,
+        )
 
 
 class PentaconSixRearLensCap(RearLensCap):
     """A rear lens cap dimensioned for the Pentacon Six mount.
 
-    Every bayonet value is read straight from `PentaconSixMount`, the
-    shared spec, so the twist-lock channels are sized from the same lug
-    spec as the body cap. Only the cap's own print choices are set here.
+    `spec` binds the shared `PentaconSixMount`, so the `equations` read
+    every bayonet value straight from it and the twist-lock channels match
+    the body cap's lugs.
     """
 
-    # Bayonet contract — read from the shared spec.
-    bore_dia       = PentaconSixMount.bore_dia
-    lug_count      = PentaconSixMount.lug_count
-    lug_span_deg   = PentaconSixMount.lug_span_deg
-    lug_radial     = PentaconSixMount.lug_radial
-    lug_axial      = PentaconSixMount.lug_axial
-    lug_step_deg   = PentaconSixMount.lug_step_deg
-    lock_twist_deg = PentaconSixMount.lock_twist_deg
-    fit_clearance  = PentaconSixMount.fit_clearance
+    spec = PentaconSixMount
 
     # This cap's own print choices.
     cap_wall    = 2.5     # wall outside the lug channels

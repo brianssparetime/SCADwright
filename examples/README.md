@@ -1,6 +1,6 @@
 # SCADwright examples
 
-Each file is a self-contained SCADwright project that renders to one or more `.scad` files you can open in OpenSCAD. Run them with either:
+Each example is a self-contained SCADwright project that renders to one or more `.scad` files you can open in OpenSCAD. Most are a single file; the last is a small folder of files that share one spec. Run them with either:
 
 ```
 python examples/<name>.py                           # default variant
@@ -21,6 +21,7 @@ The examples are arranged below from simplest to most complex. Each one introduc
 | Complex | [`electronics-case.py`](electronics-case.py) | `namedtuple` specs for the PCB and its ports. Three custom transforms. Separate variants for print vs. display. |
 | Complex | [`simple-lens-housing.py`](simple-lens-housing.py) | A helper that turns each lens element into a record with precomputed fields. A conditional that picks between two body shapes. A `halve()` section view in the print variant. |
 | Complex | [`rocket.py`](rocket.py) | A wide cross-section of the shape library: `Helix` with a custom `almond_profile`, `Barrel`, `Ogive`, fins via `polygon` + `minkowski(sphere)`, M2 counterbores stamped in a 2x2 array, curved-meridian `add_text` engravings. 59 lines vs. ~360 of equivalent OpenSCAD. |
+| Complex | [`pentacon-six-mount/`](pentacon-six-mount/) | A body cap and rear lens cap for a Pentacon Six camera bayonet, both built from one shared `spec.py`. The first example split across files. |
 
 ---
 
@@ -196,3 +197,23 @@ This is a flat script — no Components, no Design class — built from shape-li
 *Full rocket: parabolic nose, bulged body with engraved labels, three fins, flared nozzle, helicoid stem, and M2-counterbored baseplate.*
 
 **Reference:** [shape library](../docs/shapes/README.md) · [Helix](../docs/shapes/curves.md) · [Barrel](../docs/shapes/tubes_and_shells.md) · [counterbore_for_screw](../docs/shapes/fillets.md) · [linear_copy / rotate_copy](../docs/composition_helpers.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [add_text() on curved meridians](../docs/add_text.md) · [halve()](../docs/composition_helpers.md#halve)
+
+---
+
+## 9. [`pentacon-six-mount/`](pentacon-six-mount/)
+
+A body cap and a rear lens cap for the Pentacon Six, a three-lug medium-format camera bayonet. The body cap drops into the camera throat and the camera's collar clamps its lugs; the rear lens cap is a cup whose channels the lens's lugs twist into and lock under. This is the first example split across more than one file: a shared `spec.py` holds the bayonet dimensions, and both caps read them from it.
+
+- `spec.py` is a `Spec`: it holds the dimensions both caps must agree on (bore, lug pattern, fit clearance) and runs the same `equations` block a Component does.
+- Both caps import that one `Spec`, so the body cap's lugs and the rear cap's channels can't drift apart across files. Change a number in `spec.py` and both parts follow on the next render.
+- The body cap builds the bayonet as solid lugs; the rear lens cap cuts the same lug shape as twist-lock channels with a roof that traps them once turned.
+- A parametric Component plus a concrete subclass that binds the shared spec as one parameter, with the equations reading its values directly (`spec.bore_dia`) — the same spec-as-parameter pattern earlier examples used within a single file.
+- `fit_clearance` and the adjustments idiom (`+=`) for dialing in a printed fit.
+- `print_plate.py` arranges both caps flat on the bed with `arrange_on_bed` for a single build, raising if the set wouldn't fit; it's the file that pulls the two parts together.
+- `validation_morph.py` animates the two halves mating with a chain `morph`: because both caps read the same spec, the male lugs and the female channels rise, face off, and twist-lock together.
+
+![Pentacon Six mate morph](images/PentaconSixMount-mate.apng)
+
+*The `mate` morph: both caps are cut from the same bayonet spec, so the male lugs and the female channels twist-lock together — a compatibility check you can watch.*
+
+**Reference:** [Spec](../docs/specs_and_adjustments.md#your-first-spec) · [sharing a Spec across files](../docs/specs_and_adjustments.md#sharing-a-spec-across-files) · [letting the Spec flow through equations](../docs/specs_and_adjustments.md#letting-the-spec-flow-through-equations) · [adjustments](../docs/specs_and_adjustments.md#adjustments) · [the equations block](../docs/components.md#parameters-equations) · [shape library](../docs/shapes/README.md) · [morph](../docs/morph.md) · [organizing a project](../docs/organizing_a_project.md)

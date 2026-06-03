@@ -11,11 +11,12 @@ dimensions to the shared `spec.py` — the same file the rear lens cap
 reads, so the lug pattern on both parts always matches.
 
 Run:
-    python examples/pentacon6-mount/body_cap.py
+    python examples/pentacon-six-mount/body_cap.py
 """
 
-from scadwright import Component
+from scadwright import Component, Param
 from scadwright.api.tolerances import default_eps
+from scadwright.boolops import union
 from scadwright.design import Design, run, variant
 from scadwright.primitives import cylinder
 from scadwright.shapes import Arc, Tube
@@ -31,62 +32,65 @@ class BodyCap(Component):
     camera's collar can grab them, exactly as a lens's lugs do.
     """
 
+    # The shared bayonet spec flows in as one parameter; the equations read
+    # its values with a `spec.` prefix.
+    spec = Param()
+
     equations = """
-        bore_dia, lug_radial, lug_axial, lug_span_deg, lug_step_deg > 0
-        skirt_wall, skirt_h, disc_thk, disc_lip, fit_clearance > 0
-        lug_count >= 1
-        lug_axial < skirt_h
-        skirt_od = bore_dia - 2 * fit_clearance
+        skirt_wall, skirt_h, disc_thk, disc_lip > 0
+        spec.lug_axial < skirt_h
+        skirt_od = spec.bore_dia - 2 * spec.fit_clearance
         skirt_or = skirt_od / 2
         skirt_id = skirt_od - 2 * skirt_wall
         skirt_id > 0
-        disc_od = bore_dia + 2 * disc_lip
+        disc_od = spec.bore_dia + 2 * disc_lip
     """
+
+    # Maker's mark raised on the outward cover face.
+    label_relief = 0.6
+    label_size = 7.0
 
     def build(self):                                       # framework hook: required; returns the shape
         eps = default_eps()
         # Cover disc sitting against the camera's flange face (z = 0).
-        yield cylinder(h=self.disc_thk, r=self.disc_od / 2)
+        disc = cylinder(h=self.disc_thk, r=self.disc_od / 2)
         # Skirt dropping into the throat, overlapping the disc slightly
         # for a clean union.
-        yield (
+        skirt = (
             Tube(h=self.skirt_h, od=self.skirt_od, id=self.skirt_id)
             .up(self.disc_thk - eps)
         )
         # Three lugs near the far end of the skirt. Each is an annular
         # sector projecting outward from the skirt wall by `lug_radial`,
         # at one of the three 120-degree positions.
-        z_lug = self.disc_thk + self.skirt_h - self.lug_axial
-        half = self.lug_span_deg / 2
-        for k in range(int(self.lug_count)):
-            center = k * self.lug_step_deg
-            yield (
-                Arc(
-                    r=self.skirt_or + self.lug_radial / 2,
-                    width=self.lug_radial,
-                    angles=(center - half, center + half),
-                )
-                .linear_extrude(height=self.lug_axial)
-                .up(z_lug)
+        z_lug = self.disc_thk + self.skirt_h - self.spec.lug_axial
+        half = self.spec.lug_span_deg / 2
+        lugs = [
+            Arc(
+                r=self.skirt_or + self.spec.lug_radial / 2,
+                width=self.spec.lug_radial,
+                angles=(k * self.spec.lug_step_deg - half, k * self.spec.lug_step_deg + half),
             )
+            .linear_extrude(height=self.spec.lug_axial)
+            .up(z_lug)
+            for k in range(int(self.spec.lug_count))
+        ]
+        # Raised maker's mark on the outward cover face (z = 0).
+        return union(disc, skirt, *lugs).add_text(
+            label="Pentacon Six", on="bottom",
+            relief=self.label_relief, font_size=self.label_size,
+        )
 
 
 class PentaconSixBodyCap(BodyCap):
     """A body cap dimensioned for the Pentacon Six mount.
 
-    Every bayonet value is read straight from `PentaconSixMount`, the
-    shared spec, so this cap and the rear lens cap can't disagree about
-    the lug pattern. Only the cap's own print choices are set here.
+    `spec` binds the shared `PentaconSixMount`, so the `equations` read
+    every bayonet value straight from it and this cap can't disagree with
+    the rear lens cap about the lug pattern.
     """
 
-    # Bayonet contract — read from the shared spec.
-    bore_dia     = PentaconSixMount.bore_dia
-    lug_count    = PentaconSixMount.lug_count
-    lug_span_deg = PentaconSixMount.lug_span_deg
-    lug_radial   = PentaconSixMount.lug_radial
-    lug_axial    = PentaconSixMount.lug_axial
-    lug_step_deg = PentaconSixMount.lug_step_deg
-    fit_clearance = PentaconSixMount.fit_clearance
+    spec = PentaconSixMount
 
     # This cap's own print choices.
     skirt_wall = 2.0     # skirt wall thickness (hollow, to save plastic)

@@ -1,7 +1,9 @@
 """Pentacon Six bayonet — the shared dimension contract.
 
-This file is the single source of truth for the Pentacon Six (P6) lens
-mount. Both `body_cap.py` and `rear_lens_cap.py` import this one `Spec`
+This file describes the geometry of the Pentacon Six (P6) lens
+mount. 
+
+Both `body_cap.py` and `rear_lens_cap.py` import this one `Spec`
 and read their dimensions from it, so the two parts can never drift out
 of agreement: change a number here and both caps follow. That is the
 whole point of splitting a project across files around a shared `Spec`.
@@ -9,12 +11,11 @@ whole point of splitting a project across files around a shared `Spec`.
 The P6 bayonet is a three-lug medium-format mount. The three lugs are
 identical and spaced 120 degrees apart, so a lens (or a cap) seats in
 any of three orientations. A small post on the lens, just in front of
-the top lug, picks the one orientation that comes out level on film; a
+the top lug, picks the one orientation that comes out level on film. However, a
 cap doesn't care which way round it sits, so the caps simply leave room
 for that post rather than reproducing it.
 
-The numbers come from measuring a real mount and cross-checking against
-published references and community 3D models. The lug width is the
+The numbers come from measuring a real mount.   The lug width is the
 softest of them (derived from a chord measurement); `fit_clearance` is
 the knob to turn if a printed cap comes out tight or loose.
 """
