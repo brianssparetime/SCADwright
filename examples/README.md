@@ -189,14 +189,14 @@ This is a flat script — no Components, no Design class — built from shape-li
 - `Barrel` is used twice — once for the body's convex bulge, once for the nozzle's outward flare (the latter halved with `.halve(z=1)` to keep just the upper bell).
 - `Ogive(kind="parabolic", fn=64).attach(body, on="top")` stacks the nose on the body, no z-offset math.
 - Fins: `polygon → linear_extrude → minkowski(sphere)` for the rounded blank, `attach(body, on="outer_wall", using_anchor="lside", at_z=...)` to seat one fin tangent to the bulged body, a small `.left(fin_fillet)` to embed it so the curved meridian carves into the fin root, and `.rotate_copy(angle=120, n=3, axis=[0, 0, 1])` for the 3-fold pattern. 
-- Nested `linear_copy(...)` stamps a 2x2 array of M2 counterbores at the plate corners; `.through(plate_solid, axis="z")` flushes the cuts.
+- `hole_grid(rows=2, cols=2, ...)` stamps a centered 2x2 array of M2 counterbores at the plate corners; `.through(plate_solid, axis="z")` flushes the cuts.
 - `add_text(angle=45, ...)` engraves text along a meridian on the body's curved outer wall — once horizontally for the wordmark (raised relief), then chained again with `text_dir="axial"` and `rotate_glyphs=True` for the multi-line punchline (recessed relief).
 
 ![Rocket](images/Rocket.png)
 
 *Full rocket: parabolic nose, bulged body with engraved labels, three fins, flared nozzle, helicoid stem, and M2-counterbored baseplate.*
 
-**Reference:** [shape library](../docs/shapes/README.md) · [Helix](../docs/shapes/curves.md) · [Barrel](../docs/shapes/tubes_and_shells.md) · [counterbore_for_screw](../docs/shapes/fillets.md) · [linear_copy / rotate_copy](../docs/composition_helpers.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [add_text() on curved meridians](../docs/add_text.md) · [halve()](../docs/composition_helpers.md#halve)
+**Reference:** [shape library](../docs/shapes/README.md) · [Helix](../docs/shapes/curves.md) · [Barrel](../docs/shapes/tubes_and_shells.md) · [counterbore_for_screw](../docs/shapes/fillets.md) · [hole_grid / rotate_copy](../docs/composition_helpers.md) · [attach(fuse=True)](../docs/auto-eps_fuse_and_through.md) · [through()](../docs/auto-eps_fuse_and_through.md) · [add_text() on curved meridians](../docs/add_text.md) · [halve()](../docs/composition_helpers.md#halve)
 
 ---
 

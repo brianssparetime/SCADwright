@@ -11,11 +11,18 @@ If you haven't used OpenSCAD, the basic idea is:
 - Combine them with boolean operations (union, difference, intersection).
 - The result is a 3D shape you can save and 3D-print.
 
-## [Quick start guide / How to organizing a project](organizing_a_project.md)
+## [Quick start guide / How to organize a project](organizing_a_project.md)
 
 This quick guide shows you how a project can organically grow from very simple OpenSCAD-like code
 to levaraging more complex constructs like reusable [Components](components.md) and [variants](variants.md) without
 having to re-write anything.
+
+
+## [Examples](../examples/README.md)
+
+Example projects arranged from simplest to most complex, each building on the last: from flat OpenSCAD-like scripts up to multi-file projects around shared specs. 
+
+Reading them in order is a guided tour of the constructs in context.
 
 
 ## Reference
