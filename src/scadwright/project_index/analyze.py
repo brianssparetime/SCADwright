@@ -113,6 +113,25 @@ class ParamInfo:
 
 
 @dataclass(frozen=True)
+class PlainAttr:
+    """A class-level ``name = value`` assignment that is neither
+    ``equations`` nor a ``Param(...)`` call.
+
+    ``value_text`` is the RHS rendered to text so it matches the
+    runtime's ``repr(value)`` for literals: ``repr(ast.literal_eval(...))``
+    when the RHS is a literal, otherwise ``ast.unparse(...)``. The four
+    ``range_*`` fields hold the 0-based file range of the target name,
+    the span the LSP highlights for a collision diagnostic.
+    """
+    name: str
+    value_text: str
+    range_start_line: int
+    range_start_col: int
+    range_end_line: int
+    range_end_col: int
+
+
+@dataclass(frozen=True)
 class EquationsBlock:
     """A class's ``equations = ...`` assignment plus discovered metadata.
 
@@ -133,6 +152,8 @@ class EquationsBlock:
     hosts: tuple[EquationsHostString, ...]
     params: tuple[ParamInfo, ...] = ()
     param_names: frozenset[str] = frozenset()
+    plain_attrs: tuple[PlainAttr, ...] = ()
+    base_names: frozenset[str] = frozenset()
     class_start_line: int | None = None
     class_start_col: int | None = None
     class_end_line: int | None = None
@@ -174,28 +195,33 @@ def _block_from_classdef(
     """
     equations_value: ast.AST | None = None
     params: list[ParamInfo] = []
+    plain_attrs: list[PlainAttr] = []
     for stmt in cls.body:
         if isinstance(stmt, ast.Assign):
             if (
                 len(stmt.targets) == 1
                 and isinstance(stmt.targets[0], ast.Name)
             ):
-                target_name = stmt.targets[0].id
-                if target_name == "equations":
+                target = stmt.targets[0]
+                if target.id == "equations":
                     equations_value = stmt.value
                 elif _is_param_call(stmt.value):
                     params.append(
-                        _build_param_info(target_name, stmt.value, stmt),
+                        _build_param_info(target.id, stmt.value, stmt),
                     )
+                else:
+                    plain_attrs.append(_plain_attr(target, stmt.value))
         elif isinstance(stmt, ast.AnnAssign):
             if isinstance(stmt.target, ast.Name) and stmt.value is not None:
-                target_name = stmt.target.id
-                if target_name == "equations":
+                target = stmt.target
+                if target.id == "equations":
                     equations_value = stmt.value
                 elif _is_param_call(stmt.value):
                     params.append(
-                        _build_param_info(target_name, stmt.value, stmt),
+                        _build_param_info(target.id, stmt.value, stmt),
                     )
+                else:
+                    plain_attrs.append(_plain_attr(target, stmt.value))
     if equations_value is None:
         return None
     hosts = _extract_hosts(equations_value, source_text)
@@ -208,6 +234,10 @@ def _block_from_classdef(
         hosts=tuple(hosts),
         params=tuple(params),
         param_names=frozenset(p.name for p in params),
+        plain_attrs=tuple(plain_attrs),
+        base_names=frozenset(
+            n for n in (_base_name(b) for b in cls.bases) if n is not None
+        ),
         class_start_line=cls.lineno - 1,
         class_start_col=cls.col_offset,
         class_end_line=(
@@ -303,6 +333,48 @@ def _is_param_call(node: ast.AST) -> bool:
     if isinstance(func, ast.Attribute):
         return func.attr == "Param"
     return False
+
+
+def _plain_attr(target: ast.Name, value: ast.AST) -> PlainAttr:
+    """Build a :class:`PlainAttr` from a class-body ``name = value``.
+
+    The value is rendered to match the runtime's ``repr(value)`` for
+    literals; a non-literal RHS falls back to its source text. The
+    range covers the target name node so a diagnostic squiggles the
+    assigned name, not the whole statement.
+    """
+    try:
+        value_text = repr(ast.literal_eval(value))
+    except (ValueError, TypeError, SyntaxError):
+        try:
+            value_text = ast.unparse(value)
+        except Exception:  # pragma: no cover — unparse is total in practice
+            value_text = "..."
+    end_line = getattr(target, "end_lineno", target.lineno)
+    end_col = getattr(target, "end_col_offset", target.col_offset)
+    return PlainAttr(
+        name=target.id,
+        value_text=value_text,
+        range_start_line=target.lineno - 1,
+        range_start_col=target.col_offset,
+        range_end_line=end_line - 1,
+        range_end_col=end_col,
+    )
+
+
+def _base_name(node: ast.AST) -> str | None:
+    """Render a base-class expression to a simple name for gating.
+
+    ``Component`` yields ``"Component"``; ``sc.Component`` yields the
+    attribute tail ``"Component"``. Anything else (a subscripted
+    generic, a call) yields ``None`` and is treated as an unrecognized
+    base.
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
 
 
 def _extract_hosts(

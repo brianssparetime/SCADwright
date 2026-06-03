@@ -162,7 +162,7 @@ class Spec(metaclass=_SpecMeta):
         super().__init_subclass__(**kwargs)
         params = _collect_params_from_mro(cls)
         _apply_class_attr_overrides(cls, params)
-        _register_equations(cls, params)
+        _register_equations(cls, params, kind="Spec")
         type.__setattr__(cls, "__params__", params)
 
         is_parameterized = bool(cls._optional_names)

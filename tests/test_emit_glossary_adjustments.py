@@ -90,7 +90,6 @@ def test_multiple_additive_adjustments_chain():
 
 def test_input_name_with_adjustment():
     class C(Component):
-        x = None  # placeholder so equations declare via free-name path
         equations = """
             x > 0
             x += 0.3  # printer overshoot

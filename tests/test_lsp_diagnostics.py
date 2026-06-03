@@ -468,3 +468,125 @@ def test_node_range_uses_colmap_from_error_when_available(monkeypatch) -> None:
     # Confirms the precise range was computed from the attached colmap.
     src_line = src.splitlines()[d.range.start_line]
     assert src_line[d.range.start_col:d.range.end_col] == "snh"
+
+
+# =============================================================================
+# Plain-attribute / equation-name collisions (LSP parity with runtime)
+# =============================================================================
+
+
+def test_collision_referenced_name_component() -> None:
+    src = (
+        'from scadwright import Component\n'
+        'class Rectangle(Component):\n'
+        '    equations = "area = width * height"\n'
+        '    width = 4\n'
+        '    height = 3\n'
+    )
+    [d] = analyze_file(src)
+    assert d.severity == "error"
+    # Both width and height collide; the first by (line, name) is height.
+    assert "references 'height'" in d.message
+    assert "passed in when the part is built" in d.message
+    src_line = src.splitlines()[d.range.start_line]
+    assert src_line[d.range.start_col:d.range.end_col] == "height"
+
+
+def test_collision_referenced_name_spec() -> None:
+    src = (
+        'from scadwright import Spec\n'
+        'class BatterySpec(Spec):\n'
+        '    equations = "outer = inner * 2"\n'
+        '    inner = 5\n'
+    )
+    [d] = analyze_file(src)
+    assert d.severity == "error"
+    assert "A Spec's values belong within its equations" in d.message
+    src_line = src.splitlines()[d.range.start_line]
+    assert src_line[d.range.start_col:d.range.end_col] == "inner"
+
+
+def test_collision_equation_target() -> None:
+    src = (
+        'from scadwright import Component\n'
+        'class Rectangle(Component):\n'
+        '    equations = "area = width * height"\n'
+        '    area = 12\n'
+    )
+    [d] = analyze_file(src)
+    assert d.severity == "error"
+    assert "already define 'area'" in d.message
+    src_line = src.splitlines()[d.range.start_line]
+    assert src_line[d.range.start_col:d.range.end_col] == "area"
+
+
+def test_collision_optional_name() -> None:
+    src = (
+        'from scadwright import Component\n'
+        'class C(Component):\n'
+        '    equations = "?fillet > 0"\n'
+        '    fillet = 2\n'
+    )
+    [d] = analyze_file(src)
+    assert d.severity == "error"
+    assert "already define 'fillet'" in d.message
+
+
+def test_collision_gated_out_for_custom_base() -> None:
+    # Derived's base is not a framework root, so the plain `width = 4`
+    # might legitimately override an inherited Param the analyzer cannot
+    # see. The check stays silent; the runtime still enforces it.
+    src = (
+        'from scadwright import Component\n'
+        'class Base(Component):\n'
+        '    width = 0\n'
+        'class Derived(Base):\n'
+        '    equations = "area = width * height"\n'
+        '    width = 4\n'
+    )
+    assert analyze_file(src) == []
+
+
+def test_collision_legitimate_forms_clean() -> None:
+    inside = (
+        'from scadwright import Component\n'
+        'class C(Component):\n'
+        '    equations = """\n'
+        '        area = width * height\n'
+        '        width = 4\n'
+        '        height = 3\n'
+        '    """\n'
+    )
+    param_and_unrelated = (
+        'from scadwright import Component, Param\n'
+        'class C(Component):\n'
+        '    width = Param(float, default=4)\n'
+        '    equations = "area = width * 2"\n'
+        '    bolt_count = 4\n'
+    )
+    assert analyze_file(inside) == []
+    assert analyze_file(param_and_unrelated) == []
+
+
+def test_collision_message_matches_runtime() -> None:
+    from scadwright import Component
+    from scadwright.errors import ValidationError
+
+    src = (
+        'from scadwright import Component\n'
+        'class Rectangle(Component):\n'
+        '    equations = "area = width * height"\n'
+        '    height = 3\n'
+    )
+    [d] = analyze_file(src)
+    try:
+        class Rectangle(Component):
+            equations = "area = width * height"
+            height = 3
+
+            def build(self):
+                return None
+    except ValidationError as e:
+        assert d.message == str(e)
+    else:
+        raise AssertionError("runtime did not raise")

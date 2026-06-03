@@ -531,3 +531,132 @@ def _check_mutual_inconsistency(
             f"inconsistent: no solution to the system {eqs_str}",
             equations_source_index=primary_index,
         )
+
+
+# =============================================================================
+# Plain-attribute / equation-name collision (shared by runtime and LSP)
+# =============================================================================
+#
+# A name lives in one place. If the equations use a name, a plain class
+# attribute of the same name is rejected. The runtime reads the plain
+# attributes from ``cls.__dict__``; the LSP reads them from the class
+# body AST. Both classify the collision and build the message through
+# the functions below, so the two surfaces cannot drift apart.
+
+
+def collision_sets(
+    equations: list[ParsedEquation],
+    constraints: list[ParsedConstraint],
+    adjustments: list[ParsedAdjustment],
+    optional_names: frozenset[str],
+    typed_names: dict[str, str],
+) -> tuple[set[str], set[str]]:
+    """Partition the names the equations touch into declared vs used.
+
+    ``declared`` is every name the equations define: a bare-Name target,
+    an optional ``?name``, or an inline ``:type``-tagged name. ``used``
+    is every name the equations only read (a right-hand-side reference,
+    a constraint or adjustment RHS, or an adjustment target) and do not
+    define. The two are disjoint: a name that is both defined and read
+    counts as declared.
+    """
+    declared: set[str] = {
+        name
+        for eq in equations
+        for name, _ in equation_bare_targets(eq)
+    }
+    declared |= set(optional_names)
+    declared |= set(typed_names)
+
+    used: set[str] = set()
+    for item in (*equations, *constraints, *adjustments):
+        used |= item.referenced_names
+    for adj in adjustments:
+        used.add(adj.name)
+    used -= declared
+    return declared, used
+
+
+def representative_line(
+    name: str, bucket: str, equations, constraints, adjustments,
+) -> tuple[str, int]:
+    """Return ``(raw, source_line_index)`` for the line to cite for ``name``.
+
+    A declared name cites its declaration: an equation where it is a
+    bare target, else the first line carrying it as a ``?`` optional. A
+    used name cites a use: the first item whose ``referenced_names``
+    holds it, else an adjustment that targets it. Falls back to the
+    first item that mentions the name at all.
+    """
+    items = sorted(
+        [*equations, *constraints, *adjustments],
+        key=lambda i: i.source_line_index,
+    )
+    if bucket == "declared":
+        for eq in sorted(equations, key=lambda i: i.source_line_index):
+            if name in {n for n, _ in equation_bare_targets(eq)}:
+                return eq.raw, eq.source_line_index
+        for item in items:
+            if name in getattr(item, "line_optionals", frozenset()):
+                return item.raw, item.source_line_index
+    else:
+        for item in items:
+            if name in item.referenced_names:
+                return item.raw, item.source_line_index
+        for adj in sorted(adjustments, key=lambda i: i.source_line_index):
+            if adj.name == name:
+                return adj.raw, adj.source_line_index
+
+    for item in items:
+        if name in item.referenced_names:
+            return item.raw, item.source_line_index
+    for adj in sorted(adjustments, key=lambda i: i.source_line_index):
+        if adj.name == name:
+            return adj.raw, adj.source_line_index
+    return "", 0
+
+
+def collision_message(
+    class_name: str, name: str, raw: str, value_repr: str,
+    bucket: str, kind: str,
+) -> str:
+    """Build the collision error message.
+
+    ``value_repr`` is the loose value already rendered to text: the
+    runtime passes ``repr(value)``, the LSP passes the rendered RHS of
+    the class-body assignment. ``bucket`` is ``"declared"`` or
+    ``"used"``; ``kind`` is ``"Component"`` or ``"Spec"`` and only
+    affects the used-bucket tail.
+    """
+    where = f"{class_name}.{name} = {value_repr}"
+    if bucket == "declared":
+        return (
+            f"'{name}' is defined by the equations at '{raw}', and you "
+            f"also set it as a plain value at '{where}'.\n\n"
+            f"A name belongs in one place. The equations already define "
+            f"'{name}', so remove the plain value."
+        )
+
+    msg = (
+        f"The equation '{raw}' references '{name}', which you defined "
+        f"outside the equations at '{where}'.\n\n"
+        f"An equation can only reference variables defined inside the "
+        f"equations, or values passed in when the part is built.\n\n"
+    )
+    if kind == "Spec":
+        msg += (
+            f"A Spec's values belong within its equations block. Move "
+            f"'{name}' there."
+        )
+    else:
+        msg += (
+            f"Constants that are truly intrinsic and idiosyncratic to the "
+            f"Component belong within its equations block.\n\n"
+            f"However, passing constants in via arguments at build time is "
+            f"usually better, since a caller can change it, or the "
+            f"equations can solve for it, with no change to the "
+            f"Component.\n\n"
+            f"Optional argument defaults should be declared with "
+            f"?{name} = ?{name} or {value_repr}."
+        )
+    return msg

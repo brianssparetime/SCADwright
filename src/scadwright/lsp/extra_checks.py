@@ -27,6 +27,11 @@ import ast
 from scadwright.component.equations import (
     _extract_name_annotations_with_colmap,
 )
+from scadwright.component.resolver import (
+    collision_message,
+    collision_sets,
+    representative_line,
+)
 from scadwright.lsp.analyze import EquationsBlock
 from scadwright.lsp.diagnostics import (
     Diagnostic,
@@ -34,6 +39,75 @@ from scadwright.lsp.diagnostics import (
     _LineOrigin,
 )
 from scadwright.lsp.positions import map_cleaned_col_to_file
+
+
+# Bases the analyzer recognizes as framework roots. The collision check
+# runs only when every base is one of these, because a custom base could
+# declare a Param the analyzer cannot see across files, and a plain value
+# overriding that inherited Param is legitimate. Skipping such classes
+# trades an edit-time warning (the runtime still catches a real error)
+# for never firing on a valid override.
+_FRAMEWORK_BASES = frozenset({"Component", "Spec"})
+
+
+def find_equation_name_collisions(
+    block: EquationsBlock,
+    equations,
+    constraints,
+    optional_names,
+    typed_names,
+    adjustments,
+) -> list[Diagnostic]:
+    """Emit the one error a plain class attribute colliding with an
+    equation name would raise at class-define time.
+
+    Mirrors the runtime ``_check_equation_name_collisions`` via the
+    shared ``resolver.checks`` helpers, so the wording and bucketing
+    match exactly. The plain values come from the class body
+    (``block.plain_attrs``) instead of ``cls.__dict__``, and the
+    diagnostic range squiggles the offending assignment.
+
+    Gated to classes whose bases are all framework roots; see
+    ``_FRAMEWORK_BASES``. Returns at most one diagnostic, the same
+    offender the runtime would report.
+    """
+    if not (block.base_names and block.base_names <= _FRAMEWORK_BASES):
+        return []
+    kind = "Spec" if "Spec" in block.base_names else "Component"
+
+    declared, used = collision_sets(
+        equations, constraints, adjustments, optional_names, typed_names,
+    )
+    candidates = declared | used
+
+    offenders: list[tuple[int, str, str, str, str]] = []
+    for attr in block.plain_attrs:
+        if attr.name in block.param_names or attr.name not in candidates:
+            continue
+        bucket = "declared" if attr.name in declared else "used"
+        raw, index = representative_line(
+            attr.name, bucket, equations, constraints, adjustments,
+        )
+        offenders.append((index, attr.name, bucket, raw, attr.value_text))
+
+    if not offenders:
+        return []
+
+    offenders.sort(key=lambda o: (o[0], o[1]))
+    _, name, bucket, raw, value_text = offenders[0]
+    attr = next(a for a in block.plain_attrs if a.name == name)
+    return [
+        Diagnostic(
+            range=DiagnosticRange(
+                attr.range_start_line, attr.range_start_col,
+                attr.range_end_line, attr.range_end_col,
+            ),
+            severity="error",
+            message=collision_message(
+                block.class_name, name, raw, value_text, bucket, kind,
+            ),
+        ),
+    ]
 
 
 def find_undeclared_attribute_bases(

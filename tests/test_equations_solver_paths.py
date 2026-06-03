@@ -637,6 +637,152 @@ def test_K12_disagreeing_inline_tags_rejected():
 
 
 # =============================================================================
+# Group K (cont.) — plain class attribute colliding with an equation name
+# =============================================================================
+#
+# A name lives in one place. If the equations use a name, a plain class
+# attribute of the same name is rejected at class-define time. Two
+# buckets: a name only *read* by the equations (the value is fed from
+# outside) versus a name *defined* by them (the plain value is a
+# duplicate). The read bucket reads differently for a Spec.
+
+
+def test_K13_referenced_name_with_plain_attr_rejected():
+    with pytest.raises(ValidationError, match="references 'height'"):
+        class Rectangle(Component):
+            equations = ["area = width * height"]
+            width = 4
+            height = 3
+
+            def build(self):
+                return cube(1)
+
+
+def test_K13_message_offers_build_time_and_optional_default():
+    try:
+        class Rectangle(Component):
+            equations = ["area = width * height"]
+            height = 3
+
+            def build(self):
+                return cube(1)
+    except ValidationError as e:
+        msg = str(e)
+        assert "passed in when the part is built" in msg
+        assert "?height = ?height or 3" in msg
+    else:
+        raise AssertionError("expected ValidationError")
+
+
+def test_K14_referenced_name_on_spec_points_into_block():
+    from scadwright import Spec as _SwSpec
+
+    with pytest.raises(
+        ValidationError, match="A Spec's values belong within its equations",
+    ):
+        class S(_SwSpec):
+            equations = ["outer = inner * 2"]
+            inner = 5
+
+
+def test_K15_adjustment_target_with_plain_attr_rejected():
+    with pytest.raises(ValidationError, match="references 'x'"):
+        class C(Component):
+            equations = [
+                "x > 0",
+                "x += 0.3",
+            ]
+            x = 5
+
+            def build(self):
+                return cube(1)
+
+
+def test_K16_plain_attr_collides_with_equation_target_rejected():
+    with pytest.raises(
+        ValidationError, match="already define 'area'",
+    ):
+        class Rectangle(Component):
+            equations = ["area = width * height"]
+            area = 12
+
+            def build(self):
+                return cube(1)
+
+
+def test_K17_plain_attr_collides_with_optional_rejected():
+    with pytest.raises(
+        ValidationError, match="already define 'fillet'",
+    ):
+        class C(Component):
+            equations = ["?fillet > 0"]
+            fillet = 2
+
+            def build(self):
+                return cube(1)
+
+
+def test_K18_name_written_inside_and_as_plain_attr_rejected():
+    with pytest.raises(
+        ValidationError, match="already define 'width'",
+    ):
+        class C(Component):
+            equations = [
+                "area = width * height",
+                "width = 4",
+            ]
+            width = 9
+
+            def build(self):
+                return cube(1)
+
+
+def test_K19_legitimate_forms_stay_quiet():
+    # Values written inside the equations.
+    class Inside(Component):
+        equations = [
+            "area = width * height",
+            "width = 4",
+            "height = 3",
+        ]
+
+        def build(self):
+            return cube(1)
+
+    # Param defaults on the same class.
+    class WithParams(Component):
+        width = Param(float, default=4)
+        height = Param(float, default=3)
+        equations = ["area = width * height"]
+
+        def build(self):
+            return cube(1)
+
+    # Subclass bare values filling inherited Params.
+    class Base(Component):
+        equations = ["area = width * height"]
+
+        def build(self):
+            return cube(1)
+
+    class Sub(Base):
+        width = 4
+        height = 3
+
+    # A plain attribute no equation touches.
+    class Unrelated(Component):
+        equations = ["area = width * height"]
+        bolt_count = 4
+
+        def build(self):
+            return cube(1)
+
+    assert WithParams().area == 12.0
+    assert Sub().area == 12.0
+    Unrelated(width=4, height=3)
+
+
+# =============================================================================
 # Group L — cross-Component publishing under stress
 # =============================================================================
 

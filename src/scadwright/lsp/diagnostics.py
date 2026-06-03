@@ -138,11 +138,23 @@ def _diagnose_block(block: EquationsBlock) -> list[Diagnostic]:
         )
     except ValidationError as err:
         return [_diagnostic_from_error(err, origins)]
-    equations, constraints, _, _, adjustments = parsed
+    equations, constraints, optional_names, typed_names, adjustments = parsed
     # Deferred import: extra_checks imports back from this module
     # (reuses Diagnostic / DiagnosticRange / _LineOrigin), so a
     # module-level import here would cycle.
-    from scadwright.lsp.extra_checks import find_undeclared_attribute_bases
+    from scadwright.lsp.extra_checks import (
+        find_equation_name_collisions,
+        find_undeclared_attribute_bases,
+    )
+    # The collision check mirrors a class-define-time raise: if it
+    # fires, the class would not import, so nothing downstream runs.
+    # Return that error alone, the same way the runtime stops.
+    collisions = find_equation_name_collisions(
+        block, equations, constraints, optional_names, typed_names,
+        adjustments,
+    )
+    if collisions:
+        return collisions
     return find_undeclared_attribute_bases(
         block, equations, constraints, adjustments, origins,
     )

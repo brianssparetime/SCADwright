@@ -27,6 +27,11 @@ import ast
 
 from scadwright.component.equations import _NUMERIC_FUNCTION_NAMES
 from scadwright.component.params import Param, _MISSING
+from scadwright.component.resolver import (
+    collision_message,
+    collision_sets,
+    representative_line,
+)
 from scadwright.component.resolver.types import equation_bare_targets
 from scadwright.errors import ValidationError
 
@@ -111,7 +116,9 @@ def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
             cloned.__set_name__(cls, name)
 
 
-def _register_equations(cls, params: dict[str, Param]) -> None:
+def _register_equations(
+    cls, params: dict[str, Param], *, kind: str = "Component",
+) -> None:
     """Parse ``equations = [...]`` into the unified representation and
     auto-declare any Params introduced by names appearing in equations,
     constraints, or adjustments.
@@ -125,16 +132,18 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
        shape.
     3. Reject reserved-name collisions (curated-namespace clashes).
     4. Reject inline-tag-vs-explicit-Param collisions.
-    5. Infer which bare-Name equation targets are numeric-only
+    5. Reject a plain class attribute that shares a name with a name
+       the equations use or define.
+    6. Infer which bare-Name equation targets are numeric-only
        (controls auto-declared Param type: ``float`` vs ``None``).
-    6. Auto-declare every Param referenced in equations, constraints,
+    7. Auto-declare every Param referenced in equations, constraints,
        or adjustments that isn't already declared.
-    7. Attach per-Param validators extracted from numeric-RHS
+    8. Attach per-Param validators extracted from numeric-RHS
        constraints.
-    8. Verify every adjustment targets a name with a value source.
-    9. Compute ``cls._override_names`` (optionals that are also
-       bare-Name equation targets — the resolver pre-resolves these).
-    10. Stash the parsed representation on the class for the auto-init
+    9. Verify every adjustment targets a name with a value source.
+    10. Compute ``cls._override_names`` (optionals that are also
+        bare-Name equation targets — the resolver pre-resolves these).
+    11. Stash the parsed representation on the class for the auto-init
         to hand to the resolver.
 
     Per the spec, ``=`` and ``==`` are identical: every bare-Name
@@ -177,6 +186,10 @@ def _register_equations(cls, params: dict[str, Param]) -> None:
         cls.__name__, unified_eqs, optional_names, curated,
     )
     _check_inline_tag_param_collision(cls, typed_names)
+    _check_equation_name_collisions(
+        cls, unified_eqs, unified_constraints, unified_adjustments,
+        optional_names, typed_names, kind,
+    )
 
     target_is_numeric_only = _infer_numeric_only_targets(unified_eqs)
 
@@ -307,6 +320,63 @@ def _check_inline_tag_param_collision(
                 f"explicit `Param(...)` declaration. Use one or the "
                 f"other."
             )
+
+
+def _check_equation_name_collisions(
+    cls, equations, constraints, adjustments,
+    optional_names: frozenset[str],
+    typed_names: dict[str, str],
+    kind: str,
+) -> None:
+    """Reject a plain class attribute that shares a name with the equations.
+
+    A name lives in one place. If the equations use a name, that name
+    belongs in the equations, not also set loose beside them as a plain
+    value. Honoring the plain value would let the equations reach into
+    arbitrary class state, and silently dropping it (the historical
+    behavior) hid the mistake behind a later "cannot solve" error.
+
+    A colliding name falls in one of two buckets, by how the equations
+    use it, and each gets its own message:
+
+    - Declared inside (a bare-Name target, an optional ``?name``, or an
+      inline ``:type`` tag). The equations already define it, so the
+      plain value is a duplicate to remove.
+    - Used but not declared (read on a right-hand side, in a constraint
+      or adjustment RHS, or an adjustment target with no definition
+      inside). The plain value is feeding the equations from outside;
+      it belongs inside, or passed in at build. This bucket alone reads
+      differently for a Spec than a Component, so it consults ``kind``.
+
+    ``kind`` is ``"Component"`` or ``"Spec"``. The classification, line
+    citation, and message text are shared with the LSP via
+    ``resolver.checks`` so the two surfaces cannot drift apart; this
+    function only supplies the plain values, read from ``cls.__dict__``.
+    """
+    declared, used = collision_sets(
+        equations, constraints, adjustments, optional_names, typed_names,
+    )
+
+    offenders: list[tuple[int, str, str, str, object]] = []
+    for name in declared | used:
+        value = cls.__dict__.get(name, _MISSING)
+        if value is _MISSING or isinstance(value, Param):
+            continue
+        bucket = "declared" if name in declared else "used"
+        raw, index = representative_line(
+            name, bucket, equations, constraints, adjustments,
+        )
+        offenders.append((index, name, bucket, raw, value))
+
+    if not offenders:
+        return
+
+    # Report one, deterministically: earliest cited line, then name.
+    offenders.sort(key=lambda o: (o[0], o[1]))
+    _, name, bucket, raw, value = offenders[0]
+    raise ValidationError(
+        collision_message(cls.__name__, name, raw, repr(value), bucket, kind),
+    )
 
 
 def _infer_numeric_only_targets(equations) -> dict[str, bool]:

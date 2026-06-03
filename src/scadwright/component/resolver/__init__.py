@@ -23,6 +23,11 @@ without caring which sibling module each name lives in:
   needs to reason about the same algebraic subset.
 """
 
+from scadwright.component.resolver.checks import (
+    collision_message,
+    collision_sets,
+    representative_line,
+)
 from scadwright.component.resolver.iterative import IterativeResolver
 from scadwright.component.resolver.parsing import parse_equations_unified
 from scadwright.component.resolver.per_param import extract_per_param_validator
@@ -37,6 +42,9 @@ __all__ = [
     "ParsedConstraint",
     "ParsedEquation",
     "ast_to_sympy",
+    "collision_message",
+    "collision_sets",
     "extract_per_param_validator",
     "parse_equations_unified",
+    "representative_line",
 ]
