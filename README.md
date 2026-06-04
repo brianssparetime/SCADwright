@@ -73,6 +73,8 @@ b = Bracket(width=80, height=5)
 print(b.width)               # readable; no geometry built yet
 ```
 
+For scenarios where multiple parts rely on the same mechanical interface, or when you want to separate direct measurements from your code, SCADWright offers [Specs](docs/specs_and_adjustments.md).
+
 ### 2. Define a component's equations once, call it with any combination of sufficient arguments, the framework handles the rest; no boilerplate. Components are as nice to write as they are to call.
 
 Consider a hollow tube has an outer diameter, an inner diameter, and a wall thickness, linked by `od = id + 2*thk`. 
@@ -281,7 +283,7 @@ scadwright build widget.py --variant=display
 
 Animating between variants is a one-liner using [morph](/docs/morph.md) (as long as same parts appear in the variants).
 
-### 8. Positioning parts relative to each other is easy without extra calculation
+### 8. Attaching shapes, components, or parts to each other is easy, without extra offset calculation
 
 In OpenSCAD, stacking a lid on a box means computing `translate([0, 0, box_height])` by hand. If you add a spacer or change a dimension, every downstream offset needs updating.
 
@@ -589,7 +591,7 @@ Download the latest release from the [releases page](https://github.com/brianssp
 pip install '.[lsp,curved-text]'
 ```
 
-The `scadwright` command becomes available. `[lsp]` adds editor integration; `[curved-text]` adds proportional glyph spacing on curved surfaces. Both are optional, but recommended.
+The `scadwright` command becomes available. `[lsp]` adds editor integration; `[curved-text]` adds proportional glyph spacing on curved surfaces. Both are recommended, but optional.
 
 ## Dependencies
 
@@ -656,7 +658,7 @@ framework and motivated its completion.
 
 I'm sure someone will accuse this project of pissing all over OpenSCAD's functional programming purity.  
 
-On the one hand, OpenSCAD isn't pure to begin with (Haskell syntax, but where's the type system and typeclasses?).  On the other hand, SCADwright's equations syntax is pretty fucking FP (at least in the ways that aren't annoying).
+On the one hand, OpenSCAD isn't pure to begin with (Haskell syntax, but where's the type system and typeclasses?).  On the other hand, SCADwright's equations syntax is pretty fucking FP (at least in the ways that FP isn't annoying).
 
 At bottom, I'm far more interested in making SCADwright easy and widely usable than I am in expanding your consciousness through FP indoctrination.  
 

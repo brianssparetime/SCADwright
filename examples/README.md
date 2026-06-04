@@ -211,9 +211,10 @@ A body cap and a rear lens cap for the Pentacon Six, a three-lug medium-format c
 - `fit_clearance` and the adjustments idiom (`+=`) for dialing in a printed fit.
 - `print_plate.py` arranges both caps flat on the bed with `arrange_on_bed` for a single build, raising if the set wouldn't fit; it's the file that pulls the two parts together.
 - `validation_morph.py` animates the two halves mating with a chain `morph`: because both caps read the same spec, the male lugs and the female channels rise, face off, and twist-lock together.
+- `scadwright graph .`, run in this directory, makes the shared spec visible: both caps link back to the one `PentaconSixMount`, listing the bayonet values each reads, while the reusable bases stay open and link to no particular spec. Each node also carries its source file and line, so the graph answers where any cap, spec, or design is defined.
 
 ![Pentacon Six mate morph](images/PentaconSixMount-mate.apng)
 
 *The `mate` morph: both caps are cut from the same bayonet spec, so the male lugs and the female channels twist-lock together — a compatibility check you can watch.*
 
-**Reference:** [Spec](../docs/specs_and_adjustments.md#your-first-spec) · [sharing a Spec across files](../docs/specs_and_adjustments.md#sharing-a-spec-across-files) · [letting the Spec flow through equations](../docs/specs_and_adjustments.md#letting-the-spec-flow-through-equations) · [adjustments](../docs/specs_and_adjustments.md#adjustments) · [the equations block](../docs/components.md#parameters-equations) · [shape library](../docs/shapes/README.md) · [morph](../docs/morph.md) · [organizing a project](../docs/organizing_a_project.md)
+**Reference:** [Spec](../docs/specs_and_adjustments.md#your-first-spec) · [sharing a Spec across files](../docs/specs_and_adjustments.md#sharing-a-spec-across-files) · [letting the Spec flow through equations](../docs/specs_and_adjustments.md#letting-the-spec-flow-through-equations) · [adjustments](../docs/specs_and_adjustments.md#adjustments) · [the equations block](../docs/components.md#parameters-equations) · [shape library](../docs/shapes/README.md) · [morph](../docs/morph.md) · [organizing a project](../docs/organizing_a_project.md) · [project dependency graph](../docs/graph_setup.md)
