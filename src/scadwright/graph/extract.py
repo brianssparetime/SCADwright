@@ -21,14 +21,18 @@ from pathlib import Path
 
 from scadwright.project_index.extract import (
     AttributeRead,
+    InvalidBinding,
     ParamRef,
     _iter_walked_nodes,
     _try_build_param_info,
+    ancestor_classes,
+    build_effective_params_by_class,
     build_params_by_class,
     extract_build_attribute_reads,
     extract_class_attribute_reads,
     extract_equations_attribute_reads,
     extract_params,
+    one_hop_param_reads,
 )
 from scadwright.project_index.registry import (
     ClassRegistry,
@@ -45,8 +49,11 @@ from scadwright.project_index.walk import FileInfo
 __all__ = [
     "AttributeRead",
     "CompositionRef",
+    "InvalidBinding",
     "ParamRef",
     "VariantInfo",
+    "ancestor_classes",
+    "build_effective_params_by_class",
     "build_params_by_class",
     "extract_build_attribute_reads",
     "extract_build_instantiations",
@@ -57,6 +64,7 @@ __all__ = [
     "extract_params",
     "extract_transform_uses",
     "extract_variants",
+    "one_hop_param_reads",
 ]
 
 

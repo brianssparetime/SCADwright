@@ -40,6 +40,7 @@ from scadwright.project_index.analyze import (
 from scadwright.project_index.registry import (
     ClassRegistry,
     ResolvedClass,
+    _base_to_dotted_name,
     resolve_name_in_file,
 )
 from scadwright.project_index.walk import FileInfo
@@ -474,5 +475,374 @@ def extract_build_attribute_reads(
             target=owner,
         ))
     return tuple(out)
+
+
+# =============================================================================
+# Effective parameters: MRO merge + class-attribute overrides
+# =============================================================================
+#
+# The per-class ``extract_params`` above sees only a class's own body.
+# The runtime, by contrast, collects Params across the whole MRO and
+# re-binds an inherited Param that a subclass shadows with a plain class
+# attribute (``_collect_params_from_mro`` + ``_apply_class_attr_overrides``
+# in ``component/_subclass_setup``). The functions below are the static
+# mirror of that: an effective Param map per class, and the set of
+# bindings a class introduces by assigning a project Spec / Component to
+# an inherited Param name.
+#
+# Two binding shapes carry a resolved value source:
+#
+# - ``spec = PentaconSixMount`` — a bare class. Only a *fixed* Spec class
+#   is a usable value bag (its resolved values live on the class); a
+#   Component class or a parameterized Spec class is rejected at runtime
+#   (see ``_reject_class_valued_override``), so static analysis flags it
+#   rather than drawing an edge that the running code would never reach.
+# - ``part = Widget(...)`` — a constructor call. The instance is a value
+#   source whatever the category, so any project class resolves.
+
+
+@dataclass(frozen=True)
+class ClassAttrBinding:
+    """A class-body ``name = X`` or ``name = X(...)`` whose value resolves
+    to a project class.
+
+    ``via_call`` is ``True`` for the constructor form (``X(...)``, an
+    instance) and ``False`` for the bare-class form (``X``). The
+    distinction decides validity: a bare Component or parameterized-Spec
+    class is not a usable value, while a constructor call of any category
+    is.
+    """
+    name: str
+    target: ResolvedClass
+    via_call: bool
+
+
+@dataclass(frozen=True)
+class InvalidBinding:
+    """A bare-class binding that resolves to a project class which cannot
+    serve as a parameter value: a Component class or a parameterized Spec
+    class. Carried out of :func:`build_effective_params_by_class` so the
+    graph can warn rather than silently drop the dependency.
+
+    ``source`` is the class that wrote the binding; ``name`` the Param it
+    shadowed; ``target`` the bound class; ``reason`` is ``"component"`` or
+    ``"param_spec"``.
+    """
+    source: ResolvedClass
+    name: str
+    target: ResolvedClass
+    reason: str
+
+
+def _callee_name(func: ast.AST) -> str | None:
+    """Dotted name of a call's callee (``Name`` or ``Name.attr``), or
+    ``None`` for shapes the resolver doesn't chase."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return f"{func.value.id}.{func.attr}"
+    return None
+
+
+def _resolve_bases(
+    cls: ResolvedClass,
+    file_info: FileInfo,
+    registry: ClassRegistry,
+    project_root: Path,
+) -> list[ResolvedClass]:
+    """Resolve a class's direct base expressions to project classes,
+    skipping framework bases and unresolvable shapes."""
+    out: list[ResolvedClass] = []
+    for base_node in cls.ast_node.bases:
+        name = _base_to_dotted_name(base_node)
+        if name is None:
+            continue
+        rc = resolve_name_in_file(name, file_info, registry, project_root)
+        if rc is not None and rc.category != "unknown":
+            out.append(rc)
+    return out
+
+
+def ancestor_classes(
+    cls: ResolvedClass,
+    registry: ClassRegistry,
+    files_by_path: dict[Path, FileInfo],
+    project_root: Path,
+) -> list[ResolvedClass]:
+    """Every transitive project base of ``cls``, nearest first, ``cls``
+    itself excluded.
+
+    Used to gather the inherited equations and ``build`` bodies that read
+    a Param a subclass binds. Deduplicated by ``(file_path, name)`` and
+    cycle-guarded.
+    """
+    seen: set[ClassKey] = set()
+    out: list[ResolvedClass] = []
+
+    def visit(c: ResolvedClass) -> None:
+        file_info = files_by_path.get(c.file_path)
+        if file_info is None:
+            return
+        for base in _resolve_bases(c, file_info, registry, project_root):
+            key = _class_key(base)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(base)
+            visit(base)
+
+    visit(cls)
+    return out
+
+
+def _class_attr_bindings(
+    cls: ResolvedClass,
+    file_info: FileInfo,
+    registry: ClassRegistry,
+    project_root: Path,
+) -> list[ClassAttrBinding]:
+    """Find class-body ``name = ProjectClass`` and ``name =
+    ProjectClass(...)`` assignments.
+
+    ``name = Param(...)`` resolves its callee to ``Param`` (not a project
+    class) and drops out, so explicit Param declarations don't masquerade
+    as bindings. Plain scalars, tuples, and attribute reads
+    (``Spec.value``) have no class-resolving value and drop too.
+    """
+    out: list[ClassAttrBinding] = []
+    for stmt in cls.ast_node.body:
+        if isinstance(stmt, ast.Assign):
+            if not (
+                len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+            ):
+                continue
+            name = stmt.targets[0].id
+            value = stmt.value
+        elif isinstance(stmt, ast.AnnAssign):
+            if not (
+                isinstance(stmt.target, ast.Name) and stmt.value is not None
+            ):
+                continue
+            name = stmt.target.id
+            value = stmt.value
+        else:
+            continue
+
+        if isinstance(value, ast.Name):
+            rc = resolve_name_in_file(
+                value.id, file_info, registry, project_root,
+            )
+            if rc is not None and rc.category != "unknown":
+                out.append(ClassAttrBinding(name, rc, via_call=False))
+        elif isinstance(value, ast.Call):
+            callee = _callee_name(value.func)
+            if callee is None:
+                continue
+            rc = resolve_name_in_file(
+                callee, file_info, registry, project_root,
+            )
+            if rc is not None and rc.category != "unknown":
+                out.append(ClassAttrBinding(name, rc, via_call=True))
+    return out
+
+
+def _spec_is_parameterized(
+    spec_rc: ResolvedClass,
+    files_by_path: dict[Path, FileInfo],
+) -> bool:
+    """Whether a Spec class declares any ``?`` optional in its equations.
+
+    A parameterized Spec's resolved values are only available on an
+    instance, so binding the bare class is invalid. Mirrors the runtime's
+    ``_optional_names`` test. A spec whose equations don't parse, or that
+    has none, is treated as fixed.
+    """
+    file_info = files_by_path.get(spec_rc.file_path)
+    if file_info is None:
+        return False
+    block = _block_from_classdef(spec_rc.ast_node, file_info.source)
+    if block is None:
+        return False
+    eq_lines = [
+        line.cleaned
+        for host in block.hosts
+        for line in _split_logical_lines(host.raw_text)
+    ]
+    if not eq_lines:
+        return False
+    try:
+        _, _, optional_names, _, _ = parse_equations_unified(
+            eq_lines, class_name=block.class_name,
+        )
+    except (ValidationError, ImportError):
+        return False
+    return bool(optional_names)
+
+
+def build_effective_params_by_class(
+    registry: ClassRegistry,
+    files_by_path: dict[Path, FileInfo],
+    project_root: Path,
+) -> tuple[
+    dict[ClassKey, tuple[ParamRef, ...]],
+    dict[ClassKey, dict[str, ResolvedClass]],
+    list[InvalidBinding],
+]:
+    """Compute every class's effective Param map and its locally-introduced
+    project-class bindings.
+
+    Returns three things:
+
+    - ``effective``: per class, the MRO-merged Params with class-attribute
+      overrides applied to ``type_resolves_to``. Feed this to the read
+      extractors so a subclass resolves attributes off a Param its base
+      declared and it rebound. The static mirror of the runtime's
+      ``_collect_params_from_mro`` + ``_apply_class_attr_overrides``.
+    - ``local_bindings``: per class, the Param names this class binds to a
+      project Spec / Component **and thereby establishes or changes the
+      resolved type** versus what it inherited. A subclass that merely
+      inherits an already-typed Param contributes nothing here, so the
+      binding edge attaches once, at the class that introduces it, and
+      doesn't multiply down the inheritance chain.
+    - ``invalid``: bare-class bindings that resolve to a Component class or
+      a parameterized Spec class — values the runtime rejects, surfaced so
+      the caller can warn instead of drawing an unreachable edge.
+    """
+    effective: dict[ClassKey, tuple[ParamRef, ...]] = {}
+    local_bindings: dict[ClassKey, dict[str, ResolvedClass]] = {}
+    invalid: list[InvalidBinding] = []
+    memo: dict[ClassKey, dict[str, ParamRef]] = {}
+    in_progress: set[ClassKey] = set()
+
+    def resolve(cls: ResolvedClass) -> dict[str, ParamRef]:
+        key = _class_key(cls)
+        if key in memo:
+            return memo[key]
+        if key in in_progress:
+            return {}  # inheritance cycle: bail to empty, like the registry
+        in_progress.add(key)
+        merged: dict[str, ParamRef] = {}
+        file_info = files_by_path.get(cls.file_path)
+        if file_info is not None:
+            for base in _resolve_bases(cls, file_info, registry, project_root):
+                for name, pref in resolve(base).items():
+                    merged[name] = pref
+            for pref in extract_params(
+                cls, file_info, registry, project_root,
+            ):
+                merged[pref.name] = pref
+            _apply_bindings(cls, file_info, merged, key)
+        in_progress.discard(key)
+        memo[key] = merged
+        effective[key] = tuple(merged.values())
+        return merged
+
+    def _apply_bindings(
+        cls: ResolvedClass,
+        file_info: FileInfo,
+        merged: dict[str, ParamRef],
+        key: ClassKey,
+    ) -> None:
+        local: dict[str, ResolvedClass] = {}
+        for b in _class_attr_bindings(
+            cls, file_info, registry, project_root,
+        ):
+            if b.name not in merged:
+                # Not a Param — class-level composition (``inner =
+                # Inner()`` on a Design or Component) handled elsewhere.
+                continue
+            if not b.via_call:
+                if b.target.category == "component":
+                    invalid.append(
+                        InvalidBinding(cls, b.name, b.target, "component"),
+                    )
+                    continue
+                if (
+                    b.target.category == "spec"
+                    and _spec_is_parameterized(b.target, files_by_path)
+                ):
+                    invalid.append(
+                        InvalidBinding(cls, b.name, b.target, "param_spec"),
+                    )
+                    continue
+            prev = merged.get(b.name)
+            prev_type = prev.type_resolves_to if prev else None
+            merged[b.name] = ParamRef(
+                name=b.name,
+                type_text=prev.type_text if prev else None,
+                default_text=None,
+                doc_text=None,
+                extras=(),
+                type_resolves_to=b.target,
+            )
+            if b.target.category in ("component", "spec") and (
+                prev_type is None
+                or _class_key(prev_type) != _class_key(b.target)
+            ):
+                local[b.name] = b.target
+        if local:
+            local_bindings[key] = local
+
+    for cls in registry.classes.values():
+        resolve(cls)
+    return effective, local_bindings, invalid
+
+
+def one_hop_param_reads(
+    class_node: ast.ClassDef,
+    source: str,
+    param_names: frozenset[str],
+) -> dict[str, set[str]]:
+    """Attributes read one hop off each named Param in a class body.
+
+    Collects ``p.attr`` in the equations and ``self.p.attr`` in any
+    method for every ``p`` in ``param_names``, returning ``{p: {attr,
+    ...}}``. No type resolution: the caller already knows the bound
+    class for each ``p`` and only needs the attribute names that flow
+    into the edge label. One hop is the whole story for a value bag —
+    a Spec's attributes are scalars, so ``spec.bore_dia`` never extends
+    further.
+    """
+    out: dict[str, set[str]] = {}
+
+    block = _block_from_classdef(class_node, source)
+    if block is not None:
+        eq_lines = [
+            line.cleaned
+            for host in block.hosts
+            for line in _split_logical_lines(host.raw_text)
+        ]
+        if eq_lines:
+            try:
+                equations, constraints, _, _, adjustments = (
+                    parse_equations_unified(
+                        eq_lines, class_name=block.class_name,
+                    )
+                )
+            except (ValidationError, ImportError):
+                equations = constraints = adjustments = ()
+            for node in _iter_walked_nodes(
+                equations, constraints, adjustments,
+            ):
+                for sub in ast.walk(node):
+                    if (
+                        isinstance(sub, ast.Attribute)
+                        and isinstance(sub.value, ast.Name)
+                        and sub.value.id in param_names
+                    ):
+                        out.setdefault(sub.value.id, set()).add(sub.attr)
+
+    for sub in ast.walk(class_node):
+        if (
+            isinstance(sub, ast.Attribute)
+            and isinstance(sub.value, ast.Attribute)
+            and isinstance(sub.value.value, ast.Name)
+            and sub.value.value.id == "self"
+            and sub.value.attr in param_names
+        ):
+            out.setdefault(sub.value.attr, set()).add(sub.attr)
+
+    return out
 
 

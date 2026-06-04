@@ -3,7 +3,7 @@ authoring style from docs/organizing_a_project.md."""
 
 import pytest
 
-from scadwright import Component, Param
+from scadwright import Component, Param, Spec
 from scadwright.errors import ValidationError
 from scadwright.primitives import cube
 
@@ -85,3 +85,105 @@ def test_subclass_with_redeclared_param_still_works():
 
     s = _Stricter()
     assert s.wall_thk == 5.0
+
+
+# =============================================================================
+# Class-valued overrides: only a fixed Spec class is a usable value bag
+# =============================================================================
+#
+# A class attribute that shadows an inherited Param supplies that
+# parameter's value. The value is read for its attributes, so it must be
+# a value, not a class — unless the class is a fixed Spec, whose resolved
+# values live on the class itself. The other class shapes are rejected at
+# the binding site rather than left to surface later as a descriptor read
+# or a resolver error far from the cause.
+
+
+class _Bayonet(Spec):
+    equations = """
+        bore = 60.0
+        bore_r = bore / 2
+    """
+
+
+class _SizedBayonet(Spec):
+    equations = """
+        ?bore > 0
+        bore_r = bore / 2
+    """
+
+
+class _Holder(Component):
+    spec = Param()
+    equations = """
+        wall = spec.bore_r + 1
+    """
+
+    def build(self):
+        return cube([self.wall, 1, 1])
+
+
+def test_fixed_spec_class_binds_as_value_bag():
+    """A fixed Spec's resolved values live on the class, so binding the
+    bare class is valid and the equations read straight off it."""
+
+    class _ConcreteHolder(_Holder):
+        spec = _Bayonet
+
+    h = _ConcreteHolder()
+    assert h.wall == 31.0                                  # 60/2 + 1
+
+
+def test_spec_instance_binds_as_value_bag():
+    """A Spec instance is a value source whatever its parameters."""
+
+    class _ConcreteHolder(_Holder):
+        spec = _SizedBayonet(bore=40.0)
+
+    h = _ConcreteHolder()
+    assert h.wall == 21.0                                  # 40/2 + 1
+
+
+def test_component_class_binding_is_rejected_at_definition():
+    """Binding a Component class yields a descriptor when read; reject it
+    at the binding, pointing at the instance and typed-Param forms."""
+
+    class _Part(Component):
+        equations = """
+            w > 0
+        """
+
+        def build(self):
+            return cube([self.w, 1, 1])
+
+    with pytest.raises(ValidationError) as exc:
+        class _Bad(_Holder):
+            spec = _Part                                   # a Component class
+
+    msg = str(exc.value)
+    assert "_Bad.spec" in msg
+    assert "_Part(...)" in msg                             # instance form
+    assert "Param(_Part)" in msg                           # typed-Param form
+
+
+def test_parameterized_spec_class_binding_is_rejected_at_definition():
+    """A parameterized Spec's values are only on an instance, so binding
+    the bare class is rejected with an instantiate hint."""
+
+    with pytest.raises(ValidationError) as exc:
+        class _Bad(_Holder):
+            spec = _SizedBayonet                           # parameterized Spec class
+
+    msg = str(exc.value)
+    assert "_Bad.spec" in msg
+    assert "_SizedBayonet(...)" in msg
+
+
+def test_scalar_and_instance_overrides_still_pass():
+    """The validation only fires on class-valued overrides; scalars and
+    instances are untouched."""
+
+    class _ScalarHolder(_Holder):
+        spec = _Bayonet                                    # fixed Spec class: fine
+
+    assert _ScalarHolder().wall == 31.0

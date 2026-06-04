@@ -21,6 +21,8 @@ from typing import Iterable
 
 from scadwright.graph.extract import (
     AttributeRead,
+    ancestor_classes,
+    build_effective_params_by_class,
     build_params_by_class,
     extract_build_attribute_reads,
     extract_build_instantiations,
@@ -30,6 +32,7 @@ from scadwright.graph.extract import (
     extract_params,
     extract_transform_uses,
     extract_variants,
+    one_hop_param_reads,
 )
 from scadwright.graph.model import Edge, Graph, Node
 from scadwright.project_index.registry import (
@@ -73,6 +76,9 @@ def build_graph(
     transforms = build_transform_registry(files, registry, base_root)
     files_by_path: dict[Path, FileInfo] = {f.path: f for f in files}
     params_by_class = build_params_by_class(registry, files_by_path, base_root)
+    effective_params, local_bindings, invalid_bindings = (
+        build_effective_params_by_class(registry, files_by_path, base_root)
+    )
 
     nodes: list[Node] = []
     edges: list[Edge] = []
@@ -97,7 +103,8 @@ def build_graph(
         if file_info is None:
             continue
         edges.extend(_edges_for_class(
-            cls, file_info, registry, transforms, base_root, params_by_class,
+            cls, file_info, registry, transforms, base_root,
+            params_by_class, effective_params, local_bindings, files_by_path,
         ))
         if cls.category == "design":
             v_nodes, v_edges = _variant_nodes_and_edges(
@@ -130,7 +137,9 @@ def build_graph(
         key=lambda pair: pair[0],
     ))
     warnings = tuple(sorted(
-        transforms.warnings,
+        list(transforms.warnings) + _binding_warnings(
+            invalid_bindings, registry, base_root,
+        ),
         key=lambda pair: (str(pair[0]), pair[1]),
     ))
     return Graph(
@@ -195,6 +204,9 @@ def _edges_for_class(
     transforms: TransformRegistry,
     project_root: Path,
     params_by_class: dict,
+    effective_params: dict,
+    local_bindings: dict,
+    files_by_path: dict,
 ) -> list[Edge]:
     """Emit every outgoing edge for a single class.
 
@@ -205,6 +217,16 @@ def _edges_for_class(
     like ``SpecName.attr``), then ``contains`` (Component
     instantiations), then ``uses_transform`` (chained calls into
     project transforms).
+
+    Two parameter maps are in play. ``params_by_class`` is the class's
+    own-body Params; the ``uses_param`` loop reads it so a typed Param
+    draws its edge from the class that declares it, not from every
+    descendant. ``effective_params`` is the MRO-merged, override-applied
+    map; the read extractors read it so a subclass resolves attributes
+    off a Param its base declared. ``local_bindings`` carries the Params
+    a class rebinds to a project class via a plain class attribute (the
+    ``spec = PentaconSixMount`` shape), which emit through
+    :func:`_override_binding_edges`.
     """
     out: list[Edge] = []
     source_id = _node_id(cls)
@@ -256,13 +278,22 @@ def _edges_for_class(
     build_reads = ()
     if cls.category in ("component", "spec"):
         eq_reads = extract_equations_attribute_reads(
-            cls, file_info, params_by_class,
+            cls, file_info, effective_params,
         )
-        build_reads = extract_build_attribute_reads(cls, params_by_class)
+        build_reads = extract_build_attribute_reads(cls, effective_params)
     exclude_names = frozenset({"self"} | {p.name for p in params})
     class_reads = extract_class_attribute_reads(
         cls.ast_node, file_info, registry, project_root, exclude_names,
     )
+
+    # Override-binding edges: a Param this class rebinds to a project
+    # Spec / Component via a plain class attribute. The reads live in the
+    # inherited equations and build body, resolved here to the bound class.
+    out.extend(_override_binding_edges(
+        cls, source_id, local_bindings, registry, files_by_path,
+        project_root, transforms,
+    ))
+
     out.extend(_collapsed_attr_edges(
         source_id, eq_reads + build_reads + class_reads, transforms,
     ))
@@ -300,6 +331,92 @@ def _edges_for_class(
             kind="uses_transform",
         ))
 
+    return out
+
+
+def _override_binding_edges(
+    cls: ResolvedClass,
+    source_id: str,
+    local_bindings: dict,
+    registry: ClassRegistry,
+    files_by_path: dict[Path, FileInfo],
+    project_root: Path,
+    transforms: TransformRegistry,
+) -> list[Edge]:
+    """Emit ``uses_param`` and ``reads_attr`` for the Params ``cls``
+    rebinds to a project Spec / Component via a plain class attribute.
+
+    The binding lives on ``cls`` but the reads live in the inherited
+    equations and ``build`` body, so the attribute names are gathered
+    one hop off the bound Param across ``cls`` and every ancestor, then
+    resolved to the bound class. A binding with no reads still emits its
+    ``uses_param`` edge: the dependency is real even if no attribute is
+    read off it yet.
+    """
+    binds: dict = local_bindings.get((cls.file_path, cls.name), {})
+    if not binds:
+        return []
+
+    param_names = frozenset(binds)
+    reads: dict[str, set[str]] = {}
+    for c in [cls, *ancestor_classes(
+        cls, registry, files_by_path, project_root,
+    )]:
+        c_file = files_by_path.get(c.file_path)
+        if c_file is None:
+            continue
+        for name, attrs in one_hop_param_reads(
+            c.ast_node, c_file.source, param_names,
+        ).items():
+            reads.setdefault(name, set()).update(attrs)
+
+    out: list[Edge] = []
+    for name, target in binds.items():
+        target_id = _target_node_id(target, transforms)
+        out.append(Edge(
+            source=source_id, target=target_id,
+            kind="uses_param", via_param=name,
+        ))
+        attrs = reads.get(name)
+        if attrs:
+            out.append(Edge(
+                source=source_id, target=target_id,
+                kind="reads_attr", attrs_read=tuple(sorted(attrs)),
+            ))
+    return out
+
+
+def _binding_warnings(
+    invalid_bindings: list,
+    registry: ClassRegistry,
+    project_root: Path,
+) -> list[tuple[Path, str]]:
+    """Render the invalid bare-class bindings as graph warnings.
+
+    A Component class or a parameterized Spec class bound to an inherited
+    Param raises at runtime (see ``_reject_class_valued_override``). On
+    source that hasn't been run, the graph would otherwise omit the
+    dependency in silence; this surfaces it instead, naming the binding
+    and the fix.
+    """
+    out: list[tuple[Path, str]] = []
+    for b in invalid_bindings:
+        cls_name = b.source.name
+        target = b.target.name
+        if b.reason == "component":
+            msg = (
+                f"{cls_name}.{b.name}: binds the Component class "
+                f"`{target}` to a parameter; this raises at runtime. "
+                f"Bind an instance `{b.name} = {target}(...)`, or declare "
+                f"`Param({target})` for a caller-supplied parameter."
+            )
+        else:
+            msg = (
+                f"{cls_name}.{b.name}: binds the parameterized Spec class "
+                f"`{target}`; this raises at runtime. Bind an instance "
+                f"`{b.name} = {target}(...)`."
+            )
+        out.append((b.source.file_path, msg))
     return out
 
 

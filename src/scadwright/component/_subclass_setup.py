@@ -99,6 +99,14 @@ def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
     we clone the Param with the new default so instance assignment still
     runs the original validators — otherwise ``w = 20`` would just be a
     class attribute and no validation would fire on that subclass.
+
+    The override value must be a usable parameter value: a scalar, a Spec
+    or Component instance, or a fixed Spec class (whose resolved values
+    live on the class, so the class itself is a value bag). Binding a bare
+    class that is not a fixed Spec — a Component class, a parameterized
+    Spec class, any other class — is rejected here, at the binding site,
+    rather than left to surface later as a descriptor read or a resolver
+    error far from the cause. See :func:`_reject_class_valued_override`.
     """
     import copy as _copy
 
@@ -106,6 +114,7 @@ def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
         override = cls.__dict__.get(name, _MISSING)
         if override is _MISSING or isinstance(override, Param):
             continue
+        _reject_class_valued_override(cls, name, override)
         cloned = _copy.copy(params[name])
         cloned.default = override
         params[name] = cloned
@@ -114,6 +123,61 @@ def _apply_class_attr_overrides(cls, params: dict[str, Param]) -> None:
         # a Param variant relies on it.
         if hasattr(cloned, "__set_name__"):
             cloned.__set_name__(cls, name)
+
+
+def _reject_class_valued_override(cls, name: str, override) -> None:
+    """Raise when a subclass binds a bare class to ``name`` that can't
+    serve as a parameter value.
+
+    A parameter value is read for its attributes; it must be something
+    whose attributes are concrete values when the equations read them.
+    Instances qualify, and so does a fixed Spec class (its resolved
+    values live on the class). Three class shapes do not:
+
+    - a Component class — its values resolve per instance, so reading an
+      attribute off the class yields a ``Param`` descriptor, not a value;
+    - a parameterized Spec class — its values are only available on an
+      instance;
+    - any other class.
+
+    Each raises here, citing the binding, showing the bound class, and
+    pointing at the instance form (or, for a Component, the typed-Param
+    form for a caller-supplied parameter). A non-class ``override`` —
+    scalar, tuple, Spec/Component instance — passes through untouched.
+    """
+    if not isinstance(override, type):
+        return
+
+    # Lazy imports: ``component.spec`` imports this module at load time,
+    # and ``Component`` lives in a sibling that likewise depends on the
+    # subclass-setup machinery. Resolving the names here, at subclass-
+    # definition time, sidesteps the import cycle.
+    from scadwright.component.base import Component
+    from scadwright.component.spec import Spec
+
+    if issubclass(override, Spec):
+        if not getattr(override, "_parameterized", False):
+            return  # fixed Spec class: a usable value bag.
+        raise ValidationError(
+            f"{cls.__name__}.{name}: `{override.__name__}` has parameters, "
+            f"so the class itself is not a usable value. Bind an instance: "
+            f"`{name} = {override.__name__}(...)`."
+        )
+
+    if issubclass(override, Component):
+        raise ValidationError(
+            f"{cls.__name__}.{name}: bound the class `{override.__name__}` "
+            f"to parameter `{name}`, but a parameter value must be an "
+            f"instance, not a class. Did you mean "
+            f"`{name} = {override.__name__}(...)`? To declare a parameter "
+            f"the caller fills in, use `{name} = Param({override.__name__})`."
+        )
+
+    raise ValidationError(
+        f"{cls.__name__}.{name}: bound the class `{override.__name__}` to "
+        f"parameter `{name}`, but a class is not a usable parameter value. "
+        f"Bind an instance or a resolved value instead."
+    )
 
 
 def _register_equations(

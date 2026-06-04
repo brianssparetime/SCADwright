@@ -130,6 +130,8 @@ The header summarizes counts. Each line under `## nodes` carries the node's kind
 
 `reads_attr` covers three sources of attribute access merged into one labeled edge per (source, target) pair: equation references, `self.<param>.<attr>` reads in any method body, and direct class-attribute reads like `BatterySpec.cells` at class scope or in any method body.
 
+These edges also span files. A reusable base can take any Spec as a parameter, written `spec = Param()`, and read values off it in the equations. A concrete subclass names the one Spec it uses, written `spec = MountInterface`. The graph draws `uses_param` and `reads_attr` from that subclass to the Spec, because the subclass is where the Spec is chosen. The base names no particular Spec, so it gets none.
+
 `--format mermaid` renders the same data as a `graph TD` source for Markdown embedding. Spec nodes become diamonds, Components rounded boxes, Designs cylinders, variants hexagons, and project-registered transforms parallelograms. The remaining example outputs in this doc use that format for visual compactness; pass `--format mermaid` to reproduce them.
 
 ## Composition: `contains` edges
