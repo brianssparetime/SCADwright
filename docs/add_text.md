@@ -398,7 +398,7 @@ result = difference(plate, cutter)
 
 The sign of `relief` still controls extrusion direction and overshoot, so use a negative value with `difference` and a positive value with `union`.
 
-The motivating case is pulling glyph diffs out of a `force_render` scope so they don't sit inside the cached subtree — see [docs/debug.md](debug.md#what-goes-inside-the-wrap). Unlike `add_text`, `text_geometry` is not a decoration transform: chaining `.attach()` to its result targets the glyph mesh, not the host's anchors.
+The motivating case is pulling glyph diffs out of a `force_render` scope so they don't sit inside the cached subtree — see [Preview performance](preview_performance.md#what-goes-inside-the-wrap). Unlike `add_text`, `text_geometry` is not a decoration transform: chaining `.attach()` to its result targets the glyph mesh, not the host's anchors.
 
 ### Cutter overshoot
 

@@ -87,3 +87,27 @@ set_verbose(logging.DEBUG)
 - The full logger hierarchy is under the `scadwright` namespace: `scadwright.component`, `scadwright.emit`, `scadwright.resolution`, `scadwright.variant`, `scadwright.validation`. Configure them individually with `logging.getLogger("scadwright.component").setLevel(...)` if you want fine-grained control.
 - `set_verbose()` attaches a single stderr handler. Calling it multiple times doesn't stack handlers — it replaces and re-applies cleanly.
 - `BuildError`'s `__cause__` is the original exception. Tracebacks from pytest show both the wrapping and the original; debuggers can step into either.
+
+## Render-time output: `echo`
+
+`set_verbose` shows what scadwright does as it builds. To put a message or a computed value into OpenSCAD's own console at render time, emit `echo`:
+
+```python
+from scadwright.debug import echo
+
+# Bare statement: emits `echo("starting");`
+echo("starting")
+
+# Wrap a subtree: emits `echo("label") { ...subtree... }`
+cube(10).echo("size=10")
+
+# Or standalone wrapping form:
+echo("label", _node=cube(5))
+
+# Positional and keyword args:
+echo("count:", n=4)
+```
+
+Use it when you're handing the `.scad` to someone who will open it in OpenSCAD, or when you want a computed value in OpenSCAD's console. For inspecting values while your Python runs, `print()` is simpler.
+
+A bare `echo` has zero bounding box (it's a statement, not geometry); a wrapping `echo` passes its child's bbox through unchanged.
