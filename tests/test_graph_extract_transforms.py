@@ -13,9 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from scadwright.graph.build import build_graph
-from scadwright.graph.render_dot import render_dot
+from scadwright.graph.render_ascii import render_ascii
 from scadwright.graph.render_json import render_json
-from scadwright.graph.render_mermaid import render_mermaid
 from scadwright.project_index.registry import build_class_registry
 from scadwright.project_index.transforms import (
     build_transform_registry,
@@ -371,17 +370,15 @@ def test_renderers_handle_transform_nodes_and_edges(tmp_path: Path) -> None:
         "        return (None).foo()\n"
     ))
     graph = build_graph(tmp_path)
-    mermaid = render_mermaid(graph)
-    assert "[/foo/]" in mermaid
-    assert '--"uses"-->' in mermaid
-
-    dot = render_dot(graph)
-    assert "shape=parallelogram" in dot
-    assert 'label="uses"' in dot
+    ascii_out = render_ascii(graph)
+    assert "Transforms" in ascii_out
+    assert "uses Transform  foo" in ascii_out
+    assert "used by  C" in ascii_out
 
     rendered_json = render_json(graph)
-    assert '"kind": "transform"' in rendered_json
-    assert '"kind": "uses_transform"' in rendered_json
+    assert '"transforms"' in rendered_json
+    assert '"uses_transform"' in rendered_json
+    assert '"foo"' in rendered_json
 
 
 # =============================================================================

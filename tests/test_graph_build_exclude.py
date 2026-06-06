@@ -91,7 +91,7 @@ def test_cli_passes_exclude_through(tmp_path: Path, capsys) -> None:
     ])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "component  current.Current" in out
+    assert "Current [" in out
     assert "Snapshot" not in out
 
 

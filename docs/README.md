@@ -63,7 +63,7 @@ Reading them in order is a guided tour of the constructs in context.
 - [Resolution](resolution.md) — controlling smoothness (`fn`/`fa`/`fs`), precedence rules
 - [Errors and logging](errors_and_logging.md) — what SCADwright does when something's wrong, plus `echo` for render-time output
 - [Command line](cli_and_args.md) — `scadwright build`/`preview`/`render`, script parameters
-- [Project dependency graph](dependency_graph.md) — `scadwright graph` emits a Mermaid/JSON/DOT graph of how Components, Specs, and Designs relate
+- [Project dependency graph](dependency_graph.md) — `scadwright graph` prints a map of how Components, Specs, and Designs relate, as text or JSON
 - [Preview performance](preview_performance.md) — `force_render` for slow or flickering OpenSCAD previews
 - [Testing](testing.md) — `tree_hash` for regression pinning, geometry assertions, golden-file patterns
 

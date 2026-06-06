@@ -1,355 +1,167 @@
-"""Tests for the ASCII renderer.
+"""Tests for the ASCII project-map renderer.
 
-Covers the section structure (header, nodes, edges, warnings),
-per-kind sort order, edge-extras formatting (uses_param,
-reads_attr), label parentheticals for transforms whose registered
-name differs from the identifier, path relativization against
-project_root, determinism across runs, and empty-section handling.
+The renderer turns a built :class:`Graph` into a grouped, plain-text
+project map. These build small synthetic projects end-to-end and
+assert on the rendered text, since the rendering is what the user
+reads.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from scadwright.graph.model import Edge, Graph, Node
+from scadwright.graph.build import build_graph
 from scadwright.graph.render_ascii import render_ascii
 
 
-# =============================================================================
-# Header
-# =============================================================================
+def _write(root: Path, name: str, src: str) -> None:
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(src)
 
 
-def test_header_carries_project_root_and_counts() -> None:
-    g = Graph(
-        nodes=(Node(id="m.A", label="A", kind="component"),),
-        edges=(),
-        project_root=Path("/tmp/proj"),
-    )
-    out = render_ascii(g)
-    first_line = out.splitlines()[0]
-    assert first_line == "# scadwright graph: /tmp/proj  (1 nodes, 0 edges, 0 warnings)"
+def test_header_and_counts(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component\n"
+           "class A(Component):\n"
+           "    pass\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert out.startswith("scadwright project:")
+    assert "1 component." in out
 
 
-def test_header_when_project_root_missing() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(),
-    )
-    out = render_ascii(g)
-    assert "(unknown)" in out.splitlines()[0]
+def test_empty_project(tmp_path: Path) -> None:
+    out = render_ascii(build_graph(tmp_path))
+    assert "(empty project)" in out
+    # Empty sections are omitted entirely.
+    assert "Components" not in out
 
 
-# =============================================================================
-# Empty sections
-# =============================================================================
+def test_component_uses_spec_and_spec_read_by_map(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component, Spec, Param\n"
+           "class CellSpec(Spec):\n"
+           "    equations = 'cells = 4'\n"
+           "class Holder(Component):\n"
+           "    spec = Param(CellSpec)\n"
+           "    equations = 'wall = spec.cells * 2'\n")
+    out = render_ascii(build_graph(tmp_path))
+    # Component names the spec; fields live on the spec, not the part.
+    assert "uses Spec  CellSpec" in out
+    assert "wall" not in out  # the component doesn't list read fields
+    assert "read by Component" in out
+    assert "cells  Holder" in out
+    # Locations are bracketed.
+    assert "[main.py:" in out
 
 
-def test_empty_graph_shows_none_markers() -> None:
-    out = render_ascii(Graph(nodes=(), edges=()))
-    assert "## nodes\n(none)" in out
-    assert "## edges\n(none)" in out
-    assert "## warnings\n(none)" in out
+def test_inheritance_folded_and_reverse_shown(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component\n"
+           "class Base(Component):\n"
+           "    pass\n"
+           "class Concrete(Base):\n"
+           "    pass\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert "Concrete (a Base) [" in out
+    assert "specialized by Component  Concrete" in out
 
 
-# =============================================================================
-# Node section
-# =============================================================================
+def test_design_variant_default_and_built_by(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component\n"
+           "from scadwright.design import Design, variant\n"
+           "class Part(Component):\n"
+           "    pass\n"
+           "class Box(Design):\n"
+           "    part = Part()\n"
+           "    @variant(default=True)\n"
+           "    def show(self):\n"
+           "        return self.part\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert "Variant show (default)  builds Component  Part" in out
+    assert "built by Design  Box" in out
 
 
-def test_nodes_sorted_by_kind_then_id() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.Cc", label="Cc", kind="component"),
-            Node(id="m.Aa", label="Aa", kind="component"),
-            Node(id="m.S", label="S", kind="spec"),
-            Node(id="m.D", label="D", kind="design"),
-        ),
-        edges=(),
-    )
-    out = render_ascii(g)
-    # Find the order of node identifiers in the output.
-    nodes_section = out.split("## nodes\n", 1)[1].split("\n##", 1)[0]
-    body = nodes_section.strip().splitlines()
-    kinds_in_order = [line.split()[0] for line in body]
-    # Alphabetical kind order: component, design, spec.
-    assert kinds_in_order == ["component", "component", "design", "spec"]
-    # Within component group, ids alphabetize.
-    component_lines = [line for line in body if line.startswith("component")]
-    assert component_lines[0].endswith("m.Aa")
-    assert component_lines[1].endswith("m.Cc")
+def test_morph_renders_with_numbered_stages(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component, morph\n"
+           "from scadwright.design import Design, variant\n"
+           "class Part(Component):\n"
+           "    pass\n"
+           "class M(Design):\n"
+           "    part = Part()\n"
+           "    @variant()\n"
+           "    def a(self):\n"
+           "        return self.part\n"
+           "    @variant()\n"
+           "    def b(self):\n"
+           "        return self.part\n"
+           "    anim = morph(stages=['a', 'b'])\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert "Morph anim" in out
+    assert "builds Component  Part" in out
+    assert "uses Variant as stage" in out
+    assert "1. a" in out
+    assert "2. b" in out
 
 
-def test_node_line_includes_path_and_line(tmp_path: Path) -> None:
-    file_path = tmp_path / "widget.py"
-    g = Graph(
-        nodes=(Node(
-            id="m.A", label="A", kind="component",
-            file_path=file_path, line=42,
-        ),),
-        edges=(),
-        project_root=tmp_path,
-    )
-    out = render_ascii(g)
-    assert "widget.py:42" in out
+def test_long_list_breaks_vertical(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component\n"
+           "from scadwright.boolops import union\n"
+           "from scadwright.design import Design, variant\n"
+           + "".join(
+               f"class P{i}(Component):\n    pass\n" for i in range(1, 5)
+           )
+           + "class D(Design):\n"
+           "    p1 = P1()\n    p2 = P2()\n    p3 = P3()\n    p4 = P4()\n"
+           "    @variant(default=True)\n"
+           "    def show(self):\n"
+           "        return union(self.p1, self.p2, self.p3, self.p4)\n")
+    out = render_ascii(build_graph(tmp_path))
+    # Four build targets exceed the inline threshold, so they wrap.
+    assert "builds Component\n" in out
+    assert "      P1\n" in out
+    assert "      P4\n" in out
 
 
-def test_node_line_without_path() -> None:
-    g = Graph(
-        nodes=(Node(id="m.A", label="A", kind="component"),),
-        edges=(),
-    )
-    out = render_ascii(g)
-    # Bare id with no trailing location component.
-    body = out.split("## nodes\n", 1)[1].splitlines()[0]
-    assert body == "component  m.A"
+def test_untraceable_variant_labeled_no_parts_traced(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright.primitives import cube\n"
+           "from scadwright.design import Design, variant\n"
+           "class D(Design):\n"
+           "    @variant(default=True)\n"
+           "    def show(self):\n"
+           "        return cube([1, 1, 1])\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert "no parts traced" in out
 
 
-def test_transform_label_differing_from_identifier_shown_in_parens() -> None:
-    g = Graph(
-        nodes=(Node(
-            id="m.actual_name", label="alias", kind="transform",
-        ),),
-        edges=(),
-    )
-    out = render_ascii(g)
-    assert "m.actual_name (alias)" in out
+def test_colliding_labels_qualified_by_module(tmp_path: Path) -> None:
+    _write(tmp_path, "a.py",
+           "from scadwright import Component\n"
+           "class Part(Component):\n"
+           "    pass\n")
+    _write(tmp_path, "b.py",
+           "from scadwright import Component\n"
+           "class Part(Component):\n"
+           "    pass\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert "a.Part [" in out
+    assert "b.Part [" in out
 
 
-def test_transform_label_matching_identifier_not_parenthesized() -> None:
-    g = Graph(
-        nodes=(Node(id="m.foo", label="foo", kind="transform"),),
-        edges=(),
-    )
-    out = render_ascii(g)
-    assert "m.foo (" not in out
-
-
-# =============================================================================
-# Edge section
-# =============================================================================
-
-
-def test_edges_grouped_by_source_with_header_line() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.B", label="B", kind="component"),
-        ),
-        edges=(
-            Edge(source="m.A", target="m.B", kind="contains"),
-            Edge(source="m.A", target="m.B", kind="inherits"),
-        ),
-    )
-    out = render_ascii(g)
-    edges_section = out.split("## edges\n", 1)[1].split("\n##", 1)[0]
-    lines = edges_section.strip().splitlines()
-    # Source header on its own line, edges indented.
-    assert lines[0] == "m.A"
-    assert lines[1].startswith("  ")
-    assert lines[2].startswith("  ")
-
-
-def test_edges_sorted_alphabetically_by_kind_then_target() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.B", label="B", kind="component"),
-            Node(id="m.C", label="C", kind="component"),
-        ),
-        edges=tuple(sorted([
-            Edge(source="m.A", target="m.C", kind="uses_transform"),
-            Edge(source="m.A", target="m.B", kind="contains"),
-            Edge(source="m.A", target="m.B", kind="inherits"),
-        ], key=lambda e: (e.source, e.target, e.kind))),
-    )
-    out = render_ascii(g)
-    edges_section = out.split("## edges\n", 1)[1].split("\n##", 1)[0]
-    lines = [line.strip() for line in edges_section.strip().splitlines() if line.startswith("  ")]
-    # contains < inherits < uses_transform alphabetically.
-    assert lines[0].startswith("contains")
-    assert lines[1].startswith("inherits")
-    assert lines[2].startswith("uses_transform")
-
-
-def test_uses_param_edge_shows_via_paramname() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.S", label="S", kind="spec"),
-        ),
-        edges=(Edge(
-            source="m.A", target="m.S", kind="uses_param", via_param="spec",
-        ),),
-    )
-    out = render_ascii(g)
-    assert "(via spec)" in out
-
-
-def test_reads_attr_edge_shows_all_attrs() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.S", label="S", kind="spec"),
-        ),
-        edges=(Edge(
-            source="m.A", target="m.S", kind="reads_attr",
-            attrs_read=("alpha", "beta", "gamma"),
-        ),),
-    )
-    out = render_ascii(g)
-    assert "[alpha, beta, gamma]" in out
-
-
-def test_uses_transform_edge_target_format() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.foo", label="foo", kind="transform"),
-        ),
-        edges=(Edge(
-            source="m.A", target="m.foo", kind="uses_transform",
-        ),),
-    )
-    out = render_ascii(g)
-    assert "uses_transform" in out
-    assert "m.foo" in out
-
-
-def test_source_without_outgoing_edges_absent_from_edges_section() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.S", label="S", kind="spec"),
-        ),
-        edges=(Edge(
-            source="m.A", target="m.S", kind="contains",
-        ),),
-    )
-    out = render_ascii(g)
-    edges_section = out.split("## edges\n", 1)[1].split("\n##", 1)[0]
-    # m.S appears as a target but not as a source header.
-    assert "m.S" in out
-    source_headers = [
-        line for line in edges_section.splitlines()
-        if line and not line.startswith(" ")
-    ]
-    assert source_headers == ["m.A"]
-
-
-# =============================================================================
-# Warnings section
-# =============================================================================
-
-
-def test_warnings_section_lists_each_warning() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(),
-        warnings=(
-            (Path("/tmp/a.py"), "duplicate transform 'foo'"),
-            (Path("/tmp/b.py"), "duplicate transform 'bar'"),
-        ),
-        project_root=Path("/tmp"),
-    )
-    out = render_ascii(g)
-    warnings_section = out.split("## warnings\n", 1)[1]
-    assert "a.py: duplicate transform 'foo'" in warnings_section
-    assert "b.py: duplicate transform 'bar'" in warnings_section
-
-
-# =============================================================================
-# Path relativization
-# =============================================================================
-
-
-def test_paths_relativized_against_project_root(tmp_path: Path) -> None:
-    (tmp_path / "sub").mkdir()
-    file_path = tmp_path / "sub" / "widget.py"
-    file_path.touch()
-    g = Graph(
-        nodes=(Node(
-            id="sub.widget.A", label="A", kind="component",
-            file_path=file_path, line=1,
-        ),),
-        edges=(),
-        project_root=tmp_path,
-    )
-    out = render_ascii(g)
-    assert "sub/widget.py:1" in out
-    assert str(tmp_path) not in out.split("## nodes\n", 1)[1]
-
-
-def test_paths_outside_root_use_absolute(tmp_path: Path) -> None:
-    outside = Path("/elsewhere/file.py")
-    g = Graph(
-        nodes=(Node(
-            id="elsewhere.file.A", label="A", kind="component",
-            file_path=outside, line=10,
-        ),),
-        edges=(),
-        project_root=tmp_path,
-    )
-    out = render_ascii(g)
-    assert "/elsewhere/file.py:10" in out
-
-
-# =============================================================================
-# Determinism
-# =============================================================================
-
-
-def test_render_is_deterministic() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.B", label="B", kind="component"),
-            Node(id="m.S", label="S", kind="spec"),
-        ),
-        edges=(
-            Edge(source="m.A", target="m.S", kind="reads_attr",
-                 attrs_read=("a", "b")),
-            Edge(source="m.B", target="m.S", kind="reads_attr",
-                 attrs_read=("c",)),
-        ),
-    )
-    assert render_ascii(g) == render_ascii(g)
-
-
-# =============================================================================
-# End-to-end: every node kind + every edge kind
-# =============================================================================
-
-
-def test_all_node_kinds_and_edge_kinds_rendered() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.Plate", label="Plate", kind="component"),
-            Node(id="m.Box", label="Box", kind="design"),
-            Node(id="m.Box.show", label="show", kind="variant"),
-            Node(id="m.Box.Sub", label="Sub", kind="component"),
-            Node(id="m.Cfg", label="Cfg", kind="spec"),
-            Node(id="m.foo", label="foo", kind="transform"),
-        ),
-        edges=(
-            Edge(source="m.Box", target="m.Plate", kind="contains"),
-            Edge(source="m.Box", target="m.Box.show", kind="has_variant"),
-            Edge(source="m.Box.Sub", target="m.Plate", kind="inherits"),
-            Edge(source="m.Box.show", target="m.Plate", kind="variant_builds"),
-            Edge(source="m.Plate", target="m.Cfg", kind="reads_attr",
-                 attrs_read=("size",)),
-            Edge(source="m.Plate", target="m.Cfg", kind="uses_param",
-                 via_param="cfg"),
-            Edge(source="m.Plate", target="m.foo", kind="uses_transform"),
-        ),
-    )
-    out = render_ascii(g)
-    for kind in ("component", "design", "spec", "transform", "variant"):
-        assert kind in out
-    for kind in (
-        "contains", "has_variant", "inherits", "reads_attr",
-        "uses_param", "uses_transform", "variant_builds",
-    ):
-        assert kind in out
-    assert "(via cfg)" in out
-    assert "[size]" in out
+def test_warnings_section_present_when_warnings(tmp_path: Path) -> None:
+    # A Component class bound to an inherited Param raises at runtime;
+    # the builder surfaces it as a warning.
+    _write(tmp_path, "main.py",
+           "from scadwright import Component, Param\n"
+           "class Inner(Component):\n"
+           "    pass\n"
+           "class Base(Component):\n"
+           "    thing = Param()\n"
+           "class Concrete(Base):\n"
+           "    thing = Inner\n")
+    out = render_ascii(build_graph(tmp_path))
+    assert "Warnings" in out

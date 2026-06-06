@@ -214,14 +214,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     graph.add_argument(
         "--format",
-        choices=["ascii", "mermaid", "json", "dot"],
+        choices=["ascii", "json"],
         default="ascii",
         help=(
             "Output format: 'ascii' (default) for terminal / "
-            "structured text / AI consumption, 'mermaid' for "
-            "Markdown / GitHub embedding, 'json' for programmatic "
-            "/ diff tooling, 'dot' for Graphviz layout on larger "
-            "projects."
+            "structured text / AI consumption, 'json' for "
+            "programmatic / diff tooling."
         ),
     )
     graph.add_argument(
@@ -615,12 +613,6 @@ def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
     if args.format == "json":
         from scadwright.graph.render_json import render_json
         sys.stdout.write(render_json(graph))
-    elif args.format == "dot":
-        from scadwright.graph.render_dot import render_dot
-        sys.stdout.write(render_dot(graph))
-    elif args.format == "mermaid":
-        from scadwright.graph.render_mermaid import render_mermaid
-        sys.stdout.write(render_mermaid(graph))
     else:
         from scadwright.graph.render_ascii import render_ascii
         sys.stdout.write(render_ascii(graph))

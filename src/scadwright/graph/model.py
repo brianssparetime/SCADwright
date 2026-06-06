@@ -19,10 +19,12 @@ from pathlib import Path
 from typing import Literal
 
 
-NodeKind = Literal["component", "spec", "design", "variant", "transform"]
+NodeKind = Literal[
+    "component", "spec", "design", "variant", "morph", "transform",
+]
 EdgeKind = Literal[
     "uses_param", "reads_attr", "inherits", "contains",
-    "has_variant", "variant_builds", "uses_transform",
+    "has_variant", "variant_builds", "uses_variant", "uses_transform",
 ]
 
 
@@ -52,6 +54,8 @@ class Node:
     kind: NodeKind
     file_path: Path | None = None
     line: int | None = None
+    default: bool = False
+    stages: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

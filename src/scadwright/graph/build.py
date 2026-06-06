@@ -29,6 +29,7 @@ from scadwright.graph.extract import (
     extract_class_attribute_reads,
     extract_component_instantiations,
     extract_equations_attribute_reads,
+    extract_morphs,
     extract_params,
     extract_transform_uses,
     extract_variants,
@@ -527,13 +528,15 @@ def _variant_nodes_and_edges(
     design_id = _node_id(cls)
     nodes: list[Node] = []
     edges: list[Edge] = []
+    stage_builds: dict[str, tuple] = {}
     for v in extract_variants(cls, file_info, registry, project_root):
         variant_id = f"{design_id}.{v.method_name}"
+        stage_builds[v.method_name] = v.builds
         method = _find_variant_method(cls.ast_node, v.method_name)
         variant_line = method.lineno if method is not None else cls.line + 1
         nodes.append(Node(
             id=variant_id, label=v.method_name, kind="variant",
-            file_path=cls.file_path, line=variant_line,
+            file_path=cls.file_path, line=variant_line, default=v.default,
         ))
         edges.append(Edge(
             source=design_id, target=variant_id, kind="has_variant",
@@ -560,6 +563,37 @@ def _variant_nodes_and_edges(
                 source=variant_id,
                 target=_transform_node_id(target),
                 kind="uses_transform",
+            ))
+
+    # Morphs: declared `name = morph(stages=[...])`, registered as a
+    # variant in their own right. A morph builds the union of its
+    # stages' build targets (a valid morph shares parts across
+    # stages) and links to each stage variant via uses_variant.
+    for m in extract_morphs(cls, file_info):
+        morph_id = f"{design_id}.{m.name}"
+        nodes.append(Node(
+            id=morph_id, label=m.name, kind="morph",
+            file_path=cls.file_path, line=m.line, stages=m.stages,
+        ))
+        edges.append(Edge(
+            source=design_id, target=morph_id, kind="has_variant",
+        ))
+        built_ids: list[str] = []
+        seen_built: set[str] = set()
+        for stage in m.stages:
+            edges.append(Edge(
+                source=morph_id,
+                target=f"{design_id}.{stage}",
+                kind="uses_variant",
+            ))
+            for target in stage_builds.get(stage, ()):
+                tid = _target_node_id(target, transforms)
+                if tid not in seen_built:
+                    seen_built.add(tid)
+                    built_ids.append(tid)
+        for tid in built_ids:
+            edges.append(Edge(
+                source=morph_id, target=tid, kind="variant_builds",
             ))
     return nodes, edges
 

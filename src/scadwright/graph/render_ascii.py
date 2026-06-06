@@ -1,212 +1,178 @@
-"""ASCII renderer for the project dependency graph.
+"""ASCII renderer: a scadwright project map.
 
-Converts a :class:`scadwright.graph.model.Graph` into a
-section-structured plain-text representation. Designed for
-terminal viewing, scripting, grep, and AI assistants — the format
-is line-oriented, deterministic, and self-describing.
+Renders the :class:`scadwright.graph.view.ProjectView` as a grouped,
+plain-text outline for terminal reading, grep, and AI consumers. The
+output describes the project in the framework's own terms — Designs,
+Components, Specs, Transforms — rather than as a node-and-edge graph.
 
-Three sections under a one-line header::
-
-    # scadwright graph: <path>  (N nodes, M edges, W warnings)
-
-    ## nodes
-    <kind>  <id>  <path:line>
-    <kind>  <id> (<label>)  <path:line>      # when label differs from id's tail
-    ...
-
-    ## edges
-    <source_id>
-      <kind>  <target_id>  <extras>
-      ...
-
-    ## warnings
-    <path>: <message>
-    ...
-
-Node lines are sorted by ``(kind, id)`` with the kind column
-padded so identifiers align. Sources that have outgoing edges
-get a section in ``## edges``; their edges are sorted by
-``(kind, target)`` with the edge-kind column padded the same way.
-Edge extras follow each line as ``[attrs]`` for ``reads_attr`` or
-``(via name)`` for ``uses_param``.
-
-Empty sections show ``(none)`` rather than being omitted, so the
-structure stays predictable regardless of project size.
-
-The renderer is the default format for the CLI: it's the most
-useful output in a terminal, the most token-efficient for an AI
-consumer, and the most diff-friendly for tracking changes across
-runs.
+Each entity lists its relationships in both directions, named with a
+small fixed verb set plus the capitalized framework noun of the
+target (``uses Spec``, ``built by Design``, ``read by Component``).
+Locations are bracketed ``[path:line]``; parentheses carry qualifiers
+(``(a BodyCap)``, ``(default)``). Lists of more than three values
+break to one per line; a morph's stages always render as a numbered
+list, since their order is the animation sequence.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from scadwright.graph.model import Graph
+from scadwright.graph.view import Entity, assemble
 
-from scadwright.graph.model import Edge, Graph, Node
 
-
-_NODE_KIND_WIDTH = max(len(k) for k in (
-    "spec", "component", "design", "variant", "transform",
-))
-_EDGE_KIND_WIDTH = max(len(k) for k in (
-    "inherits", "uses_param", "reads_attr", "contains",
-    "has_variant", "variant_builds", "uses_transform",
-))
+_INLINE_MAX = 3
 
 
 def render_ascii(graph: Graph) -> str:
-    """Return the ASCII representation of ``graph``.
+    """Return the project-map representation of ``graph``.
 
-    Output is deterministic — :class:`Graph` already sorts nodes
-    and edges, and per-section sorts inside this renderer are
-    stable secondary keys. Output ends with a trailing newline.
+    Output is deterministic (the view sorts entities and their
+    relationships) and ends with a trailing newline.
     """
-    lines: list[str] = []
-    lines.append(_header(graph))
+    view = assemble(graph)
+    lines: list[str] = [
+        f"scadwright project: {view.project}",
+        _counts(view),
+    ]
+    _section(lines, "Designs", view.designs, _design_lines)
+    _section(lines, "Components", view.components, _component_lines)
+    _section(lines, "Specs", view.specs, _spec_lines)
+    _section(lines, "Transforms", view.transforms, _transform_lines)
+    if view.warnings:
+        lines.append("")
+        lines.append("Warnings")
+        for path, msg in view.warnings:
+            lines.append(f"  {path}: {msg}")
+    return "\n".join(lines) + "\n"
+
+
+def _counts(view) -> str:
+    parts: list[str] = []
+    for n, word in (
+        (len(view.designs), "design"),
+        (len(view.components), "component"),
+        (len(view.specs), "spec"),
+        (len(view.transforms), "transform"),
+    ):
+        if n:
+            parts.append(f"{n} {word}" + ("s" if n != 1 else ""))
+    return ", ".join(parts) + "." if parts else "(empty project)"
+
+
+def _section(lines, title, entities, render_entity) -> None:
+    if not entities:
+        return
     lines.append("")
-    lines.append("## nodes")
-    lines.extend(_node_lines(graph))
-    lines.append("")
-    lines.append("## edges")
-    lines.extend(_edge_lines(graph))
-    lines.append("")
-    lines.append("## warnings")
-    lines.extend(_warning_lines(graph))
-    lines.append("")
-    return "\n".join(lines)
+    lines.append(title)
+    for e in entities:
+        lines.extend(render_entity(e))
 
 
-def _header(graph: Graph) -> str:
-    """Build the one-line header summarizing project + counts."""
-    if graph.project_root is not None:
-        root = graph.project_root.as_posix()
-    else:
-        root = "(unknown)"
-    n = len(graph.nodes)
-    m = len(graph.edges)
-    w = len(graph.warnings)
-    return (
-        f"# scadwright graph: {root}  "
-        f"({n} nodes, {m} edges, {w} warnings)"
-    )
+def _header(e: Entity) -> str:
+    quals = f" (a {', '.join(e.bases)})" if e.bases else ""
+    loc = f" [{e.location}]" if e.location else ""
+    return f"  {e.name}{quals}{loc}"
 
 
-def _node_lines(graph: Graph) -> list[str]:
-    """Format the per-node section.
-
-    Nodes sort by ``(kind, id)`` so kinds group together within
-    the section. The kind column is padded to a fixed width;
-    labels that differ from the id's tail segment appear in
-    parentheses after the id; the source location, when known,
-    follows after two spaces.
+def _emit_rels(out, rels, indent) -> None:
+    """Emit ``(phrase, targets)`` relationship lines, aligning the
+    phrase column for inline ones and breaking >3-item lists vertical.
     """
-    if not graph.nodes:
-        return ["(none)"]
-    out: list[str] = []
-    sorted_nodes = sorted(graph.nodes, key=lambda n: (n.kind, n.id))
-    for node in sorted_nodes:
-        out.append(_node_line(node, graph.project_root))
-    return out
-
-
-def _node_line(node: Node, project_root: Path | None) -> str:
-    """Format one node line."""
-    kind = node.kind.ljust(_NODE_KIND_WIDTH)
-    body = node.id
-    tail = node.id.rsplit(".", 1)[-1]
-    if node.label != tail:
-        body = f"{node.id} ({node.label})"
-    location = _format_location(node.file_path, node.line, project_root)
-    if location is None:
-        return f"{kind}  {body}"
-    return f"{kind}  {body}  {location}"
-
-
-def _format_location(
-    file_path: Path | None, line: int | None, project_root: Path | None,
-) -> str | None:
-    """Return ``"<path>:<line>"`` for a node's source location, or
-    ``None`` when file_path isn't known.
-
-    Paths are relativized against ``project_root`` when possible
-    and converted to POSIX form so output reads the same on every
-    OS.
-    """
-    if file_path is None:
-        return None
-    if project_root is not None:
-        try:
-            rel = file_path.relative_to(project_root)
-            path_str = rel.as_posix()
-        except ValueError:
-            path_str = file_path.as_posix()
-    else:
-        path_str = file_path.as_posix()
-    if line is None:
-        return path_str
-    return f"{path_str}:{line}"
-
-
-def _edge_lines(graph: Graph) -> list[str]:
-    """Format the per-source edges section.
-
-    Walks the edge list (already sorted by ``Graph`` upstream) and
-    groups consecutive same-source edges into a section with the
-    source id as a header line followed by indented edges. Sources
-    that don't appear in the edge list are absent from this
-    section — the reader can confirm a node has no outgoing edges
-    by its absence here.
-    """
-    if not graph.edges:
-        return ["(none)"]
-    out: list[str] = []
-    current_source: str | None = None
-    for edge in graph.edges:
-        if edge.source != current_source:
-            if current_source is not None:
-                out.append("")
-            out.append(edge.source)
-            current_source = edge.source
-        out.append("  " + _edge_line(edge))
-    return out
-
-
-def _edge_line(edge: Edge) -> str:
-    """Format one edge line: ``<kind>  <target>  <extras>``."""
-    kind = edge.kind.ljust(_EDGE_KIND_WIDTH)
-    extras = _edge_extras(edge)
-    if extras is None:
-        return f"{kind}  {edge.target}"
-    return f"{kind}  {edge.target}  {extras}"
-
-
-def _edge_extras(edge: Edge) -> str | None:
-    """Return the kind-specific extras suffix, or ``None`` for
-    edge kinds that carry no extras.
-    """
-    if edge.kind == "uses_param":
-        return f"(via {edge.via_param})"
-    if edge.kind == "reads_attr":
-        return "[" + ", ".join(edge.attrs_read) + "]"
-    return None
-
-
-def _warning_lines(graph: Graph) -> list[str]:
-    """Format the warnings section. Warnings come pre-sorted from
-    the builder; this renderer just emits them one per line.
-    """
-    if not graph.warnings:
-        return ["(none)"]
-    out: list[str] = []
-    for path, message in graph.warnings:
-        if graph.project_root is not None:
-            try:
-                rel = Path(path).relative_to(graph.project_root)
-                path_str = rel.as_posix()
-            except ValueError:
-                path_str = Path(path).as_posix()
+    if not rels:
+        return
+    inline = [len(p) for p, t in rels if len(t) <= _INLINE_MAX]
+    width = max(inline) if inline else 0
+    for phrase, targets in rels:
+        if len(targets) <= _INLINE_MAX:
+            out.append(f"{indent}{phrase.ljust(width)}  {', '.join(targets)}")
         else:
-            path_str = Path(path).as_posix()
-        out.append(f"{path_str}: {message}")
+            out.append(f"{indent}{phrase}")
+            for t in targets:
+                out.append(f"{indent}  {t}")
+
+
+def _component_lines(e: Entity) -> list[str]:
+    out = [_header(e)]
+    rels = []
+    if e.spec_uses:
+        rels.append(("uses Spec", [s.spec for s in e.spec_uses]))
+    if e.part_uses:
+        rels.append(("uses Component", [p.part for p in e.part_uses]))
+    if e.contains:
+        rels.append(("contains Component", list(e.contains)))
+    if e.uses_transform:
+        rels.append(("uses Transform", list(e.uses_transform)))
+    if e.specialized_by:
+        rels.append(("specialized by Component", list(e.specialized_by)))
+    if e.built_by:
+        rels.append(("built by Design", list(e.built_by)))
+    if e.used_in:
+        rels.append(("used in Component", list(e.used_in)))
+    _emit_rels(out, rels, "    ")
+    return out
+
+
+def _spec_lines(e: Entity) -> list[str]:
+    out = [_header(e)]
+    if e.read_by:
+        out.append("    read by Component")
+        fw = max(len(fld) for fld, _ in e.read_by)
+        for fld, readers in e.read_by:
+            readers = list(readers)
+            if len(readers) <= _INLINE_MAX:
+                out.append(f"      {fld.ljust(fw)}  {', '.join(readers)}")
+            else:
+                out.append(f"      {fld}")
+                for r in readers:
+                    out.append(f"        {r}")
+    return out
+
+
+def _design_lines(e: Entity) -> list[str]:
+    out = [_header(e)]
+    regular = [v for v in e.variants if not v.is_morph]
+    morphs = [v for v in e.variants if v.is_morph]
+    if regular:
+        pw = max(len(_vlabel(v)) for v in regular)
+        for v in regular:
+            label = _vlabel(v).ljust(pw)
+            if not v.builds:
+                out.append(f"    {label}  no parts traced")
+            elif len(v.builds) <= _INLINE_MAX:
+                out.append(
+                    f"    {label}  builds Component  {', '.join(v.builds)}"
+                )
+            else:
+                out.append(f"    {label}  builds Component")
+                for t in v.builds:
+                    out.append(f"      {t}")
+    for v in morphs:
+        out.append(f"    Morph {v.name}")
+        if v.builds:
+            _emit_rels(out, [("builds Component", list(v.builds))], "      ")
+        else:
+            out.append("      no parts traced")
+        if v.stages:
+            out.append("      uses Variant as stage")
+            for i, stage in enumerate(v.stages, 1):
+                out.append(f"        {i}. {stage}")
+    return out
+
+
+def _vlabel(v) -> str:
+    return f"Variant {v.name}" + (" (default)" if v.default else "")
+
+
+def _transform_lines(e: Entity) -> list[str]:
+    out = [_header(e)]
+    rels = []
+    if e.spec_uses:
+        rels.append(("uses Spec", [s.spec for s in e.spec_uses]))
+    if e.contains:
+        rels.append(("contains Component", list(e.contains)))
+    if e.uses_transform:
+        rels.append(("uses Transform", list(e.uses_transform)))
+    if e.used_by:
+        rels.append(("used by", list(e.used_by)))
+    _emit_rels(out, rels, "    ")
     return out

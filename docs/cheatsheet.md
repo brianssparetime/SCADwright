@@ -860,10 +860,10 @@ scadwright build widget.py --from-json design.json --from-json caps.json
 scadwright build widget.py --help
 scadwright preview widget.py                                # build + open in OpenSCAD GUI
 scadwright render widget.py -o widget.stl                   # build + headless STL render
-scadwright graph project/                                   # dependency graph: ASCII (default; terminal / AI / grep)
+scadwright graph project/                                   # project map: text (default; terminal / AI / grep)
 scadwright graph project/ --exclude OLD --exclude scratch   # drop snapshot or scratch directories
-scadwright graph project/ --format mermaid                  # Mermaid graph TD for Markdown / GitHub embedding
-scadwright graph project/ --format json --filter Holder     # JSON / DOT, focus + depth
+scadwright graph project/ --filter Holder --depth 1         # focus one part plus its neighbours
+scadwright graph project/ --format json                     # same map as data, for tooling / diff
 scadwright lsp                                              # language server (editors spawn this)
 ```
 

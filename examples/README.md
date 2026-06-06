@@ -211,7 +211,7 @@ A body cap and a rear lens cap for the Pentacon Six, a three-lug medium-format c
 - `fit_clearance` and the adjustments idiom (`+=`) for dialing in a printed fit.
 - `print_plate.py` arranges both caps flat on the bed with `arrange_on_bed` for a single build, raising if the set wouldn't fit; it's the file that pulls the two parts together.
 - `validation_morph.py` animates the two halves mating with a chain `morph`: because both caps read the same spec, the male lugs and the female channels rise, face off, and twist-lock together.
-- For a multi-file project like this, `scadwright graph .` summarizes what each part is, where it lives, and how the parts link through specs and references. Here both caps point back to the shared `PentaconSixMount`, and every part carries its source file and line.
+- For a multi-file project like this, `scadwright graph .` maps what each part is, where it lives, and how the parts connect. Both caps draw on the shared `PentaconSixMount`, which lists them back under `read by`, and every part is tagged with its source file and line.
 
 ![Pentacon Six mate morph](images/PentaconSixMount-mate.apng)
 

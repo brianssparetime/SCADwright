@@ -1,83 +1,122 @@
-"""JSON renderer for the project dependency graph.
+"""JSON renderer: the scadwright project map as structured data.
 
-Converts a :class:`scadwright.graph.model.Graph` into a JSON
-string suitable for downstream tooling — custom dashboards,
-documentation generators, diff-based "what changed" tooling.
+Mirrors the ASCII renderer's vocabulary and grouping (Designs /
+Components / Specs / Transforms) for machine consumers — doc
+generators, dashboards, diff tooling, AI assistants. Two differences
+from the ASCII output, both deliberate:
 
-The shape is two top-level keys: ``"nodes"`` and ``"edges"``,
-each a list. Per-node fields: ``id``, ``label``, ``kind``, plus
-``path`` (project-relative, POSIX-style) and ``line`` (1-based)
-when source location is available. Per-edge fields: ``source``,
-``target``, ``kind``, plus kind-specific extras included only
-when present (``via_param`` for ``uses_param`` edges,
-``attrs_read`` for ``reads_attr``).
+- **Full, not brief.** Every field a Component reads off a Spec is
+  listed inline; nothing is moved or summarized for length.
+- **Single-source forward.** Each relationship is stored once, on the
+  entity that owns it (a Component's ``uses_spec``, a Design's
+  ``builds``). The reverse views the ASCII shows (``read by``,
+  ``built by``) are derivable by inversion and are not duplicated
+  here, so the data has one source of truth and diffs cleanly.
 
-Output is sorted (the :class:`Graph` builder already sorts) and
-formatted with two-space indentation so the result is readable
-when piped to a file. Use :func:`json.loads` on the output
-without surprises — no custom encoder, no dataclass smuggling.
+Entities are keyed by display name. Relationship keys appear only when
+non-empty; the four top-level group keys are always present.
 """
 
 from __future__ import annotations
 
 import json
 
-from scadwright.graph.model import Edge, Graph, Node
+from scadwright.graph.view import Entity, assemble
 
 
-def render_json(graph: Graph) -> str:
-    """Return a JSON string representation of ``graph``.
-
-    Output ends in a trailing newline so concatenation with other
-    text or files-on-disk doesn't need fixup. Two-space indent
-    keeps diffs reviewable.
-    """
+def render_json(graph) -> str:
+    """Return the project map as a JSON string with a trailing newline."""
+    view = assemble(graph)
     payload = {
-        "nodes": [_node_dict(n, graph.project_root) for n in graph.nodes],
-        "edges": [_edge_dict(e) for e in graph.edges],
+        "project": view.project,
+        "designs": {e.name: _design(e) for e in view.designs},
+        "components": {e.name: _component(e) for e in view.components},
+        "specs": {e.name: _spec(e) for e in view.specs},
+        "transforms": {e.name: _transform(e) for e in view.transforms},
     }
+    if view.warnings:
+        payload["warnings"] = [list(w) for w in view.warnings]
     return json.dumps(payload, indent=2) + "\n"
 
 
-def _node_dict(node: Node, project_root) -> dict[str, object]:
-    """Serialize one :class:`Node` to its JSON dict shape.
+def _loc(e: Entity) -> dict:
+    return {"location": e.location} if e.location else {}
 
-    Source location fields ``path`` and ``line`` are added when
-    the node carries them. The path is relativized against
-    ``project_root`` when one is set and the file lives under it;
-    otherwise the absolute POSIX path is used.
-    """
-    out: dict[str, object] = {
-        "id": node.id, "label": node.label, "kind": node.kind,
-    }
-    if node.file_path is not None:
-        if project_root is not None:
-            try:
-                rel = node.file_path.relative_to(project_root)
-                out["path"] = rel.as_posix()
-            except ValueError:
-                out["path"] = node.file_path.as_posix()
-        else:
-            out["path"] = node.file_path.as_posix()
-    if node.line is not None:
-        out["line"] = node.line
+
+def _component(e: Entity) -> dict:
+    out: dict[str, object] = _loc(e)
+    if e.bases:
+        out["based_on"] = list(e.bases)
+    if e.spec_uses:
+        out["uses_spec"] = [
+            _drop_empty({
+                "spec": s.spec, "via_param": s.via_param,
+                "reads": list(s.fields),
+            })
+            for s in e.spec_uses
+        ]
+    if e.part_uses:
+        out["uses_component"] = [
+            _drop_empty({
+                "component": p.part, "via_param": p.via_param,
+                "reads": list(p.fields),
+            })
+            for p in e.part_uses
+        ]
+    if e.contains:
+        out["contains"] = list(e.contains)
+    if e.uses_transform:
+        out["uses_transform"] = list(e.uses_transform)
     return out
 
 
-def _edge_dict(edge: Edge) -> dict[str, object]:
-    """Serialize one :class:`Edge` to its JSON dict shape.
+def _spec(e: Entity) -> dict:
+    return _loc(e)
 
-    Kind-specific supplemental fields are included only when
-    present, so consumers can do ``edge.get("via_param")`` without
-    having to know which edge kinds populate which fields.
-    """
-    out: dict[str, object] = {
-        "source": edge.source,
-        "target": edge.target,
-        "kind": edge.kind,
+
+def _design(e: Entity) -> dict:
+    out: dict[str, object] = _loc(e)
+    variants = {
+        v.name: _drop_empty({"default": v.default, "builds": list(v.builds)})
+        for v in e.variants if not v.is_morph
     }
-    if edge.via_param is not None:
-        out["via_param"] = edge.via_param
-    if edge.attrs_read:
-        out["attrs_read"] = list(edge.attrs_read)
+    morphs = {
+        v.name: {"builds": list(v.builds), "stages": list(v.stages)}
+        for v in e.variants if v.is_morph
+    }
+    if variants:
+        out["variants"] = variants
+    if morphs:
+        out["morphs"] = morphs
+    return out
+
+
+def _transform(e: Entity) -> dict:
+    out: dict[str, object] = _loc(e)
+    if e.spec_uses:
+        out["uses_spec"] = [
+            _drop_empty({"spec": s.spec, "reads": list(s.fields)})
+            for s in e.spec_uses
+        ]
+    if e.contains:
+        out["contains"] = list(e.contains)
+    if e.uses_transform:
+        out["uses_transform"] = list(e.uses_transform)
+    return out
+
+
+def _drop_empty(d: dict) -> dict:
+    """Drop keys whose value is ``None``, an empty list, or ``False``
+    for ``default`` — keeps per-entry records tight without losing
+    meaningful zeros.
+    """
+    out = {}
+    for k, v in d.items():
+        if v is None:
+            continue
+        if v == [] :
+            continue
+        if k == "default" and v is False:
+            continue
+        out[k] = v
     return out

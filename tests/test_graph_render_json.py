@@ -1,150 +1,113 @@
-"""Tests for the JSON renderer.
+"""Tests for the JSON project-map renderer.
 
-Covers per-node + per-edge serialization, kind-specific
-supplemental fields (only present when set), determinism, and
-the empty-graph case.
+JSON mirrors the ASCII vocabulary and grouping, but full (every read
+field listed) and single-source forward (no reverse keys). These build
+small projects end-to-end and assert on the parsed payload.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from scadwright.graph.model import Edge, Graph, Node
+from scadwright.graph.build import build_graph
 from scadwright.graph.render_json import render_json
 
 
-def _parsed(graph: Graph) -> dict:
-    """Render and round-trip through ``json.loads`` so tests assert
-    against the structural payload rather than the textual form."""
-    return json.loads(render_json(graph))
+def _write(root: Path, name: str, src: str) -> None:
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(src)
 
 
-# =============================================================================
-# Node serialization
-# =============================================================================
+def _payload(root: Path) -> dict:
+    return json.loads(render_json(build_graph(root)))
 
 
-def test_node_keys_are_id_label_kind() -> None:
-    g = Graph(
-        nodes=(Node(id="m.A", label="A", kind="component"),),
-        edges=(),
-    )
-    [node] = _parsed(g)["nodes"]
-    assert node == {"id": "m.A", "label": "A", "kind": "component"}
+def test_top_level_keys_always_present(tmp_path: Path) -> None:
+    p = _payload(tmp_path)
+    assert set(p) >= {"project", "designs", "components", "specs",
+                      "transforms"}
+    assert p["components"] == {}
+    assert p["specs"] == {}
 
 
-def test_each_node_kind_round_trips() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.S", label="S", kind="spec"),
-            Node(id="m.C", label="C", kind="component"),
-            Node(id="m.D", label="D", kind="design"),
-            Node(id="m.D.show", label="show", kind="variant"),
-        ),
-        edges=(),
-    )
-    kinds = {n["kind"] for n in _parsed(g)["nodes"]}
-    assert kinds == {"spec", "component", "design", "variant"}
+def test_component_uses_spec_full_fields(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component, Spec, Param\n"
+           "class CellSpec(Spec):\n"
+           "    equations = 'cells = 4'\n"
+           "class Holder(Component):\n"
+           "    spec = Param(CellSpec)\n"
+           "    equations = 'wall = spec.cells * 2'\n")
+    p = _payload(tmp_path)
+    holder = p["components"]["Holder"]
+    assert holder["uses_spec"] == [
+        {"spec": "CellSpec", "via_param": "spec", "reads": ["cells"]}
+    ]
+    # Specs are single-source: no reverse read_by stored.
+    assert "read_by" not in p["specs"]["CellSpec"]
 
 
-# =============================================================================
-# Edge serialization (per-kind extras)
-# =============================================================================
+def test_components_are_forward_single_source(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component\n"
+           "class Base(Component):\n"
+           "    pass\n"
+           "class Concrete(Base):\n"
+           "    pass\n")
+    p = _payload(tmp_path)
+    assert p["components"]["Concrete"]["based_on"] == ["Base"]
+    # The reverse (specialized_by) is derivable, not stored.
+    assert "specialized_by" not in p["components"]["Base"]
 
 
-def test_inherits_edge_minimal_keys() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(Edge(source="m.A", target="m.B", kind="inherits"),),
-    )
-    [edge] = _parsed(g)["edges"]
-    assert edge == {"source": "m.A", "target": "m.B", "kind": "inherits"}
-    assert "via_param" not in edge
-    assert "attrs_read" not in edge
+def test_design_variants_and_morph_stages(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component, morph\n"
+           "from scadwright.design import Design, variant\n"
+           "class Part(Component):\n"
+           "    pass\n"
+           "class M(Design):\n"
+           "    part = Part()\n"
+           "    @variant(default=True)\n"
+           "    def a(self):\n"
+           "        return self.part\n"
+           "    @variant()\n"
+           "    def b(self):\n"
+           "        return self.part\n"
+           "    anim = morph(stages=['a', 'b'])\n")
+    p = _payload(tmp_path)
+    design = p["designs"]["M"]
+    assert design["variants"]["a"] == {"default": True, "builds": ["Part"]}
+    assert design["variants"]["b"] == {"builds": ["Part"]}
+    assert design["morphs"]["anim"] == {
+        "builds": ["Part"], "stages": ["a", "b"],
+    }
+    # built_by is reverse, not stored on the component.
+    assert "built_by" not in p["components"]["Part"]
 
 
-def test_uses_param_edge_includes_via_param() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(
-            Edge(
-                source="m.A", target="m.S",
-                kind="uses_param", via_param="spec",
-            ),
-        ),
-    )
-    [edge] = _parsed(g)["edges"]
-    assert edge["via_param"] == "spec"
-    assert "attrs_read" not in edge
+def test_transform_section(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright.transforms import transform\n"
+           "from scadwright import Component\n"
+           "@transform('foo')\n"
+           "def foo(node):\n"
+           "    return node\n"
+           "class C(Component):\n"
+           "    def build(self):\n"
+           "        return (None).foo()\n")
+    p = _payload(tmp_path)
+    assert "foo" in p["transforms"]
+    assert p["components"]["C"]["uses_transform"] == ["foo"]
 
 
-def test_reads_attr_edge_includes_attrs_list() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(
-            Edge(
-                source="m.A", target="m.S",
-                kind="reads_attr", attrs_read=("height", "width"),
-            ),
-        ),
-    )
-    [edge] = _parsed(g)["edges"]
-    assert edge["attrs_read"] == ["height", "width"]
-    assert "via_param" not in edge
-
-
-def test_contains_edge_minimal_keys() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(Edge(source="m.A", target="m.B", kind="contains"),),
-    )
-    [edge] = _parsed(g)["edges"]
-    assert edge == {"source": "m.A", "target": "m.B", "kind": "contains"}
-
-
-def test_has_variant_and_variant_builds_minimal_keys() -> None:
-    g = Graph(
-        nodes=(),
-        edges=(
-            Edge(source="m.D", target="m.D.show", kind="has_variant"),
-            Edge(source="m.D.show", target="m.C", kind="variant_builds"),
-        ),
-    )
-    edges = _parsed(g)["edges"]
-    assert {e["kind"] for e in edges} == {"has_variant", "variant_builds"}
-    for e in edges:
-        assert "via_param" not in e
-        assert "attrs_read" not in e
-
-
-# =============================================================================
-# Output shape
-# =============================================================================
-
-
-def test_top_level_keys() -> None:
-    payload = _parsed(Graph(nodes=(), edges=()))
-    assert set(payload.keys()) == {"nodes", "edges"}
-
-
-def test_empty_graph_payload() -> None:
-    assert _parsed(Graph(nodes=(), edges=())) == {"nodes": [], "edges": []}
-
-
-def test_output_ends_with_newline() -> None:
-    assert render_json(Graph(nodes=(), edges=())).endswith("\n")
-
-
-def test_render_is_deterministic() -> None:
-    g = Graph(
-        nodes=(
-            Node(id="m.A", label="A", kind="component"),
-            Node(id="m.B", label="B", kind="component"),
-        ),
-        edges=(
-            Edge(source="m.A", target="m.B", kind="inherits"),
-        ),
-    )
-    a = render_json(g)
-    b = render_json(g)
-    assert a == b
+def test_round_trips_as_valid_json(tmp_path: Path) -> None:
+    _write(tmp_path, "main.py",
+           "from scadwright import Component\n"
+           "class A(Component):\n"
+           "    pass\n")
+    text = render_json(build_graph(tmp_path))
+    assert text.endswith("\n")
+    json.loads(text)  # no exception

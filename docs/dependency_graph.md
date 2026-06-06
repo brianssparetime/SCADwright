@@ -1,122 +1,27 @@
 # Project dependency graph
 
-`scadwright graph PROJECT` walks a scadwright project and emits a dependency graph (plain-text ASCII by default; also Mermaid, JSON, and Graphviz DOT) showing how Components, Specs, Designs, and Transforms relate. Useful for re-orienting on a project after time away, confirming in review that a change touches only the components you expected, and finding who reads an attribute before a refactor.
+`scadwright graph PROJECT` reads a scadwright project and prints how its parts relate: which Components draw on which Specs, what each Design builds, what reads what. The default output is a plain-text project map; `--format json` gives the same information as data. It's useful for re-orienting on a project after time away, confirming in review that a change touches only the parts you expected, and finding who reads a dimension before you rename it.
 
-The analyzer is fully static: it reads your `.py` files without importing or running them, and needs no optional extras. A scadwright project is everything reachable from the path you pass, recursing into subdirectories.
+The analyzer is fully static: it reads your `.py` files without importing or running them, and needs no optional extras. The project is everything reachable from the path you pass, recursing into subdirectories.
 
-Run it on a project and you get a node-and-edge map you can read in a terminal or grep. Given:
+Run it on a project and you get an outline grouped by what each thing is. Given:
 
 ```python
 # project/main.py
 from scadwright import Component, Spec, Param
+from scadwright.design import Design, variant
+from scadwright.primitives import cube
 
 class BatterySpec(Spec):
-    cells: int = Param(int, default=4)
+    equations = "cells = 4"
 
 class Holder(Component):
     spec = Param(BatterySpec)
     equations = "wall = spec.cells * 2"
     def build(self):
         return cube([self.spec.cells, 5, 5])
-```
 
-`scadwright graph project/` emits the default ASCII format:
-
-```
-# scadwright graph: project  (2 nodes, 2 edges, 0 warnings)
-
-## nodes
-component  main.Holder  main.py:6
-spec       main.BatterySpec  main.py:2
-
-## edges
-main.Holder
-  reads_attr      main.BatterySpec  [cells]
-  uses_param      main.BatterySpec  (via spec)
-
-## warnings
-(none)
-```
-
-## Reading the output
-
-The output has three sections (`## nodes`, `## edges`, `## warnings`) under a one-line header that summarizes counts. Each node line carries the node's kind, dotted id, and source location (`path:line`). Edge lines sit indented under each source, naming the edge kind, the target id, and any extras (`[cells]` for attribute reads, `(via spec)` for the Param a dependency flows through). The format is deterministic line by line, so diffs across runs read cleanly, and you can grep the output for a class's id to find every reference to it.
-
-Two edge kinds carry a Spec or Component dependency. `uses_param` marks a Param whose type resolves to a project class. `reads_attr` marks attribute access, merged into one labeled edge per source-and-target pair from three places: equation references, `self.<param>.<attr>` reads in any method body, and direct class-attribute reads like `BatterySpec.cells`.
-
-These edges span files. A reusable base can take any Spec as a parameter, written `spec = Param()`, and read values off it in the equations. A concrete subclass names the one Spec it uses, written `spec = MountInterface`. The graph draws `uses_param` and `reads_attr` from that subclass to the Spec, because the subclass is where the Spec is chosen. The base names no particular Spec, so it gets none.
-
-## What the graph captures
-
-Beyond the Param and attribute dependencies above, the graph traces composition, custom-transform use, and variant builds. In the Mermaid and DOT renderings, each kind of node has its own shape: Specs are diamonds, Components rounded boxes, Designs cylinders, variants hexagons, and project-registered transforms parallelograms.
-
-### Composition (`contains`)
-
-When a Component instantiates another Component, the graph emits a `"contains"` edge. Both shapes the design supports — class-attribute instantiation and `build()`-body instantiation — surface:
-
-```python
-class Inner(Component):
-    pass
-
-class Outer(Component):
-    inner = Inner()           # class-attribute composition
-    def build(self):
-        return Inner(...)     # build()-body composition
-```
-
-```
-graph TD
-  main_Inner(Inner)
-  main_Outer(Outer)
-  main_Outer --"contains"--> main_Inner
-```
-
-The instantiation can sit anywhere in a method body — returned, nested in a boolean op, or built in a helper — and repeated instantiations of the same target collapse into one edge. Curated factories (`cube`, `cylinder`, boolean ops) aren't project Components, so they don't surface as nodes or edges.
-
-### Custom transforms (`uses`)
-
-A project that registers a transform gets a parallelogram node. Two registration shapes count: a free function with the `@transform("name")` decorator, and a `Transform` subclass with a `name = "..."` class attribute. Components, transforms, and variant methods that invoke a registered transform via a chained call `<expr>.<name>(...)` get a `"uses"` edge to the parallelogram:
-
-```python
-from scadwright.transforms import transform
-from scadwright import Component
-from scadwright.primitives import cube
-
-@transform("port_cutout")
-def port_cutout(node, *, on, width):
-    return node
-
-class Case(Component):
-    def build(self):
-        body = cube([40, 30, 10], center="xy")
-        return body.port_cutout(on="+x", width=10)
-```
-
-```
-graph TD
-  main_Case(Case)
-  main_port_cutout[/port_cutout/]
-  main_Case --"uses"--> main_port_cutout
-```
-
-A chained call collapses into one `"uses"` edge per source-and-target pair, wherever it sits in a method body. Three more details:
-
-- Transforms participate in `reads_attr` and `contains` themselves: a transform that reads a Spec's class attribute or instantiates a Component shows those edges outgoing from its own parallelogram.
-- Variants that call transforms surface the edge from the variant sub-node, not the parent Design.
-- Module-level `register("name", instance)` is a third registration shape; it produces a parallelogram, but there's no defining function or class to walk, so no outgoing edges follow from it.
-
-### Variants (`builds`)
-
-`Design` classes get a node per `@variant`-decorated method. Each variant renders as a hexagon, linked to its Design by a `"variant"` edge, with `"builds"` edges to the Components the variant produces:
-
-```python
-from scadwright import variant, Component
-from scadwright.design import Design
-
-class Holder(Component):
-    pass
-
-class BatteryBox(Design):
+class Tray(Design):
     holder = Holder()
 
     @variant(default=True)
@@ -124,54 +29,92 @@ class BatteryBox(Design):
         return self.holder
 ```
 
+`scadwright graph project/` prints:
+
 ```
-graph TD
-  main_BatteryBox[(BatteryBox)]
-  main_BatteryBox_show{{show}}
-  main_Holder(Holder)
-  main_BatteryBox --"variant"--> main_BatteryBox_show
-  main_BatteryBox_show --"builds"--> main_Holder
+scadwright project: project
+1 design, 1 component, 1 spec.
+
+Designs
+  Tray [main.py:15]
+    Variant show (default)  builds Component  Holder
+
+Components
+  Holder [main.py:9]
+    uses Spec        BatterySpec
+    built by Design  Tray
+
+Specs
+  BatterySpec [main.py:6]
+    read by Component
+      cells  Holder
 ```
 
-Build-target detection picks up the patterns scadwright projects actually use:
+## Reading the map
 
-- `return self.foo` — when `foo = SomeComponent()` at Design class scope.
-- `return SomeComponent()` — direct instantiation in the variant body.
-- `return union(self.a, self.b)` — both Components surface as build targets.
-- `return helper(self.x)` — `self.x` resolves through the class-attribute map.
+The map groups the project's parts into Designs, Components, Specs, and Transforms; each section appears only when the project has something to put in it. Every part shows its source location in brackets, so `[main.py:9]` is where to go look.
+
+Under each part are its relationships, named plainly and shown from both directions. A Component names the Spec it uses (`uses Spec`) and the Designs that build it (`built by Design`); a Spec lists which part reads each of its fields (`read by Component`); a Design lists what each variant builds. You read a Component to see what it depends on, and a Spec to see what depends on it — which is the question you actually have when you're about to change one.
+
+A concrete part wears its base in parentheses, `PentaconSixBodyCap (a BodyCap)`, and the base shows `specialized by` in return. The remaining verbs read the same way: `contains Component` for one part building another, `uses Transform` for a custom verb. A list of more than three values breaks to one per line so a busy part stays readable.
+
+### Specs shared across files
+
+A reusable Component takes any Spec as a parameter, written `spec = Param()`, and reads values off it in its equations. A concrete subclass names the one Spec it uses, written `spec = PentaconSixMount`. The map hangs `uses Spec` off that subclass, not the base, because the subclass is where the Spec is chosen — the base names no particular Spec, so it shows none. This is what lets a graph confirm that two parts built from one shared Spec actually read it.
+
+### Morphs
+
+A morph — `name = morph(stages=[...])` on a Design — appears under its Design marked `Morph`. Every stage of a valid morph builds the same parts, so the map states those parts once and then lists the stages as a numbered sequence, the order being the animation. From the [pentacon-six-mount example](../examples/README.md):
+
+```
+  validation_morph [validation_morph.py:40]
+    Variant faced             builds Component  PentaconSixBodyCap, PentaconSixRearLensCap
+    Variant held              builds Component  PentaconSixBodyCap, PentaconSixRearLensCap
+    Variant locked (default)  builds Component  PentaconSixBodyCap, PentaconSixRearLensCap
+    Variant mated             builds Component  PentaconSixBodyCap, PentaconSixRearLensCap
+    Variant spread            builds Component  PentaconSixBodyCap, PentaconSixRearLensCap
+    Morph mate
+      builds Component  PentaconSixBodyCap, PentaconSixRearLensCap
+      uses Variant as stage
+        1. spread
+        2. faced
+        3. mated
+        4. locked
+        5. held
+```
+
+The stages also appear above as variants in their own right, since each one renders on its own.
 
 ## Running it on a project
 
 ```
-scadwright graph PATH [--format ascii|mermaid|json|dot] [--filter NAME] [--depth N]
+scadwright graph PATH [--format ascii|json] [--filter NAME] [--depth N] [--exclude PATTERN]
 ```
 
-`PATH` may be a directory (recursed) or a single Python file. The default `--format ascii` writes plain text to stdout that you can read directly, redirect, or pipe:
+`PATH` is a directory (recursed) or a single `.py` file. The default writes the map to stdout, ready to read, redirect, or grep:
 
 ```
 scadwright graph project/
-scadwright graph project/ > project-graph.txt
-scadwright graph project/ --filter Bayonet | less
+scadwright graph project/ > project-map.txt
 scadwright graph examples/electronics-case.py
 ```
 
-### Focusing on one class: `--filter`
+### Focusing on one part: `--filter`
 
-When the project has more nodes than fit comfortably on one diagram, `--filter NAME` narrows the output to one class plus its connected neighbourhood:
+On a large project, `--filter NAME` narrows the map to one part plus its connected neighbourhood:
 
 ```
 scadwright graph project/ --filter BatteryHolder
 scadwright graph project/ --filter BatteryHolder --depth 1
-scadwright graph project/ --filter main.BatteryHolder
 ```
 
-`NAME` is the class name. If two classes in different modules share a name, pass the full dotted id (`module.ClassName`) — the error message lists the candidates when the bare name is ambiguous.
+`NAME` is the part's name. When two parts in different modules share a name, the map qualifies them with their module (`a.Part`, `b.Part`); pass that dotted form to pick one, and the error message lists the candidates when a bare name is ambiguous.
 
-`--depth N` caps the radius, counting hops in either direction (Param-of, contains, inherits all count as one): `--depth 0` keeps only the focus node, `--depth 1` adds its direct neighbours, and the default keeps the full reachable subgraph. `--depth` requires `--filter`; using it alone is an error.
+`--depth N` caps the radius, counting hops in either direction: `--depth 0` keeps only the focus part, `--depth 1` adds its direct neighbours, and the default keeps the whole reachable neighbourhood. `--depth` requires `--filter`.
 
 ### Excluding files: `--exclude`
 
-`scadwright graph` walks the project directory in full. For projects that keep historical snapshots, scratch sketches, or generated stubs alongside live code, `--exclude PATTERN` drops matching files before they enter the graph:
+`scadwright graph` walks the project in full. For a project that keeps historical snapshots, scratch sketches, or generated stubs alongside live code, `--exclude PATTERN` drops matching files before they enter the map:
 
 ```
 scadwright graph project/ --exclude OLD
@@ -179,51 +122,48 @@ scadwright graph project/ --exclude OLD --exclude scratch
 scadwright graph project/ --exclude 'OLD/2026-*'
 ```
 
-A pattern without a `/` matches any single path segment. `--exclude OLD` skips every file whose path contains a directory or file named `OLD`. Wildcards work too: `--exclude '*.test.py'` skips test files by suffix.
+A pattern without a `/` matches any single path segment, so `--exclude OLD` skips every file under a directory or named `OLD`, and `--exclude '*.test.py'` skips test files by suffix. A pattern with a `/` matches the file's project-relative path, so `--exclude OLD/2026-*` skips only the dated subdirs under `OLD`. Repeat the flag for more than one pattern; the built-in skips (`__pycache__`, `node_modules`, hidden directories) always apply.
 
-A pattern with a `/` matches the file's project-relative path. `--exclude OLD/2026-*` skips only the dated subdirs under `OLD`, leaving `OLD/keep.py` in the graph.
+## JSON output
 
-Repeat the flag to apply more than one pattern. The built-in skips (`__pycache__`, `node_modules`, hidden directories like `.git`) always apply.
-
-## Other output formats
-
-For embedding a diagram in a Markdown README, `--format mermaid` writes Mermaid `graph TD` source. Pipe it into a renderer or paste into [mermaid.live](https://mermaid.live):
-
-```
-scadwright graph project/ --format mermaid > project-graph.mmd
-scadwright graph project/ --format mermaid | mmdc -i - -o project-graph.svg
-```
-
-For programmatic consumers (custom dashboards, doc generators, diff tooling), `--format json` produces a structured payload:
+`--format json` prints the same map as structured data — for doc generators, dashboards, diff tooling, or handing to an assistant:
 
 ```
 scadwright graph project/ --format json
 ```
 
-The JSON shape is two top-level keys, `nodes` and `edges`. Each node has `id`, `label`, `kind`, plus `path` and `line` (project-relative, POSIX-style) when source location is available. Each edge has `source`, `target`, `kind`, plus `via_param` (on `uses_param` edges) or `attrs_read` (on `reads_attr` edges) when relevant.
+The shape mirrors the text: a top-level `project`, then `designs`, `components`, `specs`, and `transforms`, each an object keyed by part name. Every part carries its `location` and its relationships, with each read field listed in full:
 
-For larger projects where Mermaid layout suffers, `--format dot` produces Graphviz DOT source. Pipe through `dot` to render:
-
+```json
+{
+  "components": {
+    "Holder": {
+      "location": "main.py:9",
+      "uses_spec": [
+        {"spec": "BatterySpec", "via_param": "spec", "reads": ["cells"]}
+      ]
+    }
+  }
+}
 ```
-scadwright graph project/ --format dot | dot -Tsvg -o project-graph.svg
-scadwright graph project/ --format dot | dot -Tpng -o project-graph.png
-```
 
-Graphviz's layout engines (`dot`, `neato`, `sfdp`) handle the geometry — the same shape vocabulary applies (diamond, rounded box, cylinder, hexagon, parallelogram).
+Each relationship is stored once, on the part that owns it — a Component's `uses_spec`, a Design's `builds`. The reverse views the text map shows (`read by`, `built by`) aren't duplicated here; they invert from the forward data. So the JSON keeps one source of truth and diffs cleanly across runs.
 
-## Limitations
+## What it covers, and what it doesn't
 
-`scadwright graph` covers Component / Spec / Design / Transform class discovery, Param / equations / `build()` / class-attribute reads, composition, variant analysis, and transform usage. The following aren't covered:
+The map finds Component, Spec, Design, and Transform classes and the relationships among them: inheritance, the Spec or Component a part takes as a Param and the fields it reads, one Component building another, what each variant and morph builds, and custom-transform use. Detection follows the shapes scadwright projects actually use — composition anywhere in a method body, a variant that delegates to a helper, a morph's stages — and collapses repeats into a single relationship.
 
-- **No abstract / concrete distinction.** All Components render with the same shape, regardless of whether they're directly instantiated anywhere.
-- **Cross-project imports aren't followed.** A class whose base is in a third-party scadwright extension is categorized as `unknown` and omitted.
-- **Dynamic dispatch isn't tracked.** `cls = A if flag else B; return cls()` can't be statically resolved; both branches drop unless they're each independently instantiated.
-- **Transforms registered with computed names don't surface.** `@transform(name_var)` or `register(name_var, instance)` where the name isn't a string literal can't be resolved by static analysis; the registration drops and chained calls to it produce no edge.
-- **Star-imported transforms drop.** `from project_transforms import *` registers the names at runtime, but the consumer file's imports aren't enumerable without executing it, so the consumer's `"uses"` edges to those transforms don't appear.
+Some things static analysis can't see:
+
+- **Cross-project bases.** A class whose base lives in a third-party scadwright extension can't be categorized, so it drops from the map.
+- **Dynamic dispatch.** `cls = A if flag else B; return cls()` can't be resolved; neither branch surfaces unless it's also built directly somewhere.
+- **Transforms named at runtime.** `@transform(name_var)` or `register(name_var, ...)` with a non-literal name can't be read statically, so the transform and any calls to it drop.
+- **Star-imported transforms.** `from project_transforms import *` binds names at runtime, so a file that calls one through a star import shows no `uses Transform`.
 
 ## Troubleshooting
 
-- **A file with a syntax error is skipped, with a stderr warning.** Classes defined in unparseable files don't appear in the graph; the warning lists each skipped file and the parse error so you know what's missing. Fix the syntax and re-run.
-- **A class doesn't appear in the graph.** Confirm its base resolves to one of `scadwright.Component`, `scadwright.Spec`, or `scadwright.Design` — directly or via project-local intermediate classes. Bases imported from external packages categorize as `unknown` and drop the class.
-- **Equation-derived edges are missing.** If equations don't validate (the LSP would mark them with squiggles), attribute-read edges from those equations are dropped. The rest of the graph still builds. Fix the validation error and re-run.
-- **A transform call doesn't produce an edge.** The chained `.X(...)` name doesn't match a registered project transform. Cause: `X` is a curated framework verb (`.translate`, `.rotate`, ...), a Python method on an unrelated object, or a typo. Fix: confirm the project defines `@transform("X")`, `class MyTransform(Transform): name = "X"`, or `register("X", ...)` with `X` as a string literal.
+- **A file with a syntax error is skipped.** A stderr warning names the file and the parse error; classes in it won't appear. Fix the syntax and re-run.
+- **A part is missing.** Its base has to resolve to `Component`, `Spec`, or `Design` — directly or through project-local intermediates. A base imported from an external package drops the class.
+- **A variant reads `no parts traced`.** Its return doesn't resolve to a project Component: it builds only primitives, or uses a pattern beyond direct instantiation, a `self.part` attribute, or delegation to a helper method. Read the variant to see what it makes.
+- **An equation's reads are missing.** The equations block doesn't validate (the LSP would mark it); its attribute reads drop while the rest of the map still builds. Fix the validation error and re-run.
+- **A transform call shows no `uses Transform`.** The chained `.X(...)` isn't a registered project transform — `X` is a built-in verb (`.translate`, `.rotate`), an unrelated method, or a typo. Confirm the project defines `@transform("X")`, a `Transform` subclass with `name = "X"`, or `register("X", ...)` with a literal name.

@@ -50,6 +50,7 @@ __all__ = [
     "AttributeRead",
     "CompositionRef",
     "InvalidBinding",
+    "MorphInfo",
     "ParamRef",
     "VariantInfo",
     "ancestor_classes",
@@ -61,6 +62,7 @@ __all__ = [
     "extract_class_attribute_reads",
     "extract_component_instantiations",
     "extract_equations_attribute_reads",
+    "extract_morphs",
     "extract_params",
     "extract_transform_uses",
     "extract_variants",
@@ -281,6 +283,11 @@ def extract_variants(
     class_attrs = extract_class_attr_components(
         cls, file_info, registry, project_root,
     )
+    methods = {
+        stmt.name: stmt
+        for stmt in cls.ast_node.body
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
     out: list[VariantInfo] = []
     for stmt in cls.ast_node.body:
         if not isinstance(
@@ -290,7 +297,7 @@ def extract_variants(
         if not _is_variant_decorated(stmt, file_info):
             continue
         builds = _variant_build_targets(
-            stmt, class_attrs, file_info, registry, project_root,
+            stmt, class_attrs, file_info, registry, project_root, methods,
         )
         out.append(VariantInfo(
             method_name=stmt.name,
@@ -364,21 +371,30 @@ def _variant_build_targets(
     file_info: FileInfo,
     registry: ClassRegistry,
     project_root: Path,
+    methods: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] | None = None,
 ) -> tuple[ResolvedClass, ...]:
     """Walk a variant method body for the Components it builds.
 
-    Two surfacing rules:
+    Surfacing rules:
 
     - Direct ``OtherComponent(...)`` instantiation → that Component.
     - ``self.X`` where ``X`` is a class-level Component attribute
       on the Design → that Component.
+    - ``self.m(...)`` where ``m`` is another method on the same
+      Design → follow into ``m``'s body and apply the same rules.
+      This catches variants that delegate to a shared helper
+      (``return self._locked()``); ``methods`` maps the Design's
+      method names to their definitions. Recursion is guarded by
+      method name so mutually-calling helpers don't loop.
 
     Targets are deduplicated by ``(file_path, name)`` and returned
     sorted by ``(module_path, name)`` for deterministic graph
     output.
     """
+    methods = methods or {}
     seen: set[tuple[Path, str]] = set()
     out: list[ResolvedClass] = []
+    walked: set[str] = set()
 
     def add(target: ResolvedClass) -> None:
         key = (target.file_path, target.name)
@@ -387,23 +403,109 @@ def _variant_build_targets(
         seen.add(key)
         out.append(target)
 
-    for sub in ast.walk(method):
-        if isinstance(sub, ast.Call):
-            target = _resolve_callee(
-                sub.func, file_info, registry, project_root,
-            )
-            if target is not None and target.category == "component":
-                add(target)
-        elif (
-            isinstance(sub, ast.Attribute)
-            and isinstance(sub.value, ast.Name)
-            and sub.value.id == "self"
-        ):
-            target = class_attrs.get(sub.attr)
-            if target is not None:
-                add(target)
+    def walk(node: ast.AST) -> None:
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Call):
+                func = sub.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "self"
+                    and func.attr in methods
+                    and func.attr not in walked
+                ):
+                    walked.add(func.attr)
+                    walk(methods[func.attr])
+                    continue
+                target = _resolve_callee(
+                    func, file_info, registry, project_root,
+                )
+                if target is not None and target.category == "component":
+                    add(target)
+            elif (
+                isinstance(sub, ast.Attribute)
+                and isinstance(sub.value, ast.Name)
+                and sub.value.id == "self"
+            ):
+                target = class_attrs.get(sub.attr)
+                if target is not None:
+                    add(target)
+
+    walk(method)
     out.sort(key=lambda c: (c.module_path or "", c.name))
     return tuple(out)
+
+
+@dataclass(frozen=True)
+class MorphInfo:
+    """One ``name = morph(stages=[...])`` declaration on a Design.
+
+    ``name`` is the bound attribute name — the morph is itself a
+    variant by that name. ``stages`` is the ordered tuple of
+    ``@variant`` method names the morph chains. ``line`` is the
+    1-based source line of the assignment. The Components a morph
+    builds aren't stored here: they're the union of its stages'
+    build targets, computed by the graph builder where both are in
+    hand.
+    """
+    name: str
+    stages: tuple[str, ...]
+    line: int
+
+
+def extract_morphs(
+    cls: ResolvedClass,
+    file_info: FileInfo,
+) -> tuple[MorphInfo, ...]:
+    """Find ``name = morph(stages=[...])`` declarations on a Design.
+
+    A morph registers as a variant in its own right (see
+    :class:`scadwright.design.Design`), so it needs a node and edges
+    like any variant — but :func:`extract_variants` only walks
+    decorated methods, never class-level assignments. This fills the
+    gap. Returns ``()`` for non-Designs and Designs without morphs.
+    """
+    if cls.category != "design":
+        return ()
+    out: list[MorphInfo] = []
+    for stmt in cls.ast_node.body:
+        binding = _class_attr_binding(stmt)
+        if binding is None:
+            continue
+        name, call = binding
+        callee = _decorator_name(call.func)
+        if callee is None:
+            continue
+        if not resolves_to_scadwright_name(
+            callee, file_info, "morph",
+            ("scadwright", "scadwright.api", "scadwright.api.morph"),
+        ):
+            continue
+        out.append(MorphInfo(
+            name=name, stages=_morph_stages(call), line=stmt.lineno,
+        ))
+    return tuple(out)
+
+
+def _morph_stages(call: ast.Call) -> tuple[str, ...]:
+    """Pull the string-literal stage names from a ``morph(...)`` call.
+
+    Reads the ``stages=`` keyword (or the first positional argument)
+    when it's a list literal; non-literal entries drop, since a stage
+    name computed at runtime can't be resolved statically.
+    """
+    elts: list[ast.expr] = []
+    for kw in call.keywords:
+        if kw.arg == "stages" and isinstance(kw.value, ast.List):
+            elts = kw.value.elts
+            break
+    else:
+        if call.args and isinstance(call.args[0], ast.List):
+            elts = call.args[0].elts
+    return tuple(
+        e.value for e in elts
+        if isinstance(e, ast.Constant) and isinstance(e.value, str)
+    )
 
 
 # =============================================================================
