@@ -1,4 +1,4 @@
-# Integrating legacy SCAD code
+# Using existing SCAD files
 
 The normal way to structure a SCADwright project is entirely in Python — Components as classes, transforms as methods, libraries as Python packages. You don't need SCAD's `use` or `include` for that.
 
@@ -41,12 +41,8 @@ render(cube(10), "out.scad", scad_include=["project_defaults.scad"])
 
 Both `scad_use` and `scad_include` accept lists of strings; the order you pass is the order emitted. `use` lines come before `include` lines in the output.
 
-## Why this is separate from the AST
-
-`use` and `include` aren't geometry — they're file-level declarations. They don't fit inside the tree of shapes SCADwright builds, so they're specified at the boundary where SCADwright hands the output to OpenSCAD, not inside the shape expression.
-
-If your project is mostly SCAD with SCADwright as a thin wrapper, this is the seam between the two worlds. If your project is mostly Python, you probably won't reach for these — prefer writing reusable shapes as Python modules and Components.
+`use` and `include` apply to the whole output file, not to any one shape, so you pass them to `render`, `emit`, or `emit_str` rather than chaining them onto a shape.
 
 ## See also
 
-- [`scad_import`](primitives_3d.md#scad_import) — for bringing *external geometry* (STL, SVG, DXF, 3MF, OFF, AMF) into a SCADwright design. This is the common case; it belongs in the primitives chapter, not here.
+- [`scad_import`](primitives_3d.md#scad_import) — brings *external geometry* (STL, SVG, DXF, 3MF, OFF, AMF) into a design. To load a mesh rather than SCAD source, start there.

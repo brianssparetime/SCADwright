@@ -167,8 +167,6 @@ Ellipsoid(a=10, dy=16, c=6)      # mixed
 
 The bbox-derived face anchors (`top`, `bottom`, `lside`, `rside`, `front`, `back`) sit exactly on the six axis-tip points — the ellipsoid is tangent to its bbox at those tips — so `.attach()` lines up cleanly without custom anchors.
 
-When all three semi-axes are equal, the build short-circuits to a plain `sphere(r=a)` (no redundant scale wrapper in the emitted SCAD).
-
 ## `Elbow(id, od, thk, bend_radius, angle=90)`
 
 Hollow pipe bend — partial torus with wall thickness. The two end-faces are perpendicular to the tube axis at angle=0 and angle=`angle`, both planar with `rim_radius=od/2` so they mate cleanly with another pipe via `attach()`. `id`/`od`/`thk` follow the same pattern as `Tube` (`od = id + 2·thk`); specify any two. Default `angle=90` (the most common pipe bend); `angle ∈ (0, 360]`.

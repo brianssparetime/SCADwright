@@ -184,14 +184,7 @@ plate.add_text(
 
 ## Curved surfaces
 
-When `on=` names an anchor with curved-surface geometry, `add_text()` wraps the label along the surface automatically. Shapes with curved/rim anchors:
-
-- `cylinder()`: `outer_wall` (cylindrical or conical), plus angle and radial placement on `top` and `bottom`.
-- `Tube`: `outer_wall`, `inner_wall`, plus the same on `top` and `bottom`.
-- `Funnel`: `outer_wall` and `inner_wall` (conical), plus the same on `top` and `bottom`.
-- `Barrel`: `outer_wall` and `inner_wall` (curved meridian), plus the same on `top` and `bottom`.
-
-See [attach.md's shape table](attach.md#shapes-with-extra-anchors) for the full list. Spherical anchors aren't supported by `add_text()`; if you need a label on a sphere, label a tangent cylinder.
+When `on=` names a curved-surface anchor, `add_text()` wraps the label along the surface. Cylinder, `Tube`, `Funnel`, and `Barrel` walls and rims carry these anchors; see [attach.md's shape table](attach.md#shapes-with-extra-anchors) for the full list. Spherical anchors aren't supported; to label a sphere, label a tangent cylinder.
 
 The placement options (`angle=`, `at_z=`, `at_radial=`) mean the same things as in `attach()`. See [Placement on cylinders, cones, and spheres](attach.md#placement-on-cylinders-cones-and-spheres) for their canonical definitions. The sections below cover what's specific to text wrapping.
 

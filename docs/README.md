@@ -41,7 +41,7 @@ Reading them in order is a guided tour of the constructs in context.
 - [Extrusions](extrusions.md) — turning 2D shapes into 3D (`linear_extrude`, `rotate_extrude`)
 - [Math](math.md) — `scadwright.math` SCAD trig (in degrees).  Python trig works fine too.
 - [Animation and viewpoints](animation.md) — `t()` for `$t`-driven shapes, `cond()` for ternary, `viewpoint()` for the default camera. See also [Morph](morph.md) for one-line animation between variants.
-- [Integrating legacy SCAD code](scad_interop.md) — emitting `use <...>` / `include <...>` at the boundary to an existing SCAD codebase
+- [Using existing SCAD files](scad_interop.md) — emitting `use <...>` / `include <...>` at the boundary to an existing SCAD codebase
 
 ### SCADwright extended functionality:
 

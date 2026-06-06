@@ -1,6 +1,6 @@
 # Quick Start / Organizing a project
 
-SCADwright projects span a range from "a few lines of primitives" to "multi-part assembly with a dozen measurements." You don't need to learn the full feature set up front: start simple, and layer on structure only when the project calls for it.
+SCADwright is designed to let you start simple, but also to provide useful structure as your project gets more complicated.
 
 For examples at each level of complexity, see [examples/](../examples/README.md).
 
@@ -29,11 +29,11 @@ part = difference(
 render(part, "plate.scad")
 ```
 
-Every measurement appears once, at its point of use. Zero ceremony.
+Every measurement appears once, at its point of use. 
 
 ### Stage 2: Wrap in a Component
 
-When the part has enough parameters that you want to name them, or you need a caller to read dimensions off the part, wrap it in a [Component](components.md). Variables in `equations` are auto-declared as float parameters; non-float types use `Param(...)` directly.
+When the part has enough parameters that you want to name them, or you need a caller to read dimensions off the part, wrap it in a [Component](components.md). Variables in `equations` are auto-declared as float parameters.
 
 ```python
 from scadwright import Component, Param, render
@@ -125,12 +125,14 @@ The transition from Stage 1 to Stage 3 is additive: you wrap existing code in a 
 
 ## Keep generic Components portable
 
-Never put project-specific defaults on a generic Component. If a value belongs to one design, put it on a concrete subclass. If it's genuinely tunable, leave it as a required parameter, or give it a geometrically neutral default like `corner_r=0`.
+Putting project-specific defaults on a Component limits its reusability. 
+
+If a value belongs to one design, put it on a concrete subclass. If it's genuinely tunable, leave it as a required parameter, or give it a geometrically neutral default like `corner_r=0`.
 
 ```python
-# Wrong: the 80 mm width is a project choice baked into a reusable class.
+# Bad: the 80 mm width is baked in and can't be easily overriden.
 class Plate(Component):
-    width = Param(float, default=80)
+    width = 80
 
 # Right: Plate stays reusable; MyPlate holds the project number.
 class Plate(Component):
@@ -142,9 +144,9 @@ class MyPlate(Plate):
 
 ## Sharing measurements across parts
 
-The three stages grow a single part. Once a project has *two* parts that must agree on a measurement, that number needs one home. Put it on both parts and a later edit changes one and silently breaks the fit.
+A [Spec](specs_and_adjustments.md#your-first-spec) keeps the shared numbers in one place: a small class of dimensions that one or more parts can read from.
 
-Say a cover bolts onto the plate: both need the same mount-hole pattern, so `hole_d` and `hole_spacing` aren't the plate's alone anymore — they describe the interface between the parts. Put that interface in a [Spec](specs_and_adjustments.md#your-first-spec), a small frozen class that holds dimensions and runs the same `equations` block a Component does. Each part takes the Spec as a parameter and reads from it:
+This avoids the potential for mis-matches possible if the same dimensions is duplicated in different places, and is be more organized than reading those dimensions from an arbitrary one of the multiple parts sharing it.
 
 ```python
 from scadwright import Spec
@@ -174,9 +176,11 @@ class MyPlate(Plate):
     thk = 5
 ```
 
-A `Cover` written the same way, given the same `MountInterface`, has holes that line up by construction. Change `hole_spacing` in the Spec and both parts follow on the next render. Passing the Spec in as a parameter keeps `Plate` portable: any Spec carrying `hole_d` and `hole_spacing` drops in.
+Parts built from one Spec agree by construction. Write `Cover` the same way with the same `MountInterface`, and its holes match the plate's; change `hole_spacing` once, and both parts follow on the next render.
 
-A Spec is the home for any measurement two parts share, and for measurements taken off something external (a battery, a bolt, a lens mount) that several parts size against. Manufacturing fudges go in the same Spec as [adjustments](specs_and_adjustments.md#adjustments) on their own lines, so the design number stays clean. The [pentacon-six-mount example](../examples/README.md) is built this way: two bayonet caps, each reading one shared spec.
+Passing the Spec in as a parameter keeps `Plate` generic. Any Spec carrying `hole_d` and `hole_spacing` works, so the same `Plate` serves another project with a different mount.
+
+Use a Spec for any measurement two parts share, or for one measured off something external (a battery, a bolt, a lens mount) that several parts size against. The [pentacon-six-mount example](../examples/README.md) reads one shared spec across two bayonet caps.
 
 ## Splitting across files
 

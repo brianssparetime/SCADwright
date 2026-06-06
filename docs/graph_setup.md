@@ -1,8 +1,8 @@
 # Project dependency graph
 
-`scadwright graph PROJECT` walks a scadwright project and emits a dependency graph (plain-text ASCII by default; also Mermaid, JSON, and Graphviz DOT) showing how Components, Specs, Designs, and Transforms relate. Useful for re-orienting on a project after time away, code review (does this change touch the components I expected?), refactoring (who reads this attribute?), and onboarding a collaborator.
+`scadwright graph PROJECT` walks a scadwright project and emits a dependency graph (plain-text ASCII by default; also Mermaid, JSON, and Graphviz DOT) showing how Components, Specs, Designs, and Transforms relate. Useful for re-orienting on a project after time away, confirming in review that a change touches only the components you expected, and finding who reads an attribute before a refactor.
 
-The analyzer is fully static — it parses `.py` files via `ast.parse` and never imports user code. A scadwright project is everything reachable from the path you pass, recursing into subdirectories.
+The analyzer is fully static: it reads your `.py` files without importing or running them. A scadwright project is everything reachable from the path you pass, recursing into subdirectories.
 
 ## Install
 
@@ -14,7 +14,7 @@ The `graph` subcommand is part of the base `scadwright` install — no extras ne
 scadwright graph PATH [--format ascii|mermaid|json|dot] [--filter NAME] [--depth N]
 ```
 
-`PATH` may be a directory (recursed) or a single Python file. The default `--format ascii` writes a section-structured plain-text representation to stdout. The output is readable in a terminal, greppable, and compact for scripts and AI assistants:
+`PATH` may be a directory (recursed) or a single Python file. The default `--format ascii` writes plain text to stdout that you can read directly or grep:
 
 ```
 scadwright graph project/
@@ -30,29 +30,7 @@ Single-file projects work too:
 scadwright graph examples/electronics-case.py
 ```
 
-For embedding a diagram in a Markdown README, `--format mermaid` writes Mermaid `graph TD` source. Pipe it into a renderer or paste into [mermaid.live](https://mermaid.live):
-
-```
-scadwright graph project/ --format mermaid > project-graph.mmd
-scadwright graph project/ --format mermaid | mmdc -i - -o project-graph.svg
-```
-
-For programmatic consumers (custom dashboards, doc generators, diff tooling), `--format json` produces a structured payload:
-
-```
-scadwright graph project/ --format json
-```
-
-The JSON shape is two top-level keys, ``nodes`` and ``edges``. Each node has ``id``, ``label``, ``kind``, plus ``path`` and ``line`` (project-relative, POSIX-style) when source location is available. Each edge has ``source``, ``target``, ``kind``, plus ``via_param`` (on ``uses_param`` edges) or ``attrs_read`` (on ``reads_attr`` edges) when relevant.
-
-For larger projects where Mermaid layout suffers, `--format dot` produces Graphviz DOT source. Pipe through `dot` to render:
-
-```
-scadwright graph project/ --format dot | dot -Tsvg -o project-graph.svg
-scadwright graph project/ --format dot | dot -Tpng -o project-graph.png
-```
-
-Graphviz's layout engines (`dot`, `neato`, `sfdp`) handle the geometry — the same shape vocabulary applies (diamond, rounded box, cylinder, hexagon, parallelogram).
+The other three formats serve embedding and tooling: `--format mermaid` for Markdown diagrams, `--format json` for programmatic consumers, and `--format dot` for large graphs that Mermaid lays out poorly. See [Other output formats](#other-output-formats).
 
 ## Focusing on one class: `--filter`
 
@@ -226,6 +204,32 @@ Variant build-target detection picks up the patterns scadwright projects actuall
 - `return SomeComponent()` — direct instantiation in the variant body.
 - `return union(self.a, self.b)` — both Components surface as build targets.
 - `return helper(self.x)` — `self.x` resolves through the class-attribute map.
+
+## Other output formats
+
+For embedding a diagram in a Markdown README, `--format mermaid` writes Mermaid `graph TD` source. Pipe it into a renderer or paste into [mermaid.live](https://mermaid.live):
+
+```
+scadwright graph project/ --format mermaid > project-graph.mmd
+scadwright graph project/ --format mermaid | mmdc -i - -o project-graph.svg
+```
+
+For programmatic consumers (custom dashboards, doc generators, diff tooling), `--format json` produces a structured payload:
+
+```
+scadwright graph project/ --format json
+```
+
+The JSON shape is two top-level keys, ``nodes`` and ``edges``. Each node has ``id``, ``label``, ``kind``, plus ``path`` and ``line`` (project-relative, POSIX-style) when source location is available. Each edge has ``source``, ``target``, ``kind``, plus ``via_param`` (on ``uses_param`` edges) or ``attrs_read`` (on ``reads_attr`` edges) when relevant.
+
+For larger projects where Mermaid layout suffers, `--format dot` produces Graphviz DOT source. Pipe through `dot` to render:
+
+```
+scadwright graph project/ --format dot | dot -Tsvg -o project-graph.svg
+scadwright graph project/ --format dot | dot -Tpng -o project-graph.png
+```
+
+Graphviz's layout engines (`dot`, `neato`, `sfdp`) handle the geometry — the same shape vocabulary applies (diamond, rounded box, cylinder, hexagon, parallelogram).
 
 ## Limitations
 

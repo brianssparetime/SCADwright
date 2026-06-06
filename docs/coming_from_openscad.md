@@ -1,8 +1,8 @@
 # Coming from OpenSCAD
 
-If you know OpenSCAD and you're looking for a feature by name, this page maps the common ones to their SCADwright equivalent. SCADwright deliberately doesn't implement SCAD's language-level features (loops, conditionals, let-bindings, functions, modules) at the emit layer — you get those from Python instead, and the result is usually shorter and more expressive.
+Many OpenSCAD primitives have direct analogs in SCADwright that function similarly (e.g. cube() and translate()).
 
-Not exhaustive; covers what SCAD users commonly stumble over.
+However, this page looks at other OpenSCAD features (loops, conditionals, let-bindings, functions, modules) that lack a direct analog, and are handled by a combination of pure python and more advanced SCADwright concepts. 
 
 ## Side-by-side: migrating a script
 
@@ -43,22 +43,25 @@ from scadwright.boolops import difference
 from scadwright.primitives import cylinder
 from scadwright.shapes import rounded_rect
 
-plate_w, plate_l, thk = 80, 40, 5
-hole_d, hole_spacing = 6, 40
+plate_w = 80
+plate_l = 40
+thk = 5
+hole_d = 6 
+hole_spacing = 40
 
-body = rounded_rect(plate_w, plate_l, r=3, fn=32).linear_extrude(height=thk)
-hole = cylinder(h=thk + 2, d=hole_d, fn=32).down(1)
+body = rounded_rect(plate_w, plate_l, r=3).linear_extrude(height=thk)
+hole = cylinder(h=thk + 2, d=hole_d).down(1)
 
 part = difference(
     body,
     hole.left(hole_spacing / 2),
     hole.right(hole_spacing / 2),
 )
-
-render(part, "plate.scad")
+with resolution(fn=32):
+    render(part, "plate.scad")
 ```
 
-The shapes and operations are the same — `difference`, `cylinder`, `minkowski` (via `rounded_rect`). The differences: Python variables instead of SCAD globals, `fn=32` passed to the primitives (or use `with resolution(fn=32):`), and `render()` at the end to write the output file. No `module` declaration needed for a one-off part.
+The shapes and operations are the same — `difference`, `cylinder`, `minkowski` (via `rounded_rect`). The differences: Python variables instead of SCAD globals, and resolution handled for the render using python's `with`.
 
 ## Control flow
 
@@ -81,11 +84,11 @@ from scadwright.primitives import cube
 # Python loop:
 parts = []
 for i in range(10):
-    parts.append(cube(5).translate([i*10, 0, 0]))
+    parts.append(cube(5).right(i*10))
 row = union(*parts)
 
 # List comprehension:
-row = union(*[cube(5).translate([i*10, 0, 0]) for i in range(10)])
+row = union(*[cube(5).right(i*10) for i in range(10)])
 
 # Simpler when the spacing is uniform along an axis:
 row = cube(5).array(count=10, spacing=10, axis="x")
@@ -205,7 +208,7 @@ class Bracket(Component):
 Bracket(width=40, height=20)
 ```
 
-Components beat SCAD modules in two ways: you can read computed attributes (`bracket.mount_offset`) without rendering, and the class can carry an `equations` block of relationships SCADwright fills in for you and rules it checks when you make the part. See [Components](components.md).
+Components have two main advantages over SCAD modules: you can read computed attributes (`bracket.mount_offset`) from outside, and an `equations` block that defines relationships and constraints so the Component can accept any set of arguments from which the rest can be calculated. See [Components](components.md).
 
 ### User-defined functions
 
@@ -244,7 +247,7 @@ SCAD's `$children` (number of children passed to a module) doesn't apply — in 
 
 ## Shared dimensions across parts
 
-For a one-off script, SCAD's module-level globals translate to plain Python module-level variables (see the side-by-side example at the top). When several parts share the same dimensions (a battery's measurements, a fastener's size, a panel stock's thickness), and especially when those parts live across multiple files, use a [Spec](specs_and_adjustments.md):
+For a one-off script, SCAD's top-of-file globals become plain Python module variables (see the side-by-side example above). When several parts share the same dimensions — a battery's measurements, a fastener's size, a panel stock's thickness — collect them in a [Spec](specs_and_adjustments.md):
 
 ```python
 from scadwright import Spec
@@ -257,7 +260,7 @@ class AA(Spec):
     """
 ```
 
-A Spec is a group of related dimensions you collect in one place. You write them once, and you read them anywhere as plain attributes (`AA.d`, `AA.length`). Use one when you have a few values (a battery, a panel stock, measurements from something external you want to interface or connect with) that several parts share. The closest SCAD analog is "constants at the top of a file" or `include <dimensions.scad>` for sharing across files; a Spec replaces both with a frozen class that every importer reads directly.
+Every part imports the one `Spec` and reads its values as attributes (`AA.d`, `AA.length`). It is the analog of SCAD constants at the top of a file, or `include <dimensions.scad>` for sharing across files — but as a class the parts read directly, so changing a number in one place reaches every part. [Specs and adjustments](specs_and_adjustments.md) covers the full syntax.
 
 ### Manufacturing fudges (printer overshoot, slop, shrinkage)
 
@@ -407,7 +410,7 @@ values = [random.uniform(min_v, max_v) for _ in range(count)]
 
 ## Including other SCAD files
 
-SCAD's `use <file>` and `include <file>` are supported as emit-time keyword arguments on `render` / `emit_str` / `emit`. See [Integrating legacy SCAD code](scad_interop.md) — this is the rare case; SCADwright's default assumption is that shared code lives in Python modules, not SCAD files.
+SCAD's `use <file>` and `include <file>` are supported as emit-time keyword arguments on `render` / `emit_str` / `emit`. See [Using existing SCAD files](scad_interop.md) — this is the rare case; SCADwright's default assumption is that shared code lives in Python modules, not SCAD files.
 
 ## BOSL2's `attach()` system
 

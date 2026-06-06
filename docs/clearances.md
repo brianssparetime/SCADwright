@@ -23,7 +23,7 @@ DEFAULT_CLEARANCES = Clearances(sliding=0.1, press=0.1, snap=0.2, finger=0.2)
 
 Each category maps to exactly one fit family. Every field is `float | None`; `None` means "inherit from the enclosing scope."
 
-`DEFAULT_CLEARANCES` are starter values — **tune for your printer on day one**. They're framework-level, importable, and meant to be overridden.
+`DEFAULT_CLEARANCES` are starting values — **override them for your printer and material**.
 
 ## Setting clearances
 
