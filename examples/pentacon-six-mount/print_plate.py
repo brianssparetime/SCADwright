@@ -25,8 +25,8 @@ class print_plate(Design):
     body = PentaconSixBodyCap()
     rear = PentaconSixRearLensCap()
 
-    @variant(fn=96, default=True)
-    def bed(self):
+    @variant(fn=128, default=True)
+    def p6_print(self):
         return arrange_on_bed(self.body, self.rear)
 
 
