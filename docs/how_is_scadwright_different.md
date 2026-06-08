@@ -1,6 +1,6 @@
 # How is SCADwright different?
 
-If you searched "Python OpenSCAD" or "Python parametric CAD," several other projects probably came up. Here is how SCADwright relates to each. The goal isn't to argue SCADwright wins on every axis. It's to help you pick the right tool for what you're building.
+If you searched "Python OpenSCAD" or "Python parametric CAD," you probably found SolidPython, CadQuery, or Build123d, among others. Here is how SCADwright relates to each. The goal isn't to argue SCADwright wins on every axis. It's to help you pick the right tool for what you're building.
 
 ## SolidPython / SolidPython2
 

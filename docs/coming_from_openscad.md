@@ -2,7 +2,7 @@
 
 Many OpenSCAD primitives have direct analogs in SCADwright that function similarly (e.g. cube() and translate()).
 
-However, this page looks at other OpenSCAD features (loops, conditionals, let-bindings, functions, modules) that lack a direct analog, and are handled by a combination of pure python and more advanced SCADwright concepts. 
+However, this page looks at other OpenSCAD features (loops, conditionals, let-bindings, functions, modules) that lack a direct analog, and are handled by a combination of plain Python and SCADwright constructs like Components, Specs, and custom transforms.
 
 ## Side-by-side: migrating a script
 
