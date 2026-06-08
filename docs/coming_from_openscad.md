@@ -75,7 +75,7 @@ for (i = [0:9])
         cube(5);
 ```
 
-SCADwright — use a Python for-loop plus `union`, a list comprehension, or the `array` helper:
+SCADwright uses a Python for-loop plus `union`, a list comprehension, or the `array` helper:
 
 ```python
 from scadwright.boolops import union
@@ -103,7 +103,7 @@ if (mode == "solid") cube(10);
 else                 sphere(r=5);
 ```
 
-SCADwright — inside a `Component.build()`, use plain Python:
+In SCADwright, use plain Python inside a `Component.build()`:
 
 ```python
 class Widget(Component):
@@ -124,7 +124,7 @@ points = [for (i=[0:35]) [10*cos(i*10), 10*sin(i*10)]];
 polygon(points);
 ```
 
-SCADwright — Python list comprehension:
+SCADwright uses a Python list comprehension:
 
 ```python
 from scadwright import math as scmath
@@ -142,7 +142,7 @@ SCAD:
 let (r = d/2, h = sqrt(3) * r) ...
 ```
 
-SCADwright — just Python variable assignment:
+In SCADwright, it's plain Python variable assignment:
 
 ```python
 r = d / 2
@@ -157,7 +157,7 @@ SCAD:
 size = large ? 20 : 10;
 ```
 
-SCADwright — Python conditional expression:
+SCADwright uses a Python conditional expression:
 
 ```python
 size = 20 if large else 10
@@ -189,7 +189,7 @@ module bracket(width, height) {
 bracket(40, 20);
 ```
 
-SCADwright — [Components](components.md):
+In SCADwright, use [Components](components.md):
 
 ```python
 from scadwright import Component
@@ -212,7 +212,7 @@ Components have two main advantages over SCAD modules: you can read computed att
 
 ### User-defined functions
 
-SCAD's function syntax limits you to expressions. Python functions have no such restriction — write any Python function:
+SCAD's function syntax limits you to expressions. Python functions have no such restriction. Write any Python function:
 
 ```python
 def hex_grid_points(cols, rows, spacing):
@@ -243,7 +243,7 @@ SCAD's `children()` passes the caller-provided subtree into a module. SCADwright
     cube([10, 10, 5]).chamfer_top(depth=1)
     ```
 
-SCAD's `$children` (number of children passed to a module) doesn't apply — in SCADwright, you receive the actual children as Python arguments and can `len()` them if needed.
+SCAD's `$children` (number of children passed to a module) doesn't apply. In SCADwright you receive the actual children as Python arguments and can `len()` them if needed.
 
 ## Shared dimensions across parts
 
@@ -260,7 +260,7 @@ class AA(Spec):
     """
 ```
 
-Every part imports the one `Spec` and reads its values as attributes (`AA.d`, `AA.length`). It is the analog of SCAD constants at the top of a file, or `include <dimensions.scad>` for sharing across files — but as a class the parts read directly, so changing a number in one place reaches every part. [Specs and adjustments](specs_and_adjustments.md) covers the full syntax.
+Every part imports the one `Spec` and reads its values as attributes (`AA.d`, `AA.length`). It plays the role of SCAD's top-of-file constants, or `include <dimensions.scad>` for sharing across files. Because it's a class, the parts read its values directly, so changing one number reaches every part. [Specs and adjustments](specs_and_adjustments.md) covers the full syntax.
 
 ### Manufacturing fudges (printer overshoot, slop, shrinkage)
 
@@ -350,7 +350,7 @@ Fully supported as chained methods: `.highlight()`, `.background()`, `.disable()
 
 ### `$preview`
 
-OpenSCAD sets `$preview = true` during F5 preview and `false` during F6 render. SCADwright doesn't have a direct equivalent — the closest concept is [variants](variants.md):
+OpenSCAD sets `$preview = true` during F5 preview and `false` during F6 render. SCADwright has no direct equivalent. The closest concept is [variants](variants.md):
 
 ```python
 from scadwright.design import Design, run, variant
@@ -410,7 +410,7 @@ values = [random.uniform(min_v, max_v) for _ in range(count)]
 
 ## Including other SCAD files
 
-SCAD's `use <file>` and `include <file>` are supported as emit-time keyword arguments on `render` / `emit_str` / `emit`. See [Using existing SCAD files](scad_interop.md) — this is the rare case; SCADwright's default assumption is that shared code lives in Python modules, not SCAD files.
+SCAD's `use <file>` and `include <file>` are supported as emit-time keyword arguments on `render` / `emit_str` / `emit`. See [Using existing SCAD files](scad_interop.md). This is the rare case: SCADwright assumes shared code lives in Python modules, not SCAD files.
 
 ## BOSL2's `attach()` system
 
@@ -425,9 +425,9 @@ Unlike BOSL2, anchors don't appear on every primitive as keyword arguments, and 
 
 See [Attaching shapes](attach.md) for the `attach()` reference and [Anchors](anchors.md) for the data type and authoring API.
 
-For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#putting-things-on-curved-surfaces-bridgetrue).
+For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True`. It adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#putting-things-on-curved-surfaces-bridgetrue).
 
-SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. For a whole set of touching parts, `fuse(*parts)` does it in one call, and `stack(*parts)` builds a column and fuses the joints. Both replace the manual `+0.01` you would otherwise scatter through a SCAD `union()` of abutting pieces. 
+SCADwright also automates epsilon overlap: `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. For a whole set of touching parts, `fuse(*parts)` does it in one call, and `stack(*parts)` builds a column and fuses the joints. Both replace the manual `+0.01` you would otherwise scatter through a SCAD `union()` of abutting pieces. 
 
 ## Text on a 3D shape
 
@@ -447,4 +447,4 @@ A short list of things that SCAD users occasionally ask about:
 - **Assignment-in-expression.** Python doesn't have it (`:=` walrus notwithstanding); write two lines.
 - **SCAD's `?:` short-circuit for building large comprehensions.** Use Python generator expressions and `filter(...)`.
 
-If you run into something not covered here, it probably has a clean Python equivalent — or it's a legitimate gap. Open an issue with the use case.
+If you run into something not covered here, it probably has a clean Python equivalent, or it's a legitimate gap. Open an issue with the use case.
