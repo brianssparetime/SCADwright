@@ -58,6 +58,34 @@ def align_anchor_to_z_up(anchor):
     return R.compose(T)
 
 
+def build_cross_section_slab(node, anchor, eps, *, context: str = "cross-section fuse"):
+    """Return the eps slab at ``anchor``'s plane, without unioning it into
+    ``node``.
+
+    Aligns ``anchor.position`` to the origin and ``anchor.normal`` to +Z,
+    takes ``projection(cut=True)`` to extract the 2D cross-section,
+    ``linear_extrude``s by ``eps``, and applies the inverse alignment so the
+    slab lies on the +normal side of the anchor. The caller decides what to
+    do with it: ``cross_section_extend`` unions it back into ``node``; the
+    N-ary fuse path collects slabs and unions once.
+
+    Raises via ``validate_planar_anchor_for_cross_section`` if the anchor
+    isn't on the shape's outermost face along its normal.
+    """
+    from scadwright.ast.transforms import MultMatrix
+
+    validate_planar_anchor_for_cross_section(node, anchor, context=context)
+    m = align_anchor_to_z_up(anchor)
+    m_inv = m.invert()
+    loc = node.source_location
+    slab = (
+        MultMatrix(matrix=m, child=node, source_location=loc)
+        .projection(cut=True)
+        .linear_extrude(height=eps)
+    )
+    return MultMatrix(matrix=m_inv, child=slab, source_location=loc)
+
+
 def validate_planar_anchor_for_cross_section(node, anchor, *, context: str = "cross-section fuse"):
     """Raise ``ValidationError`` if ``anchor`` doesn't satisfy the
     necessary conditions for a non-degenerate cross-section on ``node``.

@@ -14,6 +14,8 @@ Everything on this page works on flat-face contacts. For attaching things to the
 | Drill a cutter through a parent shape | `cutter.through(parent)` inside `difference()` |
 | Combine two parts symmetrically — either side may carry the eps lever | `fuse(a, b)` from `scadwright.boolops` (peer auto-match form) |
 | Same, with explicit anchors and bond/bridge control | `fuse(a, b, on=..., using_anchor=..., bond=..., bridge=...)` |
+| Fuse a whole set of positioned parts into one body | `fuse(a, b, c, ...)` — raises if they don't all touch |
+| Stack parts along an axis and fuse them | `stack(a, b, c, axis="z")` — see [composition_helpers.md](composition_helpers.md#stack) |
 | Disable all auto-eps inside a scope (precision builds, performance debugging) | `with disable_eps_fuse(): ...` |
 | Override the default `eps` value across a scope | `with tolerances(eps=0.001): ...` |
 | Override `through()`'s face-matching tolerance | `with tolerances(coincidence=1e-5): ...` |
@@ -243,6 +245,14 @@ peg.attach(plate, bond="shift")                # explicit bilateral shift
 `attach(fuse=True)` only extends `self`; the framework can't extend `other` because `other` isn't part of the returned value, so an extension on it would be invisible. The standalone `fuse(a, b)` from `scadwright.boolops` returns the union directly, so either side can carry the extension.
 
 `fuse(a, b)` with no anchors auto-matches the contact, same rules as `node.fuse(host)`. With explicit `on=` / `using_anchor=` / `bond=` / `bridge=`, it falls back to placement-style behavior — useful when you want symmetric side-selection paired with an explicit bond.
+
+### Fusing several parts: `fuse(*parts)`
+
+`fuse(a, b, c, ...)` fuses a whole set of already-positioned parts into one body. It finds each touching pair's contact the same way the two-part form does, and adds the overlap at every contact without moving any part.
+
+It treats the call as an assertion that the parts form one connected body. If they split into groups with no contact between them, it raises and names them — which catches a dimension that has drifted just far enough that two faces no longer meet. For parts meant to sit apart, use `union(*parts)` instead.
+
+The single-contact selectors (`on=`, `using_anchor=`, `from_anchor=`, `bond=`, `bridge=`) don't apply with more than two parts, because each names one contact and there are now many. To fuse a specific pair at a named contact, call the two-part form on that pair.
 
 ### How `through()` handles rotated cutters internally
 

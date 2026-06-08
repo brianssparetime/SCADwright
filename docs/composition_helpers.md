@@ -188,6 +188,35 @@ By default the kept-region box is sized to just enclose the shape's world-space 
 
 `bbox()` of a halved shape returns the AABB of the *kept* region, not the original shape — `halve()` emits as `intersection(part, kept_box)` and the BBoxVisitor for Intersection folds children's bboxes via intersection, so the clipping is automatic. This matters for things like reading `bbox(part).min[2]` to compute how far below the bed a printed half extends.
 
+## `stack`
+
+Places parts in order along an axis, each sitting on top of the one before, and combines them into one body. Use it for anything built as a column of pieces, like a base, a spacer, and a cap, or a run of segments.
+
+```python
+column = stack(base, spacer, cap)        # along +z by default
+rail = stack(a, b, c, axis="x")          # along +x
+```
+
+`axis` picks the mating faces: along `"z"` each part's bottom sits on the previous part's top, and `"y"` and `"x"` do the same with front-and-back and left-and-right. To mate on your own anchors instead, pass `on=` (the face on the part below) and `using_anchor=` (the face on the part going on top):
+
+```python
+tower = stack(a, b, on="rside", using_anchor="lside")   # stack left-to-right
+```
+
+Stacked pieces touch flush, and OpenSCAD's exporter can leave that contact as an internal seam a slicer later flags. `stack` adds a small overlap at each joint so the union stays clean. Pass `eps=` to change the overlap size.
+
+Stacking repeats placement, so a part stacks only if it could `attach` to the one below it. A pair that can't mate (a curved contact face, or an anchor name that doesn't exist) raises the same error `attach` would.
+
+## `place_stack`
+
+Stacks the parts the same way as `stack`, but returns them as separate parts with exact contact and no overlap. Use it for an assembled view, or for pieces printed individually and fitted together by hand, where an added overlap would make them collide.
+
+```python
+base, spacer, cap = place_stack(base, spacer, cap)
+```
+
+`axis` and `on=` / `using_anchor=` work exactly as in `stack`. Reach for `stack` when the column is one printed object, `place_stack` when the pieces stay separate.
+
 ## `arrange_on_bed`
 
 Lays several parts out on the print bed and returns their union, ready to export and print together. Useful when a design splits into pieces and you want them placed side by side instead of stacked at the origin.

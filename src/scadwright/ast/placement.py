@@ -1489,7 +1489,7 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
     from scadwright.ast._surface_match import (
         ContactMatch, _match_pair,
         cross_kind_bridge_candidates, curved_near_miss_candidates,
-        diagnose_match_failure, find_contacts,
+        diagnose_match_failure, distinct_contacts, find_contacts,
         planar_near_miss_candidates, same_side_wall_candidates,
     )
     from scadwright.errors import ValidationError
@@ -1536,6 +1536,12 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
         matches = find_contacts(partial_self, host_anchors)
     else:
         matches = find_contacts(self_anchors, host_anchors)
+
+    # Collapse anchor pairs that describe one surface (a custom anchor on a
+    # face that also carries a bbox anchor), so a single contact described two
+    # ways isn't misread as an ambiguous multi-contact. Same rule the N-ary
+    # path uses.
+    matches = distinct_contacts(matches)
 
     if len(matches) == 1:
         return matches[0]
@@ -1680,41 +1686,240 @@ def _alignment_translate(working_self, self_anchor, host_anchor, *, concentric, 
 def _dispatch_curved_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc):
     """Symmetric curved-contact dispatch (used by ``boolops.fuse(a, b)``).
 
-    Same ``inner=False``-first rule as the asymmetric form. The peer
-    semantics: either side may be the extending one; we don't move
-    either shape, just apply eps on the matched side.
+    Extends one side (``inner=False`` first) via the shared
+    ``_curved_extend_one_side`` core and unions it with the other; peer
+    semantics, neither shape is moved. Raises (in the core) if neither side
+    carries a ``fuse_extend`` lever.
     """
     from scadwright.boolops import union as _union
+
+    which, extended = _curved_extend_one_side(a, a_anchor, b, b_anchor, eps, loc)
+    if which == "a":
+        return _union(extended, b)
+    return _union(a, extended)
+
+
+# =============================================================================
+# N-ary fuse — fuse(*parts). Builds a contact graph over declared-anchor
+# coincidences, asserts the parts form one connected body, and applies eps at
+# every contact without moving any part: planar contacts get an additive slab,
+# curved concentric contacts rebuild one side in place.
+# =============================================================================
+
+
+def _planar_contact_slab(a, a_anchor, b, eps, loc):
+    """Build the additive eps slab bridging a planar contact between ``a`` and
+    ``b``.
+
+    The slab is the intersection of the two parts' cross-sections at the
+    contact plane (so it is exactly the touching region, never a stray lip
+    in empty space), extruded ``2*eps`` centered on the plane so it overlaps
+    ``eps`` into each side. Union it alongside the parts and the coincident
+    faces dissolve. No part is moved.
+    """
+    from scadwright.ast._fuse_cross_section import align_anchor_to_z_up
+    from scadwright.ast.transforms import MultMatrix, Translate
+    from scadwright.boolops import intersection as _intersection
+
+    m = align_anchor_to_z_up(a_anchor)
+    m_inv = m.invert()
+    proj_a = MultMatrix(matrix=m, child=a, source_location=loc).projection(cut=True)
+    proj_b = MultMatrix(matrix=m, child=b, source_location=loc).projection(cut=True)
+    contact = _intersection(proj_a, proj_b)
+    slab = contact.linear_extrude(height=2.0 * eps)
+    slab = Translate(v=(0.0, 0.0, -eps), child=slab, source_location=loc)
+    return MultMatrix(matrix=m_inv, child=slab, source_location=loc)
+
+
+def _curved_extend_one_side(a, a_anchor, b, b_anchor, eps, loc):
+    """Rebuild one side of a curved concentric contact by ``eps``, outer side
+    first, inner if the outer has no lever. Returns ``("a"|"b", extended)``.
+    Raises if neither side can extend.
+    """
     from scadwright.errors import ValidationError
 
     if not a_anchor.inner:
-        outer_side, outer_anchor = a, a_anchor
-        inner_side, inner_anchor = b, b_anchor
-        outer_is_a = True
+        outer, outer_anchor, outer_which = a, a_anchor, "a"
+        inner, inner_anchor, inner_which = b, b_anchor, "b"
     else:
-        outer_side, outer_anchor = b, b_anchor
-        inner_side, inner_anchor = a, a_anchor
-        outer_is_a = False
+        outer, outer_anchor, outer_which = b, b_anchor, "b"
+        inner, inner_anchor, inner_which = a, a_anchor, "a"
 
-    extended = outer_side.fuse_extend(outer_anchor, eps)
+    extended = outer.fuse_extend(outer_anchor, eps)
     if extended is not None:
-        if outer_is_a:
-            return _union(extended, b)
-        return _union(a, extended)
-
-    extended = inner_side.fuse_extend(inner_anchor, eps)
+        return outer_which, extended
+    extended = inner.fuse_extend(inner_anchor, eps)
     if extended is not None:
-        if outer_is_a:
-            return _union(a, extended)
-        return _union(extended, b)
+        return inner_which, extended
 
     raise ValidationError(
         f"fuse: neither side has a fuse_extend lever for this "
         f"{a_anchor.kind} contact (a={type(a).__name__}, "
         f"b={type(b).__name__}). Override fuse_extend on the relevant "
-        f"Component, or restructure so one side is a standard-library "
-        f"shape that carries the lever (Tube, Funnel, Barrel, Cylinder, "
-        f"Sphere)."
+        f"Component, or restructure so one side is a standard-library shape "
+        f"that carries the lever (Tube, Funnel, Barrel, Cylinder, Sphere)."
         f"{_scale_wrapper_hint(a, b)}",
         source_location=loc,
     )
+
+
+def _shape_label(node):
+    """Name a part's underlying shape for error messages, unwrapping
+    single-child transform/decoration wrappers so a positioned part reads as
+    its shape (``Tube``) rather than the outer ``Translate``. CSG nodes (with
+    plural ``children``) and leaves are named as-is.
+    """
+    seen = set()
+    while getattr(node, "child", None) is not None and id(node) not in seen:
+        seen.add(id(node))
+        node = node.child
+    return type(node).__name__
+
+
+def fuse_nary(parts, eps, loc, *, apply_eps=True):
+    """Fuse three or more already-positioned parts into one connected body,
+    eps-clean for CGAL unions.
+
+    Detects contacts pairwise over declared-anchor coincidences, asserts the
+    parts form one connected body (raises on disconnection or on a pair with
+    more than one contact), and applies eps at each contact without moving any
+    part. Returns ``union(...)`` of the parts (some curved sides rebuilt in
+    place) plus the planar bridging slabs.
+
+    When ``apply_eps`` is False, or inside ``disable_eps_fuse()``, the matching
+    and connectivity checks still run, but eps is skipped and the result is a
+    plain ``union(*parts)`` with exact contact.
+    """
+    from scadwright.anchor import get_node_anchors
+    from scadwright.api.fuse_mode import fuse_enabled
+    from scadwright.api.tolerances import coincidence_tol
+    from scadwright.ast._surface_match import distinct_contacts, find_contacts
+    from scadwright.boolops import union as _union
+    from scadwright.errors import ValidationError
+
+    n = len(parts)
+    anchors = [get_node_anchors(p) for p in parts]
+
+    # Contact graph: one edge per distinct contact surface a pair shares.
+    # A pair sharing several surfaces (e.g. a flat shoulder and a cylindrical
+    # wall) gets fused at each; distinct_contacts collapses anchor pairs that
+    # describe the same surface so it's fused once.
+    edges = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            for match in distinct_contacts(find_contacts(anchors[i], anchors[j])):
+                edges.append((i, j, match))
+
+    # Connectivity: the parts must form one connected body.
+    parent = list(range(n))
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i, j, _ in edges:
+        parent[_find(i)] = _find(j)
+
+    groups = {}
+    for k in range(n):
+        groups.setdefault(_find(k), []).append(k)
+    if len(groups) > 1:
+        ordered = sorted(groups.values(), key=lambda g: g[0])
+        desc = "\n".join(
+            "  {" + ", ".join(
+                f"parts[{k}] ({_shape_label(parts[k])})" for k in g
+            ) + "}"
+            for g in ordered
+        )
+        lines = [
+            f"fuse: the parts do not form one connected body. They split "
+            f"into {len(ordered)} groups that share no contact face:",
+            desc,
+        ]
+
+        # The "placed off-center" case: faces on the same plane whose
+        # reference points don't coincide read as no contact, because fuse
+        # keys on coincident points (it can't see whether the faces overlap
+        # without evaluating geometry). Surface those pairs specifically so
+        # the message names the real cause instead of blaming drift.
+        from scadwright.ast._surface_match import planar_near_miss_candidates
+        near = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                if _find(i) == _find(j):
+                    continue
+                for s_name, h_name, offset in planar_near_miss_candidates(
+                    anchors[i], anchors[j]
+                ):
+                    near.append((offset, i, s_name, j, h_name))
+        if near:
+            near.sort()
+            lines.append(
+                "Some faces are on the same plane but their reference points "
+                "don't coincide, so fuse reads them as no contact:"
+            )
+            for offset, i, s_name, j, h_name in near:
+                lines.append(
+                    f"  parts[{i}].{s_name} and parts[{j}].{h_name} "
+                    f"(offset {offset:.3g} mm on the shared plane)"
+                )
+            lines.append(
+                "fuse keys on coincident contact points, so an off-center "
+                "face reads as no contact. Declare an anchor at the shared "
+                "point on each part, or, if the offset is intentional, "
+                "position the parts to overlap and use union(*parts)."
+            )
+        else:
+            lines.append(
+                f"fuse joins parts that meet at an exact shared face, adding "
+                f"the eps overlap for you. If two of these parts are meant to "
+                f"join, position them to meet exactly (fuse supplies the "
+                f"overlap, so don't add your own), or check that a dimension "
+                f"hasn't drifted past the coincidence tolerance "
+                f"({coincidence_tol()} mm) so two faces no longer meet. If the "
+                f"parts are meant to overlap or sit apart with no fusing, use "
+                f"union(*parts)."
+            )
+        raise ValidationError("\n".join(lines), source_location=loc)
+
+    # eps_overlap=False or disable_eps_fuse(): validated above; union exactly.
+    if not apply_eps or not fuse_enabled():
+        return _union(*parts)
+
+    working = list(parts)
+    curved_done = set()
+
+    # Curved concentric contacts first: rebuild one side in place. At most one
+    # rebuild per part (a second would need to compose two radius changes,
+    # which this path does not).
+    for i, j, match in edges:
+        if not match.concentric:
+            continue
+        which, extended = _curved_extend_one_side(
+            working[i], match.self_anchor, working[j], match.host_anchor,
+            eps, loc,
+        )
+        idx = i if which == "a" else j
+        if idx in curved_done:
+            raise ValidationError(
+                f"fuse: parts[{idx}] ({_shape_label(parts[idx])}) would need "
+                f"a second curved-contact rebuild to fuse all its concentric "
+                f"contacts, which fuse(*parts) can't combine in one call. Fuse "
+                f"that part's contacts with pairwise fuse(a, b) instead.",
+                source_location=loc,
+            )
+        curved_done.add(idx)
+        working[idx] = extended
+
+    # Planar contacts: additive slabs, built from the post-rebuild parts.
+    slabs = [
+        _planar_contact_slab(
+            working[i], match.self_anchor, working[j], eps, loc,
+        )
+        for i, j, match in edges
+        if not match.concentric
+    ]
+
+    return _union(*working, *slabs)

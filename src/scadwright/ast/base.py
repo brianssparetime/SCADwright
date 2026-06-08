@@ -345,23 +345,10 @@ class Node(
         """
         if anchor.kind != "planar":
             return None
-        from scadwright.ast._fuse_cross_section import (
-            align_anchor_to_z_up,
-            validate_planar_anchor_for_cross_section,
-        )
+        from scadwright.ast._fuse_cross_section import build_cross_section_slab
         from scadwright.boolops import union as _union
-        from scadwright.ast.transforms import MultMatrix
 
-        validate_planar_anchor_for_cross_section(self, anchor, context=context)
-        m = align_anchor_to_z_up(anchor)
-        m_inv = m.invert()
-        loc = self.source_location
-        slab = (
-            MultMatrix(matrix=m, child=self, source_location=loc)
-            .projection(cut=True)
-            .linear_extrude(height=eps)
-        )
-        slab = MultMatrix(matrix=m_inv, child=slab, source_location=loc)
+        slab = build_cross_section_slab(self, anchor, eps, context=context)
         return _union(self, slab)
 
     # --- placement helpers ---

@@ -428,6 +428,46 @@ def find_contacts(self_anchors, host_anchors):
     return results
 
 
+def _same_contact_surface(m1, m2):
+    """Whether two ``ContactMatch``es between the same pair describe the same
+    physical contact surface.
+
+    ``find_contacts`` returns one match per coincident *anchor pair*, and
+    several anchor pairs can lie on one surface (a custom anchor on a face
+    that also carries a bbox anchor). This collapses those so each surface is
+    fused once.
+
+    - **planar**: same plane — the self anchors' normals are parallel or
+      anti-parallel and the displacement between them lies in the plane (no
+      component along the normal). The in-plane offset doesn't matter; a
+      planar face is the whole plane, not the anchor point.
+    - **curved**: same curved surface per ``_is_same_curved_surface`` (same
+      axis line and radii, or sphere center and radius).
+    """
+    if m1.kind != m2.kind:
+        return False
+    if m1.kind == "planar":
+        from scadwright.api.tolerances import PARALLEL_CROSS_TOL, coincidence_tol
+        a1, a2 = m1.self_anchor, m2.self_anchor
+        if not _axes_parallel(a1.normal, a2.normal, PARALLEL_CROSS_TOL):
+            return False
+        delta = _vec_sub(a1.position, a2.position)
+        return abs(_dot(delta, a1.normal)) <= coincidence_tol()
+    return _is_same_curved_surface(m1.self_anchor, m2.self_anchor)
+
+
+def distinct_contacts(matches):
+    """Reduce a ``find_contacts`` result to one ``ContactMatch`` per physical
+    contact surface, preserving order (so the kept representative is
+    deterministic). See ``_same_contact_surface`` for the surface identity.
+    """
+    distinct = []
+    for m in matches:
+        if not any(_same_contact_surface(m, kept) for kept in distinct):
+            distinct.append(m)
+    return distinct
+
+
 _CURVED_KINDS = ("cylindrical", "conical", "spherical", "meridional")
 
 

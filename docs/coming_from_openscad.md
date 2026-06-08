@@ -247,7 +247,7 @@ SCAD's `$children` (number of children passed to a module) doesn't apply — in 
 
 ## Shared dimensions across parts
 
-For a one-off script, SCAD's top-of-file globals become plain Python module variables (see the side-by-side example above). When several parts share the same dimensions — a battery's measurements, a fastener's size, a panel stock's thickness — collect them in a [Spec](specs_and_adjustments.md):
+For a one-off script, SCAD's top-of-file globals become plain Python module variables (see the side-by-side example above). When several parts share the same dimensions, like a battery's measurements or a fastener's size, collect them in a [Spec](specs_and_adjustments.md):
 
 ```python
 from scadwright import Spec
@@ -427,7 +427,7 @@ See [Attaching shapes](attach.md) for the `attach()` reference and [Anchors](anc
 
 For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True` — it adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#putting-things-on-curved-surfaces-bridgetrue).
 
-SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. 
+SCADwright also automates epsilon overlap — `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. For a whole set of touching parts, `fuse(*parts)` does it in one call, and `stack(*parts)` builds a column and fuses the joints. Both replace the manual `+0.01` you would otherwise scatter through a SCAD `union()` of abutting pieces. 
 
 ## Text on a 3D shape
 

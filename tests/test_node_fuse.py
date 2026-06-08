@@ -243,12 +243,27 @@ def test_fuse_matched_curved_but_no_extender_raises():
 
 
 def test_fuse_multiple_matches_raises_with_candidates():
-    """Multiple coincident cylindrical anchors on self both match a
-    single host inner_wall: ambiguity → raise."""
+    """Two genuinely distinct coincident surfaces (different planes) between
+    self and host. The pairwise form extends one side, so it can't fuse both
+    and raises for disambiguation."""
+    a = (
+        cube([10, 10, 10])
+        .with_anchor("p_top", at=(5, 5, 10), normal=(0, 0, 1))
+        .with_anchor("p_side", at=(10, 5, 5), normal=(1, 0, 0))
+    )
+    b = (
+        cube([10, 10, 10])
+        .with_anchor("p_top", at=(5, 5, 10), normal=(0, 0, -1))
+        .with_anchor("p_side", at=(10, 5, 5), normal=(-1, 0, 0))
+    )
+    with pytest.raises(ValidationError, match="multiple coincident-surface contacts"):
+        a.fuse(b)
+
+
+def test_fuse_redundant_same_surface_anchor_does_not_raise():
+    """A second anchor on the same wall as outer_wall describes one surface,
+    not two contacts, so it fuses rather than raising as an ambiguity."""
     barrel = Tube(h=20, od=20, id=10)
-    # holder.outer_wall (the real one) plus a synthetic "alt_outer" at
-    # a different axial position; both pass the cylindrical match rules
-    # against barrel.inner_wall.
     holder = (
         Tube(h=8, od=10, id=4)
         .up(10)
@@ -259,8 +274,7 @@ def test_fuse_multiple_matches_raises_with_candidates():
             axis=(0, 0, 1), radius=5.0, length=2.0, inner=False,
         )
     )
-    with pytest.raises(ValidationError, match="multiple coincident-surface contacts"):
-        holder.fuse(barrel)
+    assert isinstance(holder.fuse(barrel), Union)
 
 
 # --- Errors: explicit override with incompatible kinds ---

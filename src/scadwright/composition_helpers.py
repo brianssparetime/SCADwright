@@ -382,6 +382,101 @@ def arrange_on_bed(
     return Union(children=tuple(placed), source_location=loc)
 
 
+# Axis to the (on, using_anchor) face pair that stacks the next part on top
+# of the previous one along +axis: the next part's low face mates to the
+# previous part's high face.
+_STACK_AXIS_FACES = {
+    "z": ("top", "bottom"),
+    "y": ("back", "front"),
+    "x": ("rside", "lside"),
+}
+
+
+def _stack_place(parts, axis, on, using_anchor, name):
+    """Place each part on the previous one along the axis (or the explicit
+    anchor pair) with exact contact, and return the list of placed parts.
+    Placement, and any rejection, is ``attach``'s (``fuse=False``).
+    """
+    loc = SourceLocation.from_caller()
+    flat = _flatten_csg_args(parts, name)
+    if not flat:
+        raise ValidationError(
+            f"{name}: needs at least one part.", source_location=loc,
+        )
+    if (on is None) != (using_anchor is None):
+        raise ValidationError(
+            f"{name}: pass both on= and using_anchor=, or neither and let "
+            f"axis= pick the mating faces. Got on={on!r}, "
+            f"using_anchor={using_anchor!r}.",
+            source_location=loc,
+        )
+    if on is None:
+        if axis not in _STACK_AXIS_FACES:
+            raise ValidationError(
+                f"{name}: axis must be 'x', 'y', or 'z' (got {axis!r}), or "
+                f"pass on= and using_anchor= explicitly.",
+                source_location=loc,
+            )
+        on, using_anchor = _STACK_AXIS_FACES[axis]
+
+    placed = [flat[0]]
+    prev = flat[0]
+    for part in flat[1:]:
+        here = part.attach(prev, on=on, using_anchor=using_anchor, fuse=False)
+        placed.append(here)
+        prev = here
+    return placed
+
+
+def stack(*parts, axis="z", on=None, using_anchor=None, eps=None) -> Node:
+    """Stack parts in order along ``axis`` and fuse them into one body.
+
+    Each part is placed so its low face on the axis sits on the previous
+    part's high face (placement is ``attach``), then the abutting contacts
+    are fused with a small overlap so the union stays manifold-clean for
+    CGAL (the fuse is ``fuse``). Returns one solid::
+
+        column = stack(base, spacer, cap)              # along +z
+        rail = stack(a, b, c, axis="x")
+
+    ``axis`` selects the mating faces (``"z"`` uses top/bottom, ``"y"`` uses
+    back/front, ``"x"`` uses rside/lside). Pass ``on=`` / ``using_anchor=``
+    to mate on custom anchors instead. ``eps`` overrides the overlap size.
+
+    Stacking is placement, so it is exactly ``attach`` repeated: a
+    consecutive pair that ``attach`` can't place (curved contact face,
+    missing anchor) raises through ``attach`` unchanged. Use ``place_stack``
+    for the same layout returned as separate parts (assembled view, or
+    parts printed individually).
+    """
+    placed = _stack_place(parts, axis, on, using_anchor, "stack")
+    if len(placed) == 1:
+        return placed[0]
+    from scadwright.boolops import fuse as _fuse
+    if eps is None:
+        return _fuse(*placed)
+    return _fuse(*placed, eps=eps)
+
+
+def place_stack(*parts, axis="z", on=None, using_anchor=None) -> tuple[Node, ...]:
+    """Place parts in a stack along ``axis`` and return them as separate
+    parts, with exact contact and no eps overlap.
+
+    The placement is identical to ``stack``; only the result differs. Use
+    this for an assembled view, or when the parts are printed individually
+    and mated physically, where an added overlap would make the parts
+    collide::
+
+        base, spacer, cap = place_stack(base, spacer, cap)
+
+    ``axis`` and ``on=`` / ``using_anchor=`` select the mating faces exactly
+    as in ``stack``. A pair that ``attach`` can't place raises through
+    ``attach``. To fuse the stack into one body instead, use ``stack``.
+    """
+    placed = _stack_place(parts, axis, on, using_anchor, "place_stack")
+    return tuple(placed)
+
+
 __all__ = [
     "arrange_on_bed",
     "halve",
@@ -389,6 +484,8 @@ __all__ = [
     "linear_copy",
     "mirror_copy",
     "multi_hull",
+    "place_stack",
     "rotate_copy",
     "sequential_hull",
+    "stack",
 ]

@@ -30,6 +30,7 @@ from scadwright.extrusions import linear_extrude, rotate_extrude
 from scadwright.composition_helpers import (
     linear_copy, rotate_copy, mirror_copy, halve,
     hole_grid, multi_hull, sequential_hull, arrange_on_bed,
+    stack, place_stack,
 )
 from scadwright.shapes import (
     Tube, Funnel, SphericalShell, RoundedBox, UShapeChannel, FilletRing,
@@ -115,6 +116,7 @@ holder.fuse(barrel, on="inner_wall")      # host anchor explicit
 holder.fuse(barrel, on="inner_wall", from_anchor="outer_wall")  # both sides explicit
 holder.fuse(barrel, self_only=True)       # return extended self only — for generator build() where host is yielded separately
 fuse(a, b)                                # peer form — symmetric, either side extends
+fuse(a, b, c, d)                          # fuse several positioned parts into one body (raises if they don't all touch)
 cylinder(h=10, r=3).through(box)          # extend cutter through coincident faces
 cone.rotate([0,30,0]).translate([10,5,0]).through(plate, axis="local_z")  # rotated cutter
 with disable_eps_fuse(): ...              # scope-wide opt-out (precision builds, perf debugging, fuse-can't-fix-it)
@@ -167,6 +169,11 @@ part.halve([0, 1, 0])                               # keep +y, cut -y
 part.halve([1, 1, 0])                               # keep +x,+y quadrant
 part.halve(y=1)                                     # kwarg form (auto-sized cutter)
 part.halve(y=1, size=200)                           # explicit cutter size override
+
+stack(base, spacer, cap)                            # place in order along +z and fuse into one body
+stack(a, b, c, axis="x")                            # along +x (z=top/bottom, y=back/front, x=rside/lside)
+stack(a, b, on="rside", using_anchor="lside")       # mate on explicit anchors instead of an axis
+base, spacer, cap = place_stack(base, spacer, cap)  # same layout, returned as separate parts (not fused)
 
 arrange_on_bed(part_a, part_b, plate=(220, 220), gap=8)  # lay parts out in rows, drop to z=0, check they fit
 arrange_on_bed(*parts, sort="depth")                     # place deepest parts first to pack rows tighter

@@ -80,8 +80,7 @@ def minkowski(*args) -> Minkowski:
 
 
 def fuse(
-    a: Node, b: Node,
-    *,
+    *parts: Node,
     on: str | None = None,
     using_anchor: str | None = None,
     from_anchor: str | None = None,
@@ -90,7 +89,11 @@ def fuse(
     eps_overlap: bool = True,
     eps: float | None = None,
 ) -> Union:
-    """Combine ``a`` and ``b`` at coincident anchors.
+    """Combine parts at coincident contacts, eps-clean for CGAL unions.
+
+    The two-part form (``fuse(a, b)``) is documented here; the several-part
+    form (``fuse(a, b, c, ...)``) is described under "Three or more parts"
+    below.
 
     ``using_anchor`` names an anchor on ``a``; ``on`` names an anchor on
     ``b``. The two anchors' positions are aligned; the framework adds a
@@ -128,6 +131,16 @@ def fuse(
     peg-side eps slice is dropped. The bridge geometry itself persists
     (it's structural, not eps).
 
+    **Three or more parts.** ``fuse(*parts)`` fuses an already-positioned set
+    into one connected body: it finds each touching pair's contact
+    automatically, fuses every distinct surface a pair shares, asserts the
+    parts form a single connected body (raises if they split into disconnected
+    groups), and adds the overlap at every contact without moving any part. The
+    single-contact selectors ``on=`` / ``using_anchor=`` / ``from_anchor=`` /
+    ``bond=`` / ``bridge=`` don't apply with more than two parts (each names
+    one contact); fuse a specific pair at a named contact with the two-part
+    form instead.
+
     Returns ``union(...)``.
     """
     from scadwright.anchor import get_node_anchors
@@ -142,6 +155,7 @@ def fuse(
         _resolve_fuse_match,
         _shift_for_anchors,
         _validate_bond_value,
+        fuse_nary,
     )
     from scadwright.ast.transforms import Translate
     from scadwright.errors import ValidationError
@@ -150,6 +164,31 @@ def fuse(
     if eps is None:
         from scadwright.api.tolerances import default_eps
         eps = default_eps()
+
+    parts = _flatten_csg_args(parts, "fuse")
+    if len(parts) < 2:
+        raise ValidationError(
+            "fuse: needs at least two parts.", source_location=loc,
+        )
+    if len(parts) > 2:
+        named = [
+            name for name, val in (
+                ("on", on), ("using_anchor", using_anchor),
+                ("from_anchor", from_anchor), ("bond", bond),
+            ) if val is not None
+        ]
+        if bridge:
+            named.append("bridge")
+        if named:
+            raise ValidationError(
+                f"fuse: {', '.join(named)} name a single contact and don't "
+                f"apply to fuse(*parts) with more than two parts; each pair "
+                f"finds its own contact automatically. To fuse a specific "
+                f"pair at a named contact, call the two-part fuse(a, b, ...).",
+                source_location=loc,
+            )
+        return fuse_nary(parts, eps, loc, apply_eps=eps_overlap)
+    a, b = parts
 
     if using_anchor is not None and from_anchor is not None:
         placement_path = bond is not None or bridge
