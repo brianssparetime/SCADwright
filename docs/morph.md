@@ -36,7 +36,7 @@ If instead you want a single model to change continuously over the timeline (a t
 
 The morph captures every stage variant's AST, identifies which parts (`self.box`, `self.lid`, ...) appear in each, and computes the transform difference between consecutive stages. At animation time the transforms morph smoothly from one stage to the next using **Chasles' theorem**: any rigid motion in 3D is equivalent to a single rotation about a screw axis, plus an optional translation along that axis. For a 180° flip combined with a translation, this reads as a hinge swing rather than translating-and-rotating-in-midair.
 
-The CSG structure of every stage is preserved. If `print` uses `difference(self.body, self.hole.up(5))` and `display` uses `difference(self.body, self.hole.up(10))`, the morph's output keeps the `difference()` — only `self.hole`'s position animates.
+The CSG structure of every stage is preserved. If `print` uses `difference(self.body, self.hole.up(5))` and `display` uses `difference(self.body, self.hole.up(10))`, the morph's output keeps the `difference()` and animates only `self.hole`'s position.
 
 ## The `morph(...)` factory
 
@@ -88,7 +88,7 @@ Options:
 
 Parts in a `Design` are class attributes (`box = MyBox()`, `lid = MyLid()`). The morph pairs parts across stages by **Python object identity** — every stage references the same `Component` instance via `self.box`, so the morph knows they're the same part. No labels or names needed.
 
-For inline geometry (a `cube(5)` or similar constructed in-place inside a variant body), the morph pairs by **structural position and `tree_hash`**: if every stage has a `cube(5)` at the same point in the CSG tree, they pair. Their transform stacks may differ — in which case the cube animates between the positions.
+For inline geometry (a `cube(5)` or similar constructed in-place inside a variant body), the morph pairs by **structural position and `tree_hash`**: if every stage has a `cube(5)` at the same point in the CSG tree, they pair. Their transform stacks may differ, and the cube then animates between the positions.
 
 ```python
 class Stack(Design):
@@ -164,7 +164,7 @@ assemble = morph(stages=["print", "closing", "display"], pingpong=True)
 # Reverse over [0.5, 1]:  display → closing → print
 ```
 
-The pingpong reshape happens at the SCAD layer (a triangle wave on `$t`), so the same `.scad` previews correctly in OpenSCAD's animator and renders to an APNG with no extra frames — the file is the same size as the non-pingpong version. Useful when you want a looping animation that doesn't snap back to the start at the seam.
+The pingpong reshape happens at the SCAD layer (a triangle wave on `$t`), so the same `.scad` previews correctly in OpenSCAD's animator and renders to an APNG at no extra cost in frames or file size. Useful when you want a looping animation that doesn't snap back to the start at the seam.
 
 ## Michael Bay shot
 
@@ -186,13 +186,13 @@ The morph framework is intentionally "easy mode" — not infinitely extensible. 
 - **Non-uniform scale changes.** Uniform scale (the whole part grows) is fine; non-uniform scale (the part stretches in one direction) is not — that's shape morphing, which needs separate parts.
 - **Structurally different stages.** Every stage must share the same CSG skeleton: same `union`/`difference`/`intersection`/etc. structure, same decoration wrappers (colors, anchors). Only the *transforms above each leaf* may differ.
 - **Different parts in different stages.** A part in one stage must appear in every stage, in the same structural position.
-- **`Resize` wrapping animated content.** `Resize` is bbox-dependent: its scale factor is recomputed from the child's bounding box at render time. If the child is animated (rotating, translating), the bbox changes per frame and the scale factor changes with it, producing visible size-jitter as the part moves. Move the `Resize` outside the morph (apply it to the final unioned result), or replace it with `Scale` using explicit factors so the scale is constant. A `Resize` over geometry that's identical in every stage — i.e., static decoration — is fine.
+- **`Resize` wrapping animated content.** `Resize` is bbox-dependent: its scale factor is recomputed from the child's bounding box at render time. If the child is animated (rotating, translating), the bbox changes per frame and the scale factor changes with it, producing visible size-jitter as the part moves. Move the `Resize` outside the morph (apply it to the final unioned result), or replace it with `Scale` using explicit factors so the scale is constant. A `Resize` over static decoration (geometry that's identical in every stage) is fine.
 
 For the inline-primitive case where you want to animate a `cube(5)`-like piece between stages, lift it to a class attribute (`self.spacer = cube(5)`) so every stage references the same instance.
 
 ## Lifting inline parts
 
-If you see "inline primitive geometry differs at the same structural position," the morph is telling you that two stages have a `cube(...)` (or `sphere`, `cylinder`, etc.) at the same point in the CSG tree but with different transforms — and inline primitives can't pair across stages for animation.
+If you see "inline primitive geometry differs at the same structural position," two stages have a `cube(...)` (or `sphere`, `cylinder`, etc.) at the same point in the CSG tree but with different transforms. Inline primitives can't pair across stages, so they can't animate.
 
 **Why the rule exists.** A class-attribute Component (`self.spacer = MyPart()`) is a single Python object referenced from every stage; the morph pairs it across stages by `id()`. An inline `cube(10)` built inside the variant body is a fresh Python object on every call — there's no shared identity to pair with. To keep the rules simple, the morph requires the shared-identity pattern for animation.
 
@@ -233,7 +233,7 @@ class Widget(Design):
 
 The class attribute can be a `Component`, a primitive (`cube(...)`, `sphere(...)`, etc.), or any expression that yields a Node — they all become shared-identity values.
 
-**When you don't need to lift.** If the inline geometry is in the *same position* in every stage — same primitive, same parameters, same transforms — the morph sees it as static decoration and passes it through unchanged. You only need to lift when the inline thing should *move* between stages.
+**When you don't need to lift.** If the inline geometry is in the *same position* in every stage (same primitive, same parameters, same transforms), the morph sees it as static decoration and passes it through unchanged. You only need to lift when the inline thing should *move* between stages.
 
 ## Composing with viewpoint
 
@@ -243,7 +243,7 @@ The morph inherits the **final stage's** viewpoint by default — the user usual
 
 ### The animated part cuts through other geometry on its arc
 
-If your morph's arc passes through another part on its way to the end pose — a lid that swings sideways into the box rather than over the top, for example — the rotation axis is parallel to the translation between the poses. The arc plane is perpendicular to the screw axis (which follows the rotation), so a rotation aligned with the translation produces an arc that sweeps sideways at constant height instead of lifting up and over.
+If your morph's arc passes through another part on its way to the end pose, for example, a lid that swings sideways into the box rather than over the top, the rotation axis is parallel to the translation between the poses. The arc plane is perpendicular to the screw axis (which follows the rotation), so a rotation aligned with the translation produces an arc that sweeps sideways at constant height instead of lifting up and over.
 
 **Fix:** rotate the start pose about an axis perpendicular to the translation.
 
@@ -255,7 +255,7 @@ self.lid.rotate([180, 0, 0]).up(2).right(80)
 self.lid.rotate([0, 180, 0]).up(2).right(80)
 ```
 
-For parts with rotational symmetry about z — a square lid, a centered cylinder — both rotation axes produce the same final pose, so pick whichever gives the right arc. For asymmetric parts where the final orientation depends on which axis you flipped about, use a chain morph with an explicit intermediate stage (`stages=["print", "midair", "display"]`) so you can draw the path by hand.
+For parts with rotational symmetry about z, like a square lid or a centered cylinder, both rotation axes produce the same final pose, so pick whichever gives the right arc. For asymmetric parts where the final orientation depends on which axis you flipped about, use a chain morph with an explicit intermediate stage (`stages=["print", "midair", "display"]`) so you can draw the path by hand.
 
 ### The lid (or hinged part) swings the wrong way
 
