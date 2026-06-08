@@ -100,10 +100,14 @@ def fuse(
     small overlap that keeps a union manifold-clean against OpenSCAD's
     preview renderer.
 
-    The default (``bond=None``, ``bridge=False``) runs the planar cascade:
-    local face extension if both anchors are planar, otherwise raises.
-    On a convex-outer curved host without ``bridge=True``, the call raises
-    and points at ``bridge=True``.
+    With no named anchors and no ``bond=`` / ``bridge=``, ``fuse`` auto-matches
+    every contact the two parts share and applies the shared mechanism at each,
+    the same routine ``fuse(*parts)`` uses: a flat-face contact grows the side
+    whose footprint is contained in the other (a parametric bump) or, when
+    neither is contained, gets a centered slab; a curved concentric contact
+    rebuilds the outer side. Neither part is moved. A flat face against a
+    convex-outer curved wall is a bridge case and raises, pointing at
+    ``bridge=True``.
 
     - ``bond="overlap"`` — local face extension only (parametric
       ``fuse_extend`` first, cross-section fallback). Preserves the
@@ -147,10 +151,12 @@ def fuse(
     from scadwright.api.fuse_mode import fuse_enabled
     from scadwright.ast.placement import (
         _alignment_translate,
+        _can_dispatch_overlap,
         _dispatch_bridge_symmetric,
         _dispatch_curved_overlap_symmetric,
         _dispatch_overlap_symmetric,
         _dispatch_smart_cascade_fuse,
+        _fuse_planar_pair,
         _resolve_attach_anchor,
         _resolve_fuse_match,
         _shift_for_anchors,
@@ -227,9 +233,18 @@ def fuse(
     both_named = on is not None and a_anchor_name is not None
     explicit_op = bond is not None or bridge
 
+    # No anchors and no named mechanism: run the engine, the same routine the
+    # many-part form uses, so a single contact, a compound two-surface mate, and
+    # a three-part stack all fuse by one mechanism. Anchor naming only steers
+    # matching (handled below); bond= / bridge= name a mechanism and stay
+    # directed.
+    if not both_named and not explicit_op and a_anchor_name is None and on is None:
+        return fuse_nary((a, b), eps, loc, apply_eps=eps_overlap)
+
     if both_named:
-        # Legacy explicit dispatch — anchors named, placement-shift
-        # semantics preserved for bond= / bridge= cases.
+        # Both anchors named. bond= / bridge= keep their directed placement
+        # semantics; with no mechanism named, the planar contact runs the
+        # shared grow-or-slab below.
         a_anchor = _resolve_attach_anchor(a, a_anchor_name, "a", loc)
         b_anchor = _resolve_attach_anchor(b, on, "b", loc)
         if not fuse_enabled():
@@ -249,6 +264,10 @@ def fuse(
             shift = _shift_for_anchors(a_anchor, b_anchor, False, eps)
             placed_a = Translate(v=shift, child=a, source_location=loc)
             return union(placed_a, b)
+        # No mechanism named: planar contact runs the shared grow-or-slab; a
+        # curved host still raises through the smart cascade pointing at bridge=.
+        if _can_dispatch_overlap(a_anchor, b_anchor):
+            return _fuse_planar_pair(a, a_anchor, b, b_anchor, eps, loc)
         return _dispatch_smart_cascade_fuse(a, a_anchor, b, b_anchor, eps, loc)
 
     if explicit_op:
@@ -259,7 +278,8 @@ def fuse(
             source_location=loc,
         )
 
-    # Peer auto-match path.
+    # One named anchor restricting the match (the no-anchor case ran the engine
+    # above). Resolve the single contact, then apply the shared mechanism.
     a_anchors = get_node_anchors(a)
     b_anchors = get_node_anchors(b)
     match = _resolve_fuse_match(
@@ -277,7 +297,7 @@ def fuse(
         return _dispatch_curved_overlap_symmetric(
             a, match.self_anchor, b, match.host_anchor, eps, loc,
         )
-    return _dispatch_overlap_symmetric(
+    return _fuse_planar_pair(
         a, match.self_anchor, b, match.host_anchor, eps, loc,
     )
 

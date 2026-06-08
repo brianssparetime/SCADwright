@@ -171,15 +171,16 @@ def test_fuse_function_uses_either_side():
 
 
 def test_fuse_function_prefers_wrapper_free_side():
-    """When both sides qualify for local extension, fuse picks the side
-    whose fuse_extend produces no Translate wrapper (the +axis-direction
-    face). For a stacked-cubes join — top of the lower meeting bottom of
-    the upper — that's the lower cube's top: cleaner SCAD output, the
-    same final geometry as picking either side.
+    """Explicit ``bond="overlap"`` keeps the symmetric picker, which extends the
+    side whose fuse_extend produces no Translate wrapper (the +axis-direction
+    face). For a stacked-cubes join — top of the lower meeting bottom of the
+    upper — that's the lower cube's top: cleaner SCAD output, the same final
+    geometry as picking either side. (Bare ``fuse`` now runs the grow-or-slab
+    mechanism instead, which prefers the contained side, ``a`` first on a tie.)
     """
     lower = cube([10, 10, 5])    # b: fuse on its top face (+Z) → no wrapper.
     upper = cube([10, 10, 5])    # a: fuse on its bottom face (−Z) → Translate wrapper.
-    result = fuse(upper, lower, on="top", using_anchor="bottom")
+    result = fuse(upper, lower, on="top", using_anchor="bottom", bond="overlap")
     bb = bbox(result)
     # Lower spans z=0..5, extended top to z=5.01. Upper spans z=5..10
     # (preserved). Combined bbox: 0..10.

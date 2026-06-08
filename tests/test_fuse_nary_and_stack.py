@@ -14,13 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from scadwright import emit
+from scadwright import emit, emit_str
 from scadwright.api.fuse_mode import disable_eps_fuse
 from scadwright.ast.csg import Union
 from scadwright.boolops import fuse, union
 from scadwright.composition_helpers import place_stack, stack
 from scadwright.errors import ValidationError
-from scadwright.primitives import cube
+from scadwright.ast.primitives import Cube
+from scadwright.primitives import cube, cylinder
 from scadwright.shapes import Tube
 from scadwright import bbox
 
@@ -101,8 +102,11 @@ def test_fuse_nary_same_plane_multi_anchor_fuses_once():
     c = cube([10, 10, 10]).up(20)
     result = fuse(a, b, c)
     assert isinstance(result, Union)
-    # a-b is one contact (deduped), b-c is one contact: 3 parts + 2 slabs.
-    assert len(result.children) == 5
+    # Two interfaces (a-b, b-c) of equal cubes: each grows exactly one side by
+    # eps (the contained-footprint fast path), so two cubes carry a 10.01
+    # dimension. If the a-b pair's two coincident anchors weren't deduped to one
+    # contact, a-b would grow both its sides and the count would be three.
+    assert emit_str(result).count("10.01") == 2
 
 
 def test_distinct_contacts_collapses_same_surface_keeps_distinct():
@@ -160,14 +164,91 @@ def test_fuse_nary_off_center_contact_names_the_real_cause():
 # =====================================================================
 
 
-def test_fuse_nary_planar_adds_a_slab_per_interface():
+def test_fuse_nary_planar_grows_equal_footprints_no_slab():
     a = cube([10, 10, 10])
     b = cube([10, 10, 10]).up(10)
     c = cube([10, 10, 10]).up(20)
     fused = fuse(a, b, c)
-    plain = union(a, b, c)
-    # Two interfaces -> two additive slabs on top of the three parts.
-    assert len(fused.children) == len(plain.children) + 2
+    # Equal-footprint interfaces grow the contained side; no projection slab is
+    # emitted, and the result is just the three parts (two of them grown).
+    scad = emit_str(fused)
+    assert scad.count("linear_extrude") == 0
+    assert len(fused.children) == 3
+    assert scad.count("10.01") == 2
+
+
+def test_fuse_nary_planar_slabs_when_no_lever():
+    # Annular tube caps have no parametric planar lever, so each interface falls
+    # to the centered slab.
+    a = Tube(od=10, id=4, h=10)
+    b = Tube(od=10, id=4, h=10).up(10)
+    c = Tube(od=10, id=4, h=10).up(20)
+    scad = emit_str(fuse(a, b, c))
+    assert scad.count("linear_extrude") == 2
+
+
+# --- The grow fast path: containment decides the grown side, no shelf ---
+
+
+def _grown_cube_dims(node):
+    """Collect the size tuples of every Cube in the tree (depth-first)."""
+    out = []
+    if isinstance(node, Cube):
+        out.append(node.size)
+    for attr in ("child", "children"):
+        v = getattr(node, attr, None)
+        if isinstance(v, tuple):
+            for c in v:
+                out.extend(_grown_cube_dims(c))
+        elif v is not None:
+            out.extend(_grown_cube_dims(v))
+    return out
+
+
+def test_fuse_grows_the_contained_side_no_shelf():
+    """A smaller cube centered on a larger one grows the *contained* side, so no
+    eps shelf rings the joint. The larger cube keeps its declared size."""
+    big = cube([20, 20, 10], center="xy")
+    small = cube([10, 10, 10], center="xy").up(10)
+    result = fuse(big, small)
+    dims = _grown_cube_dims(result)
+    # The 20x20 cube is untouched; the 10x10 cube grew on z to 10.01.
+    assert (20.0, 20.0, 10.0) in dims
+    assert any(
+        abs(d[0] - 10.0) < 1e-9 and abs(d[1] - 10.0) < 1e-9 and abs(d[2] - 10.01) < 1e-6
+        for d in dims
+    )
+    assert emit_str(result).count("linear_extrude") == 0
+
+
+def test_fuse_disc_in_rect_grows_the_disc():
+    """A small solid cylinder on a larger cube: the disc footprint is contained
+    in the rect, so the cylinder grows and no slab is laid."""
+    plate = cube([20, 20, 10], center="xy")
+    pin = cylinder(d=8, h=10).up(10)
+    assert emit_str(fuse(plate, pin)).count("linear_extrude") == 0
+
+
+def test_fuse_off_axis_rotated_cube_falls_to_slab():
+    """A cube rotated within the contact plane has no analytic footprint, so the
+    contact falls to the sound centered slab rather than risking a shelf."""
+    base = cube([10, 10, 10], center="xy")
+    spun = cube([10, 10, 10], center="xy").rotate([0, 0, 30]).up(10)
+    assert emit_str(fuse(base, spun)).count("linear_extrude") == 1
+
+
+def test_fuse_pair_and_named_anchor_run_the_same_mechanism():
+    """fuse(a, b) and fuse(a, b, on=..., using_anchor=...) are look-alike calls
+    and must run the same grow-or-slab mechanism: equal cubes grow either way,
+    with no slab."""
+    a = cube([10, 10, 10])
+    b = cube([10, 10, 10]).up(10)
+    bare = fuse(a, b)
+    # Name the same contact the auto-match finds: a's top against b's bottom.
+    named = fuse(a, b, on="bottom", using_anchor="top")
+    assert emit_str(bare).count("linear_extrude") == 0
+    assert emit_str(named).count("linear_extrude") == 0
+    assert emit_str(bare) == emit_str(named)
 
 
 def test_fuse_nary_disable_eps_fuse_is_plain_union():

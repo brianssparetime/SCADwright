@@ -209,7 +209,7 @@ If neither method applies (concave inner walls, contacts that aren't flat-on-fla
 
 ### Curved-surface fuses
 
-`node.fuse(host)` and `fuse(a, b)` extend the same way as `attach(fuse=True)` for planar contact. On curved concentric contact (cylindrical, conical, spherical, meridional), the framework picks the side whose `fuse_extend` carries the radial lever, preferring `inner=False` (the convex/outer side) first.
+`node.fuse(host)`, `fuse(a, b)`, and `fuse(*parts)` fuse parts already in place, never repositioning either one (the flat-face mechanism is under [Symmetric form](#symmetric-form-fusea-b-) below). On curved concentric contact (cylindrical, conical, spherical, meridional), the framework picks the side whose `fuse_extend` carries the radial lever, preferring `inner=False` (the convex/outer side) first.
 
 Standard-library shapes that ship with a curved lever:
 
@@ -242,9 +242,11 @@ peg.attach(plate, bond="shift")                # explicit bilateral shift
 
 ### Symmetric form: `fuse(a, b, ...)`
 
-`attach(fuse=True)` only extends `self`; the framework can't extend `other` because `other` isn't part of the returned value, so an extension on it would be invisible. The standalone `fuse(a, b)` from `scadwright.boolops` returns the union directly, so either side can carry the extension.
+`attach(fuse=True)` is placing a part, so it grows the part it places. `fuse` repairs the seam between parts already in place, and it never repositions either one. Where one side fits inside the other and can take a local bump (a `Cube`, `Cylinder` cap, or extrude end), `fuse` pushes that side's contact face out by a sub-visible `eps` into its neighbor and leaves every other face where you put it. Where neither side fits inside the other, it lays a thin slab across exactly the shared region instead, changing neither part. Either ordering leaves the same clean joint, never a stray sliver of material around it.
 
-`fuse(a, b)` with no anchors auto-matches the contact, same rules as `node.fuse(host)`. With explicit `on=` / `using_anchor=` / `bond=` / `bridge=`, it falls back to placement-style behavior — useful when you want symmetric side-selection paired with an explicit bond.
+A flat-face contact at a cone apex has no area to fuse and raises.
+
+`fuse(a, b)` with no anchors fuses every flat or curved contact the two parts share, so a part that meets another at both a flat shoulder and a coaxial wall fuses at both. Name one contact with `on=` / `using_anchor=` / `from_anchor=` when you want just that one. `bond=` and `bridge=` ask instead for a specific mechanism, a bilateral shift or a curved-surface fill.
 
 ### Fusing several parts: `fuse(*parts)`
 

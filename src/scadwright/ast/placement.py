@@ -1487,10 +1487,8 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
     or named-anchor lookup failures.
     """
     from scadwright.ast._surface_match import (
-        ContactMatch, _match_pair,
-        cross_kind_bridge_candidates, curved_near_miss_candidates,
+        ContactMatch, _match_pair, _no_contact_error_lines,
         diagnose_match_failure, distinct_contacts, find_contacts,
-        planar_near_miss_candidates, same_side_wall_candidates,
     )
     from scadwright.errors import ValidationError
 
@@ -1559,92 +1557,10 @@ def _resolve_fuse_match(self, host, self_anchors, host_anchors, on, from_anchor,
             source_location=loc,
         )
 
-    # Zero matches. Build a single error that layers any applicable
-    # specific hints (planar near-miss, same-side wall, bridge
-    # candidates) on top of the generic anchor-list / next-steps tail.
-    near_miss = planar_near_miss_candidates(self_anchors, host_anchors)
-    same_side = same_side_wall_candidates(self_anchors, host_anchors)
-    curved_miss = curved_near_miss_candidates(self_anchors, host_anchors)
-    bridge_hints = cross_kind_bridge_candidates(self_anchors, host_anchors)
-
-    lines = [
-        f"fuse: found no coincident-surface contact between self "
-        f"({type(self).__name__}) and host ({type(host).__name__})."
-    ]
-
-    if near_miss:
-        # Show the closest near-miss as the headline; list any others.
-        near_miss_sorted = sorted(near_miss, key=lambda nm: nm[2])
-        s_name, h_name, offset = near_miss_sorted[0]
-        lines.append(
-            f"  Near-miss: self.{s_name} and host.{h_name} sit on the same "
-            f"plane but their reference positions don't coincide (offset = "
-            f"{offset:.3g} mm). For place-and-fuse, use "
-            f"self.attach(host, fuse=True)."
-        )
-        for s_name, h_name, offset in near_miss_sorted[1:]:
-            lines.append(
-                f"    Also: self.{s_name} ↔ host.{h_name} (offset = "
-                f"{offset:.3g} mm)."
-            )
-
-    if same_side:
-        s_name, h_name, kind, inner_flag = same_side[0]
-        side_word = "concave-inner" if inner_flag else "convex-outer"
-        lines.append(
-            f"  Same surface: self.{s_name} and host.{h_name} describe the "
-            f"same {kind} surface from the same side (both {side_word}). "
-            f"fuse needs one inner and one outer for concentric contact; "
-            f"for two parts whose surfaces literally coincide, use "
-            f"union(self, host) — OpenSCAD handles fully-coincident "
-            f"surfaces cleanly without an internal seam."
-        )
-
-    if curved_miss and not same_side:
-        for s_name, h_name, reasons in curved_miss:
-            lines.append(
-                f"  Curved near-miss: self.{s_name} ↔ host.{h_name}:"
-            )
-            for r in reasons:
-                lines.append(f"    - {r}")
-
-    if bridge_hints and not same_side:
-        # Same-side hint is strictly more specific; suppress the
-        # bridge hint when it fires to avoid contradictory advice.
-        outer_hits = [h for h in bridge_hints if not h[4]]
-        inner_hits = [h for h in bridge_hints if h[4]]
-        lines.append(
-            f"  Self has planar face anchor(s) positioned against host's "
-            f"curved wall — that's a bridge case, not a fuse case."
-        )
-        if outer_hits:
-            example = outer_hits[0]
-            lines.append(
-                f"    For convex-outer bridge (peg merges into a curved "
-                f"surface): use "
-                f"self.attach(host, on={example[2]!r}, bridge=True, "
-                f"orient=True)."
-            )
-        if inner_hits:
-            example = inner_hits[0]
-            lines.append(
-                f"    For concave-inner bridge (peg clipped to a bore): "
-                f"use self.attach(host, on={example[2]!r}, bridge=True, "
-                f"orient=True)."
-            )
-
-    lines.append(f"  Declared anchors on self: {sorted(self_anchors)}")
-    lines.append(f"  Declared anchors on host: {sorted(host_anchors)}")
-    lines.append("Next steps:")
-    lines.append(
-        "  - Declare a contact anchor on your Component (see "
-        "docs/anchors.md)."
-    )
-    lines.append(
-        "  - Name the contact explicitly with on=<host_anchor> and "
-        "from_anchor=<self_anchor>."
-    )
-    lines.append("  - For place-and-fuse, use self.attach(host, fuse=True).")
+    # Zero matches. The rich diagnostic (planar near-miss, same-surface, curved
+    # near-miss, bridge candidates, anchor list, next steps) is shared with the
+    # engine's two-part disconnection.
+    lines = _no_contact_error_lines(self, host, self_anchors, host_anchors)
     raise ValidationError("\n".join(lines), source_location=loc)
 
 
@@ -1707,7 +1623,21 @@ def _dispatch_curved_overlap_symmetric(a, a_anchor, b, b_anchor, eps, loc):
 # =============================================================================
 
 
-def _planar_contact_slab(a, a_anchor, b, eps, loc):
+def _degenerate_cap_check(node, anchor, eps):
+    """Raise the cone-apex error if ``node``'s contact cap has zero area.
+
+    The slab projects each side's cross-section, so a zero-radius cone cap would
+    silently yield an empty slab. The cylinder's own cross-section validator
+    knows which cap is contacted, so defer to it for the clear message (matching
+    the pairwise path); only invoked for a zero-radius cone, so the discarded
+    slab it builds costs nothing in the common case."""
+    from scadwright.ast.primitives import Cylinder
+    leaf = _geometry_leaf(node)
+    if isinstance(leaf, Cylinder) and (leaf.r1 == 0 or leaf.r2 == 0):
+        node.cross_section_extend(anchor, eps, context="fuse")
+
+
+def _planar_contact_slab(a, a_anchor, b, b_anchor, eps, loc):
     """Build the additive eps slab bridging a planar contact between ``a`` and
     ``b``.
 
@@ -1721,6 +1651,9 @@ def _planar_contact_slab(a, a_anchor, b, eps, loc):
     from scadwright.ast.transforms import MultMatrix, Translate
     from scadwright.boolops import intersection as _intersection
 
+    _degenerate_cap_check(a, a_anchor, eps)
+    _degenerate_cap_check(b, b_anchor, eps)
+
     m = align_anchor_to_z_up(a_anchor)
     m_inv = m.invert()
     proj_a = MultMatrix(matrix=m, child=a, source_location=loc).projection(cut=True)
@@ -1729,6 +1662,151 @@ def _planar_contact_slab(a, a_anchor, b, eps, loc):
     slab = contact.linear_extrude(height=2.0 * eps)
     slab = Translate(v=(0.0, 0.0, -eps), child=slab, source_location=loc)
     return MultMatrix(matrix=m_inv, child=slab, source_location=loc)
+
+
+def _geometry_leaf(node):
+    """Descend through the spatial and metadata wrappers ``fuse_extend``
+    recurses past, returning the innermost geometry node. Used by
+    ``_planar_footprint`` to recognize the underlying primitive."""
+    from scadwright.ast.transforms import (
+        Color, ForceRender, Mirror, PreviewModifier, Rotate, Translate,
+        WithAnchor, WithBBox,
+    )
+    wrappers = (
+        Translate, Rotate, Mirror, Color, PreviewModifier, ForceRender,
+        WithAnchor, WithBBox,
+    )
+    seen = set()
+    while isinstance(node, wrappers) and id(node) not in seen:
+        seen.add(id(node))
+        node = node.child
+    return node
+
+
+def _planar_footprint(node, frame):
+    """Return ``node``'s contact-face footprint in the frame ``frame`` maps
+    world into (z=0 is the contact plane, +Z the outward normal), or ``None``
+    when the footprint can't be proven analytically.
+
+    Descriptors, with the in-plane center as the last two entries:
+
+    - ``("rect", half_u, half_v, cu, cv)`` for a ``Cube`` whose faces are
+      axis-aligned to the frame (the in-frame bbox dims are a permutation of the
+      cube's own size; a cube rotated off the axes has a strictly larger bbox,
+      so this is sound).
+    - ``("disc", r, cu, cv)`` for a true cylinder cap (``r1 == r2``) whose axis
+      is parallel to the frame normal (the in-plane bbox is the ``2r`` square).
+
+    Anything else returns ``None`` so the contact falls to the centered slab.
+    The framework never evaluates geometry, so the grow fast path is limited to
+    the footprints it can compare from the tree alone.
+    """
+    from scadwright.api.tolerances import coincidence_tol
+    from scadwright.ast.primitives import Cube, Cylinder
+    from scadwright.ast.transforms import MultMatrix
+    from scadwright.bbox import bbox as _bbox
+
+    leaf = _geometry_leaf(node)
+    if not isinstance(leaf, (Cube, Cylinder)):
+        return None
+
+    bb = _bbox(MultMatrix(matrix=frame, child=node, source_location=node.source_location))
+    tol = coincidence_tol()
+    cu, cv = bb.center[0], bb.center[1]
+
+    if isinstance(leaf, Cube):
+        a = sorted(leaf.size)
+        b = sorted(bb.size)
+        if not all(abs(a[i] - b[i]) <= tol for i in range(3)):
+            return None
+        return ("rect", bb.size[0] / 2.0, bb.size[1] / 2.0, cu, cv)
+
+    # Cylinder: only a true cylinder cap has a provable disc footprint; a cone
+    # cap's radius depends on which end is contacted, which the bbox blurs.
+    if leaf.r1 != leaf.r2:
+        return None
+    r = leaf.r1
+    if abs(bb.size[0] - 2.0 * r) > tol or abs(bb.size[1] - 2.0 * r) > tol:
+        return None
+    return ("disc", r, cu, cv)
+
+
+def _footprint_contains(outer, inner):
+    """True if the ``inner`` footprint sits inside ``outer``. Both are taken in
+    the same frame, so the in-plane axes line up; centers must coincide within
+    ``coincidence_tol()`` (a matched contact guarantees this). Equal footprints
+    count as contained."""
+    import math
+    from scadwright.api.tolerances import coincidence_tol
+    tol = coincidence_tol()
+    if abs(outer[-2] - inner[-2]) > tol or abs(outer[-1] - inner[-1]) > tol:
+        return False
+    ok, ik = outer[0], inner[0]
+    if ok == "rect" and ik == "rect":
+        return inner[1] <= outer[1] + tol and inner[2] <= outer[2] + tol
+    if ok == "disc" and ik == "disc":
+        return inner[1] <= outer[1] + tol
+    if ok == "rect" and ik == "disc":
+        return inner[1] <= min(outer[1], outer[2]) + tol
+    if ok == "disc" and ik == "rect":
+        return math.hypot(inner[1], inner[2]) <= outer[1] + tol
+    return False
+
+
+def _planar_grow_candidates(a, a_anchor, b, b_anchor, eps):
+    """For a planar contact, return the grow options as ``[("a", ext), ...]``,
+    most-preferred first. A side qualifies when it carries a parametric lever
+    (``fuse_extend``) and its footprint is provably contained in the
+    neighbor's. Equal footprints qualify both, ``a`` first. Empty means slab."""
+    from scadwright.ast._fuse_cross_section import align_anchor_to_z_up
+    frame = align_anchor_to_z_up(a_anchor)
+    desc_a = _planar_footprint(a, frame)
+    desc_b = _planar_footprint(b, frame)
+    if desc_a is None or desc_b is None:
+        return []
+    out = []
+    a_ext = a.fuse_extend(a_anchor, eps)
+    if a_ext is not None and _footprint_contains(desc_b, desc_a):
+        out.append(("a", a_ext))
+    b_ext = b.fuse_extend(b_anchor, eps)
+    if b_ext is not None and _footprint_contains(desc_a, desc_b):
+        out.append(("b", b_ext))
+    return out
+
+
+def _planar_shift(node, anchor, eps, loc):
+    """Move ``node`` by ``eps`` along ``anchor``'s outward normal (into the
+    neighbor). The bilateral-shift remedy a cap-like part requests via
+    ``prefers_shift_at_anchor`` when its contact face is its whole outermost
+    cross-section, so neither a grow nor a slab is clean."""
+    from scadwright.ast.transforms import Translate
+    n = anchor.normal
+    return Translate(
+        v=(n[0] * eps, n[1] * eps, n[2] * eps), child=node, source_location=loc,
+    )
+
+
+def _fuse_planar_pair(a, a_anchor, b, b_anchor, eps, loc):
+    """Planar contact mechanism for a single named two-part contact: grow the
+    contained lever-bearing side, else shift a cap-like side that asks for it,
+    else lay the centered slab. Aligns ``a`` to the contact first (a no-op when
+    the parts already touch). Shares the decision with the N-ary engine, so
+    ``fuse(a, b)`` and ``fuse(a, b, on=...)`` apply the same mechanism."""
+    from dataclasses import replace
+    from scadwright.boolops import union as _union
+
+    aligned_a = _alignment_translate(a, a_anchor, b_anchor, concentric=False, loc=loc)
+    a_anchor2 = replace(a_anchor, position=b_anchor.position)
+    for which, extended in _planar_grow_candidates(aligned_a, a_anchor2, b, b_anchor, eps):
+        if which == "a":
+            return _union(extended, b)
+        return _union(aligned_a, extended)
+    if aligned_a.prefers_shift_at_anchor(a_anchor2):
+        return _union(_planar_shift(aligned_a, a_anchor2, eps, loc), b)
+    if b.prefers_shift_at_anchor(b_anchor):
+        return _union(aligned_a, _planar_shift(b, b_anchor, eps, loc))
+    slab = _planar_contact_slab(aligned_a, a_anchor2, b, b_anchor, eps, loc)
+    return _union(aligned_a, b, slab)
 
 
 def _curved_extend_one_side(a, a_anchor, b, b_anchor, eps, loc):
@@ -1777,14 +1855,17 @@ def _shape_label(node):
 
 
 def fuse_nary(parts, eps, loc, *, apply_eps=True):
-    """Fuse three or more already-positioned parts into one connected body,
+    """Fuse two or more already-positioned parts into one connected body,
     eps-clean for CGAL unions.
 
-    Detects contacts pairwise over declared-anchor coincidences, asserts the
-    parts form one connected body (raises on disconnection or on a pair with
-    more than one contact), and applies eps at each contact without moving any
-    part. Returns ``union(...)`` of the parts (some curved sides rebuilt in
-    place) plus the planar bridging slabs.
+    Detects contacts pairwise over declared-anchor coincidences and fuses every
+    distinct contact a pair shares. Asserts the parts form one connected body,
+    raising on disconnection (and on a part that would need a second curved
+    rebuild). No part is repositioned: a flat contact grows the contained,
+    lever-bearing side, or gets a centered slab when neither side is contained
+    (a cap-like side may shift instead); a curved concentric contact rebuilds
+    the outer side. Returns ``union(...)`` of the parts, some sides grown or
+    rebuilt in place, plus any slabs.
 
     When ``apply_eps`` is False, or inside ``disable_eps_fuse()``, the matching
     and connectivity checks still run, but eps is skipped and the result is a
@@ -1826,6 +1907,19 @@ def fuse_nary(parts, eps, loc, *, apply_eps=True):
     for k in range(n):
         groups.setdefault(_find(k), []).append(k)
     if len(groups) > 1:
+        # Two parts that don't touch is exactly the two-part no-contact case;
+        # raise the same rich diagnostic the pairwise matcher gives, so
+        # fuse(a, b) reads identically however it was routed.
+        if n == 2:
+            from scadwright.ast._surface_match import _no_contact_error_lines
+            raise ValidationError(
+                "\n".join(
+                    _no_contact_error_lines(
+                        parts[0], parts[1], anchors[0], anchors[1],
+                    )
+                ),
+                source_location=loc,
+            )
         ordered = sorted(groups.values(), key=lambda g: g[0])
         desc = "\n".join(
             "  {" + ", ".join(
@@ -1889,7 +1983,10 @@ def fuse_nary(parts, eps, loc, *, apply_eps=True):
         return _union(*parts)
 
     working = list(parts)
-    curved_done = set()
+    # A part is changed at most once, whether by a curved rebuild or a planar
+    # grow. The budget is shared so a part isn't both rebuilt and grown, which
+    # would compose two shape edits this path doesn't track.
+    changed = set()
 
     # Curved concentric contacts first: rebuild one side in place. At most one
     # rebuild per part (a second would need to compose two radius changes,
@@ -1902,7 +1999,7 @@ def fuse_nary(parts, eps, loc, *, apply_eps=True):
             eps, loc,
         )
         idx = i if which == "a" else j
-        if idx in curved_done:
+        if idx in changed:
             raise ValidationError(
                 f"fuse: parts[{idx}] ({_shape_label(parts[idx])}) would need "
                 f"a second curved-contact rebuild to fuse all its concentric "
@@ -1910,16 +2007,43 @@ def fuse_nary(parts, eps, loc, *, apply_eps=True):
                 f"that part's contacts with pairwise fuse(a, b) instead.",
                 source_location=loc,
             )
-        curved_done.add(idx)
+        changed.add(idx)
         working[idx] = extended
 
-    # Planar contacts: additive slabs, built from the post-rebuild parts.
-    slabs = [
-        _planar_contact_slab(
-            working[i], match.self_anchor, working[j], eps, loc,
+    # Planar contacts: grow a contained, lever-bearing side where one is free,
+    # otherwise lay the centered slab. Built from the post-rebuild parts; a grow
+    # at one face doesn't change a part's footprint at another, so the slabs
+    # stay consistent.
+    slabs = []
+    for i, j, match in edges:
+        if match.concentric:
+            continue
+        grew = False
+        for which, extended in _planar_grow_candidates(
+            working[i], match.self_anchor, working[j], match.host_anchor, eps,
+        ):
+            idx = i if which == "a" else j
+            if idx not in changed:
+                working[idx] = extended
+                changed.add(idx)
+                grew = True
+                break
+        if grew:
+            continue
+        # A cap-like side may ask to be shifted rather than grown or slabbed.
+        if i not in changed and working[i].prefers_shift_at_anchor(match.self_anchor):
+            working[i] = _planar_shift(working[i], match.self_anchor, eps, loc)
+            changed.add(i)
+            continue
+        if j not in changed and working[j].prefers_shift_at_anchor(match.host_anchor):
+            working[j] = _planar_shift(working[j], match.host_anchor, eps, loc)
+            changed.add(j)
+            continue
+        slabs.append(
+            _planar_contact_slab(
+                working[i], match.self_anchor, working[j], match.host_anchor,
+                eps, loc,
+            )
         )
-        for i, j, match in edges
-        if not match.concentric
-    ]
 
     return _union(*working, *slabs)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from scadwright import Component, anchor, bbox
+from scadwright import Component, anchor, bbox, emit_str
 from scadwright.ast.csg import Union
 from scadwright.ast.transforms import Translate
 from scadwright.errors import ValidationError
@@ -242,10 +242,11 @@ def test_fuse_matched_curved_but_no_extender_raises():
 # --- Errors: multiple matches ---
 
 
-def test_fuse_multiple_matches_raises_with_candidates():
+def test_fuse_two_surface_mate_fuses_both():
     """Two genuinely distinct coincident surfaces (different planes) between
-    self and host. The pairwise form extends one side, so it can't fuse both
-    and raises for disambiguation."""
+    self and host. The no-anchor form runs the engine, which fuses every
+    contact rather than raising for disambiguation: each interface grows one
+    side by eps."""
     a = (
         cube([10, 10, 10])
         .with_anchor("p_top", at=(5, 5, 10), normal=(0, 0, 1))
@@ -256,8 +257,10 @@ def test_fuse_multiple_matches_raises_with_candidates():
         .with_anchor("p_top", at=(5, 5, 10), normal=(0, 0, -1))
         .with_anchor("p_side", at=(10, 5, 5), normal=(-1, 0, 0))
     )
-    with pytest.raises(ValidationError, match="multiple coincident-surface contacts"):
-        a.fuse(b)
+    result = a.fuse(b)
+    assert isinstance(result, Union)
+    # Both interfaces fused, each growing one equal-footprint side by eps.
+    assert emit_str(result).count("10.01") == 2
 
 
 def test_fuse_redundant_same_surface_anchor_does_not_raise():

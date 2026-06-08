@@ -119,7 +119,9 @@ def test_fuse_picks_cube_over_cone_cylinder():
     cone = cylinder(h=20, r1=5, r2=8)
     plate = cube([20, 20, 4])
     # cone.top is planar; plate.bottom is planar. Both qualify for Tier 1.
-    result = fuse(cone, plate, on="bottom", using_anchor="top")
+    # Explicit bond="overlap" keeps the directed grow + symmetric picker; bare
+    # fuse would slab here (the plate isn't contained in the cone's cap disc).
+    result = fuse(cone, plate, on="bottom", using_anchor="top", bond="overlap")
     # Result is a Union of (placed_a, b_or_extended_b). With the new
     # ranking, b (cube) is the extended side; a (cone) gets only a
     # Translate to coincide-anchor positions.

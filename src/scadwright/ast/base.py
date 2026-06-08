@@ -677,14 +677,12 @@ class Node(
         """Fuse self with ``host`` at their coincident contact surface,
         eps-clean for CGAL unions.
 
-        The framework matches a contact between self and host (one
-        anchor declaration on each side describing the same surface),
-        applies ``eps`` on whichever side has the lever, and returns
-        ``union(extended_self_or_host, host_or_self)``. Use whenever
-        two parts share a surface by design and would otherwise leave
-        an internal seam (Component yields whose surfaces touch, lids
-        on containers sized to match, fillet rings against the
-        cylinder they fillet)::
+        The framework finds every contact self and host share (each an
+        anchor on both sides describing the same surface) and fuses it,
+        leaving both parts where you put them. Use whenever two parts
+        share a surface by design and would otherwise leave an internal
+        seam (Component yields whose surfaces touch, lids on containers
+        sized to match, fillet rings against the cylinder they fillet)::
 
             yield Tube(od=10, id=4, h=8).up(20).fuse(barrel)
             yield front_fillet.fuse(barrel)
@@ -692,16 +690,18 @@ class Node(
         Not for press-fit or sliding joints — those use ``clearances``,
         which puts a deliberate non-zero gap between the parts.
 
-        Auto-matching is exhaustive: exactly one matched contact uses
-        it; multiple matches raise (use ``on=`` / ``from_anchor=``
-        to disambiguate); zero matches raise with the declared anchors
-        named and the next move (declare an anchor on the relevant
-        Component, name the contact explicitly, or use ``attach()``
-        for place-and-fuse).
+        With no anchors, fuse joins every contact the two parts share,
+        so a part meeting host at both a flat shoulder and a coaxial
+        wall fuses at both. Zero contacts raises, naming the declared
+        anchors and the next move: declare an anchor on the relevant
+        Component, name the contact explicitly, or use ``attach()`` for
+        place-and-fuse.
 
         ``on=`` names a host anchor explicitly; ``from_anchor=`` names
         a self anchor explicitly. Pass both to skip matching entirely;
-        pass either to short-circuit matching on that side.
+        pass either to restrict matching to that side. If the unnamed
+        side still describes more than one surface, fuse raises so you
+        can name it too.
 
         ``self_only=True`` returns just the extended self without
         wrapping it in ``union(self, host)``. Use inside a generator
@@ -724,16 +724,22 @@ class Node(
         from scadwright.ast.placement import (
             _alignment_translate,
             _dispatch_curved_overlap,
+            _fuse_planar_pair,
             _resolve_fuse_match,
+            fuse_nary,
         )
-        from scadwright.ast.transforms import Translate
         from scadwright.boolops import union as _union
-        from scadwright.errors import ValidationError
 
         loc = SourceLocation.from_caller()
         if eps is None:
             from scadwright.api.tolerances import default_eps
             eps = default_eps()
+
+        # No anchors and not self_only: run the engine, the same mechanism as
+        # two-part fuse(a, b), so a compound two-surface mate fuses and the
+        # result matches whichever way it was spelled.
+        if on is None and from_anchor is None and not self_only:
+            return fuse_nary((self, host), eps, loc, apply_eps=True)
 
         self_anchors = get_node_anchors(self)
         host_anchors = get_node_anchors(host)
@@ -757,35 +763,11 @@ class Node(
                 self, match.self_anchor, host, match.host_anchor, eps, loc,
             )
 
-        # Planar branch. Honor prefers_shift_at_anchor on either side.
-        if (self.prefers_shift_at_anchor(match.self_anchor)
-                or host.prefers_shift_at_anchor(match.host_anchor)):
-            aligned = _alignment_translate(
-                self, match.self_anchor, match.host_anchor,
-                concentric=False, loc=loc,
-            )
-            h_norm = match.host_anchor.normal
-            shift = (-h_norm[0] * eps, -h_norm[1] * eps, -h_norm[2] * eps)
-            shifted = Translate(v=shift, child=aligned, source_location=loc)
-            return _union(shifted, host)
-
-        extended = self.fuse_extend(match.self_anchor, eps)
-        if extended is None:
-            extended = self.cross_section_extend(
-                match.self_anchor, eps, context="fuse",
-            )
-        if extended is None:
-            raise ValidationError(
-                f"fuse: planar contact but neither fuse_extend nor "
-                f"cross_section_extend applied. self="
-                f"{type(self).__name__}.",
-                source_location=loc,
-            )
-        aligned = _alignment_translate(
-            extended, match.self_anchor, match.host_anchor,
-            concentric=False, loc=loc,
+        # Planar branch: the shared grow / shift / slab mechanism, the same one
+        # the engine and the standalone fuse(a, b) use.
+        return _fuse_planar_pair(
+            self, match.self_anchor, host, match.host_anchor, eps, loc,
         )
-        return _union(aligned, host)
 
     def _fuse_self_only(self, match, eps, loc):
         """Extension path for ``fuse(self_only=True)``: extend self only,

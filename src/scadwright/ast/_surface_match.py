@@ -919,3 +919,97 @@ def same_side_wall_candidates(self_anchors, host_anchors):
                 continue
             out.append((s_name, h_name, s_anchor.kind, bool(s_anchor.inner)))
     return out
+
+
+def _no_contact_error_lines(self, host, self_anchors, host_anchors):
+    """Build the rich 'no coincident-surface contact' message for a pair that
+    shares no fuse contact, layering the applicable specific hints (planar
+    near-miss, same-surface, curved near-miss, bridge candidates) on the
+    generic anchor-list and next-steps tail.
+
+    Returned as a list of lines so callers can join or extend it. Shared by the
+    two-part matcher (``_resolve_fuse_match``) and the engine's two-part
+    disconnection, so a routed ``fuse(a, b)`` raises the same message it always
+    did.
+    """
+    near_miss = planar_near_miss_candidates(self_anchors, host_anchors)
+    same_side = same_side_wall_candidates(self_anchors, host_anchors)
+    curved_miss = curved_near_miss_candidates(self_anchors, host_anchors)
+    bridge_hints = cross_kind_bridge_candidates(self_anchors, host_anchors)
+
+    lines = [
+        f"fuse: found no coincident-surface contact between self "
+        f"({type(self).__name__}) and host ({type(host).__name__})."
+    ]
+
+    if near_miss:
+        near_miss_sorted = sorted(near_miss, key=lambda nm: nm[2])
+        s_name, h_name, offset = near_miss_sorted[0]
+        lines.append(
+            f"  Near-miss: self.{s_name} and host.{h_name} sit on the same "
+            f"plane but their reference positions don't coincide (offset = "
+            f"{offset:.3g} mm). For place-and-fuse, use "
+            f"self.attach(host, fuse=True)."
+        )
+        for s_name, h_name, offset in near_miss_sorted[1:]:
+            lines.append(
+                f"    Also: self.{s_name} ↔ host.{h_name} (offset = "
+                f"{offset:.3g} mm)."
+            )
+
+    if same_side:
+        s_name, h_name, kind, inner_flag = same_side[0]
+        side_word = "concave-inner" if inner_flag else "convex-outer"
+        lines.append(
+            f"  Same surface: self.{s_name} and host.{h_name} describe the "
+            f"same {kind} surface from the same side (both {side_word}). "
+            f"fuse needs one inner and one outer for concentric contact; "
+            f"for two parts whose surfaces literally coincide, use "
+            f"union(self, host) — OpenSCAD handles fully-coincident "
+            f"surfaces cleanly without an internal seam."
+        )
+
+    if curved_miss and not same_side:
+        for s_name, h_name, reasons in curved_miss:
+            lines.append(
+                f"  Curved near-miss: self.{s_name} ↔ host.{h_name}:"
+            )
+            for r in reasons:
+                lines.append(f"    - {r}")
+
+    if bridge_hints and not same_side:
+        outer_hits = [h for h in bridge_hints if not h[4]]
+        inner_hits = [h for h in bridge_hints if h[4]]
+        lines.append(
+            f"  Self has planar face anchor(s) positioned against host's "
+            f"curved wall — that's a bridge case, not a fuse case."
+        )
+        if outer_hits:
+            example = outer_hits[0]
+            lines.append(
+                f"    For convex-outer bridge (peg merges into a curved "
+                f"surface): use "
+                f"self.attach(host, on={example[2]!r}, bridge=True, "
+                f"orient=True)."
+            )
+        if inner_hits:
+            example = inner_hits[0]
+            lines.append(
+                f"    For concave-inner bridge (peg clipped to a bore): "
+                f"use self.attach(host, on={example[2]!r}, bridge=True, "
+                f"orient=True)."
+            )
+
+    lines.append(f"  Declared anchors on self: {sorted(self_anchors)}")
+    lines.append(f"  Declared anchors on host: {sorted(host_anchors)}")
+    lines.append("Next steps:")
+    lines.append(
+        "  - Declare a contact anchor on your Component (see "
+        "docs/anchors.md)."
+    )
+    lines.append(
+        "  - Name the contact explicitly with on=<host_anchor> and "
+        "from_anchor=<self_anchor>."
+    )
+    lines.append("  - For place-and-fuse, use self.attach(host, fuse=True).")
+    return lines
