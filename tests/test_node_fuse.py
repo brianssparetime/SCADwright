@@ -533,3 +533,61 @@ def test_self_only_disable_eps_returns_aligned_self():
     bb = bbox(result)
     assert bb.min[2] == pytest.approx(20.0)
     assert bb.max[2] == pytest.approx(28.0)
+
+
+def test_self_only_larger_self_slabs_no_sliver():
+    """When self is the larger side at a planar contact, self_only must not grow
+    self's full cross-section (that leaves an eps sliver in open space). It lays
+    a slab that rides with self instead, leaving self's declared size intact."""
+    from scadwright.ast.primitives import Cube
+    peg = cube([20, 20, 5], center="xy")            # self, larger footprint
+    plate = cube([10, 10, 2], center="xy").down(2)  # host, smaller, below
+    result = peg.fuse(plate, self_only=True)
+    assert isinstance(result, Union)
+    scad = emit_str(result)
+    assert scad.count("linear_extrude") == 1          # slabbed, not grown
+    assert "5.01" not in scad and "20.01" not in scad  # peg not grown anywhere
+    # The peg itself is a direct child at its declared size; host is absent.
+    assert any(isinstance(c, Cube) and c.size == (20.0, 20.0, 5.0)
+               for c in result.children)
+
+
+def test_self_only_two_surface_mate_fuses_both():
+    """A genuine two-surface mate fuses both contacts self-side instead of
+    raising: self grows at one interface (changing once) and the other rides on
+    a slab. Host is not in the result."""
+    a = (cube([10, 10, 10])
+         .with_anchor("pt", at=(5, 5, 10), normal=(0, 0, 1))
+         .with_anchor("ps", at=(10, 5, 5), normal=(1, 0, 0)))
+    b = (cube([10, 10, 10])
+         .with_anchor("pt", at=(5, 5, 10), normal=(0, 0, -1))
+         .with_anchor("ps", at=(10, 5, 5), normal=(-1, 0, 0)))
+    result = a.fuse(b, self_only=True)
+    assert isinstance(result, Union)
+    # Two children: self grown at one contact, plus one slab for the other.
+    assert len(result.children) == 2
+    scad = emit_str(result)
+    assert scad.count("linear_extrude") == 1     # one contact slabbed
+    assert "10.01" in scad                       # the other grew self by eps
+
+
+def test_self_only_no_contact_raises_rich():
+    a = cube([5, 5, 5])
+    b = cube([5, 5, 5]).up(20)
+    with pytest.raises(ValidationError, match="no coincident-surface contact"):
+        a.fuse(b, self_only=True)
+
+
+def test_self_only_disable_eps_compound_returns_exact_self():
+    from scadwright import disable_eps_fuse
+    a = (cube([10, 10, 10])
+         .with_anchor("pt", at=(5, 5, 10), normal=(0, 0, 1))
+         .with_anchor("ps", at=(10, 5, 5), normal=(1, 0, 0)))
+    b = (cube([10, 10, 10])
+         .with_anchor("pt", at=(5, 5, 10), normal=(0, 0, -1))
+         .with_anchor("ps", at=(10, 5, 5), normal=(-1, 0, 0)))
+    with disable_eps_fuse():
+        result = a.fuse(b, self_only=True)
+    assert not isinstance(result, Union)            # just self, no host, no eps
+    scad = emit_str(result)
+    assert "10.01" not in scad and "linear_extrude" not in scad

@@ -703,16 +703,18 @@ class Node(
         side still describes more than one surface, fuse raises so you
         can name it too.
 
-        ``self_only=True`` returns just the extended self without
-        wrapping it in ``union(self, host)``. Use inside a generator
-        ``build()`` where host is yielded separately::
+        ``self_only=True`` returns self's contribution to the fuse and
+        never the host, for a generator ``build()`` where host is
+        yielded separately::
 
             yield barrel
             yield holder.fuse(barrel, self_only=True)
 
-        Raises if the extension lever lives on host rather than self;
-        the error points at ``fuse()`` (without ``self_only``) as the
-        fallback.
+        Self grows where it fits inside host and carries the lever,
+        shifts if it is a cap that asks, and otherwise rides on a slab,
+        so it never leaves a stray eps sliver. A curved contact whose
+        only lever is on host raises and points at ``fuse()`` without
+        ``self_only``.
 
         Inside ``disable_eps_fuse()`` the matching step still runs (a
         bad call still raises), but the eps mechanics are bypassed
@@ -743,20 +745,26 @@ class Node(
 
         self_anchors = get_node_anchors(self)
         host_anchors = get_node_anchors(host)
+
+        # self_only returns self's contribution to every contact (host is
+        # emitted separately), so it owns its matching, disable-eps, and eps
+        # logic on the same shared mechanism the union forms use.
+        if self_only:
+            return self._fuse_self_only(
+                host, self_anchors, host_anchors, on, from_anchor, eps, loc,
+            )
+
         match = _resolve_fuse_match(
             self, host, self_anchors, host_anchors, on, from_anchor, loc,
         )
 
-        # disable_eps_fuse(): no extension, just align (+ union unless self_only).
+        # disable_eps_fuse(): no extension, just align and union with host.
         if not fuse_enabled():
             aligned = _alignment_translate(
                 self, match.self_anchor, match.host_anchor,
                 concentric=match.concentric, loc=loc,
             )
-            return aligned if self_only else _union(aligned, host)
-
-        if self_only:
-            return self._fuse_self_only(match, eps, loc)
+            return _union(aligned, host)
 
         if match.concentric:
             return _dispatch_curved_overlap(
@@ -769,54 +777,114 @@ class Node(
             self, match.self_anchor, host, match.host_anchor, eps, loc,
         )
 
-    def _fuse_self_only(self, match, eps, loc):
-        """Extension path for ``fuse(self_only=True)``: extend self only,
-        return without wrapping in union with host."""
-        from scadwright.ast.placement import _alignment_translate
-        from scadwright.ast.transforms import Translate
+    def _fuse_self_only(self, host, self_anchors, host_anchors, on, from_anchor, eps, loc):
+        """Return self's contribution to fusing every contact it shares with
+        ``host``, for the generator pattern where ``host`` is yielded
+        separately. Host is never changed, so self takes the eps where it can:
+        grown when it is the contained, lever-bearing side, shifted when it is a
+        cap that asks, otherwise a slab that rides with self. Self changes at
+        most once. Runs the same mechanism as the union-returning forms, so it
+        can't leave a stray eps sliver.
+        """
+        from dataclasses import replace
+
+        from scadwright.api.fuse_mode import fuse_enabled
+        from scadwright.ast._surface_match import (
+            _no_contact_error_lines, distinct_contacts, find_contacts,
+        )
+        from scadwright.ast.placement import (
+            _alignment_translate, _planar_contact_slab, _planar_grow_candidates,
+            _planar_shift, _resolve_fuse_match,
+        )
+        from scadwright.boolops import union as _union
         from scadwright.errors import ValidationError
 
-        if match.concentric:
-            extended = self.fuse_extend(match.self_anchor, eps)
+        if on is None and from_anchor is None:
+            matches = distinct_contacts(find_contacts(self_anchors, host_anchors))
+            if not matches:
+                raise ValidationError(
+                    "\n".join(
+                        _no_contact_error_lines(
+                            self, host, self_anchors, host_anchors,
+                        )
+                    ),
+                    source_location=loc,
+                )
+        else:
+            matches = [
+                _resolve_fuse_match(
+                    self, host, self_anchors, host_anchors, on, from_anchor, loc,
+                )
+            ]
+
+        # disable_eps_fuse(): align self to each contact (a no-op when it's
+        # already in place) and return it, no eps and no host.
+        if not fuse_enabled():
+            working = self
+            for m in matches:
+                working = _alignment_translate(
+                    working, m.self_anchor, m.host_anchor,
+                    concentric=m.concentric, loc=loc,
+                )
+            return working
+
+        working = self
+        self_changed = False
+
+        # Curved concentric: self must carry the lever, since host can't grow.
+        for m in matches:
+            if not m.concentric:
+                continue
+            extended = working.fuse_extend(m.self_anchor, eps)
             if extended is None:
                 raise ValidationError(
                     f"fuse(self_only=True): the extension lever for this "
-                    f"{match.self_anchor.kind} contact lives on host "
-                    f"({type(match.host_anchor).__name__}), not self "
+                    f"{m.self_anchor.kind} contact lives on host "
+                    f"({type(host).__name__}), not self "
                     f"({type(self).__name__}). Either give self a "
                     f"fuse_extend() that handles this anchor, or use "
                     f"fuse() without self_only and accept the host union.",
                     source_location=loc,
                 )
-            return extended
+            if self_changed:
+                raise ValidationError(
+                    f"fuse(self_only=True): self ({type(self).__name__}) meets "
+                    f"host at two curved contacts and would need two radial "
+                    f"rebuilds, which can't combine. Fuse them with pairwise "
+                    f"fuse() instead.",
+                    source_location=loc,
+                )
+            working, self_changed = extended, True
 
-        # Planar: shift or overlap, self side only.
-        if self.prefers_shift_at_anchor(match.self_anchor):
-            aligned = _alignment_translate(
-                self, match.self_anchor, match.host_anchor,
-                concentric=False, loc=loc,
+        # Planar: grow self when it is the contained, lever-bearing side; shift a
+        # cap that asks; otherwise a centered slab that rides with self. Self
+        # changes at most once, so a second contact falls to the slab.
+        slabs = []
+        for m in matches:
+            if m.concentric:
+                continue
+            working = _alignment_translate(
+                working, m.self_anchor, m.host_anchor, concentric=False, loc=loc,
             )
-            h_norm = match.host_anchor.normal
-            shift = (-h_norm[0] * eps, -h_norm[1] * eps, -h_norm[2] * eps)
-            return Translate(v=shift, child=aligned, source_location=loc)
+            s_anchor = replace(m.self_anchor, position=m.host_anchor.position)
+            self_grow = None
+            if not self_changed:
+                for which, extended in _planar_grow_candidates(
+                    working, s_anchor, host, m.host_anchor, eps,
+                ):
+                    if which == "a":
+                        self_grow = extended
+                        break
+            if self_grow is not None:
+                working, self_changed = self_grow, True
+            elif not self_changed and working.prefers_shift_at_anchor(s_anchor):
+                working, self_changed = _planar_shift(working, s_anchor, eps, loc), True
+            else:
+                slabs.append(
+                    _planar_contact_slab(working, s_anchor, host, m.host_anchor, eps, loc)
+                )
 
-        extended = self.fuse_extend(match.self_anchor, eps)
-        if extended is None:
-            extended = self.cross_section_extend(
-                match.self_anchor, eps, context="fuse",
-            )
-        if extended is None:
-            raise ValidationError(
-                f"fuse(self_only=True): self ({type(self).__name__}) has "
-                f"no extension lever for this planar contact. Either "
-                f"override fuse_extend on self, or use fuse() without "
-                f"self_only and accept the host union.",
-                source_location=loc,
-            )
-        return _alignment_translate(
-            extended, match.self_anchor, match.host_anchor,
-            concentric=False, loc=loc,
-        )
+        return _union(working, *slabs) if slabs else working
 
     def through(
         self,
