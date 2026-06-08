@@ -8,7 +8,7 @@ Imports used on this page:
 from scadwright import arg, parse_args, from_json
 ```
 
-The CLI also lets you parametrize a script — declare named parameters once, then override them from the command line, and pass complex / nested data via one or more JSON files.
+The CLI also lets you parametrize a script: declare named parameters once, override them from the command line, and pass complex or nested data via one or more JSON files.
 
 ## `scadwright build`
 
@@ -37,7 +37,7 @@ scadwright preview widget.py --variant=print  # variant works the same as build
 scadwright preview widget.py --openscad=/opt/homebrew/bin/openscad
 ```
 
-`preview` builds the script's `MODEL` to a stable temp file (path keyed on the script + variant, in `$TMPDIR`), then launches OpenSCAD on it detached and returns immediately. Re-running `preview` overwrites the same temp file, so an OpenSCAD window already pointed at it auto-reloads — no need to close and reopen.
+`preview` builds the script's `MODEL` to a stable temp file (path keyed on the script + variant, in `$TMPDIR`), then launches OpenSCAD on it detached and returns immediately. Re-running `preview` overwrites the same temp file, so an OpenSCAD window already pointed at it auto-reloads. No need to close and reopen it.
 
 OpenSCAD lookup order: `--openscad` flag, then `$SCADWRIGHT_OPENSCAD`, then `openscad` on `PATH`.
 
@@ -49,7 +49,7 @@ scadwright render widget.py -o /tmp/out.stl   # explicit STL output
 scadwright render widget.py --variant=print
 ```
 
-`render` builds the script to a temp `.scad` file and then invokes `openscad -o OUT.stl TEMPFILE` synchronously to produce an STL (or any format OpenSCAD's `-o` accepts based on extension — `.off`, `.amf`, `.3mf`, etc.). Output streams to stdout/stderr; the command returns OpenSCAD's exit code.
+`render` builds the script to a temp `.scad` file and then invokes `openscad -o OUT.stl TEMPFILE` synchronously to produce an STL (or any format OpenSCAD's `-o` accepts based on extension: `.off`, `.amf`, `.3mf`, etc.). Output streams to stdout/stderr; the command returns OpenSCAD's exit code.
 
 ## `scadwright morph`
 
@@ -132,7 +132,7 @@ Forces command-line argument parsing immediately and returns the result as a sta
 
 ## Passing complex data via JSON: `from_json`
 
-`arg()` is the right tool for a handful of scalar parameters. When a script needs structured input — a list of holes with positions and diameters, a nested clearances table, a parts list — pass a JSON file with `--from-json` and read it with `from_json()`:
+`arg()` is the right tool for a handful of scalar parameters. When a script needs structured input (a list of holes with positions and diameters, a nested clearances table, a parts list), pass a JSON file with `--from-json` and read it with `from_json()`:
 
 ```python
 from scadwright import from_json
