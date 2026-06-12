@@ -29,12 +29,16 @@ from spec import PentaconSixMount
 class RearLensCap(Component):
     """A closed cup with a three-channel twist-lock bayonet.
 
-    The cup bore clears the lens barrel (and the lens's orientation
-    post, which sits at the bore edge). Each channel is cut in two
-    passes: a full-height entry slot the lug drops through, and a
-    lug-tall rotation channel sweeping `lock_twist_deg` to one side of
-    it. The wall left above the rotation channel is the retaining roof;
-    the wall left below is the floor the lug rests on.
+    The cup bore admits the lens barrel and sinks it into a well deep
+    enough that the barrel's back, which runs on past the lugs, clears
+    the closed disc. Each lug channel is cut in two passes: an entry slot
+    the lug drops through, run the full way down to the post groove, and a
+    lug-tall rotation channel sweeping `lock_twist_deg` to one side of it.
+    A separate, narrower groove deeper in the well, at the same radial
+    depth as the lug channels, lets the lens's orientation post turn clear
+    of them; the post drops to it through the same entry slot as its lug.
+    The wall left above the rotation channel is the retaining roof; the
+    wall left below is the floor the lug rests on.
     """
 
     # The shared bayonet spec flows in as one parameter; the equations read
@@ -43,17 +47,44 @@ class RearLensCap(Component):
     spec = Param()
 
     equations = """
-        cap_wall, disc_thk, roof_thk, axial_clear, lead_in > 0
-        bore_cut_r = spec.bore_r + spec.fit_clearance
-        channel_outer_r = spec.lug_tip_r + spec.fit_clearance
+        cap_wall, disc_thk, axial_clear > 0
+        barrel_clear, post_axial_clear, entry_clear > 0
+        bore_clear, lug_radial_clear > 0
+        aperture_pin_clear >= 0
+        # Bore the barrel passes through, plus its own slip-fit gap. This
+        # radius is also the inner wall of the lug/post channels.
+        bore_cut_r = spec.bore_r + bore_clear
+        # Outer wall of the lug channels: the lug tip plus the fit gap and
+        # the extra radial room the lug turns in.
+        channel_outer_r = spec.lug_tip_r + spec.fit_clearance + lug_radial_clear
         channel_mid_r = (bore_cut_r + channel_outer_r) / 2
         channel_band = channel_outer_r - bore_cut_r
         channel_band > 0
+        # Sink the lens far enough that its barrel, and the aperture pin
+        # swinging behind it, both clear the closed disc: the barrel's reach
+        # past the lugs, a comfort gap, plus room for the aperture pin.
+        barrel_well = spec.barrel_past_lugs + barrel_clear + aperture_pin_clear
+        # The lugs rest a well's depth above the disc; this is that plane.
+        lug_floor = disc_thk + barrel_well
+        # The orientation post turns in a groove cut to the same radial depth
+        # as the lug channels, a touch taller than the post is wide so it
+        # turns freely (its width is pin_dia, not adjusted).
+        post_axial = spec.pin_dia + axial_clear + post_axial_clear
+        # The post sits centered in the barrel's reach past the lugs, so its
+        # groove is sunk this far below the lug floor, down in the well and
+        # clear of the lug channels.
+        pin_center_axial = spec.barrel_past_lugs / 2
+        post_center_z = lug_floor - pin_center_axial
         cap_od = 2 * (channel_outer_r + cap_wall)
-        cap_h = disc_thk + spec.lug_axial + axial_clear + roof_thk + lead_in
+        # The rim seats against the lens shoulder, which the mount fixes a set
+        # distance above the lug face. The wall left between the rotation
+        # channel and that rim is the retaining roof.
+        roof_thk = spec.axial_lug_face_to_lens_shoulder - axial_clear
+        roof_thk > 0
+        cap_h = lug_floor + spec.lug_axial + axial_clear + roof_thk
     """
 
-    # Maker's mark raised on the closed-back (z = 0) face.
+    # Mount type label raised on the closed-back (z = 0) face.
     label_relief = 0.6
     label_size = 7.0
 
@@ -68,16 +99,25 @@ class RearLensCap(Component):
 
     def build(self):                                       # framework hook: required; returns the shape
         eps = default_eps()
-        floor = self.disc_thk
-        # Angular half-width of an entry slot: the lug's own half-width
-        # plus the fit gap, converted from mm to degrees at the channel.
+        # Lugs rest a well's depth above the disc, so the barrel running on
+        # past them has room to sink toward the closed bottom.
+        floor = self.lug_floor
+        # Rotation-channel half-width (the locked fit): the lug's own
+        # half-width plus the fit gap, in degrees at the channel.
         half = self.spec.lug_span_deg / 2 + math.degrees(self.spec.fit_clearance / self.channel_mid_r)
+        # Entry slot is widened by `entry_clear` per side so the lugs drop in
+        # without binding; the locked fit above stays at `half`.
+        half_entry = half + math.degrees(self.entry_clear / self.channel_mid_r)
+        # The post spans its width circumferentially at the bore edge.
+        post_half = math.degrees((self.spec.pin_dia / 2 + self.spec.fit_clearance) / self.spec.bore_r)
+        # Bottom of the post groove, centered in the barrel well.
+        post_bot = self.post_center_z - self.post_axial / 2
         twist = self.spec.lock_twist_deg
 
         # Cup: a wall whose bore admits the lens barrel, closed at the
         # bottom by a solid disc.
         solid = union(
-            Tube(h=self.cap_h, od=self.cap_od, id=self.spec.bore_dia + 2 * self.spec.fit_clearance),
+            Tube(h=self.cap_h, od=self.cap_od, id=self.spec.bore_dia + 2 * self.bore_clear),
             cylinder(h=self.disc_thk, r=self.cap_od / 2),
         )
 
@@ -85,11 +125,13 @@ class RearLensCap(Component):
         cutters = []
         for k in range(int(self.spec.lug_count)):
             center = k * self.spec.lug_step_deg
-            # Entry slot: full height above the floor, so a lug drops in.
+            # Entry slot: the wide drop-in column, run all the way down to the
+            # post groove so the lug and the post below it enter through this
+            # one slot.
             cutters.append(
-                Arc(angles=(center - half, center + half), **band)
-                .linear_extrude(height=self.cap_h - floor + eps)
-                .up(floor)
+                Arc(angles=(center - half_entry, center + half_entry), **band)
+                .linear_extrude(height=self.cap_h - post_bot + eps)
+                .up(post_bot)
             )
             # Rotation channel: a lug-tall band sweeping `twist` to one
             # side of the entry slot. The intact wall above it is the
@@ -99,7 +141,15 @@ class RearLensCap(Component):
                 .linear_extrude(height=self.spec.lug_axial + self.axial_clear)
                 .up(floor)
             )
-        # Raised maker's mark on the closed-back (z = 0) face.
+            # Post groove: same radial band as the lug channels, centered in
+            # the barrel well below them. It sweeps the same `twist`, so the
+            # post turns in its own groove nearer the disc.
+            cutters.append(
+                Arc(angles=(center - post_half, center + post_half + twist), **band)
+                .linear_extrude(height=self.post_axial)
+                .up(post_bot)
+            )
+        # Raised mount type label on the closed-back (z = 0) face.
         yield difference(solid, *cutters).add_text(
             label="Pentacon Six", on="bottom",
             relief=self.label_relief, font_size=self.label_size,
@@ -119,9 +169,13 @@ class PentaconSixRearLensCap(RearLensCap):
     # This cap's own print choices.
     cap_wall    = 2.5     # wall outside the lug channels
     disc_thk    = 2.0     # closed-end disc thickness
-    roof_thk    = 1.2     # retaining roof above the rotation channels
-    axial_clear = 0.3     # vertical slack for the lug in its channel
-    lead_in     = 2.0     # extra rim height above the roof
+    axial_clear = 0.5     # vertical slack for the lug and post in their channels
+    barrel_clear = 0.5    # comfort gap below the lugs for the barrel's back
+    aperture_pin_clear = 10.0  # extra well depth so the lens's aperture pin clears the disc
+    post_axial_clear = 0.3  # extra axial slack on the post groove (atop axial_clear)
+    entry_clear = 0.5     # extra circumferential room per side on the lug entry slots
+    bore_clear = 0.6      # slip-fit gap per side on the bore (-> 61.2 mm ID)
+    lug_radial_clear = 1.0  # extra radial room per side for the lug tip in its channel
 
 
 class rear_lens_cap(Design):

@@ -32,9 +32,14 @@ from rear_lens_cap import PentaconSixRearLensCap
 BED_SEP   = 44.0    # half-distance between the caps lying flat on the bed
 STAND_Z   = 36.0    # height the parts rise to when stood up to face each other
 FACE_GAP  = 28.0    # half-distance between them once faced off, before sliding in
-SEAT_GAP  = 5.0     # half-distance once the lugs bottom on the channel floor
 ALIGN     = 60.0    # extra body turn to line lugs up with the slots after the flip
 TWIST     = PentaconSixMount.lock_twist_deg   # turn from lugs-in to locked
+
+# Half the distance that lands the body lugs on the rear cap's channel floor.
+# Each cap owns its own seat plane, so this follows the barrel well rather
+# than drifting when that depth changes.
+_rear, _body = PentaconSixRearLensCap(), PentaconSixBodyCap()
+SEAT_GAP  = (_rear.lug_floor + _body.lug_seat) / 2
 
 
 class validation_morph(Design):

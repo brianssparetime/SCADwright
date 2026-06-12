@@ -39,12 +39,24 @@ class PentaconSixMount(Spec):
         lug_radial = 2.6
         lug_axial = 1.8
 
+        # The lug's face nearest the lens shoulder sits this far below that
+        # shoulder, the flat ring a rear cap's rim seats against. It fixes how
+        # far the cap's rim stands above the seated lug.
+        axial_lug_face_to_lens_shoulder = 2.0
+
+        # The lens barrel runs on past the lugs toward the camera; its back
+        # face stands this far beyond the lug plane. A rear cap has to sink
+        # the lens this much deeper so the barrel clears the closed disc.
+        barrel_past_lugs = 6.0
+
         # Turn, in degrees, from dropping the lugs in to fully locked.
         lock_twist_deg = 60.0
 
-        # The lens's orientation post, just in front of the top lug.
-        # The caps don't build a post; the bore simply clears it.
-        pin_dia = 2.3
+        # The lens's orientation post, a stub at the bore edge centered in
+        # the barrel's reach past the lugs. A rear cap that sinks the lens
+        # cuts a groove for this post to turn in; pin_dia (its width) and
+        # pin_height (how far it stands off the barrel) size that groove.
+        pin_dia = 2.4
         pin_height = 2.0
 
         # --- Printed fit ---
