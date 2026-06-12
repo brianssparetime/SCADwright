@@ -161,6 +161,7 @@ shape.rotate_copy(angle=60, n=6, axis=[0, 0, 1])    # radial array
 rotate_copy(60, shape1, shape2, n=6)                # standalone: shapes positional, n kwarg
 shape.mirror_copy(normal=[1,0,0])                   # chained; also accepts positional vector
 mirror_copy(cube(5).translate([10,0,0]), normal=[1,0,0])   # or ([1,0,0], shape) positional
+mirror_copy(half, normal=[0,0,1], fuse=True)        # overlap the reflected seam by eps (rare non-manifold guard; off by default)
 
 hub.multi_hull(*spokes)                             # hull hub with each spoke
 nodes_along_path.sequential_hull()                  # hull adjacent pairs

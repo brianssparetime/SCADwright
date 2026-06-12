@@ -44,6 +44,8 @@ The mirror plane is given by its *normal*, same as `mirror`. Both the chained me
 - Chained: `shape.mirror_copy(normal=[...])`
 - Standalone: `mirror_copy(*shapes, normal=[...])`
 
+When a shape and its reflection meet exactly on the plane, that seam can export non-manifold once a later boolean cuts across it. Pass `fuse=True` to overlap the two by `eps` along the normal rather than let them abut, which keeps the walls continuous. It is off by default, since the case is rare and the framework can't tell in advance which seams will hit it; reach for it if your slicer flags a reflected seam. `disable_eps_fuse()` turns the overlap off.
+
 ## `rotate_copy`
 
 Rotates the shape around an axis, keeping `n` total copies (including the original).

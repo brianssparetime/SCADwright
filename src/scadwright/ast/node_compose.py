@@ -16,17 +16,30 @@ class _CompositionMixin:
         x: float = 0,
         y: float = 0,
         z: float = 0,
+        fuse: bool = False,
+        eps: float | None = None,
     ) -> "Node":
         """Keep the original AND add a mirrored copy. Returns union(self, self.mirror(v)).
 
         Accepts the mirror-plane normal as `v` (positional or first arg),
         `normal=` (readable alias — matches the standalone `mirror_copy`
         helper), or as component kwargs `x=, y=, z=`.
+
+        `fuse=True` overlaps the original with its reflection by `eps` (default
+        `default_eps()`) along the normal, instead of letting them abut. A
+        reflected seam that abuts exactly can export non-manifold once a later
+        boolean cuts across it; the overlap keeps the walls continuous and avoids
+        that. It is off by default because the case is rare and not detectable in
+        advance. `disable_eps_fuse()` suppresses the overlap.
         """
         from scadwright.api._vectors import _vec_from_args
+        from scadwright.api.fuse_mode import fuse_enabled
         from scadwright.ast.base import SourceLocation
         from scadwright.ast.csg import Union
         from scadwright.ast.transforms import Mirror
+        from scadwright.composition_helpers import (
+            _mirrored_with_overlap, _validate_mirror_normal,
+        )
         from scadwright.errors import ValidationError
 
         loc = SourceLocation.from_caller()
@@ -38,7 +51,14 @@ class _CompositionMixin:
                 )
             v = normal
         mirror_normal = _vec_from_args(v, x, y, z, name="mirror_copy normal")
-        mirrored = Mirror(normal=mirror_normal, child=self, source_location=loc)
+        _validate_mirror_normal(mirror_normal, loc)
+        if fuse and fuse_enabled():
+            if eps is None:
+                from scadwright.api.tolerances import default_eps
+                eps = default_eps()
+            mirrored = _mirrored_with_overlap(self, mirror_normal, eps, loc)
+        else:
+            mirrored = Mirror(normal=mirror_normal, child=self, source_location=loc)
         return Union(children=(self, mirrored), source_location=loc)
 
     def halve(

@@ -24,7 +24,41 @@ class _Measured(NamedTuple):
     ext_y: float
 
 
-def mirror_copy(*args, normal=None) -> Union:
+def _validate_mirror_normal(normal_vec, loc):
+    """Reject a zero or near-zero mirror-plane normal, which defines no plane."""
+    import math
+    if math.sqrt(sum(c * c for c in normal_vec)) < 1e-9:
+        raise ValidationError(
+            f"mirror_copy: the mirror-plane normal must be a non-zero vector; "
+            f"got {tuple(normal_vec)}.",
+            source_location=loc,
+        )
+
+
+def _mirrored_with_overlap(child, normal_vec, eps, loc):
+    """Mirror ``child`` across the origin plane with normal ``normal_vec``, then
+    shift the copy by ``eps`` along the normal toward the side ``child`` sits on,
+    so the two overlap rather than abut. A child centered on the plane already
+    overlaps its own mirror, so it is returned unshifted. Caller has validated
+    the normal is non-zero.
+    """
+    import math
+    from scadwright.api.tolerances import coincidence_tol
+    from scadwright.bbox import bbox as _bbox
+
+    m = Mirror(normal=normal_vec, child=child, source_location=loc)
+    nlen = math.sqrt(sum(c * c for c in normal_vec))
+    n_unit = tuple(c / nlen for c in normal_vec)
+    center = _bbox(child).center
+    s = sum(center[i] * n_unit[i] for i in range(3))
+    if abs(s) <= coincidence_tol():
+        return m
+    sign = 1.0 if s > 0 else -1.0
+    shift = tuple(sign * eps * n_unit[i] for i in range(3))
+    return Translate(v=shift, child=m, source_location=loc)
+
+
+def mirror_copy(*args, normal=None, fuse=False, eps=None) -> Union:
     """Keep all children AND a mirrored copy of the group.
 
     Two equivalent forms:
@@ -34,6 +68,13 @@ def mirror_copy(*args, normal=None) -> Union:
 
     The second form is recommended for new code — it reads "these shapes,
     mirrored across this plane" and catches typos in the kwarg name.
+
+    ``fuse=True`` overlaps each child with its reflection by ``eps`` (default
+    ``default_eps()``) along the normal, instead of letting them abut. A
+    reflected seam that abuts exactly can export non-manifold once a later
+    boolean cuts across it; the overlap keeps the walls continuous and avoids
+    that. It is off by default because the case is rare and not detectable in
+    advance. ``disable_eps_fuse()`` suppresses the overlap.
     """
     loc = SourceLocation.from_caller()
 
@@ -57,10 +98,21 @@ def mirror_copy(*args, normal=None) -> Union:
         normal_val, *children = args
 
     normal_vec = _as_vec3(normal_val, name="mirror_copy normal", default_scalar_broadcast=False)
+    _validate_mirror_normal(normal_vec, loc)
     flat = _flatten_csg_args(children, "mirror_copy")
-    mirrored = tuple(
-        Mirror(normal=normal_vec, child=c, source_location=loc) for c in flat
-    )
+
+    from scadwright.api.fuse_mode import fuse_enabled
+    if fuse and fuse_enabled():
+        if eps is None:
+            from scadwright.api.tolerances import default_eps
+            eps = default_eps()
+        mirrored = tuple(
+            _mirrored_with_overlap(c, normal_vec, eps, loc) for c in flat
+        )
+    else:
+        mirrored = tuple(
+            Mirror(normal=normal_vec, child=c, source_location=loc) for c in flat
+        )
     return Union(children=flat + mirrored, source_location=loc)
 
 
