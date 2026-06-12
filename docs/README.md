@@ -53,6 +53,8 @@ Reading them in order is a guided tour of the constructs in context.
 - [Shape library](shapes/README.md) — 50+ ready-made Components: tubes, gears, fasteners, bearings, infill panels, and more
 - [Anchors](anchors.md) — the data type (named attachment points), authoring custom anchors on Components
 - [Attaching shapes](attach.md) — `attach()` to position parts relative to each other
+- [Text on a surface](add_text.md) — `add_text()` for raised or inset labels on a face, wall, or rim
+- [A 2D profile on a surface](wrap_2d.md) — `wrap_2d()` for an SVG logo, polygon, or outline as relief
 - [Eliminating epsilon overlap](auto-eps_fuse_and_through.md) — `through()` for cutters, `attach(fuse=True)` for joints
 - [Custom transforms](custom_transforms.md) — adding your own verbs (e.g. `.chamfer_top(depth=1)`)
 - [Specs](specs_and_adjustments.md#your-first-spec) — shared dimensions across parts in a single source of truth

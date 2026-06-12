@@ -55,6 +55,7 @@ from scadwright.render import render
 # Register built-in custom transforms. Imported for side effects only —
 # each module's ``@transform(...)`` decorator self-registers on import.
 from scadwright._custom_transforms import add_text as _add_text  # noqa: F401
+from scadwright._custom_transforms import wrap_2d as _wrap_2d  # noqa: F401
 
 __version__ = "0.0.1"
 

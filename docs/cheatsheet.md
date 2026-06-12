@@ -285,6 +285,34 @@ shape.add_text(label="X", relief=0.4, font_size=5,
 intact, so you can chain more labels or call `.attach()` afterward. `text()`
 options (`font`, `halign`, `valign`, etc.) pass through.
 
+## A 2D profile on a surface &nbsp; &nbsp;[→ full](wrap_2d.md)
+
+```python
+logo = scad_import("logo.svg", bbox=((0, 0, 0), (124, 106, 0)))  # bbox = imported mm extent (px at ~72 dpi)
+
+# Flat face and cylinder (wrap keeps proportions; default on a cylinder):
+cube([60, 60, 4], center="xy").wrap_2d(profile=logo, relief=1.0, on="top", size=40)   # raised
+cylinder(h=80, r=25).wrap_2d(profile=logo, relief=-0.8, on="outer_wall", size=60)     # inset, wrapped
+
+# Curved walls use projection="flat" (the default there) — a straight press, uniform depth:
+sphere(r=30).wrap_2d(profile=logo, relief=-1.0, on="+z", size=24)
+cylinder(h=60, r1=30, r2=18).wrap_2d(profile=logo, relief=0.8, on="outer_wall", size=20)  # cone
+Barrel(h=80, end_r=25, bulge=10).wrap_2d(profile=logo, relief=-1.0, on="outer_wall", size=30)  # barrel
+Tube(h=40, od=30, thk=6).wrap_2d(profile=logo, relief=-0.6, on="inner_wall", size=12)          # bore
+
+cyl.wrap_2d(profile=logo, relief=0.6, on="outer_wall", size=24, angle=37, at_z=-12)    # place around/along
+cyl.wrap_2d(profile=logo, relief=0.6, on="outer_wall", size=24, segments=120)          # smoother wrap
+
+cutter = body.wrap_2d_geometry(profile=logo, relief=-0.6, on="outer_wall", size=30)    # relief without the host
+```
+
+`profile` is any 2D node (imported SVG, polygon, outline); SVGs import as filled
+closed paths, holes by winding. `size=` is the mm width (scalar keeps aspect, a
+`(w, h)` pair sets both). `projection="wrap"` is developable (cylinder only);
+`"flat"` presses straight onto a sphere, cone, cylinder, or barrel, inside or
+out, best for a small shape on a large surface. `relief` is signed; the host's
+anchors survive the call.
+
 `valign` defaults to `"center"` on every host. On curved walls and rim
 arcs the per-glyph `text()` always emits with `valign="baseline"` (mixed-
 height glyphs share a baseline); the user's `valign` only positions the

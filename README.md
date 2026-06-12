@@ -247,6 +247,17 @@ Multi-line labels stack the right way for each surface — vertically on a face,
 
 See [`add_text()`](docs/add_text.md) for the full reference.
 
+[`wrap_2d()`](docs/wrap_2d.md) does the same for a 2D profile (an imported SVG logo, a polygon, an outline), placing it as raised or inset relief on a flat face or a curved wall:
+
+```python
+from scadwright.primitives import cylinder, scad_import
+
+logo = scad_import("logo.svg", bbox=((0, 0, 0), (124, 106, 0)))   # bbox = the imported mm extent
+cylinder(h=80, r=25).wrap_2d(profile=logo, relief=-0.8, on="outer_wall", size=60)  # wrapped, inset
+```
+
+`projection="wrap"` keeps proportions on a cylinder; `projection="flat"` presses the profile straight onto a sphere, cone, or other curved wall at uniform depth. See [`wrap_2d()`](docs/wrap_2d.md) for the full reference.
+
 
 ### 7. Clean separation between variants for printing, display, integration testing, etc.
 
