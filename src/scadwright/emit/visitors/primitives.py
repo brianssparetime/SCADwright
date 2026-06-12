@@ -110,8 +110,8 @@ class _PrimitiveVisitorMixin:
             args.append(f"layer={_fmt_str(n.layer)}")
         if n.origin is not None:
             args.append(f"origin={_fmt_vec(n.origin)}")
-        if n.scale is not None:
-            args.append(f"scale={_fmt_num(n.scale)}")
+        if n.import_scale is not None:
+            args.append(f"scale={_fmt_num(n.import_scale)}")
         extra = self._fmt_fn_kwargs(n.fn, n.fa, n.fs)
         if extra:
             args.append(extra)

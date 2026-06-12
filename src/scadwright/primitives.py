@@ -526,7 +526,7 @@ def scad_import(
         convexity=convexity,
         layer=layer,
         origin=origin,
-        scale=scale,
+        import_scale=scale,
         fn=fn, fa=fa, fs=fs,
         source_location=loc,
     )

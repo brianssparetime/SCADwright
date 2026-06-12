@@ -302,7 +302,9 @@ class ScadImport(Node):
     convexity: int | None = None
     layer: str | None = None               # DXF
     origin: tuple[float, float] | None = None  # DXF
-    scale: float | None = None             # DXF
+    # Stored as import_scale, not scale: a field named `scale` would shadow
+    # Node.scale and break `scad_import(...).scale(...)` chaining.
+    import_scale: float | None = None      # DXF/SVG import() scale factor
     fn: float | None = None
     fa: float | None = None
     fs: float | None = None
