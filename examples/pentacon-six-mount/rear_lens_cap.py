@@ -14,8 +14,6 @@ Run:
     python examples/pentacon-six-mount/rear_lens_cap.py
 """
 
-import math
-
 from scadwright import Component, Param
 from scadwright.api.tolerances import default_eps
 from scadwright.boolops import difference, union
@@ -60,6 +58,15 @@ class RearLensCap(Component):
         channel_mid_r = (bore_cut_r + channel_outer_r) / 2
         channel_band = channel_outer_r - bore_cut_r
         channel_band > 0
+        # Channel angular extents at the band, in degrees. The rotation
+        # channel's half-width is the lug's own half plus the fit gap; the
+        # entry slot is wider by entry_clear per side; the post spans
+        # post_half_deg at the bore edge. build() cuts the channels at these
+        # angles, and they are readable from outside to slice the ring where
+        # a channel crosses.
+        lug_half_deg = spec.lug_span_deg / 2 + degrees(spec.fit_clearance / channel_mid_r)
+        entry_half_deg = lug_half_deg + degrees(entry_clear / channel_mid_r)
+        post_half_deg = degrees((spec.pin_dia / 2 + spec.fit_clearance) / spec.bore_r)
         # Sink the lens far enough that its barrel, and the aperture pin
         # swinging behind it, both clear the closed disc: the barrel's reach
         # past the lugs, a comfort gap, plus room for the aperture pin.
@@ -102,14 +109,12 @@ class RearLensCap(Component):
         # Lugs rest a well's depth above the disc, so the barrel running on
         # past them has room to sink toward the closed bottom.
         floor = self.lug_floor
-        # Rotation-channel half-width (the locked fit): the lug's own
-        # half-width plus the fit gap, in degrees at the channel.
-        half = self.spec.lug_span_deg / 2 + math.degrees(self.spec.fit_clearance / self.channel_mid_r)
-        # Entry slot is widened by `entry_clear` per side so the lugs drop in
-        # without binding; the locked fit above stays at `half`.
-        half_entry = half + math.degrees(self.entry_clear / self.channel_mid_r)
-        # The post spans its width circumferentially at the bore edge.
-        post_half = math.degrees((self.spec.pin_dia / 2 + self.spec.fit_clearance) / self.spec.bore_r)
+        # Channel angular extents, resolved in the equations above: the
+        # locked-fit half-width, the widened entry-slot half-width, and the
+        # post's half-width, all in degrees at the channel band.
+        half = self.lug_half_deg
+        half_entry = self.entry_half_deg
+        post_half = self.post_half_deg
         # Bottom of the post groove, centered in the barrel well.
         post_bot = self.post_center_z - self.post_axial / 2
         twist = self.spec.lock_twist_deg
