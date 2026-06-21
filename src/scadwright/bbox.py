@@ -109,13 +109,105 @@ class BBox:
 
 
 def _text_bbox_estimate(node) -> BBox:
-    """Conservative bbox for a Text primitive.
+    """Bbox for a Text primitive.
 
-    Without rasterizing the font, we approximate:
-      - per-character width ≈ 0.6 * size * spacing
-      - line height ≈ size (cap height + descender)
-    Real rendered text may be slightly narrower. Downstream fit-checks
-    stay on the conservative side.
+    When freetype-py resolves the font, the box is built from the actual
+    glyphs (so all-caps text with no descenders and lowercase text with no
+    ascenders get correctly asymmetric, content-aware extents). Otherwise it
+    falls back to a conservative, font-agnostic heuristic (per-character
+    width ≈ 0.6 * size * spacing; line height ≈ size).
+    """
+    # Column-writing directions keep the heuristic for now; the real-metrics
+    # path lays out a single horizontal run.
+    if node.direction not in ("ttb", "btt"):
+        real = _text_bbox_from_metrics(node)
+        if real is not None:
+            return real
+    return _text_bbox_heuristic(node)
+
+
+# Outward safety factor on the real-metrics extent. The unit→mm scale reuses
+# the advance-tuned `1.5` calibration, which under-predicts vertical glyph
+# extents by ~2-3% (Liberation Sans), and OpenSCAD rasterizes glyphs a touch
+# taller than the outline metrics. Expanding the box symmetrically about the
+# content center keeps the (content-aware) center exact while making the box a
+# true outer envelope of OpenSCAD's render, so fit-checks never false-"fit".
+_TEXT_BBOX_SAFETY = 1.08
+
+
+def _text_bbox_from_metrics(node) -> "BBox | None":
+    """Content-aware Text bbox from real font metrics, or ``None`` if they
+    are unavailable (freetype-py missing, font unresolved, glyph read failure,
+    or a string with no inked glyphs).
+
+    Lays a single horizontal run: pen-walk the per-glyph advances, union the
+    ink extents (side bearings included), expand by ``_TEXT_BBOX_SAFETY`` about
+    the content center to stay a conservative envelope, then apply ``halign``
+    to the layout box (total advance, matching OpenSCAD) and ``valign`` to the
+    real ink (verified against OpenSCAD's rendered output for every valign
+    mode).
+    """
+    from scadwright._custom_transforms._textmetrics import get_glyph_boxes
+
+    boxes = get_glyph_boxes(
+        tuple(node.text), font=node.font, size=node.size, spacing=node.spacing
+    )
+    if not boxes:
+        return None
+
+    pen = 0.0
+    inked: list[tuple[float, float, float, float]] = []
+    for gb in boxes:
+        if gb.ink_right > gb.ink_left and gb.ink_top > gb.ink_bottom:
+            inked.append((pen + gb.ink_left, pen + gb.ink_right, gb.ink_bottom, gb.ink_top))
+        pen += gb.advance
+    total = pen
+    if not inked:
+        return None  # all-whitespace; let the heuristic give it a box
+
+    xmin = min(i[0] for i in inked)
+    xmax = max(i[1] for i in inked)
+    ymin = min(i[2] for i in inked)
+    ymax = max(i[3] for i in inked)
+
+    # Expand outward about each axis' center so the box is a conservative
+    # envelope of the render while the content-aware center stays exact.
+    def _pad(lo: float, hi: float) -> tuple[float, float]:
+        c = (lo + hi) / 2.0
+        half = (hi - lo) / 2.0 * _TEXT_BBOX_SAFETY
+        return c - half, c + half
+
+    xmin, xmax = _pad(xmin, xmax)
+    ymin, ymax = _pad(ymin, ymax)
+
+    # halign positions the layout box (the cumulative advance), not the ink.
+    if node.halign == "center":
+        dx = -total / 2.0
+    elif node.halign == "right":
+        dx = -total
+    else:  # left
+        dx = 0.0
+
+    # valign positions the real ink extent.
+    if node.valign == "center":
+        dy = -(ymin + ymax) / 2.0
+    elif node.valign == "top":
+        dy = -ymax
+    elif node.valign == "bottom":
+        dy = -ymin
+    else:  # baseline
+        dy = 0.0
+
+    return BBox(min=(xmin + dx, ymin + dy, 0.0), max=(xmax + dx, ymax + dy, 0.0))
+
+
+def _text_bbox_heuristic(node) -> BBox:
+    """Conservative, font-agnostic Text bbox.
+
+    Approximates per-character width ≈ 0.6 * size * spacing and line height
+    ≈ size. Real rendered text may be slightly narrower; downstream
+    fit-checks stay on the conservative side. Used when real font metrics
+    aren't available.
     """
     n_chars = len(node.text)
     char_w = 0.6 * node.size * node.spacing

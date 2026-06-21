@@ -33,10 +33,10 @@ from __future__ import annotations
 import os
 import threading
 from collections import OrderedDict
-from typing import Any
+from typing import Any, NamedTuple
 
 from scadwright._logging import get_logger
-from scadwright.api.text_calibration import current_calibration
+from scadwright.api.text_calibration import _DEFAULT_CALIBRATION, current_calibration
 
 
 _log = get_logger("scadwright.add_text.metrics")
@@ -48,15 +48,42 @@ _log = get_logger("scadwright.add_text.metrics")
 _HEURISTIC_AVG_ADVANCE: float = 0.6
 
 
+class GlyphMetric(NamedTuple):
+    """Unitless (per-EM) outline metrics for one glyph.
+
+    All fields are font units divided by ``units_per_EM``: size- and
+    calibration-independent, so they cache cleanly across calls.
+    """
+
+    advance_em: float
+    ink_left_em: float
+    ink_right_em: float
+    ink_bottom_em: float   # negative below the baseline
+    ink_top_em: float
+
+
+class GlyphBox(NamedTuple):
+    """Per-glyph extents in millimetres, in the glyph's pen-origin/baseline
+    frame. ``advance`` includes ``spacing``; ``ink_*`` are the glyph outline
+    extents (side bearings included), baseline at 0.
+    """
+
+    advance: float
+    ink_left: float
+    ink_right: float
+    ink_bottom: float
+    ink_top: float
+
+
 # --- Module-level state (guarded by _LOCK) ---
 
 
 _LOCK = threading.Lock()
 
-# LRU keyed on ``(font_key, char)`` storing the unitless ``advance_em`` (advance
-# in font units divided by ``units_per_EM``). Multiplied by ``size * spacing``
-# at lookup time. Bounded so a long-running session can't grow without limit.
-_CACHE: "OrderedDict[tuple[str, str], float]" = OrderedDict()
+# LRU keyed on ``(font_key, char)`` storing the unitless ``GlyphMetric``.
+# Scaled to mm by ``size``/``spacing``/calibration at lookup time. Bounded so
+# a long-running session can't grow without limit.
+_CACHE: "OrderedDict[tuple[str, str], GlyphMetric]" = OrderedDict()
 _CACHE_MAX = 256
 
 # Cached freetype.Face for each resolved font key. ``None`` marks an
@@ -100,40 +127,112 @@ def get_advances(
         return [heuristic_advance] * len(chars)
 
     font_key = _font_key_for_warnings(font)
-    em = face.units_per_EM
-    # OpenSCAD's text(size=N) renders such that per-glyph advance is
-    # roughly (advance_units / EM) × size × calibration × ascender / EM.
-    # The calibration factor (default 1.5) is read each call so callers
-    # can override it via ``with text_advance_calibration(...)``.
-    per_font_factor = current_calibration() * face.ascender / em
-    out: list[float] = []
+    metrics = _metrics_for(face, font_key, chars)
+    if metrics is None:
+        return [heuristic_advance] * len(chars)
+
+    # Curved-wall advances honour the live ``text_advance_calibration``
+    # override so callers can tighten/loosen per-glyph tracking.
+    scale = _em_to_mm(face, size, current_calibration())
+    return [m.advance_em * scale * spacing for m in metrics]
+
+
+def get_glyph_boxes(
+    chars: tuple[str, ...],
+    *,
+    font: str | None,
+    size: float,
+    spacing: float,
+) -> "list[GlyphBox] | None":
+    """Return per-glyph mm-space boxes for ``chars``, or ``None``.
+
+    ``None`` means real metrics are unavailable (freetype-py missing,
+    font unresolved, or a glyph read failed) — the caller should fall back
+    to its own heuristic. ``[]`` is returned for empty input.
+
+    Each ``GlyphBox`` is in the glyph's pen-origin / baseline frame, so the
+    caller pen-walks the advances and unions the ink extents to lay out a
+    line. Unlike ``get_advances``, this uses the *default* advance
+    calibration, not the ``text_advance_calibration`` override: a flat-text
+    bbox must not move because some curved-wall tracking context is active.
+    """
+    if not chars:
+        return []
+    face = _resolve_face(font)
+    if face is None:
+        return None
+    font_key = _font_key_for_warnings(font)
+    metrics = _metrics_for(face, font_key, chars)
+    if metrics is None:
+        return None
+    # Fixed at the default calibration (not the live override): a flat-text
+    # bbox must not move because some curved-wall tracking context is active.
+    # ``advance`` additionally scales by spacing; intra-glyph ink does not.
+    scale = _em_to_mm(face, size, _DEFAULT_CALIBRATION)
+    return [
+        GlyphBox(
+            advance=m.advance_em * scale * spacing,
+            ink_left=m.ink_left_em * scale,
+            ink_right=m.ink_right_em * scale,
+            ink_bottom=m.ink_bottom_em * scale,
+            ink_top=m.ink_top_em * scale,
+        )
+        for m in metrics
+    ]
+
+
+# --- Internals ---
+
+
+def _em_to_mm(face: Any, size: float, calibration: float) -> float:
+    """Factor mapping a glyph's unitless (per-EM) metric to millimetres.
+
+    OpenSCAD's ``text(size=N)`` renders such that a metric is roughly
+    ``metric_em × size × calibration × ascender / EM``. The same factor maps
+    both axes (verified against OpenSCAD's STL output); callers multiply an
+    advance additionally by ``spacing``.
+    """
+    return size * calibration * face.ascender / face.units_per_EM
+
+
+def _metrics_for(face: Any, font_key: str, chars) -> "list[GlyphMetric] | None":
+    """Per-glyph ``GlyphMetric`` for ``chars``, cached on ``(font_key, char)``.
+
+    Returns ``None`` (after warning once and marking the face bad) if any
+    glyph read raises, so the caller drops to its heuristic for this font.
+    """
+    out: list[GlyphMetric] = []
+    failed_char = None
+    failed_exc: Exception | None = None
     with _LOCK:
         for ch in chars:
             cache_key = (font_key, ch)
             cached = _CACHE.get(cache_key)
             if cached is None:
                 try:
-                    cached = _advance_em(face, ch)
-                except Exception as exc:
-                    _warn_once(
-                        font_key, "char-load-failed",
-                        f"add_text: failed to read metrics for {ch!r} from "
-                        f"font {font_key!r} ({exc.__class__.__name__}); "
-                        f"using heuristic for this font.",
-                    )
-                    # Mark the whole face as bad so subsequent chars skip too.
-                    _FACE_CACHE[font_key] = None
-                    return [heuristic_advance] * len(chars)
+                    cached = _glyph_metric(face, ch)
+                except Exception as exc:  # noqa: BLE001 — any read failure → heuristic
+                    failed_char, failed_exc = ch, exc
+                    break
                 if len(_CACHE) >= _CACHE_MAX:
                     _CACHE.popitem(last=False)
                 _CACHE[cache_key] = cached
             else:
                 _CACHE.move_to_end(cache_key)
-            out.append(cached * size * spacing * per_font_factor)
+            out.append(cached)
+    if failed_char is not None:
+        # Warn and mark the face bad outside the lock — ``_warn_once`` also
+        # takes ``_LOCK`` and it is not reentrant.
+        with _LOCK:
+            _FACE_CACHE[font_key] = None
+        _warn_once(
+            font_key, "char-load-failed",
+            f"add_text: failed to read metrics for {failed_char!r} from "
+            f"font {font_key!r} ({failed_exc.__class__.__name__}); "
+            f"using heuristic for this font.",
+        )
+        return None
     return out
-
-
-# --- Internals ---
 
 
 def _try_import_freetype() -> Any:
@@ -301,23 +400,33 @@ def _font_key_for_warnings(font: str | None) -> str:
     return "<default>" if font is None else font
 
 
-def _advance_em(face: Any, char: str) -> float:
-    """Read the advance for ``char`` from ``face`` as ``advance_units / EM``.
+def _glyph_metric(face: Any, char: str) -> GlyphMetric:
+    """Read unitless (per-EM) outline metrics for ``char`` from ``face``.
 
     Uses ``FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING`` so metrics come back in
-    raw font units; division by ``units_per_EM`` yields the unitless value.
-    The caller multiplies by ``size × spacing × per_font_factor`` (where
-    ``per_font_factor = calibration × ascender / EM``, default 1.5 ×
-    ascender / EM) to get advance in mm matching OpenSCAD's flat text().
+    raw font units; division by ``units_per_EM`` yields the unitless values.
+    The outline bbox (bearing/width/height) is the glyph's actual ink extent,
+    including round-glyph overshoot — not the nominal cap/x-height lines — so
+    the vertical extent reflects which letters are present (no descenders in
+    all-caps, no ascenders in lowercase). Callers multiply by ``size ×
+    calibration × ascender / EM`` to reach mm matching OpenSCAD's flat text().
 
     For chars the font lacks (``glyph_index == 0``), freetype loads the
-    ``.notdef`` glyph and returns its advance — same behaviour OpenSCAD's
-    ``text()`` would produce when rasterising the missing glyph.
+    ``.notdef`` glyph — same behaviour OpenSCAD's ``text()`` would produce
+    when rasterising the missing glyph.
     """
     ft = _try_import_freetype()
     flags = ft.FT_LOAD_NO_SCALE | ft.FT_LOAD_NO_HINTING
     face.load_char(char, flags)
-    return face.glyph.metrics.horiAdvance / face.units_per_EM
+    m = face.glyph.metrics
+    em = face.units_per_EM
+    return GlyphMetric(
+        advance_em=m.horiAdvance / em,
+        ink_left_em=m.horiBearingX / em,
+        ink_right_em=(m.horiBearingX + m.width) / em,
+        ink_top_em=m.horiBearingY / em,
+        ink_bottom_em=(m.horiBearingY - m.height) / em,
+    )
 
 
 def _warn_once(font_key: str, cause: str, message: str) -> None:

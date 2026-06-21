@@ -383,7 +383,7 @@ See [Advanced notes](#advanced-notes) for font-lookup limitations and a calibrat
 - `text_dir`, `rotate_glyphs`, or `flip` on a planar or rim anchor.
 - `at_z` (or `line_spacing` for multi-line) that puts a glyph past the cone's apex.
 
-For text on a named face whose size scadwright can determine, you get a **warning** (not an error) if the label would overflow the face. The estimate is conservative and font-agnostic, so it's a best-effort heads-up. Ad-hoc placements (no named face) skip the check.
+For text on a named face whose size scadwright can determine, you get a **warning** (not an error) if the label would overflow the face. The estimate is conservative — read from the font's glyphs when `freetype-py` is available, otherwise a font-agnostic fallback — so it's a best-effort heads-up. Ad-hoc placements (no named face) skip the check.
 
 ## Advanced notes
 

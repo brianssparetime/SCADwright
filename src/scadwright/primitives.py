@@ -411,7 +411,8 @@ def text(
     """Create a 2D text shape.
 
     `bbox=((min_x, min_y, 0), (max_x, max_y, 0))` overrides the built-in
-    heuristic (`0.6 * size * spacing` per character) when you need precise
+    bbox (read from the font's glyphs when freetype-py is available, else a
+    `0.6 * size * spacing` per-character estimate) when you need precise
     assembly checks for a specific font. The hint is scadwright-side metadata
     and is never emitted to SCAD.
     """

@@ -131,13 +131,13 @@ class TestRealMetrics:
         """Cache key is ``(font, char)`` not ``(font, char, size, spacing)`` —
         switching size/spacing reuses the cached EM-units value."""
         char_loads = {"n": 0}
-        original_advance_em = _textmetrics._advance_em
+        original_glyph_metric = _textmetrics._glyph_metric
 
-        def counting_advance_em(face: Any, char: str) -> float:
+        def counting_glyph_metric(face: Any, char: str):
             char_loads["n"] += 1
-            return original_advance_em(face, char)
+            return original_glyph_metric(face, char)
 
-        monkeypatch.setattr(_textmetrics, "_advance_em", counting_advance_em)
+        monkeypatch.setattr(_textmetrics, "_glyph_metric", counting_glyph_metric)
         get_advances(("X",), font=bundled_font_path, size=4.0, spacing=1.0)
         get_advances(("X",), font=bundled_font_path, size=8.0, spacing=1.0)
         get_advances(("X",), font=bundled_font_path, size=4.0, spacing=2.0)
@@ -705,3 +705,95 @@ def test_text_advance_calibration_no_effect_on_heuristic():
     with text_advance_calibration(2.0):
         scaled = get_advances(("X",), font=None, size=4.0, spacing=1.0)
     assert base == scaled
+
+
+# --- Content-aware Text bbox (get_glyph_boxes + the public bbox API) ---
+
+
+from scadwright import bbox as _bbox_query
+from scadwright.primitives import text as _text
+
+
+class TestGlyphBoxesHeuristicFallback:
+    """With freetype disabled (suite default), get_glyph_boxes returns None
+    so the Text bbox falls back to the content-blind heuristic."""
+
+    def test_glyph_boxes_none_without_freetype(self):
+        from scadwright._custom_transforms._textmetrics import get_glyph_boxes
+        assert get_glyph_boxes(("A",), font=None, size=10.0, spacing=1.0) is None
+
+    def test_bbox_is_content_blind_in_fallback(self):
+        # No descenders vs descenders: identical box without real metrics.
+        caps = _bbox_query(_text("ZenzaNOT", size=10, valign="baseline"))
+        desc = _bbox_query(_text("agagaga", size=10, valign="baseline"))
+        assert caps.min[1] == desc.min[1] == pytest.approx(-2.0)
+        assert caps.max[1] == desc.max[1] == pytest.approx(8.0)
+
+
+@pytest.mark.freetype
+class TestGlyphBoxesRealMetrics:
+    """With freetype + the bundled font, the bbox reflects the actual glyphs."""
+
+    def test_empty_and_whitespace(self, bundled_font_path):
+        from scadwright._custom_transforms._textmetrics import get_glyph_boxes
+        assert get_glyph_boxes((), font=bundled_font_path, size=10.0, spacing=1.0) == []
+        # A space has an advance but no ink.
+        boxes = get_glyph_boxes((" ",), font=bundled_font_path, size=10.0, spacing=1.0)
+        assert boxes is not None and len(boxes) == 1
+        assert boxes[0].advance > 0
+        assert boxes[0].ink_right <= boxes[0].ink_left or boxes[0].ink_top <= boxes[0].ink_bottom
+
+    def test_caps_have_no_descender_lowercase_does(self, bundled_font_path):
+        from scadwright._custom_transforms._textmetrics import get_glyph_boxes
+        caps = get_glyph_boxes(tuple("ZNOT"), font=bundled_font_path, size=10.0, spacing=1.0)
+        desc = get_glyph_boxes(tuple("agg"), font=bundled_font_path, size=10.0, spacing=1.0)
+        # Caps sit on the baseline (ink_bottom ~ 0, modulo round-glyph
+        # overshoot); the descender dips well below.
+        assert min(b.ink_bottom for b in caps) == pytest.approx(0.0, abs=0.2)
+        assert min(b.ink_bottom for b in desc) < -1.0
+
+    def test_bbox_baseline_is_content_aware(self, bundled_font_path):
+        # The reported bug: baseline-aligned boxes differ by content, so their
+        # ink centers differ — caps ride high, descenders ride low.
+        caps = _bbox_query(_text("ZenzaNOT", size=10, valign="baseline", font=bundled_font_path))
+        desc = _bbox_query(_text("agagaga", size=10, valign="baseline", font=bundled_font_path))
+        assert caps.min[1] == pytest.approx(0.0, abs=0.6)   # no descender (modulo safety pad)
+        assert desc.min[1] < -2.0                            # descender
+        caps_center = (caps.min[1] + caps.max[1]) / 2
+        desc_center = (desc.min[1] + desc.max[1]) / 2
+        assert caps_center > desc_center + 1.0
+
+    def test_bbox_center_valign_is_symmetric_on_ink(self, bundled_font_path):
+        # valign="center" recenters on the real ink, so the box straddles 0.
+        for s in ("ZenzaNOT", "agagaga"):
+            bb = _bbox_query(_text(s, size=10, valign="center", font=bundled_font_path))
+            assert bb.min[1] == pytest.approx(-bb.max[1], abs=1e-6)
+
+    def test_bbox_top_and_bottom_valign(self, bundled_font_path):
+        top = _bbox_query(_text("ZenzaNOT", size=10, valign="top", font=bundled_font_path))
+        bot = _bbox_query(_text("ZenzaNOT", size=10, valign="bottom", font=bundled_font_path))
+        assert top.max[1] == pytest.approx(0.0, abs=1e-6)    # ink top at 0
+        assert bot.min[1] == pytest.approx(0.0, abs=1e-6)    # ink bottom at 0
+
+    def test_bbox_width_is_proportional(self, bundled_font_path):
+        narrow = _bbox_query(_text("iii", size=10, font=bundled_font_path))
+        wide = _bbox_query(_text("WWW", size=10, font=bundled_font_path))
+        nw = narrow.max[0] - narrow.min[0]
+        ww = wide.max[0] - wide.min[0]
+        assert ww > nw * 2  # W is far wider than i
+
+    def test_bbox_halign_positions_layout_box(self, bundled_font_path):
+        left = _bbox_query(_text("ABCDE", size=10, halign="left", font=bundled_font_path))
+        center = _bbox_query(_text("ABCDE", size=10, halign="center", font=bundled_font_path))
+        right = _bbox_query(_text("ABCDE", size=10, halign="right", font=bundled_font_path))
+        # halign just translates the box by the layout width, so all three
+        # widths match and the boxes step left → center → right.
+        wl = left.max[0] - left.min[0]
+        assert (center.max[0] - center.min[0]) == pytest.approx(wl)
+        assert (right.max[0] - right.min[0]) == pytest.approx(wl)
+        assert left.min[0] > center.min[0] > right.min[0]
+        # Left starts near 0, right ends near 0 (within the safety pad), and
+        # center straddles 0.
+        assert abs(left.min[0]) < 2.0
+        assert abs(right.max[0]) < 2.0
+        assert center.min[0] < 0 < center.max[0]

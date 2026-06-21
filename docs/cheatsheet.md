@@ -72,7 +72,7 @@ circle(r=5)                               # or d=10
 polygon(points=[[x,y], ...])
 polygon(points=[...], paths=[[0,1,2,3], [4,5,6,7]])  # holes
 text("Hello", size=10, halign="center", valign="center")
-text("Hello", bbox=((0,0,0),(40,10,0)))   # override bbox heuristic for a known font
+text("Hello", bbox=((0,0,0),(40,10,0)))   # pin exact bbox (else read from font, or estimated)
 ```
 
 ## Transformations &nbsp; &nbsp;[→ full](transformations.md)
