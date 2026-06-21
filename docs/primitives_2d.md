@@ -95,7 +95,7 @@ part = union(plate, label)
 - `bbox` — optional `((min_x, min_y, 0), (max_x, max_y, 0))` hint. Overrides the built-in bbox. SCADwright-side metadata only; never emitted to SCAD.
 - `fn` / `fa` / `fs` — facet controls for curved outlines.
 
-**Bounding box reflects the real glyphs when the font is available.** With `freetype-py` installed (the `scadwright[curved-text]` extra) and the font resolvable, the bbox is read from the actual glyph outlines — so all-caps text with no descenders and lowercase text with no ascenders get correctly placed, content-aware extents (the box is expanded a few percent about the content center so it stays a conservative envelope of OpenSCAD's render). Without it, the bbox falls back to a conservative font-agnostic estimate (`0.6 * size * spacing` per character, `size` for height). Either way, for assembly checks against a specific font you can pin exact extents with a `bbox=` hint:
+**Bounding box reflects the real glyphs when the font is available.** With `freetype-py` installed (the `scadwright[curved-text]` extra) and the font resolvable, the bbox is read from the actual glyph outlines — so all-caps text with no descenders and lowercase text with no ascenders get correctly placed, content-aware extents that match OpenSCAD's rendered glyph box (and stay a conservative envelope of it, since the true outline slightly exceeds OpenSCAD's polygonized render). Without it, the bbox falls back to a conservative font-agnostic estimate (`0.6 * size * spacing` per character, `size` for height). Either way, for assembly checks against a specific font you can pin exact extents with a `bbox=` hint:
 
 ```python
 # Known extents for this font at this size:

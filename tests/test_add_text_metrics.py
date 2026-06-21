@@ -641,19 +641,18 @@ class TestAdvanceCalibration:
     def test_override_below_one_packs_tighter(self, named_font):
         from scadwright import text_advance_calibration
 
-        with text_advance_calibration(1.0):
-            # 1.0 reverts to bare em-relative scaling (no OpenSCAD-matching
-            # 1.5 multiplier), giving ~26% tighter advances.
+        with text_advance_calibration(0.5):
+            # The factor is a direct multiplier on the default (1.0) advance.
             adv = get_advances(
                 ("i",), font=named_font, size=4.0, spacing=1.0,
             )
-        assert adv[0] == pytest.approx(0.804, abs=0.01)
+        # Default is 1.205; half the calibration halves the advance.
+        assert adv[0] == pytest.approx(1.205 * 0.5, abs=0.01)
 
     def test_override_above_default_loosens(self, named_font):
         from scadwright import text_advance_calibration
 
-        with text_advance_calibration(3.0):
-            # 2× the default 1.5 factor → 2× the default advance.
+        with text_advance_calibration(2.0):
             adv = get_advances(
                 ("i",), font=named_font, size=4.0, spacing=1.0,
             )

@@ -431,7 +431,7 @@ By default, scadwright uses a font-agnostic estimate (`0.6 * font_size * spacing
 
 **Per-glyph baseline alignment.** Per-glyph `text()` calls on curved walls and rim arcs always emit with `valign="baseline"`, regardless of the user's `valign`. Mixed-height glyphs (a tall `t`, an `i` whose ink starts above zero, a `g` with a descender) all share a baseline this way. Per-glyph "center" alignment would jitter them at different visual heights. The user's `valign` still governs *block* placement on multi-line labels.
 
-**Calibration override.** The default per-glyph advance widths match OpenSCAD's flat `text()` rendering for typical Latin fonts (the empirical `1.5 × ascender / units_per_EM` factor). If you hit a font where the default packs glyphs too tightly or too loosely, scope an override:
+**Calibration override.** The default per-glyph advance widths match OpenSCAD's flat `text()` rendering — scadwright scales advances by OpenSCAD's measured, font-independent advance constant. If you hit a font where the default packs glyphs too tightly or too loosely, scope an override:
 
 ```python
 import scadwright as sw
@@ -440,4 +440,4 @@ with sw.text_advance_calibration(1.6):
     plate.add_text(label="…", on="outer_wall", font_size=4, …)
 ```
 
-Pass `1.0` to revert to bare em-relative scaling (about 26% tighter than OpenSCAD's natural layout). The override stacks with `add_text(spacing=…)` multiplicatively. It has no effect when `freetype-py` isn't installed; the heuristic fallback uses a flat `0.6 * font_size * spacing` per glyph regardless.
+The default is `1.0` (the OpenSCAD-matching scale is applied for you); the factor is a plain multiplier — below `1.0` tightens, above loosens. It stacks with `add_text(spacing=…)` multiplicatively. It has no effect when `freetype-py` isn't installed; the heuristic fallback uses a flat `0.6 * font_size * spacing` per glyph regardless.

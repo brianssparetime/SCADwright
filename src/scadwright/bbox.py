@@ -126,26 +126,18 @@ def _text_bbox_estimate(node) -> BBox:
     return _text_bbox_heuristic(node)
 
 
-# Outward safety factor on the real-metrics extent. The unit→mm scale reuses
-# the advance-tuned `1.5` calibration, which under-predicts vertical glyph
-# extents by ~2-3% (Liberation Sans), and OpenSCAD rasterizes glyphs a touch
-# taller than the outline metrics. Expanding the box symmetrically about the
-# content center keeps the (content-aware) center exact while making the box a
-# true outer envelope of OpenSCAD's render, so fit-checks never false-"fit".
-_TEXT_BBOX_SAFETY = 1.08
-
-
 def _text_bbox_from_metrics(node) -> "BBox | None":
     """Content-aware Text bbox from real font metrics, or ``None`` if they
     are unavailable (freetype-py missing, font unresolved, glyph read failure,
     or a string with no inked glyphs).
 
     Lays a single horizontal run: pen-walk the per-glyph advances, union the
-    ink extents (side bearings included), expand by ``_TEXT_BBOX_SAFETY`` about
-    the content center to stay a conservative envelope, then apply ``halign``
-    to the layout box (total advance, matching OpenSCAD) and ``valign`` to the
-    real ink (verified against OpenSCAD's rendered output for every valign
-    mode).
+    ink extents (side bearings included), then apply ``halign`` to the layout
+    box (total advance, matching OpenSCAD) and ``valign`` to the real ink. The
+    glyph extents use OpenSCAD's measured outline scale, so this matches the
+    rendered geometry; no safety pad is needed because freetype's true outline
+    already slightly exceeds OpenSCAD's flattened (polygonized) render, leaving
+    the box an inherently conservative envelope.
     """
     from scadwright._custom_transforms._textmetrics import get_glyph_boxes
 
@@ -169,16 +161,6 @@ def _text_bbox_from_metrics(node) -> "BBox | None":
     xmax = max(i[1] for i in inked)
     ymin = min(i[2] for i in inked)
     ymax = max(i[3] for i in inked)
-
-    # Expand outward about each axis' center so the box is a conservative
-    # envelope of the render while the content-aware center stays exact.
-    def _pad(lo: float, hi: float) -> tuple[float, float]:
-        c = (lo + hi) / 2.0
-        half = (hi - lo) / 2.0 * _TEXT_BBOX_SAFETY
-        return c - half, c + half
-
-    xmin, xmax = _pad(xmin, xmax)
-    ymin, ymax = _pad(ymin, ymax)
 
     # halign positions the layout box (the cumulative advance), not the ink.
     if node.halign == "center":

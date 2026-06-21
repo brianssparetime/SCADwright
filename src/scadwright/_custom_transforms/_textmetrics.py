@@ -44,7 +44,7 @@ from collections import OrderedDict
 from typing import Any, NamedTuple
 
 from scadwright._logging import get_logger
-from scadwright.api.text_calibration import _DEFAULT_CALIBRATION, current_calibration
+from scadwright.api.text_calibration import current_calibration
 
 
 _log = get_logger("scadwright.add_text.metrics")
@@ -54,6 +54,18 @@ _log = get_logger("scadwright.add_text.metrics")
 # Kept in this module so ``add_text``'s curved-wall fallback stays consistent
 # with the value users have seen historically.
 _HEURISTIC_AVG_ADVANCE: float = 0.6
+
+# OpenSCAD's text(size=N) scales a glyph's outline and its advance by two
+# different, font-independent constants (the EM and the font's ascender both
+# cancel out — verified against OpenSCAD's STL output across Liberation Sans,
+# Arial, Verdana, Times New Roman, and Courier New). For a metric expressed as
+# a fraction of EM, the millimetre value is ``K * size * em_fraction``:
+#   - outline coordinates (ink extents, side bearings, cap/descender heights)
+#     use K_OUTLINE;
+#   - advances (pen movement) use the slightly smaller K_ADVANCE.
+# Measured from flat-topped glyphs (no curve flattening) so they are exact.
+_K_OUTLINE: float = 1.3888
+_K_ADVANCE: float = 1.3563
 
 
 class GlyphMetric(NamedTuple):
@@ -144,8 +156,8 @@ def get_advances(
         return [heuristic_advance] * len(chars)
 
     # Curved-wall advances honour the live ``text_advance_calibration``
-    # override so callers can tighten/loosen per-glyph tracking.
-    scale = _em_to_mm(face, size, current_calibration())
+    # override (default 1.0) so callers can tighten/loosen per-glyph tracking.
+    scale = _K_ADVANCE * size * current_calibration()
     return [m.advance_em * scale * spacing for m in metrics]
 
 
@@ -164,9 +176,10 @@ def get_glyph_boxes(
 
     Each ``GlyphBox`` is in the glyph's pen-origin / baseline frame, so the
     caller pen-walks the advances and unions the ink extents to lay out a
-    line. Unlike ``get_advances``, this uses the *default* advance
-    calibration, not the ``text_advance_calibration`` override: a flat-text
-    bbox must not move because some curved-wall tracking context is active.
+    line. Outline extents (``ink_*``) use the outline scale; ``advance`` uses
+    the advance scale, both font-independent. The curved-wall
+    ``text_advance_calibration`` override is deliberately ignored here, so a
+    flat-text bbox doesn't move because some tracking context is active.
     """
     if not chars:
         return []
@@ -177,17 +190,18 @@ def get_glyph_boxes(
     metrics = _metrics_for(face, font_key, chars)
     if metrics is None:
         return None
-    # Fixed at the default calibration (not the live override): a flat-text
-    # bbox must not move because some curved-wall tracking context is active.
-    # ``advance`` additionally scales by spacing; intra-glyph ink does not.
-    scale = _em_to_mm(face, size, _DEFAULT_CALIBRATION)
+    # OpenSCAD scales the glyph outline and the advance by two different
+    # constants (see _K_OUTLINE / _K_ADVANCE). ``advance`` additionally scales
+    # by spacing; intra-glyph ink does not.
+    outline = _K_OUTLINE * size
+    advance = _K_ADVANCE * size * spacing
     return [
         GlyphBox(
-            advance=m.advance_em * scale * spacing,
-            ink_left=m.ink_left_em * scale,
-            ink_right=m.ink_right_em * scale,
-            ink_bottom=m.ink_bottom_em * scale,
-            ink_top=m.ink_top_em * scale,
+            advance=m.advance_em * advance,
+            ink_left=m.ink_left_em * outline,
+            ink_right=m.ink_right_em * outline,
+            ink_bottom=m.ink_bottom_em * outline,
+            ink_top=m.ink_top_em * outline,
         )
         for m in metrics
     ]
@@ -248,17 +262,6 @@ def _warn_if_substituted(font: str, face: Any) -> None:
             f"metrics use that face and OpenSCAD may substitute differently. "
             f"Install the requested font or check the name.",
         )
-
-
-def _em_to_mm(face: Any, size: float, calibration: float) -> float:
-    """Factor mapping a glyph's unitless (per-EM) metric to millimetres.
-
-    OpenSCAD's ``text(size=N)`` renders such that a metric is roughly
-    ``metric_em × size × calibration × ascender / EM``. The same factor maps
-    both axes (verified against OpenSCAD's STL output); callers multiply an
-    advance additionally by ``spacing``.
-    """
-    return size * calibration * face.ascender / face.units_per_EM
 
 
 def _metrics_for(face: Any, font_key: str, chars) -> "list[GlyphMetric] | None":
