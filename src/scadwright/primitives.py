@@ -11,6 +11,8 @@ or, for quick scripts, glob-import the whole (small) surface:
 
 from __future__ import annotations
 
+import os
+
 from scadwright.api._validate import (
     _require_integer,
     _require_non_empty,
@@ -131,6 +133,27 @@ def _warn_if_stl_hint_too_small(
 _TEXT_HALIGN = ("left", "center", "right")
 _TEXT_VALIGN = ("top", "center", "baseline", "bottom")
 _TEXT_DIRECTION = ("ltr", "rtl", "ttb", "btt")
+
+_FONT_PATH_SUFFIXES = (".ttf", ".otf", ".ttc", ".otc")
+_FONT_PATH_MSG = (
+    "`font` is a fontconfig family name, not a file path (got {font!r}). "
+    "Pass a name like 'Verdana:style=Bold'; scadwright resolves it to a file "
+    "for metrics via fontconfig, and OpenSCAD renders by that name. A file "
+    "path can't render in OpenSCAD's text()."
+)
+
+
+def looks_like_font_path(font) -> bool:
+    """True if a ``font`` string looks like a file path rather than a
+    fontconfig family name. Used to reject paths at the user-facing surface."""
+    if not isinstance(font, str):
+        return False
+    return (
+        os.path.isabs(font)
+        or os.sep in font
+        or (os.altsep is not None and os.altsep in font)
+        or font.lower().endswith(_FONT_PATH_SUFFIXES)
+    )
 
 
 # --- 3D primitives ---
@@ -410,11 +433,15 @@ def text(
 ) -> Text:
     """Create a 2D text shape.
 
+    `font` is a fontconfig family name (e.g. `"Verdana:style=Bold"`), the same
+    namespace OpenSCAD's `text()` renders from — not a file path (paths are
+    rejected, since OpenSCAD can't render them).
+
     `bbox=((min_x, min_y, 0), (max_x, max_y, 0))` overrides the built-in
-    bbox (read from the font's glyphs when freetype-py is available, else a
-    `0.6 * size * spacing` per-character estimate) when you need precise
-    assembly checks for a specific font. The hint is scadwright-side metadata
-    and is never emitted to SCAD.
+    bbox (read from the font's glyphs when freetype-py and fontconfig resolve
+    the name, else a `0.6 * size * spacing` per-character estimate) when you
+    need precise assembly checks for a specific font. The hint is
+    scadwright-side metadata and is never emitted to SCAD.
     """
     loc = SourceLocation.from_caller()
     if not isinstance(text, str):
@@ -424,6 +451,8 @@ def text(
         )
     size = _require_positive(size, "text size")
     spacing = _require_positive(spacing, "text spacing")
+    if looks_like_font_path(font):
+        raise ValidationError("text: " + _FONT_PATH_MSG.format(font=font), source_location=loc)
     bbox_hint = None
     if bbox is not None:
         bbox_hint = _normalize_bbox_hint(bbox, context="text", loc=loc)

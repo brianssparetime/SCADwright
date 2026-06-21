@@ -86,7 +86,7 @@ part = union(plate, label)
 
 - `text` — the string to render.
 - `size` — nominal glyph height. Default 10.
-- `font` — font family name, as OpenSCAD understands it. If omitted, OpenSCAD picks its default.
+- `font` — font family name, as OpenSCAD understands it (e.g. `"DejaVu Sans:style=Bold"`); not a file path. If omitted, OpenSCAD picks its default (Liberation Sans). scadwright resolves the name to a file via fontconfig for the bbox; see the bbox note below.
 - `halign` — horizontal alignment: `"left"` (default), `"center"`, `"right"`.
 - `valign` — vertical alignment: `"baseline"` (default), `"top"`, `"center"`, `"bottom"`.
 - `spacing` — character spacing multiplier. Default 1.

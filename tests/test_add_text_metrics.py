@@ -82,15 +82,15 @@ pytestmark_freetype = pytest.mark.freetype
 class TestRealMetrics:
     """Behaviour with freetype-py enabled and the bundled font."""
 
-    def test_proportional_advances_for_narrow_vs_wide(self, bundled_font_path):
+    def test_proportional_advances_for_narrow_vs_wide(self, named_font):
         adv = get_advances(
-            ("i", "W"), font=bundled_font_path, size=4.0, spacing=1.0,
+            ("i", "W"), font=named_font, size=4.0, spacing=1.0,
         )
         # Liberation Sans: ``i`` is much narrower than ``W``. The exact
         # values come from the font; assert the relationship, not numbers.
         assert adv[0] < adv[1] * 0.5, f"expected i << W, got {adv}"
 
-    def test_advances_match_known_values(self, bundled_font_path):
+    def test_advances_match_known_values(self, named_font):
         # Sanity-check a specific value against Liberation Sans 2.00.1.
         # The default calibration (1.5 × ascender / EM) makes our advances
         # match OpenSCAD's flat text() rendering: at size=4, OpenSCAD
@@ -98,21 +98,21 @@ class TestRealMetrics:
         # ``text("ii") - text("i")``). If the font ever changes, the
         # numbers update with it.
         adv = get_advances(
-            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            ("i",), font=named_font, size=4.0, spacing=1.0,
         )
         assert adv[0] == pytest.approx(1.205, abs=0.01)
 
-    def test_size_scales_real_advance(self, bundled_font_path):
-        a4 = get_advances(("M",), font=bundled_font_path, size=4.0, spacing=1.0)
-        a8 = get_advances(("M",), font=bundled_font_path, size=8.0, spacing=1.0)
+    def test_size_scales_real_advance(self, named_font):
+        a4 = get_advances(("M",), font=named_font, size=4.0, spacing=1.0)
+        a8 = get_advances(("M",), font=named_font, size=8.0, spacing=1.0)
         assert a8[0] == pytest.approx(2 * a4[0])
 
-    def test_spacing_scales_real_advance(self, bundled_font_path):
-        a1 = get_advances(("M",), font=bundled_font_path, size=4.0, spacing=1.0)
-        a2 = get_advances(("M",), font=bundled_font_path, size=4.0, spacing=2.0)
+    def test_spacing_scales_real_advance(self, named_font):
+        a1 = get_advances(("M",), font=named_font, size=4.0, spacing=1.0)
+        a2 = get_advances(("M",), font=named_font, size=4.0, spacing=2.0)
         assert a2[0] == pytest.approx(2 * a1[0])
 
-    def test_face_loaded_once_per_font(self, bundled_font_path, monkeypatch):
+    def test_face_loaded_once_per_font(self, named_font, monkeypatch):
         """Repeated calls reuse the cached freetype.Face instead of reopening."""
         load_count = {"n": 0}
         original_face = freetype_module.Face
@@ -122,12 +122,12 @@ class TestRealMetrics:
             return original_face(path, *a, **kw)
 
         monkeypatch.setattr(freetype_module, "Face", counting_face)
-        get_advances(("a",), font=bundled_font_path, size=4.0, spacing=1.0)
-        get_advances(("b",), font=bundled_font_path, size=4.0, spacing=1.0)
-        get_advances(("c", "d"), font=bundled_font_path, size=4.0, spacing=1.0)
+        get_advances(("a",), font=named_font, size=4.0, spacing=1.0)
+        get_advances(("b",), font=named_font, size=4.0, spacing=1.0)
+        get_advances(("c", "d"), font=named_font, size=4.0, spacing=1.0)
         assert load_count["n"] == 1, "Face should load exactly once per font"
 
-    def test_advance_em_cached_across_size_changes(self, bundled_font_path, monkeypatch):
+    def test_advance_em_cached_across_size_changes(self, named_font, monkeypatch):
         """Cache key is ``(font, char)`` not ``(font, char, size, spacing)`` —
         switching size/spacing reuses the cached EM-units value."""
         char_loads = {"n": 0}
@@ -138,27 +138,27 @@ class TestRealMetrics:
             return original_glyph_metric(face, char)
 
         monkeypatch.setattr(_textmetrics, "_glyph_metric", counting_glyph_metric)
-        get_advances(("X",), font=bundled_font_path, size=4.0, spacing=1.0)
-        get_advances(("X",), font=bundled_font_path, size=8.0, spacing=1.0)
-        get_advances(("X",), font=bundled_font_path, size=4.0, spacing=2.0)
+        get_advances(("X",), font=named_font, size=4.0, spacing=1.0)
+        get_advances(("X",), font=named_font, size=8.0, spacing=1.0)
+        get_advances(("X",), font=named_font, size=4.0, spacing=2.0)
         assert char_loads["n"] == 1, "cached EM advance should be reused across sizes"
 
-    def test_lru_evicts_oldest_at_capacity(self, bundled_font_path, monkeypatch):
+    def test_lru_evicts_oldest_at_capacity(self, named_font, monkeypatch):
         """When the cache is full, the oldest entry is evicted."""
         monkeypatch.setattr(_textmetrics, "_CACHE_MAX", 4)
         # Insert 4 entries.
         get_advances(
-            ("a", "b", "c", "d"), font=bundled_font_path, size=4.0, spacing=1.0,
+            ("a", "b", "c", "d"), font=named_font, size=4.0, spacing=1.0,
         )
         # Touch 'a' so 'b' becomes the LRU candidate.
-        get_advances(("a",), font=bundled_font_path, size=4.0, spacing=1.0)
+        get_advances(("a",), font=named_font, size=4.0, spacing=1.0)
         # Insert a fifth — 'b' should be evicted.
-        get_advances(("e",), font=bundled_font_path, size=4.0, spacing=1.0)
+        get_advances(("e",), font=named_font, size=4.0, spacing=1.0)
         keys = {k[1] for k in _textmetrics._CACHE.keys()}
         assert "b" not in keys
         assert keys == {"a", "c", "d", "e"}
 
-    def test_threadsafe(self, bundled_font_path):
+    def test_threadsafe(self, named_font):
         """Concurrent calls don't raise and produce consistent results."""
         chars = tuple("SCADwright")
         results = []
@@ -167,7 +167,7 @@ class TestRealMetrics:
         def run():
             try:
                 results.append(get_advances(
-                    chars, font=bundled_font_path, size=4.0, spacing=1.0,
+                    chars, font=named_font, size=4.0, spacing=1.0,
                 ))
             except Exception as exc:
                 errors.append(exc)
@@ -181,34 +181,40 @@ class TestRealMetrics:
         assert len(results) == 8
         assert all(r == results[0] for r in results)
 
-    def test_unknown_abs_path_falls_back_with_warning(self, caplog):
+    def test_name_resolves_to_real_metrics(self, named_font):
+        # A fontconfig name now yields real, proportional metrics (not the
+        # heuristic) — the whole point of the fontconfig resolution path.
+        adv = get_advances(("i", "W"), font=named_font, size=4.0, spacing=1.0)
+        assert adv[0] < adv[1] * 0.5
+        assert adv[0] != pytest.approx(_HEURISTIC_AVG_ADVANCE * 4.0)
+
+    def test_fontconfig_unavailable_falls_back_with_warning(self, monkeypatch, caplog):
+        # With fc-match absent, a name can't resolve to a file → heuristic,
+        # warned once. (No font path: render is still OpenSCAD's job.)
+        monkeypatch.setattr(_textmetrics, "_FC_MATCH_EXE", False, raising=False)
         with caplog.at_level(logging.WARNING, logger="scadwright.add_text.metrics"):
-            adv = get_advances(
-                ("A",), font="/nonexistent/path/to/font.ttf",
-                size=4.0, spacing=1.0,
-            )
+            adv = get_advances(("A",), font="Verdana", size=4.0, spacing=1.0)
         assert adv[0] == _HEURISTIC_AVG_ADVANCE * 4.0
         msgs = [r.getMessage() for r in caplog.records]
-        assert any("does not exist" in m for m in msgs), msgs
+        assert any("fc-match" in m for m in msgs), msgs
 
-    def test_font_name_falls_back_with_warning(self, caplog):
+    def test_substitution_warns(self, named_font, caplog):
+        # The fixtures-only fontconfig holds just Liberation Sans, so any other
+        # name substitutes to it — which must warn (and still give metrics).
         with caplog.at_level(logging.WARNING, logger="scadwright.add_text.metrics"):
-            adv = get_advances(
-                ("A",), font="Bogus Family", size=4.0, spacing=1.0,
-            )
-        assert adv[0] == _HEURISTIC_AVG_ADVANCE * 4.0
+            adv = get_advances(("A",), font="Verdana:style=Bold", size=4.0, spacing=1.0)
+        assert adv[0] != _HEURISTIC_AVG_ADVANCE * 4.0  # real metrics from the substitute
         msgs = [r.getMessage() for r in caplog.records]
-        assert any("resolve fonts by absolute path" in m for m in msgs), msgs
+        assert any("resolved via fontconfig to" in m for m in msgs), msgs
 
-    def test_font_name_warns_once_per_font(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="scadwright.add_text.metrics"):
-            get_advances(("A",), font="Bogus Family", size=4.0, spacing=1.0)
-            get_advances(("B",), font="Bogus Family", size=4.0, spacing=1.0)
-            get_advances(("C",), font="Other Family", size=4.0, spacing=1.0)
-            get_advances(("D",), font="Other Family", size=4.0, spacing=1.0)
-        msgs = [r.getMessage() for r in caplog.records]
-        name_warnings = [m for m in msgs if "resolve fonts by absolute path" in m]
-        assert len(name_warnings) == 2, f"expected one warning per font, got {msgs}"
+    def test_path_like_font_rejected_at_text(self):
+        # File paths are rejected at the user surface, since OpenSCAD's text()
+        # can't render them. (get_advances itself stays lenient.)
+        from scadwright.errors import ValidationError as _VE
+        from scadwright.primitives import text as _t
+        for bad in ("/System/Library/Fonts/Verdana.ttf", "fonts/Foo.otf", "Foo.ttf"):
+            with pytest.raises(_VE, match="family name, not a file path"):
+                _t("X", font=bad)
 
 
 # --- Dispatch-level valign behaviour ---
@@ -461,7 +467,7 @@ class TestAxialModeUsesProportionalAdvances:
     font_size dimension is along the line, and the slot is uniform
     font_size to prevent letters from overlapping axially.)"""
 
-    def test_iWi_wine_bottle_offsets_reflect_real_advances(self, bundled_font_path):
+    def test_iWi_wine_bottle_offsets_reflect_real_advances(self, named_font):
         # "iWi" wine-bottle on a cylinder. Liberation Sans at size=4 with
         # default calibration: i ≈ 1.21mm, W ≈ 5.13mm (matches OpenSCAD's
         # flat text() rendering). Centers (halign=center) are
@@ -471,7 +477,7 @@ class TestAxialModeUsesProportionalAdvances:
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
-                text_dir="axial", rotate_glyphs=True, font=bundled_font_path,
+                text_dir="axial", rotate_glyphs=True, font=named_font,
             )
         )
         positions = _glyph_translates_3d(scad)
@@ -493,7 +499,7 @@ class TestConicalAxialCumulativeRadius:
     up via compute_geom_at(at_z + cumulative_advance_so_far), so per-glyph
     radial position varies along the cone."""
 
-    def test_cone_axial_per_glyph_radius_tracks_cumulative_at_z(self, bundled_font_path):
+    def test_cone_axial_per_glyph_radius_tracks_cumulative_at_z(self, named_font):
         # Tapered cylinder: r1=10 at bottom, r2=4 at top, h=20. r_mid=7,
         # slope = (4-10)/20 = -0.3. So local radius at at_z is 7 + at_z*-0.3.
         # Wine-bottle "iWi" (rotate_glyphs=True) lets advance drive axial
@@ -504,7 +510,7 @@ class TestConicalAxialCumulativeRadius:
         scad = _emit(
             cylinder(h=20, r1=10, r2=4).add_text(
                 label="iWi", relief=0.4, on="outer_wall", font_size=4,
-                text_dir="axial", rotate_glyphs=True, font=bundled_font_path,
+                text_dir="axial", rotate_glyphs=True, font=named_font,
             )
         )
         positions = _glyph_translates_3d(scad)
@@ -528,14 +534,14 @@ class TestRimArcCumulativeOffsets:
     """Rim-arc placement uses cumulative-advance angular offsets so glyph
     centers land at theta = (cum + advance/2 - total/2) / path_radius."""
 
-    def test_rim_arc_iWi_glyph_angles_proportional(self, bundled_font_path):
+    def test_rim_arc_iWi_glyph_angles_proportional(self, named_font):
         # cylinder(h=10, r=15).top — rim arc. Default at_radial = max(15-4, 2) = 11.
         # "iWi" with halign=center. theta(glyph_n) = center_mm[n] / 11.
         # Glyph 3D position on the rim: ≈ (11 cos θ, 11 sin θ, 10 ± host_eps).
         scad = _emit(
             cylinder(h=10, r=15).add_text(
                 label="iWi", relief=0.4, on="top", font_size=4,
-                font=bundled_font_path,
+                font=named_font,
             )
         )
         positions = _glyph_translates_3d(scad)
@@ -572,7 +578,7 @@ class TestOverflowCheckIgnoresMetrics:
     heuristic estimate."""
 
     def test_iiii_warns_under_heuristic_even_when_real_is_smaller(
-        self, bundled_font_path, caplog,
+        self, named_font, caplog,
     ):
         # 4 narrow ``i`` glyphs at size=2: heuristic estimate = 4 * 0.6 * 2 = 4.8mm,
         # real Liberation Sans width ≈ 4 * 0.444 = 1.78mm. On a 4mm-wide face,
@@ -585,7 +591,7 @@ class TestOverflowCheckIgnoresMetrics:
             _emit(
                 cube([4, 10, 2], center="xy").add_text(
                     label="iiii", relief=0.3, on="top", font_size=2,
-                    font=bundled_font_path,
+                    font=named_font,
                 )
             )
         msgs = [r.getMessage() for r in caplog.records]
@@ -598,13 +604,13 @@ class TestOverflowCheckIgnoresMetrics:
 class TestProportionalSpacingIntegration:
     """End-to-end: real font metrics drive non-uniform glyph spacing on curved hosts."""
 
-    def test_narrow_glyph_packs_tighter_than_wide(self, bundled_font_path):
+    def test_narrow_glyph_packs_tighter_than_wide(self, named_font):
         # Place "iW" on a cylinder; with proportional metrics the i pre-translate
         # is much smaller than the W pre-translate (i is much narrower than W).
         scad = _emit(
             cylinder(h=20, r=10).add_text(
                 label="iW", relief=0.4, on="outer_wall", font_size=4,
-                font=bundled_font_path,
+                font=named_font,
             )
         )
         # Liberation Sans at size=4 with default calibration: i ≈ 1.21mm,
@@ -624,64 +630,64 @@ class TestProportionalSpacingIntegration:
 class TestAdvanceCalibration:
     """``text_advance_calibration`` context manager scales advance widths."""
 
-    def test_default_matches_openscad(self, bundled_font_path):
+    def test_default_matches_openscad(self, named_font):
         # No calibration override: advances match OpenSCAD's flat layout
         # for Liberation Sans (verified empirically).
         adv = get_advances(
-            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            ("i",), font=named_font, size=4.0, spacing=1.0,
         )
         assert adv[0] == pytest.approx(1.205, abs=0.01)
 
-    def test_override_below_one_packs_tighter(self, bundled_font_path):
+    def test_override_below_one_packs_tighter(self, named_font):
         from scadwright import text_advance_calibration
 
         with text_advance_calibration(1.0):
             # 1.0 reverts to bare em-relative scaling (no OpenSCAD-matching
             # 1.5 multiplier), giving ~26% tighter advances.
             adv = get_advances(
-                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+                ("i",), font=named_font, size=4.0, spacing=1.0,
             )
         assert adv[0] == pytest.approx(0.804, abs=0.01)
 
-    def test_override_above_default_loosens(self, bundled_font_path):
+    def test_override_above_default_loosens(self, named_font):
         from scadwright import text_advance_calibration
 
         with text_advance_calibration(3.0):
             # 2× the default 1.5 factor → 2× the default advance.
             adv = get_advances(
-                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+                ("i",), font=named_font, size=4.0, spacing=1.0,
             )
         # Default is 1.205; doubling the calibration doubles the advance.
         assert adv[0] == pytest.approx(2.41, abs=0.02)
 
-    def test_override_resets_after_block(self, bundled_font_path):
+    def test_override_resets_after_block(self, named_font):
         from scadwright import text_advance_calibration
 
         before = get_advances(
-            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            ("i",), font=named_font, size=4.0, spacing=1.0,
         )
         with text_advance_calibration(1.0):
             pass
         after = get_advances(
-            ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+            ("i",), font=named_font, size=4.0, spacing=1.0,
         )
         assert before == after
 
-    def test_override_nests(self, bundled_font_path):
+    def test_override_nests(self, named_font):
         from scadwright import text_advance_calibration
 
         outer = []
         inner = []
         with text_advance_calibration(1.0):
             outer.append(get_advances(
-                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+                ("i",), font=named_font, size=4.0, spacing=1.0,
             )[0])
             with text_advance_calibration(3.0):
                 inner.append(get_advances(
-                    ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+                    ("i",), font=named_font, size=4.0, spacing=1.0,
                 )[0])
             outer.append(get_advances(
-                ("i",), font=bundled_font_path, size=4.0, spacing=1.0,
+                ("i",), font=named_font, size=4.0, spacing=1.0,
             )[0])
         assert outer[0] == outer[1]  # restored on exit of inner
         assert inner[0] != outer[0]
@@ -734,58 +740,58 @@ class TestGlyphBoxesHeuristicFallback:
 class TestGlyphBoxesRealMetrics:
     """With freetype + the bundled font, the bbox reflects the actual glyphs."""
 
-    def test_empty_and_whitespace(self, bundled_font_path):
+    def test_empty_and_whitespace(self, named_font):
         from scadwright._custom_transforms._textmetrics import get_glyph_boxes
-        assert get_glyph_boxes((), font=bundled_font_path, size=10.0, spacing=1.0) == []
+        assert get_glyph_boxes((), font=named_font, size=10.0, spacing=1.0) == []
         # A space has an advance but no ink.
-        boxes = get_glyph_boxes((" ",), font=bundled_font_path, size=10.0, spacing=1.0)
+        boxes = get_glyph_boxes((" ",), font=named_font, size=10.0, spacing=1.0)
         assert boxes is not None and len(boxes) == 1
         assert boxes[0].advance > 0
         assert boxes[0].ink_right <= boxes[0].ink_left or boxes[0].ink_top <= boxes[0].ink_bottom
 
-    def test_caps_have_no_descender_lowercase_does(self, bundled_font_path):
+    def test_caps_have_no_descender_lowercase_does(self, named_font):
         from scadwright._custom_transforms._textmetrics import get_glyph_boxes
-        caps = get_glyph_boxes(tuple("ZNOT"), font=bundled_font_path, size=10.0, spacing=1.0)
-        desc = get_glyph_boxes(tuple("agg"), font=bundled_font_path, size=10.0, spacing=1.0)
+        caps = get_glyph_boxes(tuple("ZNOT"), font=named_font, size=10.0, spacing=1.0)
+        desc = get_glyph_boxes(tuple("agg"), font=named_font, size=10.0, spacing=1.0)
         # Caps sit on the baseline (ink_bottom ~ 0, modulo round-glyph
         # overshoot); the descender dips well below.
         assert min(b.ink_bottom for b in caps) == pytest.approx(0.0, abs=0.2)
         assert min(b.ink_bottom for b in desc) < -1.0
 
-    def test_bbox_baseline_is_content_aware(self, bundled_font_path):
+    def test_bbox_baseline_is_content_aware(self, named_font):
         # The reported bug: baseline-aligned boxes differ by content, so their
         # ink centers differ — caps ride high, descenders ride low.
-        caps = _bbox_query(_text("ZenzaNOT", size=10, valign="baseline", font=bundled_font_path))
-        desc = _bbox_query(_text("agagaga", size=10, valign="baseline", font=bundled_font_path))
+        caps = _bbox_query(_text("ZenzaNOT", size=10, valign="baseline", font=named_font))
+        desc = _bbox_query(_text("agagaga", size=10, valign="baseline", font=named_font))
         assert caps.min[1] == pytest.approx(0.0, abs=0.6)   # no descender (modulo safety pad)
         assert desc.min[1] < -2.0                            # descender
         caps_center = (caps.min[1] + caps.max[1]) / 2
         desc_center = (desc.min[1] + desc.max[1]) / 2
         assert caps_center > desc_center + 1.0
 
-    def test_bbox_center_valign_is_symmetric_on_ink(self, bundled_font_path):
+    def test_bbox_center_valign_is_symmetric_on_ink(self, named_font):
         # valign="center" recenters on the real ink, so the box straddles 0.
         for s in ("ZenzaNOT", "agagaga"):
-            bb = _bbox_query(_text(s, size=10, valign="center", font=bundled_font_path))
+            bb = _bbox_query(_text(s, size=10, valign="center", font=named_font))
             assert bb.min[1] == pytest.approx(-bb.max[1], abs=1e-6)
 
-    def test_bbox_top_and_bottom_valign(self, bundled_font_path):
-        top = _bbox_query(_text("ZenzaNOT", size=10, valign="top", font=bundled_font_path))
-        bot = _bbox_query(_text("ZenzaNOT", size=10, valign="bottom", font=bundled_font_path))
+    def test_bbox_top_and_bottom_valign(self, named_font):
+        top = _bbox_query(_text("ZenzaNOT", size=10, valign="top", font=named_font))
+        bot = _bbox_query(_text("ZenzaNOT", size=10, valign="bottom", font=named_font))
         assert top.max[1] == pytest.approx(0.0, abs=1e-6)    # ink top at 0
         assert bot.min[1] == pytest.approx(0.0, abs=1e-6)    # ink bottom at 0
 
-    def test_bbox_width_is_proportional(self, bundled_font_path):
-        narrow = _bbox_query(_text("iii", size=10, font=bundled_font_path))
-        wide = _bbox_query(_text("WWW", size=10, font=bundled_font_path))
+    def test_bbox_width_is_proportional(self, named_font):
+        narrow = _bbox_query(_text("iii", size=10, font=named_font))
+        wide = _bbox_query(_text("WWW", size=10, font=named_font))
         nw = narrow.max[0] - narrow.min[0]
         ww = wide.max[0] - wide.min[0]
         assert ww > nw * 2  # W is far wider than i
 
-    def test_bbox_halign_positions_layout_box(self, bundled_font_path):
-        left = _bbox_query(_text("ABCDE", size=10, halign="left", font=bundled_font_path))
-        center = _bbox_query(_text("ABCDE", size=10, halign="center", font=bundled_font_path))
-        right = _bbox_query(_text("ABCDE", size=10, halign="right", font=bundled_font_path))
+    def test_bbox_halign_positions_layout_box(self, named_font):
+        left = _bbox_query(_text("ABCDE", size=10, halign="left", font=named_font))
+        center = _bbox_query(_text("ABCDE", size=10, halign="center", font=named_font))
+        right = _bbox_query(_text("ABCDE", size=10, halign="right", font=named_font))
         # halign just translates the box by the layout width, so all three
         # widths match and the boxes step left → center → right.
         wl = left.max[0] - left.min[0]

@@ -1,6 +1,7 @@
 """pytest config — register markers, expose helpers."""
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -39,20 +40,55 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(scope="session")
-def bundled_font_path() -> str:
-    """Absolute path to the test-bundled Liberation Sans Regular TTF.
+def bundled_fonts_dir() -> Path:
+    """Directory holding the test-bundled Liberation Sans Regular TTF.
 
-    Tests pass this as ``font=<path>`` to bypass system font resolution and
-    get deterministic metrics across machines. The font ships in
-    ``tests/fixtures/fonts/`` under the SIL OFL — see the sibling LICENSE.
+    The font ships in ``tests/fixtures/fonts/`` under the SIL OFL — see the
+    sibling LICENSE.
     """
-    p = Path(__file__).parent / "fixtures" / "fonts" / "LiberationSans-Regular.ttf"
-    if not p.is_file():
+    d = Path(__file__).parent / "fixtures" / "fonts"
+    if not (d / "LiberationSans-Regular.ttf").is_file():
         raise RuntimeError(
-            f"bundled test font missing: {p}. "
+            f"bundled test font missing under {d}. "
             "Did you skip the test-fixtures setup?"
         )
-    return str(p)
+    return d
+
+
+@pytest.fixture(scope="session")
+def fontconfig_conf(tmp_path_factory, bundled_fonts_dir) -> str:
+    """Path to a minimal fontconfig config scanning only the bundled fonts.
+
+    Pointing ``FONTCONFIG_FILE`` at this makes ``fc-match`` resolve names
+    deterministically from ``tests/fixtures/fonts/`` alone — no system fonts —
+    so the real fontconfig resolution path is exercised without depending on
+    the host's installed fonts. Skips the test when ``fc-match`` is absent.
+    """
+    if shutil.which("fc-match") is None:
+        pytest.skip("fontconfig `fc-match` not installed")
+    d = tmp_path_factory.mktemp("fontconfig")
+    cache = d / "cache"
+    cache.mkdir()
+    conf = d / "fonts.conf"
+    conf.write_text(
+        '<?xml version="1.0"?>\n'
+        '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n'
+        "<fontconfig>\n"
+        f"  <dir>{bundled_fonts_dir}</dir>\n"
+        f"  <cachedir>{cache}</cachedir>\n"
+        "</fontconfig>\n"
+    )
+    return str(conf)
+
+
+@pytest.fixture
+def named_font(fontconfig_conf, monkeypatch) -> str:
+    """Resolve font names from the bundled fixtures only, and return the
+    family name to pass as ``font=``. With only Liberation Sans in scope,
+    ``fc-match`` returns it for that name (and substitutes it for any other).
+    """
+    monkeypatch.setenv("FONTCONFIG_FILE", fontconfig_conf)
+    return "Liberation Sans"
 
 
 @pytest.fixture(autouse=True)

@@ -319,9 +319,11 @@ height glyphs share a baseline); the user's `valign` only positions the
 *block* on multi-line labels there. Curved walls and rim arcs emit one
 `text()` per glyph for surface-following layout, so per-glyph spacing
 uses a `0.6 * font_size` heuristic by default. Install
-`pip install scadwright[curved-text]` for real font metrics via
-freetype-py and proportional spacing; scope `with sw.text_advance_calibration(...)`
-to tighten or loosen tracking.
+`pip install scadwright[curved-text]` (freetype-py) and have `fc-match`
+(system fontconfig) on PATH for real font metrics and proportional spacing;
+`font` is a fontconfig family name (e.g. `"Verdana:style=Bold"`), never a
+file path. Scope `with sw.text_advance_calibration(...)` to tighten or loosen
+tracking.
 
 `.text_geometry(...)` takes the same kwargs but returns just the placed
 glyph mesh (no host combine) — for cutter use or pulling the difference

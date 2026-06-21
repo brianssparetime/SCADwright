@@ -324,8 +324,9 @@ class Surface(Node):
 class Text(Node):
     """2D text primitive. Emits as SCAD's `text(...)`.
 
-    With no explicit hint, the bbox is read from the actual glyphs when
-    freetype-py resolves the font (content-aware: all-caps text has no
+    `font` is a fontconfig family name (never a file path). With no explicit
+    hint, the bbox is read from the actual glyphs when freetype-py and
+    fontconfig resolve that name (content-aware: all-caps text has no
     descender, lowercase no ascender), and falls back to a conservative
     `0.6 * size * spacing` per-character estimate otherwise. Pass `bbox=...`
     (scadwright-side metadata, never emitted) to override either path for a

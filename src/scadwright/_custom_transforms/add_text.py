@@ -28,7 +28,11 @@ from scadwright.boolops import difference, union
 from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
 from scadwright.matrix import Matrix
-from scadwright.primitives import text as _text_factory
+from scadwright.primitives import (
+    _FONT_PATH_MSG,
+    looks_like_font_path,
+    text as _text_factory,
+)
 
 
 _log = get_logger("scadwright.add_text")
@@ -1365,6 +1369,8 @@ def _collect_glyphs(
             "add_text: relief=0 (decal mode) is not yet supported. Use a "
             "positive value for raised text or a negative value for inset."
         )
+    if looks_like_font_path(font):
+        raise ValidationError("add_text: " + _FONT_PATH_MSG.format(font=font))
     if not isinstance(line_spacing, (int, float)) or isinstance(line_spacing, bool):
         raise ValidationError(
             f"add_text: line_spacing must be a positive number, got "

@@ -16,21 +16,29 @@ freetype-py installed, this module reads advances straight from the font
 file at emit time. Without it, falls back to the same uniform heuristic
 scadwright used before.
 
-Resolution policy for the ``font`` argument:
+Resolution policy for the ``font`` argument (the same namespace OpenSCAD
+renders from — a fontconfig family name, never a file path):
 
 - ``None`` — search known system locations for Liberation Sans Regular
-  (OpenSCAD's bundled default font). Hit: real metrics. Miss: heuristic +
-  one-time warning. Liberation Sans ships with OpenSCAD on macOS/Windows
-  and is packaged on most Linux distros.
-- Absolute path to a ``.ttf`` / ``.otf`` — loaded directly via freetype-py.
-- OpenSCAD font-pattern string (``"Family"`` or ``"Family:style=Bold"``) —
-  not yet supported. Heuristic + one-time warning suggesting an absolute
-  path. (System-font indexing is a larger feature; defer.)
+  (OpenSCAD's bundled default font), then ``fc-match "Liberation Sans"``.
+- ``"Family"`` / ``"Family:style=Bold"`` — resolved to a file with
+  ``fc-match`` (the same fontconfig OpenSCAD uses), so one name drives both
+  the render and the metrics. A one-time warning fires if fontconfig reports
+  a different family than requested.
+
+Either step needs both ``fc-match`` (system fontconfig) and freetype-py (the
+``scadwright[curved-text]`` extra). When either is missing, or the name
+can't be resolved, callers fall back to the conservative heuristic with a
+one-time warning; OpenSCAD still renders the label via its own fontconfig.
+File paths are rejected upstream (in ``text()``), since OpenSCAD's ``text()``
+resolves only by name.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import threading
 from collections import OrderedDict
 from typing import Any, NamedTuple
@@ -96,6 +104,10 @@ _WARNED: set[tuple[str, str]] = set()
 # Memoised import probe. ``None`` = not yet attempted; the freetype module on
 # success; ``False`` on import failure.
 _FREETYPE_AVAILABLE: Any = None
+
+# Memoised ``fc-match`` lookup. ``None`` = not yet probed; the resolved exe
+# path on success; ``False`` when fontconfig's CLI isn't installed.
+_FC_MATCH_EXE: Any = None
 
 
 # --- Public API ---
@@ -182,6 +194,60 @@ def get_glyph_boxes(
 
 
 # --- Internals ---
+
+
+def _fc_match_exe() -> "str | None":
+    """Cached path to the ``fc-match`` binary, or None when it isn't installed."""
+    global _FC_MATCH_EXE
+    if _FC_MATCH_EXE is None:
+        _FC_MATCH_EXE = shutil.which("fc-match") or False
+    return _FC_MATCH_EXE or None
+
+
+def _fc_match(name: str) -> "str | None":
+    """Resolve a fontconfig name to a font file with ``fc-match``, or None.
+
+    Uses the same fontconfig OpenSCAD renders through, so the file we read
+    metrics from is (modulo a differently-configured bundled fontconfig) the
+    face OpenSCAD draws. Never raises.
+    """
+    exe = _fc_match_exe()
+    if exe is None:
+        return None
+    try:
+        result = subprocess.run(
+            [exe, "--format=%{file}", name],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = result.stdout.strip()
+    if path and os.path.isfile(path):
+        return path
+    return None
+
+
+def _family_of(font: str) -> str:
+    """The family part of a fontconfig pattern: drop ``:style=…`` and any
+    comma-separated alternates."""
+    return font.split(":", 1)[0].split(",", 1)[0].strip()
+
+
+def _warn_if_substituted(font: str, face: Any) -> None:
+    """Warn once if fontconfig resolved ``font`` to a different family."""
+    requested = _family_of(font)
+    actual = getattr(face, "family_name", None)
+    if isinstance(actual, bytes):
+        actual = actual.decode("utf-8", "replace")
+    if not requested or not actual:
+        return
+    if requested.casefold() != actual.casefold():
+        _warn_once(
+            font, "font-substituted",
+            f"add_text: font {font!r} resolved via fontconfig to {actual!r}; "
+            f"metrics use that face and OpenSCAD may substitute differently. "
+            f"Install the requested font or check the name.",
+        )
 
 
 def _em_to_mm(face: Any, size: float, calibration: float) -> float:
@@ -291,56 +357,60 @@ def _resolve_face(font: str | None) -> Any:
             _FACE_CACHE[font_key] = None
         return None
 
+    if font is not None:
+        _warn_if_substituted(font, face)
+
     with _LOCK:
         _FACE_CACHE[font_key] = face
     return face
 
 
 def _resolve_font_path(font: str | None) -> str | None:
-    """Resolve the ``font`` kwarg to an absolute ``.ttf``/``.otf`` path.
+    """Resolve the ``font`` kwarg to a font file via fontconfig, or None.
 
-    Returns None on failure (and warns once for that font).
+    ``font`` is a fontconfig family name, or None for OpenSCAD's default
+    (Liberation Sans). File paths are rejected upstream in ``text()``. Returns
+    None (after a one-time warning) when fontconfig isn't available or the
+    name can't be resolved; the caller then uses the heuristic.
     """
     if font is None:
+        # The curated search finds OpenSCAD's *own* bundled Liberation Sans
+        # file, the most faithful match for the default render; fall back to
+        # fontconfig only if that misses.
         path = _find_default_liberation_sans()
-        if path is None:
-            _warn_once(
-                "<default>", "no-default-font-found",
-                "add_text: could not locate Liberation Sans Regular on this "
-                "system. Liberation Sans ships with OpenSCAD; on macOS check "
-                "/Applications/OpenSCAD.app/Contents/Resources/fonts/, on "
-                "Linux install fonts-liberation, on Windows it ships under "
-                "C:\\Program Files\\OpenSCAD\\fonts. Pass an absolute font "
-                "path or use the heuristic.",
-            )
-        return path
-
-    if os.path.isabs(font) and os.path.isfile(font):
-        return font
-
-    if os.path.isabs(font):
-        # Looks like an abs path but doesn't exist. Warn distinctly so the
-        # user knows it's a path issue, not a name-resolution issue.
+        if path is not None:
+            return path
+        path = _fc_match("Liberation Sans")
+        if path is not None:
+            return path
         _warn_once(
-            font, "abs-path-missing",
-            f"add_text: font path {font!r} does not exist; falling back "
-            f"to heuristic for this font.",
+            "<default>", "no-default-font-found",
+            "add_text: could not locate Liberation Sans Regular (OpenSCAD's "
+            "default font), and fontconfig didn't resolve it either. Install "
+            "fonts-liberation or the OpenSCAD app bundle for real metrics; "
+            "falling back to the 0.6*size heuristic.",
         )
         return None
 
-    # Treat as an OpenSCAD font-pattern string (`"Family"` or
-    # `"Family:style=Bold"`). Currently only absolute paths resolve;
-    # named-font lookup needs a fontconfig-style index that scadwright
-    # doesn't ship. OpenSCAD itself will still render the label in the
-    # requested font — only the per-glyph spacing falls back to heuristic.
-    _warn_once(
-        font, "name-resolution-unsupported",
-        f"add_text: scadwright can only resolve fonts by absolute path; "
-        f"{font!r} falls back to the 0.6*size heuristic for spacing. "
-        f"For proportional spacing pass an absolute .ttf/.otf path; the "
-        f"label still renders in the requested font.",
-    )
-    return None
+    if _fc_match_exe() is None:
+        _warn_once(
+            font, "fontconfig-unavailable",
+            f"add_text: fontconfig's `fc-match` isn't on PATH, so scadwright "
+            f"can't resolve {font!r} to a font file for metrics; falling back "
+            f"to the 0.6*size heuristic. OpenSCAD still renders the label via "
+            f"its own fontconfig. Install fontconfig for real metrics.",
+        )
+        return None
+
+    path = _fc_match(font)
+    if path is None:
+        _warn_once(
+            font, "fc-match-failed",
+            f"add_text: fontconfig could not resolve {font!r} to a usable "
+            f"font file; falling back to the 0.6*size heuristic.",
+        )
+        return None
+    return path
 
 
 # Where Liberation Sans Regular tends to live, in priority order. OpenSCAD
@@ -444,9 +514,10 @@ def _warn_once(font_key: str, cause: str, message: str) -> None:
 
 def _reset_state_for_tests() -> None:
     """Clear all module-level caches and warnings. Tests only."""
-    global _FREETYPE_AVAILABLE
+    global _FREETYPE_AVAILABLE, _FC_MATCH_EXE
     with _LOCK:
         _CACHE.clear()
         _FACE_CACHE.clear()
         _WARNED.clear()
     _FREETYPE_AVAILABLE = None
+    _FC_MATCH_EXE = None
