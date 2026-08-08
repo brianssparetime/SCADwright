@@ -41,7 +41,7 @@ def test_build_missing_model_errors(tmp_path: Path, capsys):
     script = tmp_path / "noscript.py"
     script.write_text("x = 1\n")
     rc = cli.main(["build", str(script)])
-    assert rc == 1
+    assert rc == 2
     err = capsys.readouterr().err
     assert "MODEL" in err
 
@@ -208,6 +208,62 @@ def test_preview_missing_openscad_errors_clearly(tmp_path: Path, capsys):
         "MODEL = cube(1)\n"
     )
     rc = cli.main(["preview", str(script), "--openscad", "/no/such/openscad-binary"])
-    assert rc == 1
+    assert rc == 2
     err = capsys.readouterr().err
     assert "openscad" in err.lower()
+
+
+# =============================================================================
+# Exit codes
+# =============================================================================
+#
+# Each code answers two questions for a caller that can't read stderr: whose
+# fault, and is there an artifact. 0 succeeded. 1 started and failed, nothing
+# usable. 2 the command line was wrong, nothing ran. 3 the command succeeded
+# and wrote its output, but part of the command line was unrecognized.
+
+
+def _script(tmp_path: Path, name: str = "m.py") -> Path:
+    script = tmp_path / name
+    script.write_text(
+        "from scadwright.primitives import cube\n"
+        "MODEL = cube(10)\n"
+    )
+    return script
+
+
+def test_exit_0_on_success(tmp_path: Path):
+    out = tmp_path / "m.scad"
+    assert cli.main(["build", str(_script(tmp_path)), "-o", str(out)]) == 0
+    assert out.exists()
+
+
+def test_exit_1_when_the_build_fails(tmp_path: Path, capsys):
+    script = tmp_path / "bad.py"
+    script.write_text(
+        "from scadwright import Component\n"
+        "from scadwright.primitives import cube\n"
+        "class W(Component):\n"
+        "    equations = ['w > 0', 'w = -5']\n"
+        "    def build(self): return cube(self.w)\n"
+        "MODEL = W()\n"
+    )
+    assert cli.main(["build", str(script), "-o", str(tmp_path / "bad.scad")]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_exit_2_when_the_command_line_is_wrong(tmp_path: Path):
+    # A path that isn't there, and a value outside its range. Neither runs.
+    assert cli.main(["build", str(tmp_path / "absent.py")]) == 2
+    assert cli.main([
+        "morph", str(_script(tmp_path)), "any", str(tmp_path / "x.scad"),
+        "--frames", "0",
+    ]) == 2
+
+
+def test_exit_3_leaves_the_output_in_place(tmp_path: Path):
+    # The distinguishing property of code 3: the artifact exists.
+    out = tmp_path / "m.scad"
+    rc = cli.main(["build", str(_script(tmp_path)), "-o", str(out), "--nope=1"])
+    assert rc == 3
+    assert out.exists()

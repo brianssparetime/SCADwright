@@ -53,6 +53,79 @@ def test_variant_forwarded(tmp_path: Path):
     assert "sphere" in out_display.read_text()
 
 
+def _plain_script(tmp_path: Path) -> Path:
+    script = tmp_path / "plain.py"
+    script.write_text(
+        "from scadwright.primitives import cube\n"
+        "MODEL = cube(10)\n"
+    )
+    return script
+
+
+def test_unrecognized_option_is_rejected(tmp_path: Path, capsys):
+    script = _plain_script(tmp_path)
+    out = tmp_path / "m.scad"
+    rc = cli.main(["build", str(script), "-o", str(out), "--framse=48"])
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "--framse=48" in err
+    # The user needs to know the build still happened.
+    assert out.exists()
+
+
+def test_unrecognized_option_error_lists_what_is_accepted(tmp_path: Path, capsys):
+    script = tmp_path / "m.py"
+    script.write_text(
+        "from scadwright import arg\n"
+        "from scadwright.primitives import cube\n"
+        "MODEL = cube(arg('width', default=10, type=float))\n"
+    )
+    rc = cli.main([
+        "build", str(script), "-o", str(tmp_path / "m.scad"), "--widht=25",
+    ])
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "--widht=25" in err
+    assert "--variant" in err          # a flag the subcommand takes
+    assert "--width" in err            # a flag the script declares
+
+
+def test_unrecognized_option_keeps_flag_and_value_together(tmp_path: Path, capsys):
+    script = _plain_script(tmp_path)
+    rc = cli.main([
+        "build", str(script), "-o", str(tmp_path / "m.scad"),
+        "--nope", "3,4,5",
+    ])
+    assert rc == 3
+    assert "--nope 3,4,5" in capsys.readouterr().err
+
+
+def test_recognized_options_do_not_trip_the_check(tmp_path: Path):
+    script = tmp_path / "m.py"
+    script.write_text(
+        "from scadwright import arg\n"
+        "from scadwright.primitives import cube\n"
+        "MODEL = cube(arg('width', default=10, type=float))\n"
+    )
+    rc = cli.main([
+        "build", str(script), "-o", str(tmp_path / "m.scad"),
+        "--width=25", "--variant=print", "--vpr=60,0,30",
+    ])
+    assert rc == 0
+
+
+def test_unrecognized_option_rejected_without_a_script(tmp_path: Path, capsys):
+    # `graph` never hands argv to the script-parameter parser, so the
+    # leftover tokens come straight from the CLI parser instead.
+    (tmp_path / "m.py").write_text(
+        "from scadwright.primitives import cube\n"
+        "MODEL = cube(10)\n"
+    )
+    rc = cli.main(["graph", str(tmp_path), "--bogus=1"])
+    assert rc == 3
+    assert "--bogus=1" in capsys.readouterr().err
+
+
 def test_combined_arg_and_variant(tmp_path: Path):
     script = tmp_path / "m.py"
     script.write_text(

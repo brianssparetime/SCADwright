@@ -64,6 +64,19 @@ def _parse_vec3(s: str) -> tuple:
     return tuple(parts)
 
 
+def _add_viewpoint_options(p: argparse.ArgumentParser) -> None:
+    """Camera overrides, shared by every subcommand that builds a .scad
+    OpenSCAD will look at."""
+    p.add_argument("--vpr", type=_parse_vec3, default=None, metavar="X,Y,Z",
+                    help="Camera rotation ($vpr), e.g. --vpr=60,0,30")
+    p.add_argument("--vpt", type=_parse_vec3, default=None, metavar="X,Y,Z",
+                    help="Camera target ($vpt), e.g. --vpt=0,0,10")
+    p.add_argument("--vpd", type=float, default=None, metavar="D",
+                    help="Camera distance ($vpd), e.g. --vpd=200")
+    p.add_argument("--vpf", type=float, default=None, metavar="F",
+                    help="Camera field of view ($vpf), e.g. --vpf=22.5")
+
+
 def _add_build_options(p: argparse.ArgumentParser) -> None:
     """Options shared by build/preview/render: how to build the .scad."""
     p.add_argument("--debug", action="store_true", help="Emit debug source comments")
@@ -83,15 +96,7 @@ def _add_build_options(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Show INFO-level scadwright log output",
     )
-    # Viewpoint overrides (OpenSCAD camera).
-    p.add_argument("--vpr", type=_parse_vec3, default=None, metavar="X,Y,Z",
-                    help="Camera rotation ($vpr), e.g. --vpr=60,0,30")
-    p.add_argument("--vpt", type=_parse_vec3, default=None, metavar="X,Y,Z",
-                    help="Camera target ($vpt), e.g. --vpt=0,0,10")
-    p.add_argument("--vpd", type=float, default=None, metavar="D",
-                    help="Camera distance ($vpd), e.g. --vpd=200")
-    p.add_argument("--vpf", type=float, default=None, metavar="F",
-                    help="Camera field of view ($vpf), e.g. --vpf=22.5")
+    _add_viewpoint_options(p)
 
 
 def _add_openscad_option(p: argparse.ArgumentParser) -> None:
@@ -102,7 +107,13 @@ def _add_openscad_option(p: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+    """Build the top-level parser plus a name → subparser map.
+
+    The map exists so an unrecognized flag can be reported against the
+    flags the subcommand actually takes, rather than as a bare "unknown
+    option".
+    """
     parser = argparse.ArgumentParser(
         prog="scadwright",
         description="scadwright — Python-first OpenSCAD authoring",
@@ -190,9 +201,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--verbose", "-v", action="store_true",
         help="Show INFO-level scadwright log output.",
     )
+    _add_viewpoint_options(morph)
     _add_openscad_option(morph)
 
-    sub.add_parser(
+    lsp = sub.add_parser(
         "lsp",
         help=(
             "Run the SCADwright language server over stdio "
@@ -258,7 +270,10 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    return parser
+    return parser, {
+        "build": build, "preview": prev, "render": rend,
+        "morph": morph, "lsp": lsp, "graph": graph,
+    }
 
 
 def _import_script(script_path: Path):
@@ -276,7 +291,7 @@ def _import_script(script_path: Path):
 
 def _extract_model(module, script_path: Path):
     if not hasattr(module, "MODEL"):
-        raise SCADwrightError(
+        raise _UsageError(
             f"{script_path.name} must define a top-level `MODEL` (a scadwright Node) "
             f"or call `render(...)` at module level (or define a Design subclass) "
             f"for `scadwright build` to find what to render."
@@ -343,7 +358,10 @@ def _resolve_openscad(explicit: str | None) -> str:
                         return hit
             elif os.path.isfile(path) and os.access(path, os.X_OK):
                 return path
-    raise SCADwrightError(
+    # A binary the caller named is a bad argument; a missing default is a
+    # machine without OpenSCAD on it. Different exit codes, same message.
+    error = _UsageError if explicit else SCADwrightError
+    raise error(
         f"could not find openscad binary {candidate!r} on PATH or in any "
         f"of the standard install locations. Install OpenSCAD, or pass "
         f"--openscad PATH, or set $SCADWRIGHT_OPENSCAD."
@@ -419,9 +437,23 @@ def _import_with_fresh_design_registry(script_path: Path):
     return module, registered_designs()
 
 
-class _ScriptNotFound(SCADwrightError):
-    """Raised when the user passes a script path that doesn't exist. Mapped
-    to exit code 2 by `main` to distinguish it from internal build failures."""
+class _UsageError(SCADwrightError):
+    """The command line asked for something that can't be done: a path that
+    isn't there, a value outside its range, a name the script doesn't define.
+
+    Nothing ran, so nothing was written. ``main`` maps this to exit code 2,
+    separating it from a command that started and failed (code 1)."""
+
+
+class _ScriptNotFound(_UsageError):
+    """The script path doesn't exist. A usage error with its own name so the
+    raise site reads plainly."""
+
+
+class _UnrecognizedOptions(SCADwrightError):
+    """Argv carried options nobody claimed, but the command itself ran and
+    wrote its output. Exit code 3, the one non-zero code where the artifact
+    exists."""
 
 
 def _common_setup(args: argparse.Namespace, unknown: list[str]) -> Path:
@@ -450,7 +482,7 @@ def _render_design_variants(
 
     selected = resolve_variants(args.variant, kind=kind)
     if out_override is not None and len(selected) > 1:
-        raise SCADwrightError(
+        raise _UsageError(
             f"--output specified but {len(selected)} variants would be built; "
             "pass --variant=NAME to pick one."
         )
@@ -564,13 +596,11 @@ def _cmd_lsp(args: argparse.Namespace, unknown: list[str]) -> int:
     """
     try:
         import pygls  # noqa: F401
-    except ImportError:
-        print(
-            "error: scadwright lsp requires the 'lsp' extra. "
-            "Install with: pip install 'scadwright[lsp]'",
-            file=sys.stderr,
-        )
-        return 1
+    except ImportError as exc:
+        raise SCADwrightError(
+            "scadwright lsp requires the 'lsp' extra. "
+            "Install with: pip install 'scadwright[lsp]'"
+        ) from exc
     from scadwright.lsp.server import main as server_main
     return server_main()
 
@@ -587,14 +617,9 @@ def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
 
     target = Path(args.path)
     if not target.exists():
-        print(f"error: path not found: {target}", file=sys.stderr)
-        return 2
+        raise _UsageError(f"path not found: {target}")
     if args.depth is not None and args.focus is None:
-        print(
-            "error: --depth requires --filter",
-            file=sys.stderr,
-        )
-        return 2
+        raise _UsageError("--depth requires --filter")
     graph = build_graph(target, exclude=args.exclude)
     for err_path, err_msg in graph.parse_errors:
         print(
@@ -608,8 +633,7 @@ def _cmd_graph(args: argparse.Namespace, unknown: list[str]) -> int:
         try:
             graph = filter_graph(graph, args.focus, args.depth)
         except FocusNotFound as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
+            raise _UsageError(str(exc)) from exc
     if args.format == "json":
         from scadwright.graph.render_json import render_json
         sys.stdout.write(render_json(graph))
@@ -624,17 +648,17 @@ def _parse_imgsize(s: str) -> tuple[int, int]:
     sep = "x" if "x" in s else ","
     parts = s.split(sep)
     if len(parts) != 2:
-        raise SCADwrightError(
+        raise _UsageError(
             f"--imgsize must be 'WxH' (e.g. 1920x1080), got {s!r}"
         )
     try:
         w, h = int(parts[0]), int(parts[1])
     except ValueError:
-        raise SCADwrightError(
+        raise _UsageError(
             f"--imgsize dimensions must be integers, got {s!r}"
         )
     if w <= 0 or h <= 0:
-        raise SCADwrightError(
+        raise _UsageError(
             f"--imgsize dimensions must be positive, got {w}x{h}"
         )
     return w, h
@@ -658,7 +682,7 @@ def _morph_extension_error(ext: str) -> SCADwrightError:
     path and PNG sequence for the external-encoder path.
     """
     if ext in _MORPH_VIDEO_EXTS:
-        return SCADwrightError(
+        return _UsageError(
             f"morph doesn't support {ext} output directly. SCADwright "
             f"avoids the ffmpeg dependency to keep installation simple. "
             f"Two options:\n"
@@ -671,7 +695,7 @@ def _morph_extension_error(ext: str) -> SCADwrightError:
             f"-c:v libx264 -pix_fmt yuv420p out{ext}"
         )
     if ext in _MORPH_GIF_EXTS:
-        return SCADwrightError(
+        return _UsageError(
             f"morph doesn't support .gif output directly. APNG is the "
             f"in-the-box alternative: same coverage on modern browsers and "
             f"GitHub READMEs, without .gif's lossy 256-colour quantization "
@@ -683,7 +707,7 @@ def _morph_extension_error(ext: str) -> SCADwrightError:
             f"  convert -delay 3 -loop 0 frame_*.png out.gif"
         )
     available = ", ".join(sorted(_MORPH_OUTPUT_EXTS))
-    return SCADwrightError(
+    return _UsageError(
         f"unknown output extension {ext!r}; supported: {available}"
     )
 
@@ -703,14 +727,14 @@ def _cmd_morph(args: argparse.Namespace, unknown: list[str]) -> int:
         raise _morph_extension_error(ext)
     width, height = _parse_imgsize(args.imgsize)
     if args.frames < 1:
-        raise SCADwrightError(f"--frames must be >= 1, got {args.frames}")
+        raise _UsageError(f"--frames must be >= 1, got {args.frames}")
 
     # Resolve the morph name to a Design class.
     from scadwright.design import registered_designs
 
     _, designs = _import_with_fresh_design_registry(script_path)
     if not designs:
-        raise SCADwrightError(
+        raise _UsageError(
             f"{script_path.name} defines no Design subclass; cannot render morph."
         )
     morph_owner = None
@@ -725,10 +749,10 @@ def _cmd_morph(args: argparse.Namespace, unknown: list[str]) -> int:
             for n in getattr(d, "__morphs__", {}).keys()
         })
         if available:
-            raise SCADwrightError(
+            raise _UsageError(
                 f"no morph named {args.morph_name!r}; available: {', '.join(available)}"
             )
-        raise SCADwrightError(
+        raise _UsageError(
             f"no morph named {args.morph_name!r}; {script_path.name} has no "
             f"morph declarations. Add `name = morph(start='a', end='b')` to "
             f"a Design subclass."
@@ -751,6 +775,7 @@ def _cmd_morph(args: argparse.Namespace, unknown: list[str]) -> int:
             morph_owner, args.morph_name, meta,
             base_dir=script_path.parent,
             out_override=scad_path,
+            cli_viewpoint=_cli_viewpoint(args),
         )
         print(f"wrote {scad_path}", file=sys.stderr)
 
@@ -837,8 +862,81 @@ _DISPATCH = {
 }
 
 
+def _group_leftover(tokens: list[str]) -> list[str]:
+    """Group leftover argv tokens so a flag keeps its value.
+
+    ``["--vpr", "0,0,80", "--framse=48"]`` reads back as
+    ``["--vpr 0,0,80", "--framse=48"]``, which is what the user typed
+    and therefore what they can search their own command line for.
+    """
+    groups: list[list[str]] = []
+    for token in tokens:
+        if token.startswith("-") or not groups:
+            groups.append([token])
+        else:
+            groups[-1].append(token)
+    return [" ".join(g) for g in groups]
+
+
+def _subcommand_flags(subparser: argparse.ArgumentParser) -> list[str]:
+    """Every option string the subcommand takes, minus the help flags."""
+    return sorted({
+        s
+        for action in subparser._actions
+        for s in action.option_strings
+        if s not in ("-h", "--help")
+    })
+
+
+def _reject_unrecognized(
+    subparsers: dict[str, argparse.ArgumentParser],
+    args: argparse.Namespace,
+    cli_unknown: list[str],
+) -> None:
+    """Raise when argv carried options nobody claimed.
+
+    Both parsers in the chain tolerate unknown options while running:
+    the CLI's, because a script's ``arg()`` flags aren't knowable
+    before the script is imported, and the script's, because ``arg()``
+    registers lazily. That tolerance is only sound if something checks
+    afterwards. Without this, a misspelled ``--framse=48`` builds the
+    default and exits 0.
+
+    Runs after the command has done its work, since that's the first
+    moment every ``arg()`` call has had its chance. The output is
+    therefore already written, and the message says so: the reader's
+    next move is to fix the option and run again, not to wonder
+    whether anything happened.
+    """
+    from_script = _args.argv_was_set()
+    leftover = _args.unconsumed() if from_script else list(cli_unknown)
+    if not leftover:
+        return
+
+    grouped = _group_leftover(leftover)
+    plural = "s" if len(grouped) > 1 else ""
+    lines = [
+        f"unrecognized option{plural}: {', '.join(grouped)}",
+        f"  `scadwright {args.command}` takes: "
+        f"{', '.join(_subcommand_flags(subparsers[args.command]))}",
+    ]
+    if from_script:
+        script = Path(getattr(args, "script", "the script")).name
+        declared = _args.registered_names()
+        lines.append(
+            f"  {script} declares: {', '.join(declared)}" if declared
+            else f'  {script} declares no parameters '
+                 f'(add one with `arg("name", default=...)`)'
+        )
+    lines.append(
+        f"  the command ran and wrote its output; "
+        f"{'those options' if plural else 'this option'} had no effect on it"
+    )
+    raise _UnrecognizedOptions("\n".join(lines))
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = _build_parser()
+    parser, subparsers = _build_parser()
     args, unknown = parser.parse_known_args(argv)
 
     handler = _DISPATCH.get(args.command)
@@ -846,8 +944,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"unknown command: {args.command}")
 
     try:
-        return handler(args, unknown)
-    except _ScriptNotFound as e:
+        code = handler(args, unknown)
+        if code == 0:
+            _reject_unrecognized(subparsers, args, unknown)
+        return code
+    except _UnrecognizedOptions as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 3
+    except _UsageError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except SCADwrightError as e:

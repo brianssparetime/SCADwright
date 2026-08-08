@@ -3,7 +3,10 @@
 `sc.arg(name, default=..., type=...)` registers a parameter and returns its
 parsed value. The first call to any `arg()` triggers a lazy `parse_known_args`
 against `sys.argv`, so the order of calls doesn't matter. Unknown args are
-tolerated — the CLI wrapper can inject its own flags alongside script args.
+tolerated *during* parsing, because registration is lazy and the parser can't
+know at any single moment whether a later `arg()` call will claim a flag. What
+nobody claimed by the end is available from `unconsumed()`, which the CLI
+reports as an error rather than letting a misspelled flag pass as a no-op.
 
 `sc.from_json()` registers a `--from-json <path>` flag and returns the parsed
 JSON content. One or more `--from-json` flags are accepted; payloads are
@@ -27,6 +30,7 @@ _registered: dict[str, dict[str, Any]] = {}
 _argv_override: list[str] | None = None
 _json_registered: bool = False
 _json_payloads: dict[str, Any] | None = None
+_unconsumed: list[str] = []
 
 
 class _ArgparseNoExit(argparse.ArgumentParser):
@@ -52,13 +56,14 @@ def _flush_parse() -> None:
 def _reset_for_testing() -> None:
     """Nuke the parser and all registered args. Test use only."""
     global _parser, _parsed, _registered, _argv_override
-    global _json_registered, _json_payloads
+    global _json_registered, _json_payloads, _unconsumed
     _parser = None
     _parsed = None
     _registered = {}
     _argv_override = None
     _json_registered = False
     _json_payloads = None
+    _unconsumed = []
 
 
 def set_argv(argv: list[str] | None) -> None:
@@ -70,12 +75,45 @@ def set_argv(argv: list[str] | None) -> None:
 
 
 def _ensure_parsed() -> argparse.Namespace:
-    global _parsed
+    global _parsed, _unconsumed
     if _parsed is None:
         argv = _argv_override if _argv_override is not None else sys.argv[1:]
-        ns, _unknown = _get_parser().parse_known_args(argv)
+        ns, leftover = _get_parser().parse_known_args(argv)
         _parsed = ns
+        _unconsumed = list(leftover)
     return _parsed
+
+
+def argv_was_set() -> bool:
+    """True when the CLI handed this module an argv slice to parse.
+
+    Distinguishes "the script claimed nothing out of an argv the CLI
+    gave it" from "no CLI ran", which the caller needs before reading
+    :func:`unconsumed`.
+    """
+    return _argv_override is not None
+
+
+def unconsumed() -> list[str]:
+    """Argv tokens that neither the CLI nor the script's `arg()` claimed.
+
+    Forces a parse if one hasn't happened, so a script that never calls
+    `arg()` still reports the flags nobody wanted. Call this only after
+    the script has finished running: registration is lazy, so a token
+    is not unclaimed until there is no more code left to claim it.
+    """
+    _ensure_parsed()
+    return list(_unconsumed)
+
+
+def registered_names() -> list[str]:
+    """Script parameter names declared via `arg()`, plus `--from-json`
+    when the script reads one. Used to spell out what a script accepts
+    when rejecting a flag nobody claimed."""
+    names = [f"--{n}" for n in _registered]
+    if _json_registered:
+        names.append("--from-json")
+    return sorted(names)
 
 
 def arg(

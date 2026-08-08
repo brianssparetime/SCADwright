@@ -49,7 +49,7 @@ scadwright render widget.py -o /tmp/out.stl   # explicit STL output
 scadwright render widget.py --variant=print
 ```
 
-`render` builds the script to a temp `.scad` file and then invokes `openscad -o OUT.stl TEMPFILE` synchronously to produce an STL (or any format OpenSCAD's `-o` accepts based on extension: `.off`, `.amf`, `.3mf`, etc.). Output streams to stdout/stderr; the command returns OpenSCAD's exit code.
+`render` builds the script to a temp `.scad` file and then invokes `openscad -o OUT.stl TEMPFILE` synchronously to produce an STL (or any format OpenSCAD's `-o` accepts based on extension: `.off`, `.amf`, `.3mf`, etc.). Output streams to stdout/stderr. If OpenSCAD fails, its code appears in the error message and the command exits 1.
 
 ## `scadwright morph`
 
@@ -73,6 +73,8 @@ Flags:
 - `--imgsize WxH` — image dimensions (default `800x600`).
 - `--loop` / `--no-loop` — APNG loop control (default `--loop`).
 - `--keep-frames` — keep intermediate PNG frames after encoding.
+- `--colorscheme NAME` — OpenSCAD colorscheme for the frames.
+- `--vpr X,Y,Z` / `--vpt X,Y,Z` / `--vpd D` / `--vpf F` — camera for the animation (default: the last stage's `@variant(rotation=...)`).
 - `--openscad PATH` — OpenSCAD binary path.
 
 See [Morph](morph.md) for the full feature documentation.
@@ -109,6 +111,34 @@ python widget.py --width=80
 - `default` — value used when not overridden.
 - `type` — Python type to coerce the value to (`int`, `float`, `str`, etc.). Defaults to `str`.
 - `help` — short description shown in `--help` output.
+
+## Unrecognized options
+
+An option that neither the subcommand nor your script declares is an error, so a typo doesn't quietly build the default:
+
+```
+scadwright build widget.py --widht=80
+
+error: unrecognized option: --widht=80
+  `scadwright build` takes: --compact, --debug, --output, --variant, --verbose, --vpd, --vpf, --vpr, --vpt, -o, -v
+  widget.py declares: --fn, --width
+  the command ran and wrote its output; this option had no effect on it
+```
+
+The output is already written by the time this appears, since a script can declare a parameter at any point while it runs.
+
+## Exit codes
+
+Every subcommand reports the same four codes. Each one answers both halves of what a script or Makefile needs to know: whose mistake it was, and whether there's a file to use.
+
+| Code | Meaning | Output written |
+|---|---|---|
+| 0 | Did what you asked. | yes |
+| 1 | The command started and failed: a rule your model breaks, an error inside `build()`, OpenSCAD refusing the geometry, or OpenSCAD missing from the machine. | no |
+| 2 | The command line was wrong: a path that isn't there, a value outside its range, a name the script doesn't define. Nothing ran. | no |
+| 3 | The command succeeded, but part of the command line was unrecognized. | yes |
+
+Code 3 is the only non-zero code that leaves a usable file behind, which is why it isn't folded into the other two.
 
 ## Rendering from inside a script: `render`
 
@@ -175,7 +205,7 @@ scadwright build widget.py --from-json design.json --from-json caps.json
 
 ### Advanced notes
 
-- `arg` uses `argparse.parse_known_args` under the hood, so unknown arguments don't cause errors. This lets `scadwright build`'s own flags coexist with script arguments.
+- SCADwright's own flags and your script's flags interleave freely on one command line; each side takes what it declared, and [unrecognized options](#unrecognized-options) covers the rest.
 - Re-registering the same `arg` name with different parameters raises `SCADwrightError`.
 - `render` is the lower-level entry point used by the CLI; you can pass the same `pretty` / `debug` flags either way.
 - For complex argument schemes (subparsers, mutually exclusive groups), use `argparse` directly — `arg` is the simple path.

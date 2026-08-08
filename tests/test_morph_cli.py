@@ -83,7 +83,7 @@ def test_morph_cli_unknown_morph_name_errors(design_script, tmp_path):
     exit_code, _, stderr = _run_cli([
         "morph", str(design_script), "nonexistent", str(tmp_path / "x.scad"),
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "no morph named" in stderr
     assert "swing" in stderr  # lists available
 
@@ -94,7 +94,7 @@ def test_morph_cli_mp4_extension_gives_targeted_guidance(design_script, tmp_path
     exit_code, _, stderr = _run_cli([
         "morph", str(design_script), "swing", str(tmp_path / "x.mp4"),
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "ffmpeg" in stderr.lower()
     assert ".apng" in stderr
     assert "PNG sequence" in stderr or "png sequence" in stderr.lower()
@@ -104,7 +104,7 @@ def test_morph_cli_webm_extension_also_gets_video_guidance(design_script, tmp_pa
     exit_code, _, stderr = _run_cli([
         "morph", str(design_script), "swing", str(tmp_path / "x.webm"),
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "ffmpeg" in stderr.lower()
     assert ".apng" in stderr
 
@@ -115,7 +115,7 @@ def test_morph_cli_gif_extension_recommends_apng(design_script, tmp_path):
     exit_code, _, stderr = _run_cli([
         "morph", str(design_script), "swing", str(tmp_path / "x.gif"),
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "APNG" in stderr or "apng" in stderr.lower()
     assert "gif" in stderr.lower()
 
@@ -126,7 +126,7 @@ def test_morph_cli_truly_unknown_extension_gives_generic_error(design_script, tm
     exit_code, _, stderr = _run_cli([
         "morph", str(design_script), "swing", str(tmp_path / "x.bogus"),
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "unknown output extension" in stderr
     assert ".apng" in stderr  # lists supported
 
@@ -136,7 +136,7 @@ def test_morph_cli_invalid_imgsize_errors(design_script, tmp_path):
         "morph", str(design_script), "swing", str(tmp_path / "x.scad"),
         "--imgsize", "bogus",
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "imgsize" in stderr.lower()
 
 
@@ -145,7 +145,7 @@ def test_morph_cli_invalid_frames_errors(design_script, tmp_path):
         "morph", str(design_script), "swing", str(tmp_path / "x.scad"),
         "--frames", "0",
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "frames" in stderr.lower()
 
 
@@ -155,7 +155,7 @@ def test_morph_cli_no_design_in_script(tmp_path):
     exit_code, _, stderr = _run_cli([
         "morph", str(script), "anything", str(tmp_path / "x.scad"),
     ])
-    assert exit_code == 1
+    assert exit_code == 2
     assert "no Design" in stderr or "no morph" in stderr
 
 

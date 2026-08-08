@@ -768,6 +768,7 @@ scadwright morph widget.py assemble out.apng                 # animated PNG (no 
 scadwright morph widget.py assemble out.apng --frames=120    # longer
 scadwright morph widget.py assemble out.scad                 # animated SCAD only
 scadwright morph widget.py assemble frame.png --frames=60    # PNG sequence: frame_0001.png ...
+scadwright morph widget.py assemble out.apng --vpr=0,0,80 --vpd=700   # aim the camera
 ```
 
 ## Math helpers &nbsp; &nbsp;[→ full](math.md)
@@ -908,6 +909,8 @@ scadwright graph project/ --filter Holder --depth 1         # focus one part plu
 scadwright graph project/ --format json                     # same map as data, for tooling / diff
 scadwright lsp                                              # language server (editors spawn this)
 ```
+
+Exit codes: `0` worked, `1` the command failed, `2` the command line was wrong and nothing ran, `3` it worked but an option went unrecognized. `3` is the only non-zero code that leaves a usable file.
 
 LSP integration: `pip install 'scadwright[lsp]'`, then point your editor at `scadwright lsp`. Full setup → [lsp_setup.md](lsp_setup.md).
 
