@@ -386,6 +386,101 @@ def test_non_float_as_solver_target_rhs_rejected():
             def build(self): return cube(1)
 
 
+def test_typed_int_constant_allowed():
+    class C(Component):
+        equations = ["detent_count:int = 12", "pitch = 360 / detent_count"]
+        def build(self): return cube(1)
+
+    c = C()
+    assert c.detent_count == 12
+    assert isinstance(c.detent_count, int)
+    assert c.pitch == 30.0
+
+
+def test_typed_constant_covers_every_tag():
+    class C(Component):
+        equations = [
+            "count:int = 12",
+            "mode:str = 'flat'",
+            "flag:bool = True",
+            "sizes:tuple = (1, 2, 3)",
+            "picks:list = [1, 2]",
+            "table:dict = {}",
+        ]
+        def build(self): return cube(1)
+
+    c = C()
+    assert (c.count, c.mode, c.flag) == (12, "flat", True)
+    assert (c.sizes, c.picks, c.table) == ((1, 2, 3), [1, 2], {})
+
+
+def test_typed_constant_may_be_a_curated_expression():
+    # No equation names on the right, so nothing has to be derived.
+    class C(Component):
+        equations = ["steps:int = ceil(7 / 2)", "half:int = 10 // 4"]
+        def build(self): return cube(1)
+
+    assert C().steps == 4
+    assert C().half == 2
+
+
+def test_typed_constant_is_fixed_not_a_default():
+    # Same behaviour a float constant has: the equation pins the value,
+    # and a conflicting supplied value is a consistency error.
+    class C(Component):
+        equations = ["count:int = 12"]
+        def build(self): return cube(1)
+
+    with pytest.raises(ValidationError, match="equation violated"):
+        C(count=5)
+
+
+def test_typed_constant_keeps_spec_class_accessible():
+    # A Spec whose only non-float name is a constant declares no
+    # parameters, so its values stay readable off the class.
+    from scadwright import Spec
+
+    class Dims(Spec):
+        equations = """
+            detent_count:int = 12
+            od = 40
+            pitch = od / detent_count
+        """
+
+    assert Dims.detent_count == 12
+    assert Dims.pitch == 40 / 12
+
+
+def test_typed_constant_of_wrong_type_rejected():
+    # 10 / 3 is 3.333; storing 3 is the silent truncation the check exists
+    # to prevent, so a float constant under an `:int` tag still raises.
+    with pytest.raises(ValidationError, match=r"cannot take the value 3\.3.*\(float\)"):
+        class C(Component):
+            equations = ["count:int = 10 / 3"]
+            def build(self): return cube(1)
+
+
+def test_typed_int_constant_rejects_a_bool():
+    with pytest.raises(ValidationError, match=r"cannot take the value True \(bool\)"):
+        class C(Component):
+            equations = ["count:int = True"]
+            def build(self): return cube(1)
+
+
+def test_typed_bool_constant_rejects_an_int():
+    with pytest.raises(ValidationError, match=r"cannot take the value 1 \(int\)"):
+        class C(Component):
+            equations = ["flag:bool = 1"]
+            def build(self): return cube(1)
+
+
+def test_non_constant_error_names_what_the_other_side_reads():
+    with pytest.raises(ValidationError, match=r"reads `size`, `total`"):
+        class C(Component):
+            equations = ["count:int = total / size"]
+            def build(self): return cube(1)
+
+
 def test_non_float_as_input_allowed():
     # count:int is an input; size is the solver target.
     class C(Component):

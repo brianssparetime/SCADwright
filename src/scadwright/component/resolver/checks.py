@@ -32,6 +32,65 @@ _ARITHMETIC_BINOPS = (
     ast.Mod, ast.Pow,
 )
 
+# Python type behind each inline type tag. Used to decide whether a
+# constant right-hand side already carries the tagged type.
+_TAG_TYPES: dict[str, type] = {
+    "int": int, "bool": bool, "str": str,
+    "tuple": tuple, "list": list, "dict": dict,
+}
+
+# Distinguishes "evaluated to None" from "not a constant at all".
+_NOT_CONSTANT = object()
+
+# Stand-in value per tag, used to show the shape of a fix in errors.
+_TAG_EXAMPLES: dict[str, str] = {
+    "int": "3", "bool": "True", "str": '"flat"',
+    "tuple": "(1, 2)", "list": "[1, 2]", "dict": "{}",
+}
+
+
+def _read_names(node: ast.AST) -> str:
+    """Render the equation names a side reads, for an error message.
+
+    Curated math and builtin names are not equation names, so they are
+    left out; a side made only of those failed to evaluate for some
+    other reason (a division by zero, say) and gets a generic phrase.
+    """
+    from scadwright.component.equations import (
+        _CURATED_BUILTINS, _CURATED_MATH,
+    )
+
+    curated = set(_CURATED_BUILTINS) | set(_CURATED_MATH)
+    ordered = sorted(_free_names_in(node) - curated)
+    if not ordered:
+        return "a value that can't be evaluated at class-definition time"
+    return ", ".join(f"`{n}`" for n in ordered)
+
+
+def _constant_value(node: ast.AST):
+    """Evaluate ``node`` when it references no equation names.
+
+    Returns the value, or :data:`_NOT_CONSTANT` when the expression
+    reads a name the resolver would have to fill first, or when it
+    can't be evaluated at class-definition time. Curated math and
+    builtin names don't count as references — ``ceil(7 / 2)`` is as
+    constant as ``4``.
+    """
+    from scadwright.component.equations import (
+        _CURATED_BUILTINS, _CURATED_MATH,
+    )
+
+    ns: dict = {**_CURATED_BUILTINS, **_CURATED_MATH}
+    if _free_names_in(node) - set(ns):
+        return _NOT_CONSTANT
+    ns["__builtins__"] = {}
+    try:
+        expr_node = ast.Expression(body=node)
+        ast.fix_missing_locations(expr_node)
+        return eval(compile(expr_node, "<constant-check>", "eval"), ns)
+    except Exception:
+        return _NOT_CONSTANT
+
 
 def _check_bool_in_arithmetic(
     typed_names: dict[str, str],
@@ -138,10 +197,17 @@ def _check_non_float_solver_target(
     The resolver works over floats; it cannot derive int / bool / str
     / tuple / list / dict values from algebraic equations. A non-float-
     typed name as a bare-Name target on either side of an equation is
-    a class-define-time error, except when the equation is an
-    optional-default override pattern (the equation's RHS evaluates
-    to a non-None value when the target is None — see
-    :func:`_override_rhs_dry_run`).
+    a class-define-time error, with two exceptions:
+
+    - the equation is an optional-default override pattern (the RHS
+      evaluates to a non-None value when the target is None — see
+      :func:`_override_rhs_dry_run`);
+    - the other side is a constant that already carries the tagged
+      type (``detent_count:int = 12``). Nothing is being derived, so
+      there is nothing the float solver could get wrong. A constant of
+      the wrong type still raises, because that is where the silent
+      truncation would happen: ``count:int = 10 / 3`` is 3.333, and
+      quietly storing 3 is exactly the trap this check exists for.
     """
     non_float_typed = {
         n for n, t in typed_names.items()
@@ -160,19 +226,32 @@ def _check_non_float_solver_target(
             # target=None. Allowed regardless of type.
             if classifications.get(i, ("", ""))[1] == "override":
                 continue
+            tag = typed_names[name]
+            value = _constant_value(other)
+            if value is not _NOT_CONSTANT and type(value) is _TAG_TYPES[tag]:
+                continue
             target_node = (
                 eq.lhs
                 if isinstance(eq.lhs, ast.Name) and eq.lhs.id == name
                 else eq.rhs
             )
+            example = _TAG_EXAMPLES[tag]
+            if value is _NOT_CONSTANT:
+                why = (
+                    f"cannot be derived from an equation: the other side "
+                    f"reads {_read_names(other)}"
+                )
+            else:
+                why = (
+                    f"cannot take the value {value!r} "
+                    f"({type(value).__name__})"
+                )
             raise ValidationError(
                 f"{_classdef_loc(class_name, eq.source_line_index)}: "
-                f"name `{name}` is tagged `:{typed_names[name]}` and "
-                f"cannot be derived from an equation. Non-float-typed "
-                f"names must be supplied by the caller or filled by an "
-                f"optional-default pattern whose RHS yields a value "
-                f"when `{name}` is None (e.g., `?{name}:"
-                f"{typed_names[name]} = ?{name} or default`). "
+                f"name `{name}` is tagged `:{tag}` and {why}. Make it a "
+                f"constant (`{name}:{tag} = {example}`), have the caller "
+                f"supply it, or give it an optional default "
+                f"(`?{name}:{tag} = ?{name} or {example}`). "
                 f"Offending equation: `{eq.raw}`.",
                 equations_source_index=eq.source_line_index,
                 equations_node=target_node,

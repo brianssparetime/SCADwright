@@ -430,9 +430,12 @@ Write `:type` after a name's first appearance to declare it as something other t
 "len(size:tuple) = 3"                              # 3-tuple
 "x = 1 if ?direction:bool else 2"                  # bool used in a conditional
 "?dividers:int = ?dividers or 1"                   # int with override-pattern default
+"detent_count:int = 12"                            # a fixed count, not a caller input
 ```
 
 The tag goes on the name's first reference and applies everywhere it's used. The check is strict: passing a float where an int is expected is an error. The one allowed conversion is whole-number int → float (so `Tube(thk=1)` is fine for a float `thk`).
+
+A constant's right side must be a value of the tagged type and must not read other names: `count:int = 10 / 3` and `count:int = total / size` both raise.
 
 ### Declaring parameters
 
@@ -450,6 +453,7 @@ equations = """
     count:int >= 1
     axis:str in ('x', 'y', 'z')
     len(size:tuple) = 3
+    detent_count:int = 12          # constant, not a caller input
 """
 
 # 3. Param — custom types only (namedtuples, spec classes)

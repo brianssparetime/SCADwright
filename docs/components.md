@@ -128,9 +128,14 @@ Common shapes:
 "axis:str in ('x', 'y', 'z')"               # a string choice
 "len(size:tuple) = 3"                       # a 3-tuple; the tag goes on the first reference
 "x = 1 if ?direction:bool else 2"           # a True/False switch used in a conditional
+"detent_count:int = 12"                     # a fixed count, not a caller input
 ```
 
 Type tags act like a check: the value the caller passes has to match the type, otherwise SCADwright raises a clear error. Tags don't try to convert (passing a float where an int is expected is an error, not a silent truncation). Whole-number inputs work for floats, so `Tube(thk=1)` is fine even when `thk` is a float.
+
+A tagged name can also be a constant. `detent_count:int = 12` fixes the value the same way `od = 40` does: other lines can use it, the caller can read it, and passing a different value raises.
+
+The right side of a constant has to be a value of the tagged type, not something worked out from other names. `steps:int = ceil(7 / 2)` is 4 and works; `steps:int = 10 / 3` is 3.333 and does not; `count:int = total / size` reads `total` and `size` and does not either. The solver works in floats, and silently turning one into a count is how a part ends up with the wrong number of teeth.
 
 The tag goes on a name in a real equation or rule line. A standalone line like `"flag:bool"` (with no operator) isn't an equation or a rule, so it isn't accepted; instead, declare the bool by using it in a line that has an operator, like the conditional above, or add a check that uses it.
 
@@ -494,11 +499,12 @@ Blank lines and lines that start with `#` are ignored, so you can space out rela
 
 How each type tag is typically used, with a worked example for each.
 
-**`:int` for counts.** Almost always paired with a positive bound, almost always supplied by the caller:
+**`:int` for counts.** Usually a caller input with a positive bound, sometimes a fixed constant:
 
 ```python
 "count:int > 0"                                    # integer count, must be positive
 "sides:int >= 3"                                   # polygon sides, at least 3
+"detent_count:int = 12"                            # fixed, never passed in
 ```
 
 **`:bool` for binary choices.** Use truthy in `if` expressions; bools never appear in arithmetic:

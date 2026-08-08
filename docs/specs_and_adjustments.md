@@ -192,6 +192,19 @@ class PrinterProfile(Spec):
 
 The `:str` tag tells SCADwright that `profile` is a string, not the default float.
 
+Only the `?` makes a Spec need inputs. A non-float constant doesn't need one, so the Spec's values stay class attributes you read directly:
+
+```python
+class Dims(Spec):
+    equations = """
+        detent_count:int = 12
+        finish:str = "matte"
+        od = 40
+    """
+
+Dims.detent_count      # 12
+```
+
 Once a Spec has `?` inputs, you make instances of it instead of reading the class:
 
 ```python
