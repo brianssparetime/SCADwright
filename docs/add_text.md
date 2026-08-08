@@ -425,7 +425,7 @@ Flat planar surfaces emit one OpenSCAD `text()` for the whole label, so OpenSCAD
 
 Curved walls (cylindrical, conical, meridional) and rim arcs are different. Each glyph has to be rotated to follow the surface, so scadwright emits one `text()` per glyph and computes the per-glyph advance widths itself.
 
-That is one solid per glyph in the emitted model, not one per label. A five-character label is five extruded solids, so a part carrying fifty labels hands OpenSCAD two hundred and fifty of them.
+A five-character label is therefore five extruded solids, and a part carrying fifty labels hands OpenSCAD two hundred and fifty of them.
 
 OpenSCAD's preview handles those counts fine. An exact render or STL export of the same part can run to minutes or fail to finish, and nothing collapses the glyphs back together, because each one carries its own rotation and so shares no 2D outline to extrude once. Treat labelled curved walls as a preview-first feature; [`force_render` is not the way out](preview_performance.md#it-wont-rescue-a-slow-exact-render).
 

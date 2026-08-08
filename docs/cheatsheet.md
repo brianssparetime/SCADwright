@@ -430,7 +430,7 @@ Write `:type` after a name's first appearance to declare it as something other t
 "len(size:tuple) = 3"                              # 3-tuple
 "x = 1 if ?direction:bool else 2"                  # bool used in a conditional
 "?dividers:int = ?dividers or 1"                   # int with override-pattern default
-"detent_count:int = 12"                            # a fixed count, not a caller input
+"detent_count:int = 12"                            # a count fixed at 12
 ```
 
 The tag goes on the name's first reference and applies everywhere it's used. The check is strict: passing a float where an int is expected is an error. The one allowed conversion is whole-number int → float (so `Tube(thk=1)` is fine for a float `thk`).
@@ -453,7 +453,7 @@ equations = """
     count:int >= 1
     axis:str in ('x', 'y', 'z')
     len(size:tuple) = 3
-    detent_count:int = 12          # constant, not a caller input
+    detent_count:int = 12          # a constant the caller can't change
 """
 
 # 3. Param — custom types only (namedtuples, spec classes)
@@ -742,7 +742,7 @@ if __name__ == "__main__":
     run()                                  # replaces render() when using Design
 ```
 
-Writes `build/widget-print.scad` and friends; the directory is created if missing. Per-variant override: `@variant(out="fixtures/jig.scad")`, relative to `out_dir`. `scadwright build ... -o path.scad` beats both.
+Writes `build/widget-print.scad` and the rest; the directory is created if missing. Per-variant override: `@variant(out="fixtures/jig.scad")`, relative to `out_dir`. `scadwright build ... -o path.scad` beats both.
 
 ## Morph (variant-to-variant animation) &nbsp; &nbsp;[→ full](morph.md)
 

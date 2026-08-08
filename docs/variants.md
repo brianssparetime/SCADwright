@@ -155,7 +155,7 @@ class WidgetProject(Design):
     out_dir = "build"      # directory, relative to the script
 ```
 
-That writes `build/widget-print.scad` and `build/widget-display.scad`. The directory is created if it isn't there.
+The variants then write to `build/widget-print.scad` and `build/widget-display.scad`, and SCADwright creates the directory if it isn't there.
 
 A single variant can override the path with `out=`, which composes under `out_dir` when it's relative and replaces it when it's absolute:
 

@@ -125,7 +125,7 @@ error: unrecognized option: --widht=80
   the command ran and wrote its output; this option had no effect on it
 ```
 
-The output is already written by the time this appears, since a script can declare a parameter at any point while it runs.
+The output is already written by the time this appears. Fix the option and run again.
 
 ## Exit codes
 
@@ -138,7 +138,7 @@ Every subcommand reports the same four codes. Each one answers both halves of wh
 | 2 | The command line was wrong: a path that isn't there, a value outside its range, a name the script doesn't define. Nothing ran. | no |
 | 3 | The command succeeded, but part of the command line was unrecognized. | yes |
 
-Code 3 is the only non-zero code that leaves a usable file behind, which is why it isn't folded into the other two.
+Code 3 is the only non-zero code that leaves a usable file behind.
 
 ## Rendering from inside a script: `render`
 
