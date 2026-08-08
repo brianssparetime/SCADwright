@@ -102,12 +102,40 @@ def _disable_freetype(request, monkeypatch):
     is also responsible for passing an explicit font path so it doesn't
     depend on the host's system font search path.
     """
-    if request.node.get_closest_marker("freetype"):
-        return  # opt-in: leave the real path active
     try:
         from scadwright._custom_transforms import _textmetrics
     except ImportError:
         return  # module not yet added (commit 1 / pre-commit-2)
+
+    # Clear the resolved-face cache either way. A marked test warms it,
+    # and _resolve_face serves from it without re-probing freetype, so an
+    # unmarked test that ran afterwards would silently get real metrics
+    # and no longer be testing the path it claims to.
+    _textmetrics._reset_state_for_tests()
+
+    if request.node.get_closest_marker("freetype"):
+        return  # opt-in: leave the real path active
     monkeypatch.setattr(_textmetrics, "_try_import_freetype", lambda: None)
     # Reset the import-probe cache so the patch takes effect on the next call.
     monkeypatch.setattr(_textmetrics, "_FREETYPE_AVAILABLE", None, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_overflow_warn_state():
+    """Clear the once-per-fact overflow warning caches between tests.
+
+    ``add_text`` warns once per overflow and once per font when it can't
+    measure, so a part with fifty labels doesn't emit fifty lines. Those
+    caches are module-level, so without this a test that triggers a
+    warning silences the next test that expects the same one.
+    """
+    try:
+        from scadwright._custom_transforms.add_text import (
+            _reset_overflow_state_for_tests,
+        )
+    except ImportError:
+        yield
+        return
+    _reset_overflow_state_for_tests()
+    yield
+    _reset_overflow_state_for_tests()

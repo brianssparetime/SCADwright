@@ -8,7 +8,7 @@ One-page reference. Each section links to its full docs page for details.
 from scadwright import (
     Component, Param, Spec, Adjustment, materialize,
     positive, non_negative, minimum, maximum, in_range, one_of,
-    BBox, bbox, tight_bbox, with_bbox_from, tree_hash, resolved_transform, Matrix, Node, SourceLocation,
+    BBox, bbox, tight_bbox, with_bbox_from, text_extent, tree_hash, resolved_transform, Matrix, Node, SourceLocation,
     emit, emit_str, render,
     resolution,
     clearances, Clearances, DEFAULT_CLEARANCES,
@@ -833,6 +833,9 @@ bb = tight_bbox(shape)                      # tight AABB by AST analysis
                                             # instead, or override tight_bbox
                                             # on the offending Component, or
                                             # assert via with_bbox_from below).
+
+# Measure a label from the font, before building anything:
+w = text_extent("1/128", size=2.7).size[0]   # mm; raises without font metrics
 
 # Override bbox / tight_bbox when AST analysis can't tighten (small cutter
 # against a much larger host; user asserts the bbox is unchanged):

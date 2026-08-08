@@ -19,7 +19,9 @@ emit/render and global config (resolution, variant).
 from scadwright._logging import get_logger, set_verbose
 from scadwright.anchor import Anchor
 from scadwright.ast.base import Node, SourceLocation
-from scadwright.bbox import BBox, bbox, resolved_transform, tight_bbox, with_bbox_from
+from scadwright.bbox import (
+    BBox, bbox, resolved_transform, text_extent, tight_bbox, with_bbox_from,
+)
 from scadwright.hashing import tree_hash
 from scadwright.matrix import Matrix
 from scadwright.component import (
@@ -81,6 +83,7 @@ __all__ = [
     # Bounding boxes / geometry tools
     "BBox",
     "bbox",
+    "text_extent",
     "tight_bbox",
     "with_bbox_from",
     "resolved_transform",

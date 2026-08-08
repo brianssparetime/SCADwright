@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from scadwright._custom_transforms._textmetrics import get_advances
+from scadwright._custom_transforms._textmetrics import get_advances, measure_line
 from scadwright._custom_transforms.base import transform
 from scadwright._logging import get_logger
 from scadwright.anchor import (
@@ -23,7 +23,7 @@ from scadwright.anchor import (
 from scadwright.api.tolerances import TEXT_FAR_OVERSHOOT, TEXT_HOST_OVERSHOOT
 from scadwright.ast.base import SourceLocation
 from scadwright.ast.transforms import MultMatrix, Rotate, Translate
-from scadwright.bbox import _text_bbox_estimate, bbox as _bbox
+from scadwright.bbox import bbox as _bbox
 from scadwright.boolops import difference, union
 from scadwright.errors import ValidationError
 from scadwright.extrusions import linear_extrude
@@ -362,57 +362,101 @@ def _face_dimensions_for_named_face(host, face_name):
 # --- Overflow check ---
 
 
-def _check_overflow_block(face_dims, lines, font_size, spacing, line_spacing, label, source_location):
-    """Block-bbox overflow check for multi-line text on a planar face.
+def _check_overflow_block(
+    face_dims, lines, font_size, spacing, line_spacing, label,
+    source_location, font=None,
+):
+    """Warn when a label doesn't fit the face it's being put on.
 
-    Width = max per-line glyph-advance estimate. Height = block height
-    spanning all lines (including empty ones, which take their spacing
-    slot). Single-line falls through to the existing per-Text bbox check
-    via the original ``_check_overflow`` for backward-compatible warnings.
+    Width is the widest line's pen advance; height spans every line,
+    empty ones included, since they still take their spacing slot.
+
+    Measured from the font, never estimated. A font-agnostic guess at
+    the width (0.6 per character, which this check used to use) runs
+    over 50% low on wide glyphs — `WWW` measures 10.4 mm at size 2.7
+    where the guess says 4.9 — and a fit check that is half the true
+    width reports a fit that isn't there. When the font can't be read,
+    the check says so once and stands down rather than answering from a
+    number it can't stand behind.
     """
     if face_dims is None:
         return
+
+    widths = []
+    heights = []
+    for line in lines:
+        if not line:
+            continue
+        measured = measure_line(line, font=font, size=font_size, spacing=spacing)
+        if measured is None:
+            _warn_overflow_unchecked(label, font, source_location)
+            return
+        widths.append(measured[0])
+        heights.append(measured[1])
+
+    text_w = max(widths, default=0.0)
     n = len(lines)
     if n == 1:
-        # Build a Text-like proxy via the factory and reuse the legacy check.
-        # Cheaper: replicate the single-line width/height directly here.
-        char_w = 0.6 * font_size * spacing
-        text_w = char_w * len(lines[0])
-        text_h = font_size
+        text_h = max(heights, default=0.0)
     else:
-        char_w = 0.6 * font_size * spacing
-        text_w = max((char_w * len(line) for line in lines if line), default=0.0)
-        text_h = (n - 1) * line_spacing * font_size + font_size
+        # Baselines are line_spacing apart; the block also carries the
+        # ink of its tallest line above the top baseline.
+        text_h = (n - 1) * line_spacing * font_size + max(heights, default=0.0)
+
     face_w, face_h = face_dims
-    if text_w > face_w or text_h > face_h:
-        loc_str = f" (at {source_location})" if source_location else ""
-        _log.warning(
-            "add_text: label %r estimated %.1fx%.1f mm overflows face "
-            "%.1fx%.1f mm%s",
-            label, text_w, text_h, face_w, face_h, loc_str,
-        )
-
-
-def _check_overflow(text_node, face_dims, label, source_location):
-    """Log a warning if the estimated text bbox exceeds the face dimensions.
-
-    The bbox heuristic is a font-agnostic estimate (``0.6 * size * spacing``
-    per character); a warning catches obvious overflows without claiming
-    pixel accuracy.
-    """
-    if face_dims is None:
+    if text_w <= face_w and text_h <= face_h:
         return
-    text_bb = _text_bbox_estimate(text_node)
-    text_w = text_bb.max[0] - text_bb.min[0]
-    text_h = text_bb.max[1] - text_bb.min[1]
-    face_w, face_h = face_dims
-    if text_w > face_w or text_h > face_h:
-        loc = f" (at {source_location})" if source_location else ""
-        _log.warning(
-            "add_text: label %r estimated %.1fx%.1f mm overflows face "
-            "%.1fx%.1f mm%s",
-            label, text_w, text_h, face_w, face_h, loc,
-        )
+
+    # A transform expands several times per build (bbox, emit, and so
+    # on), so warn on the fact rather than on each visit — otherwise one
+    # bad label reports four times and a part full of them buries the
+    # user.
+    key = (label, round(text_w, 3), round(face_w, 3), round(face_h, 3),
+           str(source_location))
+    if key in _OVERFLOW_REPORTED:
+        return
+    _OVERFLOW_REPORTED.add(key)
+
+    over = []
+    if text_w > face_w:
+        over.append(f"{text_w - face_w:.2f} mm too wide")
+    if text_h > face_h:
+        over.append(f"{text_h - face_h:.2f} mm too tall")
+    loc_str = f" (at {source_location})" if source_location else ""
+    _log.warning(
+        "add_text: label %r overflows its face by %s. It measures "
+        "%.2fx%.2f mm on a %.2fx%.2f mm face%s",
+        label, " and ".join(over), text_w, text_h, face_w, face_h, loc_str,
+    )
+
+
+def _warn_overflow_unchecked(label, font, source_location):
+    """Say once that the fit wasn't checked, and why."""
+    key = ("overflow-unchecked", font or "")
+    if key in _OVERFLOW_UNCHECKED:
+        return
+    _OVERFLOW_UNCHECKED.add(key)
+    loc_str = f" (at {source_location})" if source_location else ""
+    _log.warning(
+        "add_text: cannot measure label %r, so it was not checked "
+        "against the face it sits on%s. Install the font metrics extra "
+        "(`pip install 'scadwright[curved-text]'`) to have labels "
+        "checked for fit.",
+        label, loc_str,
+    )
+
+
+# One "not checked" warning per font, so a part carrying fifty labels
+# says it once rather than fifty times.
+_OVERFLOW_UNCHECKED: set = set()
+
+# Overflows already reported, keyed on the fact rather than the visit.
+_OVERFLOW_REPORTED: set = set()
+
+
+def _reset_overflow_state_for_tests() -> None:
+    _OVERFLOW_UNCHECKED.clear()
+    _OVERFLOW_REPORTED.clear()
 
 
 # --- Geometry: rotate +Z to a target normal ---
@@ -1751,7 +1795,10 @@ def _place_planar(
         else:
             text_2d = union(*line_nodes)
 
-    _check_overflow_block(face_dims, lines, font_size, spacing, line_spacing, label, loc)
+    _check_overflow_block(
+        face_dims, lines, font_size, spacing, line_spacing, label, loc,
+        font=font,
+    )
 
     raised = relief > 0
     abs_relief = abs(relief)

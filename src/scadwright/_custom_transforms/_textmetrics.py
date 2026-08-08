@@ -207,6 +207,50 @@ def get_glyph_boxes(
     ]
 
 
+def measure_line(
+    line: str,
+    *,
+    font: str | None,
+    size: float,
+    spacing: float,
+) -> "tuple[float, float] | None":
+    """Return ``(width, height)`` in mm for one line of text, or ``None``
+    when real metrics aren't available.
+
+    Both are the inked extent: the mark the label actually makes, which
+    is the thing that has to fit a face and the thing a neighbouring
+    column has to clear. Side bearings on the first and last glyph are
+    empty space and don't count, and a line of digits doesn't claim a
+    descender's worth of height it never uses.
+
+    Pen-walks the advances and unions the ink exactly the way
+    ``bbox()`` does for a ``Text`` node, so a label measures the same
+    however you ask.
+
+    ``None`` rather than a fallback is deliberate. The font-agnostic
+    estimate is wrong by up to half the true width on wide glyphs, and
+    wrong in the direction that reports a fit — callers that cannot
+    tolerate that have to be able to tell the difference.
+    """
+    boxes = get_glyph_boxes(tuple(line), font=font, size=size, spacing=spacing)
+    if boxes is None:
+        return None
+
+    pen = 0.0
+    inked: list[tuple[float, float, float, float]] = []
+    for gb in boxes:
+        if gb.ink_right > gb.ink_left and gb.ink_top > gb.ink_bottom:
+            inked.append((pen + gb.ink_left, pen + gb.ink_right,
+                          gb.ink_bottom, gb.ink_top))
+        pen += gb.advance
+    if not inked:
+        return (0.0, 0.0)
+
+    width = max(i[1] for i in inked) - min(i[0] for i in inked)
+    height = max(i[3] for i in inked) - min(i[2] for i in inked)
+    return (width, height)
+
+
 # --- Internals ---
 
 

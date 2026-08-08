@@ -245,15 +245,17 @@ def test_chain_uses_host_custom_anchor():
 # --- Overflow warning ---
 
 
-def test_overflow_warns(caplog):
+@pytest.mark.freetype
+def test_overflow_warns(caplog, named_font):
     """A label too big for its face logs a warning."""
     with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
         # 30-char label on a 10x10 face at size 8 → ~144 mm wide vs 10 mm face.
         emit_str(cube([10, 10, 5]).add_text(
             label="A" * 30, relief=0.5, on="top", font_size=8,
+            font=named_font,
         ))
     assert any(
-        "overflows face" in record.message for record in caplog.records
+        "overflows its face" in record.message for record in caplog.records
     ), "expected an overflow warning"
 
 

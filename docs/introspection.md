@@ -69,6 +69,31 @@ tight_bbox(engraved)        # == tight_bbox(body)
 
 This is a *user assertion* — the framework doesn't verify that `source` matches what the geometry would actually produce. Reach for it when AST analysis can't tighten a Difference and you'd otherwise have to write a Component subclass or a custom transform just to expose the host's extents.
 
+### Measuring a label: `text_extent`
+
+To size a part around its lettering, or to check a label against the space you have, measure it before building anything:
+
+```python
+from scadwright import text_extent
+
+ext = text_extent("1/128", size=2.7)
+ext.size[0]        # width in mm
+ext.size[1]        # height in mm
+```
+
+The measurement reads the font, so `"WWW"` and `"iii"` come back five times apart rather than equal. Use it wherever a dimension depends on the label:
+
+```python
+label_w = text_extent("1/128", size=2.7).size[0]
+window = cube([label_w + 2 * margin, 6, 2])
+```
+
+On a curved wall the width is the arc length the label will occupy, so comparing it against `angle_radians * radius` for your window is the right check. No reference cylinder needed.
+
+`text_extent` raises when the font can't be read, rather than answering from the font-agnostic estimate SCADwright falls back to elsewhere. That estimate runs over 50% low on wide glyphs, which is fine for a rough envelope and useless for a dimension you're about to build a part around. If you hit the raise, install the metrics extra with `pip install 'scadwright[curved-text]'`.
+
+Equations blocks can't call it, deliberately: font resolution depends on which fonts a machine has installed, and a Spec that resolves differently on two machines is worse than one that makes you pass the number in. Measure at module level and pass the result as a parameter, as above.
+
 ## Test assertions
 
 Four helpers raise `AssertionError` (the same kind pytest uses) with informative messages on failure.

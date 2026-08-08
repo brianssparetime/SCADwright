@@ -567,26 +567,22 @@ class TestRimArcCumulativeOffsets:
         )
 
 
-# --- Overflow check still uses the heuristic ---
+# --- Overflow check ---
 
 
-@pytest.mark.freetype
-class TestOverflowCheckIgnoresMetrics:
-    """``_check_overflow_block`` and ``_check_overflow`` are best-effort
-    estimators on planar dispatch and don't consult ``get_advances``. Even
-    with real metrics active, the warning fires (or doesn't) based on the
-    heuristic estimate."""
+class TestOverflowCheckUsesRealMetrics:
+    """The fit check measures the font rather than guessing.
 
-    def test_iiii_warns_under_heuristic_even_when_real_is_smaller(
-        self, named_font, caplog,
-    ):
-        # 4 narrow ``i`` glyphs at size=2: heuristic estimate = 4 * 0.6 * 2 = 4.8mm,
-        # real Liberation Sans width ≈ 4 * 0.444 = 1.78mm. On a 4mm-wide face,
-        # heuristic would warn; real metrics wouldn't. We assert the warning fires
-        # — proving the overflow check is heuristic-driven, even though we passed
-        # an absolute font path that would otherwise enable proportional spacing
-        # for the curved-wall code path (planar uses one whole-line text() call,
-        # so this only proves overflow checks aren't reaching for metrics).
+    It used to compute width as ``0.6 * size`` per character regardless
+    of the font, which runs over 50% low on wide glyphs and high on
+    narrow ones. Both directions are wrong; the low one is dangerous,
+    because a check that under-measures reports a fit that isn't there.
+    """
+
+    @pytest.mark.freetype
+    def test_narrow_glyphs_that_fit_do_not_warn(self, named_font, caplog):
+        # Four narrow `i` at size 2 really measure ~1.8mm. The old guess
+        # said 4.8mm and cried wolf on this 4mm face.
         with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
             _emit(
                 cube([4, 10, 2], center="xy").add_text(
@@ -595,8 +591,54 @@ class TestOverflowCheckIgnoresMetrics:
                 )
             )
         msgs = [r.getMessage() for r in caplog.records]
-        assert any("overflows face" in m for m in msgs), (
-            f"expected heuristic-based overflow warning, got {msgs}"
+        assert not any("overflows" in m for m in msgs), (
+            f"iiii fits a 4mm face; expected no warning, got {msgs}"
+        )
+
+    @pytest.mark.freetype
+    def test_wide_glyphs_that_overflow_do_warn(self, named_font, caplog):
+        # 'WWW' at size 2.7 measures ~10.4mm. The old guess said 4.9mm and
+        # stayed silent on this 7mm face — an overflow reported as a fit.
+        with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
+            _emit(
+                cube([7, 10, 2], center="xy").add_text(
+                    label="WWW", relief=0.3, on="top", font_size=2.7,
+                    font=named_font,
+                )
+            )
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("overflows its face" in m for m in msgs), (
+            f"WWW overruns a 7mm face; expected a warning, got {msgs}"
+        )
+        assert any("too wide" in m for m in msgs), "should say by how much"
+
+    @pytest.mark.freetype
+    def test_one_warning_per_overflow_not_per_expansion(self, named_font, caplog):
+        # The transform expands several times per build; the user should
+        # hear about a bad label once.
+        with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
+            _emit(
+                cube([7, 10, 2], center="xy").add_text(
+                    label="WWW", relief=0.3, on="top", font_size=2.7,
+                    font=named_font,
+                )
+            )
+        overflow = [r for r in caplog.records if "overflows its face" in r.getMessage()]
+        assert len(overflow) == 1, f"expected 1 warning, got {len(overflow)}"
+
+    def test_without_metrics_the_check_stands_down_and_says_so(self, caplog):
+        # No freetype marker, so metrics are unavailable. Guessing here is
+        # what produced the wrong answers above, so the check declines.
+        with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
+            _emit(
+                cube([4, 10, 2], center="xy").add_text(
+                    label="WWWWWWWW", relief=0.3, on="top", font_size=8,
+                )
+            )
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("was not checked against the face" in m for m in msgs), msgs
+        assert not any("overflows its face" in m for m in msgs), (
+            "must not claim an answer it can't measure"
         )
 
 
@@ -802,3 +844,66 @@ class TestGlyphBoxesRealMetrics:
         assert abs(left.min[0]) < 2.0
         assert abs(right.max[0]) < 2.0
         assert center.min[0] < 0 < center.max[0]
+
+
+# --- text_extent ---
+
+
+class TestTextExtent:
+    """Measuring a label without building anything."""
+
+    @pytest.mark.freetype
+    def test_matches_the_bbox_of_the_same_text(self, named_font):
+        # One number however you ask for it. The overflow check reads the
+        # same measurement, so a label can't measure three ways.
+        from scadwright import text_extent
+        from scadwright.bbox import bbox
+        from scadwright.primitives import text
+
+        for label in ("1/128", "W", "iii", "ISO 100"):
+            a = text_extent(label, size=2.7, font=named_font)
+            b = bbox(text(label, size=2.7, font=named_font))
+            assert a.size[0] == pytest.approx(b.size[0])
+            assert a.size[1] == pytest.approx(b.size[1])
+
+    @pytest.mark.freetype
+    def test_width_tracks_the_glyphs_not_the_character_count(self, named_font):
+        from scadwright import text_extent
+
+        wide = text_extent("WWW", size=2.7, font=named_font).size[0]
+        narrow = text_extent("iii", size=2.7, font=named_font).size[0]
+        assert wide > 4 * narrow, (
+            f"three W ({wide:.2f}) should dwarf three i ({narrow:.2f}); "
+            f"a per-character estimate would call them equal"
+        )
+
+    @pytest.mark.freetype
+    def test_scales_with_size(self, named_font):
+        from scadwright import text_extent
+
+        one = text_extent("1/128", size=2.0, font=named_font).size[0]
+        two = text_extent("1/128", size=4.0, font=named_font).size[0]
+        assert two == pytest.approx(2 * one)
+
+    def test_refuses_to_guess_when_the_font_cannot_be_read(self):
+        # No freetype marker. Answering from the font-agnostic estimate
+        # would be wrong by up to half the width, so it raises instead.
+        from scadwright import text_extent
+        from scadwright.errors import ValidationError
+
+        with pytest.raises(ValidationError, match="cannot read the font"):
+            text_extent("1/128", size=2.7)
+
+    def test_rejects_a_multiline_label(self):
+        from scadwright import text_extent
+        from scadwright.errors import ValidationError
+
+        with pytest.raises(ValidationError, match="line break"):
+            text_extent("a\nb", size=2.7)
+
+    def test_rejects_a_non_positive_size(self):
+        from scadwright import text_extent
+        from scadwright.errors import ValidationError
+
+        with pytest.raises(ValidationError, match="size must be positive"):
+            text_extent("x", size=0)

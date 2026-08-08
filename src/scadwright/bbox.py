@@ -184,12 +184,17 @@ def _text_bbox_from_metrics(node) -> "BBox | None":
 
 
 def _text_bbox_heuristic(node) -> BBox:
-    """Conservative, font-agnostic Text bbox.
+    """Font-agnostic Text bbox, used when real metrics aren't available.
 
-    Approximates per-character width ≈ 0.6 * size * spacing and line height
-    ≈ size. Real rendered text may be slightly narrower; downstream
-    fit-checks stay on the conservative side. Used when real font metrics
-    aren't available.
+    Approximates per-character width ≈ 0.6 * size * spacing and line
+    height ≈ size.
+
+    This is a guess and not a conservative one, in either direction. At
+    size 2.7 it puts ``'W'`` at 1.62 mm against a true 3.51 (54% low)
+    and ``'l'`` at 1.62 against a true 0.33 (392% high). Anything that
+    must not report a fit it can't back — the overflow check,
+    :func:`scadwright.text_extent` — asks for real metrics and declines
+    to answer without them rather than falling through to this.
     """
     n_chars = len(node.text)
     char_w = 0.6 * node.size * node.spacing
@@ -376,6 +381,67 @@ def _local_bbox(node) -> BBox:
         return BBox(min=(xmin, ymin, z_min), max=(xmax, ymax, z_max))
 
     raise TypeError(f"_local_bbox: unsupported node type {type(node).__name__}")
+
+
+# --- text_extent: how big a label will be, before you build anything. ---
+
+
+def text_extent(
+    label: str,
+    *,
+    size: float,
+    font: str | None = None,
+    spacing: float = 1.0,
+) -> BBox:
+    """Measure ``label`` as the font will actually render it.
+
+    Returns a :class:`BBox` in the text's own plane, so ``.size[0]`` is
+    the width and ``.size[1]`` the height, both in millimetres. Nothing
+    is built and nothing is emitted; this reads the font.
+
+    Use it to size a part around its lettering, or to check a label
+    against the space you have before committing to a layout::
+
+        from scadwright import text_extent
+
+        LABEL_W = text_extent("1/128", size=2.7).size[0]
+        window_w = LABEL_W + 2 * margin
+
+    On a curved wall the width returned is the arc length the label will
+    occupy, since wrapping preserves each glyph's advance. Comparing it
+    against ``radians * radius`` for the window you have is the right
+    check; no reference cylinder needed.
+
+    Raises :class:`ValidationError` when the font can't be read, rather
+    than falling back to a font-agnostic guess. That guess runs over 50%
+    low on wide glyphs, and a measurement that small is worse than none
+    when you are sizing a part around it.
+    """
+    from scadwright._custom_transforms._textmetrics import measure_line
+    from scadwright.errors import ValidationError
+
+    if "\n" in label:
+        raise ValidationError(
+            f"text_extent: measures one line, but {label!r} has a line "
+            f"break in it. Measure each line and combine them the way "
+            f"your layout stacks them."
+        )
+    if size <= 0:
+        raise ValidationError(f"text_extent: size must be positive, got {size}")
+
+    measured = measure_line(label, font=font, size=size, spacing=spacing)
+    if measured is None:
+        named = f" {font!r}" if font else ""
+        raise ValidationError(
+            f"text_extent: cannot read the font{named}, so {label!r} "
+            f"can't be measured. Install the font metrics extra "
+            f"(`pip install 'scadwright[curved-text]'`), and check the "
+            f"font name resolves on this machine. Measuring from a "
+            f"font-agnostic guess instead would be wrong by up to half "
+            f"the true width, so this raises rather than answers."
+        )
+    width, height = measured
+    return BBox(min=(0.0, 0.0, 0.0), max=(width, height, 0.0))
 
 
 # --- tight_bbox: AST-level honest bbox; raises on Difference. ---

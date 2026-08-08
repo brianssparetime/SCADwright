@@ -301,14 +301,16 @@ def test_rim_line_non_positive_radius_rejected():
 # --- Overflow per-block ---
 
 
-def test_multiline_block_overflow_warns(caplog):
+@pytest.mark.freetype
+def test_multiline_block_overflow_warns(caplog, named_font):
     """Block height (n lines * spacing) exceeding face height triggers warning."""
     with caplog.at_level(logging.WARNING, logger="scadwright.add_text"):
         # Plate is 30x4 (only 4mm tall); font_size=8, 2 lines → block ~17.6mm.
         emit_str(cube([30, 4, 5]).add_text(
             label="A\nB", relief=0.3, on="top", font_size=8,
+            font=named_font,
         ))
-    assert any("overflows face" in r.message for r in caplog.records)
+    assert any("overflows its face" in r.message for r in caplog.records)
 
 
 # --- Pathway B ---
