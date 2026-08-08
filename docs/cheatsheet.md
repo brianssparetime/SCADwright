@@ -725,7 +725,11 @@ class WidgetProject(Design):
     name = "widget"                        # output stem; default is the class name
     widget = MyWidget()
 
-    @variant(fn=48, default=True)
+    @variant                               # bare when there's nothing to set
+    def rough(self):
+        return self.widget
+
+    @variant(fn=48, default=True)          # options are all keyword
     def print(self):
         return self.widget
 

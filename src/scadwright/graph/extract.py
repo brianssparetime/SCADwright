@@ -314,12 +314,11 @@ def _is_variant_decorated(
     """Return ``True`` when one of the method's decorators resolves
     to ``scadwright.variant`` (or ``scadwright.design.variant``).
 
-    The decorator is always called (``@variant(fn=64)``), so we
-    walk for ``Call.func`` shapes. Resolution chases the file's
-    imports — ``from scadwright import variant`` and
-    ``from scadwright.design import variant`` both work. Bare
-    ``@variant`` (uncalled) isn't valid scadwright but the walker
-    handles it for robustness.
+    Both spellings are valid — ``@variant`` when there's nothing to
+    configure, ``@variant(fn=64)`` when there is — so the decorator
+    may be a call or a bare name. Resolution chases the file's
+    imports; ``from scadwright import variant`` and ``from
+    scadwright.design import variant`` both work.
     """
     for deco in method.decorator_list:
         target = deco.func if isinstance(deco, ast.Call) else deco

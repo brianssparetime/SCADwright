@@ -562,3 +562,69 @@ def test_resolve_variants_explicit_variant_still_searches_primary_only(monkeypat
     selected = resolve_variants("cap", kind="build")
     assert len(selected) == 1
     assert selected[0][0] is Primary
+
+
+# ---------------------------------------------------------------------------
+# `@variant` with and without parentheses
+# ---------------------------------------------------------------------------
+#
+# The empty parentheses exist only because Python can't tell a decorator
+# from a decorator factory. Nothing about a variant needs them, so both
+# spellings register the same thing.
+
+
+def test_bare_variant_registers():
+    class D(Design):
+        @variant
+        def plain(self):
+            return cube(1)
+
+    assert "plain" in D.__variants__
+    assert D.__variants__["plain"].default is False
+
+
+def test_bare_and_configured_variants_coexist():
+    class D(Design):
+        @variant
+        def plain(self):
+            return cube(1)
+
+        @variant(default=True, fn=32)
+        def configured(self):
+            return cube(1)
+
+    assert set(D.__variants__) == {"plain", "configured"}
+    assert D.__variants__["plain"].fn is None
+    assert D.__variants__["configured"].fn == 32
+    assert D.__variants__["configured"].default is True
+
+
+def test_bare_variant_builds_and_is_selectable():
+    class D(Design):
+        @variant
+        def plain(self):
+            return cube([1, 2, 3])
+
+    selected = resolve_variants("plain", kind="build")
+    assert len(selected) == 1
+    with tempfile.TemporaryDirectory() as tmp:
+        out = _render_one(D, "plain", D.__variants__["plain"], base_dir=Path(tmp))
+        assert "cube([1, 2, 3]" in out.read_text()
+
+
+def test_empty_parens_variant_still_registers():
+    class D(Design):
+        @variant()
+        def plain(self):
+            return cube(1)
+
+    assert "plain" in D.__variants__
+
+
+def test_variant_with_a_positional_argument_raises():
+    # Every setting is keyword-only, so a positional that isn't a method
+    # is a mistake worth naming rather than a confusing TypeError.
+    with pytest.raises(ValidationError, match="expected a method to decorate"):
+        variant(True)
+    with pytest.raises(ValidationError, match=r"@variant\(default=True\)"):
+        variant(True)

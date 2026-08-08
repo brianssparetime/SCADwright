@@ -32,6 +32,7 @@ class _VariantMeta:
 
 
 def variant(
+    func: Callable | None = None,
     *,
     fn: int | None = None,
     fa: float | None = None,
@@ -42,9 +43,13 @@ def variant(
     target: tuple | None = None,
     distance: float | None = None,
     fov: float | None = None,
-) -> Callable[[Callable], Callable]:
+):
     """Mark a Design method as a variant. The method's return value is the
     scene Node for that variant.
+
+    Write `@variant` when there's nothing to configure and
+    `@variant(default=True)` when there is; both spellings do the same
+    thing.
 
     Arguments:
         fn, fa, fs: resolution applied while building this variant.
@@ -57,14 +62,22 @@ def variant(
             `default=True`, it's rendered when no `--variant` is given.
     """
 
-    def deco(func: Callable) -> Callable:
-        func._scadwright_variant = _VariantMeta(
+    def deco(f: Callable) -> Callable:
+        f._scadwright_variant = _VariantMeta(
             fn=fn, fa=fa, fs=fs, out=out, default=default,
             rotation=rotation, target=target, distance=distance, fov=fov,
         )
-        return func
+        return f
 
-    return deco
+    if func is None:
+        return deco
+    if not callable(func):
+        raise ValidationError(
+            f"variant: expected a method to decorate, got {func!r}. Every "
+            f"setting on `@variant` is passed by name, so write "
+            f"`@variant(default=True)` rather than `@variant(True)`."
+        )
+    return deco(func)
 
 
 # Registry of Design subclasses loaded in the current interpreter process.
