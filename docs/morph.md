@@ -115,6 +115,31 @@ class Stack(Design):
 
 Default order is destination-z ascending: `base` animates first (slot 0 of 3), then `body`, then `lid`. Override with `order=["lid", "body", "base"]` for a top-down "stack pulls apart" feel.
 
+## One scene, several poses
+
+Stages that list their parts separately can drift apart as a model grows. One stage gains a washer the other doesn't have, or a helper function builds the hardware fresh on each call so no two stages share a part. Both are rejected, and both stop being possible if the stages share one method:
+
+```python
+class Stack(Design):
+    body = MyBody()
+    washer = MyWasher()             # declared once, so every stage sees this part
+
+    def _scene(self, spread):       # one scene, posed by how far apart it sits
+        return union(self.body, self.washer.up(spread * 40))
+
+    @variant
+    def apart(self):
+        return self._scene(1.0)
+
+    @variant(default=True)
+    def together(self):
+        return self._scene(0.0)
+
+    assemble = morph(stages=["apart", "together"])
+```
+
+Every stage now combines the same parts because there is only one line that combines them. Two hand-written variants are fine for two or three parts, as in the examples above; past that, writing the scene once and posing it is worth doing from the start.
+
 ## Chains
 
 A chain morph passes through three or more poses in sequence. Add intermediate stages between the start and end pose, and each consecutive pair becomes one **leg** of the chain:
@@ -215,7 +240,7 @@ The morph framework is intentionally "easy mode" — not infinitely extensible. 
 - **Mirrors in the difference between stages.** `self.lid.flip("z")` in one stage and `self.lid` in another can't be interpolated (the flip is a reflection, det = -1). Replace `flip("z")` with `rotate([180, 0, 0])` — same final pose, animatable, and the morph will trace the hinge swing.
 - **Non-uniform scale changes.** Uniform scale (the whole part grows) is fine; non-uniform scale (the part stretches in one direction) is not — that's shape morphing, which needs separate parts.
 - **Structurally different stages.** Every stage must share the same CSG skeleton: same `union`/`difference`/`intersection`/etc. structure, same decoration wrappers (colors, anchors). Only the *transforms above each leaf* may differ.
-- **Different parts in different stages.** A part in one stage must appear in every stage, in the same structural position.
+- **Different parts in different stages.** A part in one stage must appear in every stage, in the same structural position, because a part that is only in one stage has no pose to move between. Park it where it belongs while it's out of play, or write the stages as [one scene, several poses](#one-scene-several-poses).
 - **`Resize` wrapping animated content.** `Resize` is bbox-dependent: its scale factor is recomputed from the child's bounding box at render time. If the child is animated (rotating, translating), the bbox changes per frame and the scale factor changes with it, producing visible size-jitter as the part moves. Move the `Resize` outside the morph (apply it to the final unioned result), or replace it with `Scale` using explicit factors so the scale is constant. A `Resize` over static decoration (geometry that's identical in every stage) is fine.
 
 For the inline-primitive case where you want to animate a `cube(5)`-like piece between stages, lift it to a class attribute (`self.spacer = cube(5)`) so every stage references the same instance.

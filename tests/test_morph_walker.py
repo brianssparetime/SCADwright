@@ -360,7 +360,7 @@ def test_walker_arity_mismatch_raises():
             return union(self.box, self.lid, self.spacer)
 
     inst = D()
-    with pytest.raises(ValidationError, match=r"(?s)Union.*2 children.*3"):
+    with pytest.raises(ValidationError, match=r"(?s)Union.*2 parts.*3 parts"):
         walk(inst.a(), inst.b(), inst)
 
 
@@ -378,7 +378,10 @@ def test_walker_different_components_at_same_position_raises():
             return self.lid
 
     inst = D()
-    with pytest.raises(ValidationError, match=r"(?s)Component leaves differ"):
+    with pytest.raises(
+        ValidationError,
+        match=r"(?s)stages\[0\] has `self\.box`.*stages\[1\] has `self\.lid`",
+    ):
         walk(inst.a(), inst.b(), inst)
 
 
@@ -870,3 +873,96 @@ def test_walker_part_inside_hull_animates():
     plan = walk(inst.first(), inst.second(), inst)
     assert len(plan.legs[0].leaves) == 1
     assert plan.legs[0].leaves[0].display_name == "b_part"
+
+
+# ---------------------------------------------------------------------------
+# What the identity error says
+# ---------------------------------------------------------------------------
+#
+# Which side of the mismatch resolves to a class attribute is the whole
+# diagnosis. Reporting all three cases with one message is what made the
+# checker look broken: two parts built in a helper print identical
+# descriptions, so the error read as evidence of nothing.
+
+
+def _helper_part():
+    return _Box()
+
+
+def test_parts_built_per_call_are_reported_as_one_construction_site():
+    class D(Design):
+        @variant()
+        def a(self):
+            return _helper_part()
+
+        @variant(default=True)
+        def b(self):
+            return _helper_part().up(10)
+
+    inst = D()
+    with pytest.raises(ValidationError) as exc:
+        walk(inst.a(), inst.b(), inst)
+    msg = str(exc.value)
+    assert "each built their own _Box" in msg
+    # The old message printed the same repr twice as proof they differed.
+    assert msg.count("_helper_part") <= 1
+    assert "class attribute" in msg
+
+
+def test_named_against_inline_names_the_part_to_reference():
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def a(self):
+            return self.box
+
+        @variant(default=True)
+        def b(self):
+            return _Box().up(10)
+
+    inst = D()
+    with pytest.raises(ValidationError, match=r"stages\[0\] has `self\.box`"):
+        walk(inst.a(), inst.b(), inst)
+    with pytest.raises(ValidationError, match=r"stages\[1\] built a new _Box"):
+        walk(inst.a(), inst.b(), inst)
+
+
+def test_inline_against_named_reports_in_the_same_terms():
+    # Mirror of the above: the named side may be either stage.
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def a(self):
+            return _Box()
+
+        @variant(default=True)
+        def b(self):
+            return self.box.up(10)
+
+    inst = D()
+    with pytest.raises(ValidationError, match=r"stages\[1\] has `self\.box`"):
+        walk(inst.a(), inst.b(), inst)
+
+
+def test_arity_error_names_a_way_out():
+    class D(Design):
+        box = _Box()
+        lid = _Lid()
+
+        @variant()
+        def a(self):
+            return union(self.box)
+
+        @variant(default=True)
+        def b(self):
+            return union(self.box, self.lid)
+
+    inst = D()
+    with pytest.raises(ValidationError) as exc:
+        walk(inst.a(), inst.b(), inst)
+    msg = str(exc.value)
+    assert "1 part in stages[0] but 2 parts in stages[1]" in msg
+    assert "no pose to move between" in msg
+    assert "one method that takes the pose as an argument" in msg

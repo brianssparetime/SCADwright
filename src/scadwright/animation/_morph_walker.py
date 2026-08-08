@@ -122,6 +122,66 @@ def _build_id_to_name(design_instance) -> dict[int, str]:
     return out
 
 
+_ONE_SCENE_HINT = (
+    "build every stage from one method that takes the pose as an "
+    "argument, so the stages can't drift apart"
+)
+
+
+def _n_parts(n: int) -> str:
+    return "1 part" if n == 1 else f"{n} parts"
+
+
+def _where_built(node) -> str:
+    """Describe where a part was constructed, for an error message."""
+    loc = getattr(node, "source_location", None)
+    return f" at {loc}" if loc is not None else ""
+
+
+def _identity_mismatch(nodes, ids, i, id_to_name: dict[int, str]):
+    """Build the error for two stages holding different Component objects
+    at the same structural position.
+
+    Which side resolves to a class-attribute name is the whole
+    diagnosis, so the three cases get three messages. An unresolved id
+    means the part was constructed inside the variant (or in a helper it
+    calls), so every stage built its own copy — reporting that as "these
+    two differ" and printing two identical reprs is what makes the
+    checker look broken.
+    """
+    kind = type(nodes[0]).__name__
+    name_0 = id_to_name.get(ids[0])
+    name_i = id_to_name.get(ids[i])
+
+    if name_0 is None and name_i is None:
+        return ValidationError(
+            f"morph: stages[0] and stages[{i}] each built their own "
+            f"{kind}{_where_built(nodes[0])}. Parts pair across stages by "
+            f"object identity, so one constructed inside a variant is a "
+            f"different part every time that variant runs. Declare it "
+            f"once as a class attribute on the Design and reference it "
+            f"from every stage, or {_ONE_SCENE_HINT}."
+        )
+    if name_0 is not None and name_i is not None:
+        return ValidationError(
+            f"morph: stages[0] has `self.{name_0}` where stages[{i}] has "
+            f"`self.{name_i}`. Every stage has to put the same part at "
+            f"the same position in the model, since that pairing is what "
+            f"the animation moves."
+        )
+    named, anon, named_stage, anon_stage = (
+        (name_0, nodes[i], 0, i) if name_0 is not None
+        else (name_i, nodes[0], i, 0)
+    )
+    return ValidationError(
+        f"morph: stages[{named_stage}] has `self.{named}`, but "
+        f"stages[{anon_stage}] built a new {kind}"
+        f"{_where_built(anon)}. Parts pair across stages by object "
+        f"identity, so reference `self.{named}` from stages"
+        f"[{anon_stage}] too rather than constructing another one."
+    )
+
+
 def _matrices_close(a: Matrix, b: Matrix, eps: float = _MATRIX_EPS) -> bool:
     for ra, rb in zip(a.elements, b.elements):
         for x, y in zip(ra, rb):
@@ -378,14 +438,8 @@ def walk_chain(trees: tuple, design_instance) -> ChainPlan:
             ids = [id(nd) for nd in new_nodes]
             for i in range(1, n):
                 if ids[i] != ids[0]:
-                    name_0 = id_to_name.get(ids[0], repr(new_nodes[0]))
-                    name_i = id_to_name.get(ids[i], repr(new_nodes[i]))
-                    raise ValidationError(
-                        f"morph: Component leaves differ at the same "
-                        f"structural position. stages[0] has {name_0!r}, "
-                        f"stages[{i}] has {name_i!r}. Every stage must "
-                        f"reference the same Component instance (declared "
-                        f"as a class attribute on the Design)."
+                    raise _identity_mismatch(
+                        new_nodes, ids, i, id_to_name,
                     )
             display = id_to_name.get(
                 ids[0], f"<{type(new_nodes[0]).__name__} (inline)>",
@@ -478,10 +532,14 @@ def walk_chain(trees: tuple, design_instance) -> ChainPlan:
                 ai = len(new_nodes[i].children)
                 if ai != arity0:
                     raise ValidationError(
-                        f"morph: {type0.__name__}() has {arity0} children "
-                        f"in stages[0] but {ai} in stages[{i}]. Structural "
-                        f"arities must match — every stage must compose "
-                        f"the same CSG skeleton."
+                        f"morph: {type0.__name__}() combines "
+                        f"{_n_parts(arity0)} in stages[0] but "
+                        f"{_n_parts(ai)} in stages[{i}]. A part that is "
+                        f"in one stage and not another has no pose to "
+                        f"move between, so every stage has to combine the "
+                        f"same parts. Include it in both, parked where it "
+                        f"belongs while it's out of play, or "
+                        f"{_ONE_SCENE_HINT}."
                     )
             for child_idx in range(arity0):
                 child_nodes = tuple(
