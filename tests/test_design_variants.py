@@ -628,3 +628,90 @@ def test_variant_with_a_positional_argument_raises():
         variant(True)
     with pytest.raises(ValidationError, match=r"@variant\(default=True\)"):
         variant(True)
+
+
+# ---------------------------------------------------------------------------
+# Where the output goes
+# ---------------------------------------------------------------------------
+#
+# Precedence, most specific first: the CLI's -o, the variant's out=, the
+# Design's name/out_dir, then the defaults. Anything absolute stops the
+# search, so out_dir only ever redirects a relative path.
+
+
+def _out_design(**attrs):
+    body = {
+        "print": variant(default=True)(lambda self: cube(1)),
+        "display": variant(lambda self: cube(2)),
+        **attrs,
+    }
+    return type("W", (Design,), body)
+
+
+def test_out_dir_redirects_relative_output():
+    D = _out_design(name="widget", out_dir="build")
+    with tempfile.TemporaryDirectory() as tmp:
+        out = _render_one(D, "print", D.__variants__["print"], base_dir=Path(tmp))
+        assert out == Path(tmp) / "build" / "widget-print.scad"
+        assert out.exists()
+
+
+def test_out_dir_defaults_to_the_script_directory():
+    D = _out_design(name="widget")
+    with tempfile.TemporaryDirectory() as tmp:
+        out = _render_one(D, "print", D.__variants__["print"], base_dir=Path(tmp))
+        assert out == Path(tmp) / "widget-print.scad"
+
+
+def test_variant_out_composes_under_out_dir():
+    D = _out_design(
+        out_dir="build",
+        special=variant(out="deep/nested/x.scad")(lambda self: cube(3)),
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        out = _render_one(D, "special", D.__variants__["special"], base_dir=Path(tmp))
+        assert out == Path(tmp) / "build" / "deep" / "nested" / "x.scad"
+        assert out.exists()
+
+
+def test_absolute_variant_out_ignores_out_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "elsewhere" / "abs.scad"
+        D = _out_design(
+            out_dir="build",
+            solo=variant(out=str(target))(lambda self: cube(1)),
+        )
+        out = _render_one(D, "solo", D.__variants__["solo"], base_dir=Path(tmp))
+        assert out == target
+        assert out.exists()
+
+
+def test_absolute_out_dir_ignores_the_script_directory():
+    with tempfile.TemporaryDirectory() as tmp:
+        elsewhere = Path(tmp) / "elsewhere"
+        D = _out_design(name="widget", out_dir=str(elsewhere))
+        out = _render_one(
+            D, "print", D.__variants__["print"], base_dir=Path(tmp) / "script",
+        )
+        assert out == elsewhere / "widget-print.scad"
+
+
+def test_cli_output_override_beats_out_dir():
+    D = _out_design(name="widget", out_dir="build")
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "explicit.scad"
+        out = _render_one(
+            D, "print", D.__variants__["print"],
+            base_dir=Path(tmp), out_override=target,
+        )
+        assert out == target
+
+
+def test_missing_output_directory_is_created_rather_than_raising():
+    # `@variant(out="build/w.scad")` used to die on a raw FileNotFoundError
+    # from pathlib, with no context about what the user had asked for.
+    D = _out_design(nested=variant(out="a/b/c/w.scad")(lambda self: cube(1)))
+    with tempfile.TemporaryDirectory() as tmp:
+        out = _render_one(D, "nested", D.__variants__["nested"], base_dir=Path(tmp))
+        assert out.exists()
+        assert out.read_text().count("cube") == 1

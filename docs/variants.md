@@ -145,13 +145,35 @@ def debug_clearances(self):
 
 Manufacturing-specific tweaks (printer overshoot, material shrinkage, slop on a tight fit) belong in [Adjustments](specs_and_adjustments.md#adjustments), not as separate variants.
 
+## Where the output goes
+
+By default each variant writes `f"{DesignClass}-{variant_name}.scad"` next to the script. Two class attributes change that:
+
+```python
+class WidgetProject(Design):
+    name = "widget"        # filename stem; default is the class name
+    out_dir = "build"      # directory, relative to the script
+```
+
+That writes `build/widget-print.scad` and `build/widget-display.scad`. The directory is created if it isn't there.
+
+A single variant can override the path with `out=`, which composes under `out_dir` when it's relative and replaces it when it's absolute:
+
+```python
+@variant(out="fixtures/jig.scad")     # -> build/fixtures/jig.scad
+def jig(self):
+    ...
+```
+
+`scadwright build ... -o path.scad` beats all of it, and is taken relative to where you ran the command rather than to the script.
+
 ## `@variant` options
 
 Write `@variant` on its own when there's nothing to set, and `@variant(...)` when there is. Every option below is passed by name.
 
 - `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values. Components in the returned AST capture the variant's resolution context at the moment they're constructed or wrapped, so primitives inside their `build()` see the right values regardless of when the build actually runs (see [Resolution](resolution.md#components-capture-context-at-ast-insertion-not-at-build)).
 - `rotation=`, `target=`, `distance=`, `fov=` -- camera viewpoint (`$vpr`, `$vpt`, `$vpd`, `$vpf`) emitted at the top of the `.scad` file. Sets the default camera angle when opening the file in OpenSCAD.
-- `out=` -- output `.scad` path. Default: `f"{DesignClass}-{variant_name}.scad"` next to the script.
+- `out=` -- output `.scad` path for this one variant. See [Where the output goes](#where-the-output-goes).
 - `default=True` -- the variant to run when no `--variant` is given. At most one per `Design`.
 
 ```python

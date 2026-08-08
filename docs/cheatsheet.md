@@ -723,6 +723,7 @@ from scadwright.design import Design, run, variant
 
 class WidgetProject(Design):
     name = "widget"                        # output stem; default is the class name
+    out_dir = "build"                      # output directory; default is next to the script
     widget = MyWidget()
 
     @variant                               # bare when there's nothing to set
@@ -740,6 +741,8 @@ class WidgetProject(Design):
 if __name__ == "__main__":
     run()                                  # replaces render() when using Design
 ```
+
+Writes `build/widget-print.scad` and friends; the directory is created if missing. Per-variant override: `@variant(out="fixtures/jig.scad")`, relative to `out_dir`. `scadwright build ... -o path.scad` beats both.
 
 ## Morph (variant-to-variant animation) &nbsp; &nbsp;[→ full](morph.md)
 

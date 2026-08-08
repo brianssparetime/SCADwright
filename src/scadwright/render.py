@@ -92,6 +92,11 @@ def render(
     _capture_unsnapshotted_components(node)
 
     p = Path(path)
+    # Make the directory the caller named. Writing into `build/` should
+    # not require creating `build/` first; the "wrote ..." line names the
+    # full path, so a mistyped directory shows up immediately.
+    if p.parent and not p.parent.exists():
+        p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("w", encoding="utf-8") as f:
         emit(node, f, pretty=pretty, debug=debug, banner=banner,
              glossary=glossary,

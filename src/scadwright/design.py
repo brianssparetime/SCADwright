@@ -99,7 +99,19 @@ class Design:
     their own right — they appear in ``__variants__`` so the existing
     CLI / resolver paths find them, with an extra ``__morphs__`` dict
     that the render path uses to detect and dispatch the morph case.
+
+    Two optional class attributes control where output lands:
+    ``name`` sets the filename stem (default: the class name), and
+    ``out_dir`` sets the directory relative paths resolve against
+    (default: next to the script).
     """
+
+    #: Filename stem for this Design's output. Defaults to the class name.
+    name: str | None = None
+    #: Directory that relative output paths resolve against, itself
+    #: relative to the script unless absolute. Defaults to the script's
+    #: own directory.
+    out_dir: str | Path | None = None
 
     __variants__: dict[str, _VariantMeta] = {}
     __morphs__: dict = {}  # dict[str, _MorphSpec]; typed loosely to avoid an import cycle.
@@ -460,11 +472,27 @@ def _design_output_name(design_cls) -> str:
 def _resolve_out_path(
     design_cls, vname, meta, base_dir, out_override,
 ) -> Path:
+    """Where this variant's ``.scad`` goes.
+
+    Precedence, most specific first: the CLI's ``-o``, then the
+    variant's own ``out=``, then the Design's ``name`` and ``out_dir``,
+    then the defaults (the class name, next to the script). Anything
+    absolute stops the search, so ``out_dir`` only ever redirects a
+    relative path.
+    """
     if out_override is not None:
         return Path(out_override)
     out_name = meta.out or f"{_design_output_name(design_cls)}-{vname}.scad"
     out_path = Path(out_name)
-    if not out_path.is_absolute() and base_dir is not None:
+    if out_path.is_absolute():
+        return out_path
+
+    out_dir = getattr(design_cls, "out_dir", None)
+    if out_dir is not None:
+        out_path = Path(out_dir) / out_path
+        if out_path.is_absolute():
+            return out_path
+    if base_dir is not None:
         out_path = base_dir / out_path
     return out_path
 
