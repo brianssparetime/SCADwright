@@ -761,6 +761,7 @@ class BoxAndLid(Design):
     #   simultaneous=False              one part at a time per leg
     #   pingpong=False                  forward-then-reverse loop
     #   michael_bay=False               360° camera orbit while morphing
+    #   hold={"display": 0.3}           rest on a stage for 30% of the loop
 ```
 
 ```bash

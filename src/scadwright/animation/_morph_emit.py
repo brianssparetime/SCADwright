@@ -102,15 +102,17 @@ def build_animated_tree(plan: ChainPlan, spec: _MorphSpec) -> "Node":
     # count per leg. Each leg has its own slot order so two parts that
     # share a leg compete for that leg's [t_k_start, t_k_end] slice,
     # not the whole timeline.
+    legs, hold_fractions = _legs_with_holds(plan, spec)
+
     slot_indices_per_leg: list[dict[int, int]] = []
     slot_counts_per_leg: list[int] = []
-    for leg in plan.legs:
+    for leg in legs:
         slots, n_slots = _compute_slot_indices_for_leg(leg.leaves, spec)
         slot_indices_per_leg.append(slots)
         slot_counts_per_leg.append(n_slots)
 
     # Per-leg timeline fractions.
-    weights = _compute_leg_weights(plan.legs)
+    weights = _compute_leg_weights(legs, hold_fractions)
     leg_starts: list[float] = []
     leg_ends: list[float] = []
     cum = 0.0
@@ -123,7 +125,7 @@ def build_animated_tree(plan: ChainPlan, spec: _MorphSpec) -> "Node":
     # Group animated entries by substitution root id so all legs that
     # share a leaf collect into one chain.
     groups: dict[int, list[tuple[int, AnimatedLeaf]]] = {}
-    for k, leg in enumerate(plan.legs):
+    for k, leg in enumerate(legs):
         for entry in leg.leaves:
             groups.setdefault(id(entry.leaf), []).append((k, entry))
 
@@ -164,17 +166,65 @@ def _pingpong_t_expr() -> SymbolicExpr:
 # ---------------------------------------------------------------------------
 
 
-def _compute_leg_weights(legs: tuple[LegPlan, ...]) -> list[float]:
-    """Allocate timeline fractions to each leg by motion magnitude.
+def _legs_with_holds(
+    plan: ChainPlan, spec: _MorphSpec,
+) -> tuple[list[LegPlan], list["float | None"]]:
+    """Splice the declared holds into the leg sequence.
 
-    Magnitude per leg = Σ over animated leaves of
-        translation_distance_of_origin + |θ_deg| · _ROT_TO_TRANS_SCALE.
+    ``LegPlan.leaves`` carries only the leaves whose transform differs
+    across that leg, so a leg with no leaves already means "every part
+    stays where it is". A hold needs no representation of its own — it
+    is one of those, given a place in the order and a stated duration.
 
-    Legs below _MIN_LEG_FRACTION of the timeline are bumped up so a
-    deliberately-static intermediate stage still reads as a pause.
+    A hold sits where the animation arrives at its stage: after the leg
+    that ends there, or at the head of the timeline for ``stages[0]``.
+    Returns the leg sequence and a parallel list of stated fractions,
+    ``None`` for legs whose share comes from their motion.
     """
+    holds = dict(spec.hold)
+    if not holds:
+        return list(plan.legs), [None] * len(plan.legs)
+
+    legs: list[LegPlan] = []
+    fractions: list[float | None] = []
+    for i, stage in enumerate(spec.stages):
+        if stage in holds:
+            legs.append(LegPlan(leaves=()))
+            fractions.append(holds[stage])
+        if i < len(plan.legs):
+            legs.append(plan.legs[i])
+            fractions.append(None)
+    return legs, fractions
+
+
+def _compute_leg_weights(
+    legs: "tuple[LegPlan, ...] | list[LegPlan]",
+    hold_fractions: "list[float | None] | None" = None,
+) -> list[float]:
+    """Allocate timeline fractions to each leg.
+
+    A held leg takes the fraction it was given. The rest share what's
+    left, in proportion to how much motion each carries:
+
+        magnitude = Σ over animated leaves of
+            translation_distance_of_origin + |θ_deg| · _ROT_TO_TRANS_SCALE.
+
+    Moving legs below _MIN_LEG_FRACTION of that remainder are bumped up
+    so a leg that barely moves still registers.
+    """
+    if hold_fractions is None:
+        hold_fractions = [None] * len(legs)
+
+    held_total = sum(f for f in hold_fractions if f is not None)
+    moving = [i for i, f in enumerate(hold_fractions) if f is None]
+    if not moving:
+        # Every leg is a hold. Nothing animates, so the split is moot;
+        # honour the stated fractions and give any slack to the last.
+        return [f if f is not None else 0.0 for f in hold_fractions]
+    motion_share = 1.0 - held_total
+
     raw: list[float] = []
-    for leg in legs:
+    for leg in (legs[i] for i in moving):
         magnitude = 0.0
         for leaf in leg.leaves:
             origin_a = leaf.M_a.apply_point((0.0, 0.0, 0.0))
@@ -196,12 +246,18 @@ def _compute_leg_weights(legs: tuple[LegPlan, ...]) -> list[float]:
 
     total = sum(raw)
     if total < _EPS:
-        # All legs static — divide the timeline equally.
-        return [1.0 / len(legs)] * len(legs)
-    fractions = [r / total for r in raw]
-    floored = [max(f, _MIN_LEG_FRACTION) for f in fractions]
-    norm = sum(floored)
-    return [f / norm for f in floored]
+        # No leg carries any motion. Split the moving share equally.
+        motion_fractions = [1.0 / len(moving)] * len(moving)
+    else:
+        fractions = [r / total for r in raw]
+        floored = [max(f, _MIN_LEG_FRACTION) for f in fractions]
+        norm = sum(floored)
+        motion_fractions = [f / norm for f in floored]
+
+    out: list[float] = [f if f is not None else 0.0 for f in hold_fractions]
+    for j, i in enumerate(moving):
+        out[i] = motion_fractions[j] * motion_share
+    return out
 
 
 # ---------------------------------------------------------------------------

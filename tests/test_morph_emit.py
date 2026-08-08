@@ -65,6 +65,16 @@ def _eval_expr(expr, t_value: float) -> float:
             return left * right
         if expr.op == "/":
             return left / right
+        # Comparisons appear in Ternary tests (the pingpong triangle
+        # wave), where the result feeds a truthiness check.
+        if expr.op == "<":
+            return float(left < right)
+        if expr.op == "<=":
+            return float(left <= right)
+        if expr.op == ">":
+            return float(left > right)
+        if expr.op == ">=":
+            return float(left >= right)
         raise ValueError(f"unknown binop {expr.op!r}")
     if isinstance(expr, UnaryOp):
         operand = _eval_expr(expr.operand, t_value)
@@ -552,3 +562,133 @@ def test_emit_preserves_color_decoration():
     # The child is the animated chain.
     M_at_1 = _chain_matrix(out.child, 1.0, D.box)
     assert _matrices_close(M_at_1, Matrix.translate(0, 0, 20))
+
+
+# ---------------------------------------------------------------------------
+# Holds
+# ---------------------------------------------------------------------------
+#
+# A hold is a leg in which nothing moves. LegPlan.leaves carries only the
+# leaves whose transform differs across a leg, so an empty leg already
+# means "every part stays put" — these tests pin that the declared
+# fraction lands where the user asked and the pose really is frozen
+# across it.
+
+
+def _held_design():
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def apart(self):
+            return self.box.up(20)
+
+        @variant(default=True)
+        def together(self):
+            return self.box
+
+    return D
+
+
+def _tree_for(spec):
+    D = _held_design()
+    inst = D()
+    plan = walk(inst.apart(), inst.together(), inst)
+    return build_animated_tree(plan, spec), D.box
+
+
+def test_hold_freezes_the_pose_over_its_share_of_the_timeline():
+    out, leaf = _tree_for(
+        morph(stages=["apart", "together"], hold={"together": 0.3})
+    )
+    # Motion gets [0, 0.7]; the hold gets [0.7, 1.0].
+    seated = Matrix.identity()
+    assert not _matrices_close(_chain_matrix(out, 0.60, leaf), seated)
+    for t in (0.70, 0.75, 0.90, 1.0):
+        assert _matrices_close(_chain_matrix(out, t, leaf), seated), t
+
+
+def test_hold_on_the_first_stage_rests_before_anything_moves():
+    out, leaf = _tree_for(
+        morph(stages=["apart", "together"], hold={"apart": 0.25})
+    )
+    start = Matrix.translate(0, 0, 20)
+    for t in (0.0, 0.10, 0.25):
+        assert _matrices_close(_chain_matrix(out, t, leaf), start), t
+    assert not _matrices_close(_chain_matrix(out, 0.35, leaf), start)
+
+
+def test_holds_at_both_ends_bracket_the_motion():
+    out, leaf = _tree_for(
+        morph(stages=["apart", "together"], hold={"apart": 0.1, "together": 0.3})
+    )
+    start, seated = Matrix.translate(0, 0, 20), Matrix.identity()
+    assert _matrices_close(_chain_matrix(out, 0.05, leaf), start)
+    assert not _matrices_close(_chain_matrix(out, 0.4, leaf), start)
+    assert _matrices_close(_chain_matrix(out, 0.85, leaf), seated)
+
+
+def test_pingpong_puts_the_hold_on_the_turnaround_without_being_told():
+    # The hold is declared against a stage, so the triangle wave carries
+    # it to the middle of the loop on its own. Effective time [0.7, 1.0]
+    # maps to real $t [0.35, 0.65].
+    out, leaf = _tree_for(
+        morph(stages=["apart", "together"], hold={"together": 0.3},
+              pingpong=True)
+    )
+    seated = Matrix.identity()
+    for t in (0.36, 0.50, 0.64):
+        assert _matrices_close(_chain_matrix(out, t, leaf), seated), t
+    for t in (0.30, 0.70):
+        assert not _matrices_close(_chain_matrix(out, t, leaf), seated), t
+
+
+def test_hold_mid_chain_pauses_between_two_motions():
+    class D(Design):
+        box = _Box()
+
+        @variant()
+        def exploded(self):
+            return self.box.up(40)
+
+        @variant()
+        def loose(self):
+            return self.box.up(20)
+
+        @variant(default=True)
+        def seated(self):
+            return self.box
+
+    from scadwright.animation._morph_walker import walk_chain
+    from scadwright.design import _capture_variant
+
+    spec = morph(stages=["exploded", "loose", "seated"], hold={"loose": 0.2})
+    inst = D()
+    trees = tuple(
+        _capture_variant(D, inst, n, D.__variants__[n]) for n in spec.stages
+    )
+    out = build_animated_tree(walk_chain(trees, inst), spec)
+
+    loose = Matrix.translate(0, 0, 20)
+    # Motion legs share 0.8, so the pause sits at [0.4, 0.6].
+    assert _matrices_close(_chain_matrix(out, 0.45, D.box), loose)
+    assert _matrices_close(_chain_matrix(out, 0.55, D.box), loose)
+    assert not _matrices_close(_chain_matrix(out, 0.75, D.box), loose)
+
+
+def test_hold_weights_always_span_the_whole_timeline():
+    from scadwright.animation._morph_emit import (
+        _compute_leg_weights, _legs_with_holds,
+    )
+
+    D = _held_design()
+    inst = D()
+    plan = walk(inst.apart(), inst.together(), inst)
+    for hold in ({}, {"together": 0.3}, {"apart": 0.1, "together": 0.5}):
+        spec = morph(stages=["apart", "together"], hold=hold or None)
+        legs, fractions = _legs_with_holds(plan, spec)
+        weights = _compute_leg_weights(legs, fractions)
+        assert math.isclose(sum(weights), 1.0, abs_tol=1e-9), hold
+        for i, f in enumerate(fractions):
+            if f is not None:
+                assert math.isclose(weights[i], f, abs_tol=1e-9)

@@ -44,7 +44,8 @@ The CSG structure of every stage is preserved. If `print` uses `difference(self.
 morph(stages: list[str], *,
       order: list[str] | None = None,
       simultaneous: bool = False,
-      pingpong: bool = False) -> _MorphSpec
+      pingpong: bool = False,
+      hold: dict[str, float] | None = None) -> _MorphSpec
 ```
 
 - `stages`: list of two or more variant names (methods decorated with `@variant`). The animation runs through consecutive pairs `(stages[0], stages[1])`, `(stages[1], stages[2])`, …, each pair forming one "leg" of the chain. Two-stage morphs use `stages=["a", "b"]`; three or more entries make a chain (see [Chains](#chains) below).
@@ -52,6 +53,7 @@ morph(stages: list[str], *,
 - `simultaneous` (optional, default `False`): if `False`, parts animate one at a time inside each leg's slice. If `True`, all parts in a leg animate over that leg's full slice simultaneously.
 - `pingpong` (optional, default `False`): if `True`, the animation plays forward over the first half of the timeline and reverses back over the second half. The chain visits `stages[0] → … → stages[-1] → … → stages[0]` as `$t` runs from 0 to 1, ending exactly where it started — natural for looping APNGs. See [Pingpong](#pingpong) below.
 - `michael_bay` (optional, default `False`): if `True`, the camera orbits 360° around world z over the animation, overriding the final stage's rotation viewpoint. See [Michael Bay shot](#michael-bay-shot) below.
+- `hold` (optional): `{stage_name: fraction}` — how long the animation rests on a stage once it arrives there, as a fraction of the whole timeline. See [Resting on a stage](#resting-on-a-stage) below.
 
 The attribute name on the left of the assignment becomes the morph's variant name. You reference it from the CLI the same way as any other variant:
 
@@ -165,6 +167,34 @@ assemble = morph(stages=["print", "closing", "display"], pingpong=True)
 ```
 
 The pingpong reshape happens at the SCAD layer (a triangle wave on `$t`), so the same `.scad` previews correctly in OpenSCAD's animator and renders to an APNG at no extra cost in frames or file size. Useful when you want a looping animation that doesn't snap back to the start at the seam.
+
+## Resting on a stage
+
+The loop restarts the moment the parts meet, so the assembled object is never on screen long enough to look at. `hold` gives a stage a share of the timeline in which nothing moves:
+
+```python
+assemble = morph(stages=["print", "display"], hold={"display": 0.3})
+# Motion runs over [0, 0.7]; the assembled pose sits still over [0.7, 1].
+```
+
+The number is a fraction of the whole animation, so it stays right when you change `--frames` or `--fps`. Hold as many stages as you like, as long as the fractions leave room for the motion:
+
+```python
+settle = morph(stages=["exploded", "loose", "seated"],
+               hold={"loose": 0.15, "seated": 0.35})
+```
+
+A hold happens where the animation arrives at its stage, so holding `stages[0]` rests before anything moves.
+
+Naming a stage rather than a moment is also what makes `hold` and `pingpong` compose. The reverse pass replays the held leg on its way back, so a hold on the final stage lands as one continuous pause across the middle of the loop:
+
+```python
+assemble = morph(stages=["print", "display"], hold={"display": 0.3},
+                 pingpong=True)
+# Opens, rests on the assembled pose, closes.
+```
+
+A pause is time the parts aren't moving, so it costs motion detail rather than render time: a 0.3 hold over 60 frames leaves 42 frames for the movement. Raise `--frames` if the motion starts to look coarse.
 
 ## Michael Bay shot
 

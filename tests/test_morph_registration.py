@@ -65,7 +65,14 @@ def test_morph_non_string_stage_raises():
 
 
 def test_morph_consecutive_duplicate_stages_raises():
-    with pytest.raises(ValidationError, match="consecutive duplicates"):
+    with pytest.raises(ValidationError, match="listed twice in a row"):
+        morph(stages=["a", "a"])
+
+
+def test_morph_duplicate_stage_error_points_at_hold():
+    # Repeating a stage is how someone reaches for a pause; the error
+    # has to name the thing that actually gives them one.
+    with pytest.raises(ValidationError, match=r"hold=\{'a': 0\.3\}"):
         morph(stages=["a", "a"])
 
 
@@ -302,3 +309,61 @@ def test_morph_alongside_multiple_designs():
     assert len(registered_designs()) == 2
     assert "xy" in D1.__morphs__
     assert "pq" in D2.__morphs__
+
+
+# ---------------------------------------------------------------------------
+# hold= validation
+# ---------------------------------------------------------------------------
+
+
+def test_hold_defaults_to_nothing():
+    assert morph(stages=["a", "b"]).hold == ()
+
+
+def test_hold_is_stored_in_declaration_order():
+    spec = morph(stages=["a", "b", "c"], hold={"c": 0.3, "b": 0.1})
+    assert spec.hold == (("c", 0.3), ("b", 0.1))
+
+
+def test_hold_naming_a_stage_outside_the_chain_raises():
+    with pytest.raises(ValidationError, match="not a stage of this morph"):
+        morph(stages=["a", "b"], hold={"c": 0.3})
+
+
+def test_hold_error_lists_the_stages_that_do_exist():
+    with pytest.raises(ValidationError, match=r"\['a', 'b'\]"):
+        morph(stages=["a", "b"], hold={"typo": 0.3})
+
+
+def test_hold_must_be_a_dict():
+    with pytest.raises(ValidationError, match="must be a dict"):
+        morph(stages=["a", "b"], hold=["b", 0.3])
+
+
+def test_hold_fraction_must_be_positive():
+    with pytest.raises(ValidationError, match="greater than 0"):
+        morph(stages=["a", "b"], hold={"b": 0})
+    with pytest.raises(ValidationError, match="greater than 0"):
+        morph(stages=["a", "b"], hold={"b": -0.2})
+
+
+def test_hold_fraction_must_be_a_number():
+    with pytest.raises(ValidationError, match="must be a number"):
+        morph(stages=["a", "b"], hold={"b": "0.3"})
+    # bool is an int in Python; a hold of `True` is a mistake, not 100%.
+    with pytest.raises(ValidationError, match="must be a number"):
+        morph(stages=["a", "b"], hold={"b": True})
+
+
+def test_holds_must_leave_room_for_the_motion():
+    with pytest.raises(ValidationError, match="leaving nothing for the parts"):
+        morph(stages=["a", "b"], hold={"a": 0.5, "b": 0.5})
+    with pytest.raises(ValidationError, match="add up to 1.2"):
+        morph(stages=["a", "b"], hold={"a": 0.9, "b": 0.3})
+
+
+def test_hold_survives_alongside_the_other_knobs():
+    spec = morph(stages=["a", "b"], hold={"b": 0.3}, pingpong=True,
+                 simultaneous=True, michael_bay=True)
+    assert spec.hold == (("b", 0.3),)
+    assert spec.pingpong and spec.simultaneous and spec.michael_bay

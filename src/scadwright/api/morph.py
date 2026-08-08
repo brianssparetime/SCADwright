@@ -54,6 +54,9 @@ class _MorphSpec:
     simultaneous: bool = False
     pingpong: bool = False
     michael_bay: bool = False
+    # (stage_name, timeline_fraction) pairs, in the order the user wrote
+    # them. A tuple rather than a dict so the spec stays hashable.
+    hold: tuple[tuple[str, float], ...] = ()
 
     @property
     def _scadwright_morph(self) -> bool:
@@ -67,6 +70,7 @@ def morph(
     simultaneous: bool = False,
     pingpong: bool = False,
     michael_bay: bool = False,
+    hold: dict[str, float] | None = None,
 ) -> _MorphSpec:
     """Declare a morph across a sequence of two or more variants.
 
@@ -107,6 +111,16 @@ def morph(
             ``rotation`` viewpoint field. Pairs naturally with
             ``pingpong=True``: the model plays forward then back
             while the camera completes one full revolution.
+        hold: ``{stage_name: fraction}`` — how long the animation rests
+            on a stage when it arrives there, as a fraction of the
+            whole timeline. ``hold={"seated": 0.3}`` spends 30% of the
+            loop sitting on the seated pose, which is what lets the eye
+            land on the finished object before the loop restarts.
+            Arrival at ``stages[0]`` is the start of the timeline, so
+            holding it rests before anything moves. Hold as many stages
+            as you like; the fractions must leave room for the motion.
+            The rest is time the parts aren't moving, so raise
+            ``--frames`` if the motion starts to look coarse.
 
     Validation happens eagerly: ``stages`` must be a list of non-empty
     strings of length >= 2, with no consecutive duplicates. Each stage
@@ -130,9 +144,10 @@ def morph(
         if stages[i] == stages[i + 1]:
             raise ValidationError(
                 f"morph: stages[{i}] and stages[{i + 1}] are both "
-                f"{stages[i]!r}; consecutive duplicates have no motion. "
-                f"To deliberately pause at a stage, structure your chain "
-                f"so adjacent entries differ."
+                f"{stages[i]!r}; a stage listed twice in a row has no "
+                f"motion between the two. To rest on a stage, name it in "
+                f"`hold=` instead, e.g. "
+                f"`morph(stages={stages!r}, hold={{{stages[i]!r}: 0.3}})`."
             )
     if order is not None:
         if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
@@ -145,7 +160,50 @@ def morph(
         simultaneous=bool(simultaneous),
         pingpong=bool(pingpong),
         michael_bay=bool(michael_bay),
+        hold=_validate_hold(hold, stages),
     )
+
+
+def _validate_hold(
+    hold: "dict[str, float] | None", stages: list[str],
+) -> tuple[tuple[str, float], ...]:
+    """Check ``hold`` against the chain and return it as ordered pairs.
+
+    Every key has to name a stage in this chain, every fraction has to
+    be positive, and the fractions together have to leave time for the
+    parts to move.
+    """
+    if hold is None:
+        return ()
+    if not isinstance(hold, dict):
+        raise ValidationError(
+            f"morph: hold must be a dict of {{stage_name: fraction}}, "
+            f"got {hold!r}"
+        )
+    for name, fraction in hold.items():
+        if name not in stages:
+            raise ValidationError(
+                f"morph: hold names {name!r}, which is not a stage of "
+                f"this morph. Stages are {list(stages)!r}."
+            )
+        if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+            raise ValidationError(
+                f"morph: hold[{name!r}] must be a number, got {fraction!r}"
+            )
+        if fraction <= 0:
+            raise ValidationError(
+                f"morph: hold[{name!r}] is {fraction}; a hold is a "
+                f"fraction of the timeline and has to be greater than 0."
+            )
+    total = sum(hold.values())
+    if total >= 1.0:
+        raise ValidationError(
+            f"morph: the holds add up to {total:g} of the timeline, "
+            f"leaving nothing for the parts to move in. Holds are "
+            f"fractions of the whole animation and must total less "
+            f"than 1."
+        )
+    return tuple((name, float(f)) for name, f in hold.items())
 
 
 __all__ = ["morph"]
