@@ -435,11 +435,16 @@ SCAD wants each face's corners clockwise seen from outside. Get it backwards and
 
 ```scad
 // SCAD: this order, or the part vanishes inside a boolean
+pts = [[10,10,0], [10,-10,0], [-10,-10,0], [-10,10,0], [0,0,10]];
 polyhedron(points = pts, faces = [[0,1,4],[1,2,4],[2,3,4],[3,0,4],[1,0,3],[2,1,3]]);
 ```
 
 ```python
-# SCADwright: either order, oriented on the way out
+from scadwright.primitives import polyhedron
+
+pts = [(10, 10, 0), (10, -10, 0), (-10, -10, 0), (-10, 10, 0), (0, 0, 10)]
+
+# Either order, oriented on the way out.
 polyhedron(points=pts, faces=[[4,1,0],[4,2,1],[4,3,2],[4,0,3],[3,0,1],[3,1,2]])
 ```
 
