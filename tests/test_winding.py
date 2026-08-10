@@ -145,9 +145,9 @@ def test_open_mesh_warns_once_per_site(caplog):
 
 # --- The library invariant ---
 #
-# Guards against the drift that put three shapes out of step in the
-# first place. Every polyhedron the library emits must be closed,
-# consistent, and wound OpenSCAD's way.
+# Guards against the drift that had eight of the library's twelve
+# polyhedron sites wound backwards. Every polyhedron the library emits
+# must be closed, consistent, and wound OpenSCAD's way.
 
 
 def _polyhedra_in(node):
@@ -167,16 +167,32 @@ def _polyhedra_in(node):
     return found
 
 
+# Every shape in the library that emits a polyhedron. Keep this in step
+# with the `polyhedron(` call sites under src/scadwright/shapes/ —
+# test_every_polyhedron_source_is_covered below fails if one is missed,
+# which is how the original drift went unnoticed.
 LIBRARY_SHAPES = [
     ("Prism", lambda: S.Prism(r=10, sides=6, h=5)),
     ("Prism(tapered)", lambda: S.Prism(r=10, top_r=6, sides=5, h=8)),
+    ("Pyramid", lambda: S.Pyramid(r=10, sides=5, h=8)),
     ("Prismoid", lambda: S.Prismoid(bot_w=20, bot_d=20, top_w=10, top_d=10, h=8)),
     ("ChamferedBox", lambda: S.ChamferedBox(size=(20, 20, 20), chamfer=2)),
+    ("Tetrahedron", lambda: S.Tetrahedron(r=10)),
+    ("Octahedron", lambda: S.Octahedron(r=10)),
+    ("Dodecahedron", lambda: S.Dodecahedron(r=10)),
+    ("Icosahedron", lambda: S.Icosahedron(r=10)),
+    ("SnapHook", lambda: S.SnapHook(width=6, thk=2, arm_length=12,
+                                    hook_depth=1.5, hook_height=2)),
     ("Helix", lambda: S.Helix(r=10, pitch=5, turns=2, wire_r=1, points_per_turn=12)),
     ("Spring", lambda: S.Spring(r=10, pitch=5, turns=2, wire_r=1, points_per_turn=12)),
     ("path_extrude", lambda: S.path_extrude(
         profile=S.circle_profile(r=2, segments=8),
         path=S.helix_path(r=10, pitch=5, turns=1, points_per_turn=12))),
+    ("SnapPin", lambda: S.SnapPin(d=6, h=12, barb_depth=1, barb_height=1.5,
+                                  slot_width=1.2, slot_depth=8, clearance=0.1)),
+    ("loft", lambda: S.loft(
+        sections=[S.circle_profile(r=6, segments=8), S.circle_profile(r=3, segments=8)],
+        path=[(0, 0, 0), (0, 0, 10)])),
 ]
 
 
@@ -192,3 +208,60 @@ def test_library_shapes_are_wound_for_openscad(name, make):
             f"{name} is wound backwards: it will vanish from OpenCSG "
             f"preview inside a difference() or intersection()"
         )
+
+
+def test_every_polyhedron_call_site_in_the_library_is_covered():
+    """No shape may emit a polyhedron that nothing above measures.
+
+    The original drift went unnoticed across eight shapes because the
+    survey that found it was partial. Counting call sites in the source
+    and checking each one is reached closes that: a new generator that
+    isn't added to LIBRARY_SHAPES fails here rather than shipping
+    unmeasured.
+    """
+    import inspect
+    import re
+    from pathlib import Path
+
+    import scadwright.primitives as prim
+    from scadwright.shapes.curves import sweep
+    from scadwright.shapes.fillets import chamfered_box
+    from scadwright.shapes.joints import snap
+    from scadwright.shapes.polyhedra import prism, regular
+    from scadwright.shapes import three_d
+
+    modules = [prism, regular, three_d, chamfered_box, snap, sweep]
+
+    expected = set()
+    for mod in modules:
+        path = Path(inspect.getfile(mod))
+        for i, line in enumerate(path.read_text().splitlines(), start=1):
+            if re.search(r"\b_?polyhedron\(", line) and "def " not in line:
+                expected.add((path.name, i))
+
+    reached = set()
+    original = prim.polyhedron
+
+    def recorder(*args, **kwargs):
+        frame = inspect.stack()[1]
+        reached.add((Path(frame.filename).name, frame.lineno))
+        return original(*args, **kwargs)
+
+    patched = []
+    for mod in modules:
+        for attr in ("polyhedron", "_polyhedron"):
+            if getattr(mod, attr, None) is original:
+                setattr(mod, attr, recorder)
+                patched.append((mod, attr))
+    try:
+        for _, make in LIBRARY_SHAPES:
+            emit_str(make())
+    finally:
+        for mod, attr in patched:
+            setattr(mod, attr, original)
+
+    missed = expected - reached
+    assert not missed, (
+        f"these polyhedron call sites are never exercised by "
+        f"LIBRARY_SHAPES, so their winding is unmeasured: {sorted(missed)}"
+    )

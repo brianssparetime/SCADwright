@@ -139,3 +139,21 @@ def _reset_overflow_warn_state():
     _reset_overflow_state_for_tests()
     yield
     _reset_overflow_state_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _reset_polyhedron_warn_state():
+    """Clear the once-per-site polyhedron warning cache between tests.
+
+    ``polyhedron`` warns once per open mesh per source location, so a
+    test that triggers one would otherwise silence the next test
+    expecting the same warning.
+    """
+    try:
+        from scadwright.primitives import _reset_mesh_warn_state_for_tests
+    except ImportError:
+        yield
+        return
+    _reset_mesh_warn_state_for_tests()
+    yield
+    _reset_mesh_warn_state_for_tests()

@@ -26,7 +26,7 @@ class Tetrahedron(Component):
             [0, 1, 2],    # apex + base[0..1]
             [0, 2, 3],    # apex + base[1..2]
             [0, 3, 1],    # apex + base[2..0]
-            [1, 3, 2],    # base (reversed winding for outward normal)
+            [1, 3, 2],    # base
         ]
         return polyhedron(points=pts, faces=faces)
 
@@ -49,7 +49,7 @@ class Octahedron(Component):
         for i in range(n):
             j = (i + 1) % n
             faces.append([apex, i, j])     # top fan
-            faces.append([nadir, j, i])    # bottom fan (reversed winding)
+            faces.append([nadir, j, i])    # bottom fan
         return polyhedron(points=pts, faces=faces)
 
 

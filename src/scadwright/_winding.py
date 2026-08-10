@@ -170,11 +170,13 @@ def _inconsistent_message(pa: int, pb: int, fi: int, fj: int) -> str:
     return (
         f"faces[{fi}] and faces[{fj}] both run along the edge from "
         f"points[{pa}] to points[{pb}] in the same direction, so the mesh "
-        f"is not wound consistently. Neighbouring faces have to walk a "
-        f"shared edge in opposite directions, the way two adjacent "
-        f"clock faces would. SCADwright turns a mesh that is wound "
-        f"consistently the wrong way round, but it cannot decide which "
-        f"of two conflicting faces is the right one."
+        f"is not wound consistently. Two faces sharing an edge have to "
+        f"walk it in opposite directions. Reverse one of the two, then "
+        f"work outwards from it until every face agrees with its "
+        f"neighbours; the generator that built them usually has one "
+        f"loop running the wrong way. SCADwright turns a mesh that is "
+        f"wound consistently the wrong way round, but it cannot decide "
+        f"which of two conflicting faces is the right one."
     )
 
 

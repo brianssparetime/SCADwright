@@ -58,7 +58,7 @@ class Pyramid(Component):
         points.append((0.0, 0.0, self.h))
 
         faces = []
-        # Base (reversed winding).
+        # Base.
         faces.append(list(range(n - 1, -1, -1)))
         # Side triangles.
         for i in range(n):
