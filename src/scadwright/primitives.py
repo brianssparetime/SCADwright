@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 
+from scadwright._logging import get_logger
+from scadwright._winding import orient_for_openscad
 from scadwright.api._validate import (
     _require_integer,
     _require_non_empty,
@@ -43,6 +45,8 @@ from scadwright.ast.primitives import (
     Text,
 )
 from scadwright.errors import ValidationError
+
+_log = get_logger("scadwright.polyhedron")
 
 
 # --- internal helpers ---
@@ -304,12 +308,43 @@ def polyhedron(points, faces, convexity: int | None = None) -> Polyhedron:
         fcs_list.append(tuple(indices))
     if convexity is not None:
         convexity = _require_integer(convexity, "polyhedron convexity")
+
+    loc = SourceLocation.from_caller()
+    faces_out, problem = orient_for_openscad(pts, fcs_list)
+    if problem is not None:
+        if problem.kind == "inconsistent":
+            raise ValidationError(
+                f"polyhedron: {problem.message}", source_location=loc,
+            )
+        _warn_mesh_problem(problem, loc)
+
     return Polyhedron(
         points=pts,
-        faces=tuple(fcs_list),
+        faces=faces_out,
         convexity=convexity,
-        source_location=SourceLocation.from_caller(),
+        source_location=loc,
     )
+
+
+# Meshes already reported on, so a Component that rebuilds once per
+# variant doesn't repeat itself.
+_MESH_WARNED: set = set()
+
+
+def _warn_mesh_problem(problem, loc) -> None:
+    key = (problem.kind, str(loc))
+    if key in _MESH_WARNED:
+        return
+    _MESH_WARNED.add(key)
+    _log.warning(
+        "polyhedron: %s%s",
+        problem.message,
+        f" (at {loc})" if loc else "",
+    )
+
+
+def _reset_mesh_warn_state_for_tests() -> None:
+    _MESH_WARNED.clear()
 
 
 # --- 2D primitives ---

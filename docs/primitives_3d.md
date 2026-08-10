@@ -98,6 +98,19 @@ polyhedron(
 
 SCADwright checks that every index in `faces` refers to a real point. Out-of-range indices raise a `ValidationError` with the offending line.
 
+### Which way round the faces go
+
+OpenSCAD asks for each face's corners in clockwise order seen from outside the solid. Order them the other way and the mesh still exports correctly, but it vanishes from OpenSCAD's preview whenever it sits inside a `difference()` or `intersection()`, because the preview renderer decides what to draw from which way each face points.
+
+You don't have to get this right. SCADwright works out which way the mesh faces and turns it round if it needs to, so list each face's corners in whichever order suits the code that generates them.
+
+Two cases can't be settled that way, and both say so:
+
+- **Faces that disagree with each other**, where one face runs around its edge the same way as its neighbour. This raises, naming the shared edge and both faces. A mesh wound consistently the wrong way can be turned round; one wound both ways at once has no single answer.
+- **A mesh that isn't closed**, where some edge belongs to one face instead of two. This warns and builds anyway. It is almost always a missing face or a seam whose two sides use different point indices for the same corner, and a boolean against an open mesh produces nonsense, but OpenSCAD will render it and the choice stays yours.
+
+A point repeated with identical coordinates counts as one corner, so a generator that emits a seam vertex twice is not mistaken for an open mesh.
+
 ## `surface`
 
 Imports a heightmap from a PNG or DAT file and produces 3D surface geometry. OpenSCAD reads the file at render time.

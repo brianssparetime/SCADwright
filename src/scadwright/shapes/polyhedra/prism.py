@@ -28,15 +28,14 @@ class Prism(Component):
 
         points = ring_points(n, self.r, 0.0) + ring_points(n, r_top, self.h)
 
+        # OpenSCAD orders each face clockwise seen from outside, so the
+        # bottom ring runs forwards and the top ring backwards.
         faces = []
-        # Bottom face (reversed winding).
-        faces.append(list(range(n - 1, -1, -1)))
-        # Top face.
-        faces.append(list(range(n, 2 * n)))
-        # Side quads (as two triangles each).
+        faces.append(list(range(n)))                      # bottom
+        faces.append(list(range(2 * n - 1, n - 1, -1)))   # top
         for i in range(n):
             i_next = (i + 1) % n
-            faces.append([i, i_next, n + i_next, n + i])
+            faces.append([n + i, n + i_next, i_next, i])  # side quad
 
         return polyhedron(points=points, faces=faces)
 

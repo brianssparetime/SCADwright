@@ -58,7 +58,7 @@ sphere(r=5)                               # or sphere(d=10)
 cylinder(h=10, r=3)                       # or d=6
 cylinder(h=10, r1=5, r2=2)                # truncated cone
 cylinder(h=10, r=3, center=True)
-polyhedron(points=[...], faces=[...])
+polyhedron(points=[...], faces=[...])   # face order is fixed for you; see primitives_3d.md
 surface("heightmap.png", center=True)     # import PNG/DAT heightmap
 scad_import("part.stl")                   # STL auto-parses bbox
 scad_import("p.svg", bbox=((0,0,0),(100,50,0)))  # non-STL needs hint

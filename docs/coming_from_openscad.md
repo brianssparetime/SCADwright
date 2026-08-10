@@ -279,6 +279,12 @@ class CamMount(Spec):
 
 Each adjustment shows on its own line with a comment naming the rationale, and the design-intent value (60.5) stays separate from the corrections; they are the lies you must tell in order to get the truth you need.
 
+## `polyhedron` face order
+
+In SCAD you order each face's corners clockwise seen from outside, and getting it backwards gives you a solid that looks fine on its own and disappears inside a `difference()` in preview.
+
+SCADwright takes that off your hands. It reads which way the mesh faces and turns it round when it needs to, so a generator can emit faces in whatever order falls out of the loop that builds them. What it won't do is guess: a mesh whose faces disagree with each other raises, naming the shared edge, and one that isn't closed warns and builds anyway.
+
 ## Type tests
 
 SCAD has `is_undef`, `is_bool`, `is_num`, `is_string`, `is_list`. In Python:

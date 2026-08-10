@@ -52,9 +52,10 @@ class ChamferedBox(Component):
                 (0, r, 0), (0, -r, 0),
                 (0, 0, r), (0, 0, -r),
             ],
+            # Clockwise seen from outside, per OpenSCAD's convention.
             faces=[
-                [0, 2, 4], [0, 4, 3], [0, 3, 5], [0, 5, 2],
-                [1, 4, 2], [1, 2, 5], [1, 5, 3], [1, 3, 4],
+                [4, 2, 0], [3, 4, 0], [5, 3, 0], [2, 5, 0],
+                [2, 4, 1], [5, 2, 1], [3, 5, 1], [4, 3, 1],
             ],
         )
         return minkowski(inner, oct)
