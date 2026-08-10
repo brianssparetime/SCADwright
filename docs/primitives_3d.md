@@ -100,16 +100,16 @@ SCADwright checks that every index in `faces` refers to a real point. Out-of-ran
 
 ### Which way round the faces go
 
-OpenSCAD asks for each face's corners in clockwise order seen from outside the solid. Order them the other way and the mesh still exports correctly, but it vanishes from OpenSCAD's preview whenever it sits inside a `difference()` or `intersection()`, because the preview renderer decides what to draw from which way each face points.
+List each face's corners in whichever order suits the code that builds them. SCADwright works out which way the mesh faces and turns it round to match OpenSCAD, which wants each face clockwise seen from outside.
 
-You don't have to get this right. SCADwright works out which way the mesh faces and turns it round if it needs to, so list each face's corners in whichever order suits the code that generates them.
+Winding is worth knowing about even so, because a backwards mesh doesn't look broken. It exports correctly and renders fine on its own, then vanishes from OpenSCAD's preview the moment it sits inside a `difference()` or `intersection()`.
 
-Two cases can't be settled that way, and both say so:
+Two cases SCADwright won't guess at:
 
-- **Faces that disagree with each other**, where one face runs around its edge the same way as its neighbour. This raises, naming the shared edge and both faces. A mesh wound consistently the wrong way can be turned round; one wound both ways at once has no single answer.
-- **A mesh that isn't closed**, where some edge belongs to one face instead of two. This warns and builds anyway. It is almost always a missing face or a seam whose two sides use different point indices for the same corner, and a boolean against an open mesh produces nonsense, but OpenSCAD will render it and the choice stays yours.
+- **Faces that disagree with each other**, one running along a shared edge the same way as its neighbour. SCADwright raises, naming the edge and both faces. A mesh wound consistently the wrong way can be turned round; one wound both ways at once has no single answer.
+- **A mesh that isn't closed**, with an edge belonging to one face instead of two. SCADwright warns and builds it anyway. The cause is usually a missing face, or a seam whose two sides use different point indices for the same corner.
 
-A point repeated with identical coordinates counts as one corner, so a generator that emits a seam vertex twice is not mistaken for an open mesh.
+Points repeated with identical coordinates count as one corner, so a generator that emits a seam vertex twice isn't mistaken for an open mesh.
 
 ## `surface`
 

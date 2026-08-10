@@ -279,12 +279,6 @@ class CamMount(Spec):
 
 Each adjustment shows on its own line with a comment naming the rationale, and the design-intent value (60.5) stays separate from the corrections; they are the lies you must tell in order to get the truth you need.
 
-## `polyhedron` face order
-
-In SCAD you order each face's corners clockwise seen from outside, and getting it backwards gives you a solid that looks fine on its own and disappears inside a `difference()` in preview.
-
-SCADwright takes that off your hands. It reads which way the mesh faces and turns it round when it needs to, so a generator can emit faces in whatever order falls out of the loop that builds them. What it won't do is guess: a mesh whose faces disagree with each other raises, naming the shared edge, and one that isn't closed warns and builds anyway.
-
 ## Type tests
 
 SCAD has `is_undef`, `is_bool`, `is_num`, `is_string`, `is_list`. In Python:
@@ -434,6 +428,22 @@ See [Attaching shapes](attach.md) for the `attach()` reference and [Anchors](anc
 For mounting a feature on a curved surface (cylinder, cone, sphere), pass `bridge=True`. It adds a structural fill that merges the peg into the curved host. See [bridge=True](anchors.md#putting-things-on-curved-surfaces-bridgetrue).
 
 SCADwright also automates epsilon overlap: `through(parent)` extends cutters through coincident faces, and `attach(fuse=True)` overlaps planar joints. For a whole set of touching parts, `fuse(*parts)` does it in one call, and `stack(*parts)` builds a column and fuses the joints. Both replace the manual `+0.01` you would otherwise scatter through a SCAD `union()` of abutting pieces. 
+
+## `polyhedron` face order
+
+SCAD wants each face's corners clockwise seen from outside. Get it backwards and the solid looks fine on its own, then disappears inside a `difference()` in preview. SCADwright orients the mesh for you, so either order works:
+
+```scad
+// SCAD: this order, or the part vanishes inside a boolean
+polyhedron(points = pts, faces = [[0,1,4],[1,2,4],[2,3,4],[3,0,4],[1,0,3],[2,1,3]]);
+```
+
+```python
+# SCADwright: either order, oriented on the way out
+polyhedron(points=pts, faces=[[4,1,0],[4,2,1],[4,3,2],[4,0,3],[3,0,1],[3,1,2]])
+```
+
+What it won't do is guess. Faces that disagree with each other raise, naming the shared edge; a mesh that isn't closed warns and builds anyway. See [`polyhedron`](primitives_3d.md#which-way-round-the-faces-go) for the full reference.
 
 ## Text on a 3D shape
 
