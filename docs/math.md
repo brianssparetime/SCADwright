@@ -2,7 +2,7 @@
 
 `scadwright.math` provides the math functions OpenSCAD has built in, with the same names and the same behavior. The most important difference from Python's stdlib `math`: **trig functions use degrees**, not radians (matching SCAD).
 
-Use this module when you're porting code from SCAD or want SCAD's exact semantics. For general-purpose math, Python's built-in `math` module is fine.
+Use this module when you're porting code from SCAD or want SCAD's exact semantics. For general-purpose math, Python's built-in `math` module is fine. Animation needs this module: given [`t()`](animation.md#math-functions), each function emits the SCAD call rather than a number.
 
 Examples below alias the module to `scmath` to avoid shadowing Python's `math`:
 
@@ -65,7 +65,7 @@ scmath.norm([1, 2, 2])             # 3.0
 scmath.cross([1, 0, 0], [0, 1, 0]) # (0, 0, 1) — cross product
 ```
 
-`cross` requires two 3-vectors. Anything else raises `ValueError`.
+`cross` requires two 3-vectors. Anything else raises `ValidationError`.
 
 ---
 

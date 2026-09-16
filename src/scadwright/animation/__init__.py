@@ -95,6 +95,15 @@ class SymbolicExpr:
             "and don't put a SymbolicExpr inside `if`/`while`/`assert`."
         )
 
+    def __float__(self):
+        # Python's math module converts its argument with float(), so
+        # `math.sin(t())` lands here. Point at the functions that emit.
+        raise TypeError(
+            "SymbolicExpr has no value at build time. Use scadwright.math "
+            "(sin, cos, sqrt, ...) instead of Python's math module; those "
+            "emit the SCAD call."
+        )
+
     def __repr__(self):
         return f"SymbolicExpr({self.emit()!r})"
 

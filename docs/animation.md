@@ -62,6 +62,18 @@ if t() < 0.5:     # TypeError — won't silently misbehave
     ...
 ```
 
+### Math functions
+
+Every function in [`scadwright.math`](math.md) accepts a `SymbolicExpr` and emits the matching SCAD call. Angles are in degrees, as in SCAD:
+
+```python
+from scadwright import math as scmath
+
+cube(10).translate([scmath.sin(t() * 360) * 20, 0, 0])    # sin($t * 360) * 20
+```
+
+Python's `math` module needs a real number, so `math.sin(t())` raises `TypeError`.
+
 ## `cond(test, a, b)` — branching on `$t`
 
 For values that depend on a condition involving `$t`, use `cond()` to emit a SCAD ternary:
