@@ -17,11 +17,12 @@ structural mismatches raise. As we descend:
   preserve themselves in the emit and reset the accumulator. Their
   metadata must match across every stage.
 - **Components and primitives** are leaves. Components pair across
-  stages by Python ``id`` (the same instance backs every stage when
-  declared as a class attribute on the Design). Inline primitives
-  (Cube, Sphere, Cylinder, etc.) pair by ``tree_hash``; their transform
-  stacks may differ per stage, in which case the primitive animates on
-  the legs where its matrices differ.
+  stages by the name the Design declares them under: every stage
+  builds from its own copies of the parts, and the declared name is
+  what says two copies are one part. Inline primitives (Cube, Sphere,
+  Cylinder, etc.) pair by ``tree_hash``; their transform stacks may
+  differ per stage, in which case the primitive animates on the legs
+  where its matrices differ.
 
 For each animated leaf, the walker records — per leg — an ``AnimatedLeaf``
 entry only if the leaf's transform stack differs between that leg's
@@ -101,25 +102,34 @@ class ChainPlan:
     legs: tuple[LegPlan, ...]
 
 
-# Backwards-compatible alias for the 2-stage entry point. Older callers /
-# tests can still construct ``walk(tree_a, tree_b, inst)`` and get a plan
-# back; the plan now has a ``.legs[0].leaves`` shape instead of a flat
-# ``.leaves`` field. See ``walk_chain`` for the N-stage entry point.
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _build_id_to_name(design_instance) -> dict[int, str]:
-    from scadwright.component.base import Component
-    out: dict[int, str] = {}
-    for klass in type(design_instance).__mro__:
-        for name, value in vars(klass).items():
-            if isinstance(value, Component):
-                out.setdefault(id(value), name)
-    return out
+def _part_key(node):
+    """What decides whether two stages hold the same part.
+
+    Each variant call builds from its own copies of the design's parts,
+    so the same part is a different object in every stage. What the
+    copies share is the name the design declared them under, and that
+    name is the user's own statement that these are one part, so it is
+    what pairs them.
+
+    A part built inside a variant body has no such declaration. Every
+    stage that runs makes its own, and there is nothing to say they are
+    meant to be the same one, so each is keyed by its own identity and
+    the mismatch gets reported.
+    """
+    name = getattr(node, "_design_attr", None)
+    if name is not None:
+        return ("part", name)
+    return ("inline", id(node))
+
+
+def _part_name(node) -> str | None:
+    """The name a part was declared under on the design, if it was."""
+    return getattr(node, "_design_attr", None)
 
 
 _ONE_SCENE_HINT = (
@@ -138,29 +148,28 @@ def _where_built(node) -> str:
     return f" at {loc}" if loc is not None else ""
 
 
-def _identity_mismatch(nodes, ids, i, id_to_name: dict[int, str]):
-    """Build the error for two stages holding different Component objects
-    at the same structural position.
+def _identity_mismatch(nodes, i):
+    """Build the error for two stages holding different parts at the same
+    structural position.
 
-    Which side resolves to a class-attribute name is the whole
-    diagnosis, so the three cases get three messages. An unresolved id
-    means the part was constructed inside the variant (or in a helper it
-    calls), so every stage built its own copy — reporting that as "these
-    two differ" and printing two identical reprs is what makes the
-    checker look broken.
+    Which side resolves to a declared name is the whole diagnosis, so the
+    three cases get three messages. An unnamed part was constructed
+    inside the variant (or in a helper it calls), so every stage built
+    its own — reporting that as "these two differ" and printing two
+    identical reprs is what makes the checker look broken.
     """
     kind = type(nodes[0]).__name__
-    name_0 = id_to_name.get(ids[0])
-    name_i = id_to_name.get(ids[i])
+    name_0 = _part_name(nodes[0])
+    name_i = _part_name(nodes[i])
 
     if name_0 is None and name_i is None:
         return ValidationError(
             f"morph: stages[0] and stages[{i}] each built their own "
             f"{kind}{_where_built(nodes[0])}. Parts pair across stages by "
-            f"object identity, so one constructed inside a variant is a "
-            f"different part every time that variant runs. Declare it "
-            f"once as a class attribute on the Design and reference it "
-            f"from every stage, or {_ONE_SCENE_HINT}."
+            f"the name the design declares them under, and one built "
+            f"inside a variant has no name to pair on. Declare it once in "
+            f"the design's body (`part = {kind}(...)`) and write "
+            f"`self.part` in every stage, or {_ONE_SCENE_HINT}."
         )
     if name_0 is not None and name_i is not None:
         return ValidationError(
@@ -176,9 +185,9 @@ def _identity_mismatch(nodes, ids, i, id_to_name: dict[int, str]):
     return ValidationError(
         f"morph: stages[{named_stage}] has `self.{named}`, but "
         f"stages[{anon_stage}] built a new {kind}"
-        f"{_where_built(anon)}. Parts pair across stages by object "
-        f"identity, so reference `self.{named}` from stages"
-        f"[{anon_stage}] too rather than constructing another one."
+        f"{_where_built(anon)}. Parts pair across stages by the name the "
+        f"design declares them under, so reference `self.{named}` from "
+        f"stages[{anon_stage}] too rather than constructing another one."
     )
 
 
@@ -245,7 +254,7 @@ def _import_ast_types():
     from scadwright.ast.transforms import (
         Color, Echo, ForceRender, Mirror, MultMatrix, Offset,
         PreviewModifier, Projection, Resize, Rotate, Scale, Translate,
-        WithAnchor, WithBBox,
+        WithAnchor, WithBBox, WithViewpoint,
     )
     from scadwright.component.base import Component
     return {
@@ -253,8 +262,8 @@ def _import_ast_types():
         "spatial_transforms": (Translate, Rotate, Scale, Mirror, MultMatrix),
         "structural": (Union, Difference, Intersection, Hull, Minkowski),
         "decorations": (
-            Color, WithAnchor, WithBBox, PreviewModifier, ForceRender,
-            Resize, Projection, Offset, Echo,
+            Color, WithAnchor, WithBBox, WithViewpoint, PreviewModifier,
+            ForceRender, Resize, Projection, Offset, Echo,
         ),
     }
 
@@ -321,16 +330,16 @@ def _decoration_matches(node_a, node_b) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def walk(tree_a, tree_b, design_instance) -> ChainPlan:
+def walk(tree_a, tree_b) -> ChainPlan:
     """Walk two trees and produce a single-leg ChainPlan.
 
     Thin convenience wrapper over :func:`walk_chain` for the common
     two-stage case. The returned ChainPlan has ``len(legs) == 1``.
     """
-    return walk_chain((tree_a, tree_b), design_instance)
+    return walk_chain((tree_a, tree_b))
 
 
-def walk_chain(trees: tuple, design_instance) -> ChainPlan:
+def walk_chain(trees: tuple) -> ChainPlan:
     """Walk N>=2 variant trees in lockstep; produce a ChainPlan describing
     which leaves animate per leg and at what transforms.
 
@@ -346,7 +355,6 @@ def walk_chain(trees: tuple, design_instance) -> ChainPlan:
             f"morph: walk_chain requires at least 2 stages, got {n}"
         )
     types = _import_ast_types()
-    id_to_name = _build_id_to_name(design_instance)
 
     legs_leaves: list[list[AnimatedLeaf]] = [[] for _ in range(n - 1)]
 
@@ -435,14 +443,12 @@ def walk_chain(trees: tuple, design_instance) -> ChainPlan:
         kind = kinds[0]
 
         if kind == "component":
-            ids = [id(nd) for nd in new_nodes]
+            keys = [_part_key(nd) for nd in new_nodes]
             for i in range(1, n):
-                if ids[i] != ids[0]:
-                    raise _identity_mismatch(
-                        new_nodes, ids, i, id_to_name,
-                    )
-            display = id_to_name.get(
-                ids[0], f"<{type(new_nodes[0]).__name__} (inline)>",
+                if keys[i] != keys[0]:
+                    raise _identity_mismatch(new_nodes, i)
+            display = _part_name(new_nodes[0]) or (
+                f"<{type(new_nodes[0]).__name__} (inline)>"
             )
             sub_root = new_sub if new_sub is not None else new_nodes[0]
             for k in range(n - 1):
@@ -490,7 +496,7 @@ def walk_chain(trees: tuple, design_instance) -> ChainPlan:
                         f"match across every stage. Either rewrite the "
                         f"stages to use the same primitive, or lift to a "
                         f"Component class attribute for finer control.\n"
-                        f"  See docs/morph.md#inline-primitives."
+                        f"  See docs/morph.md#declaring-a-part-so-it-can-animate."
                     )
             display = f"<inline {type(new_nodes[0]).__name__}>"
             sub_root = new_sub if new_sub is not None else new_nodes[0]

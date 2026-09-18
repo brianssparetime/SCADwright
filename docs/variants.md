@@ -1,6 +1,6 @@
 # Variants
 
-A SCADwright project often needs to produce more than one `.scad` file from the same set of parts. Variants let you define multiple arrangements -- different scenes, different orientations, different levels of detail -- all from one script, with shared parts instantiated once.
+A SCADwright project often needs to produce more than one `.scad` file from the same set of parts. Variants let you define multiple arrangements -- different scenes, different orientations, different levels of detail -- all from one script, with the parts written down once.
 
 ## The Design + @variant pattern
 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     run()
 ```
 
-- Parts are instantiated once at class-definition time. No duplication across variants.
+- Parts are written down once, in the class body. Each variant then builds its own copy, so it can't disturb another variant's geometry.
 - Each variant method returns a scene Node. The method name becomes the variant name.
 - `run()` replaces `render()` -- it discovers the Design, picks the right variant, and writes the `.scad` file.
 
@@ -171,8 +171,8 @@ def jig(self):
 
 Write `@variant` on its own when there's nothing to set, and `@variant(...)` when there is. Every option below is passed by name.
 
-- `fn=`, `fa=`, `fs=` -- resolution applied while building this variant. All primitives built inside the variant method inherit these values. Components in the returned AST capture the variant's resolution context at the moment they're constructed or wrapped, so primitives inside their `build()` see the right values regardless of when the build actually runs (see [Resolution](resolution.md#components-capture-context-at-ast-insertion-not-at-build)).
-- `rotation=`, `target=`, `distance=`, `fov=` -- camera viewpoint (`$vpr`, `$vpt`, `$vpd`, `$vpf`) emitted at the top of the `.scad` file. Sets the default camera angle when opening the file in OpenSCAD.
+- `fn=`, `fa=`, `fs=` -- resolution for everything this variant builds. The geometry is built before the variant hands it back, so these values are already in the result.
+- `rotation=`, `target=`, `distance=`, `fov=` -- camera viewpoint (`$vpr`, `$vpt`, `$vpd`, `$vpf`) emitted at the top of the `.scad` file. Sets the default camera angle when opening the file in OpenSCAD. The camera travels with the scene, so it reaches the file whether you build from the command line or render the scene yourself.
 - `out=` -- output `.scad` path for this one variant. See [Where the output goes](#where-the-output-goes).
 - `default=True` -- the variant to run when no `--variant` is given. At most one per `Design`.
 
@@ -193,6 +193,30 @@ scadwright build widget.py --vpd=200         # override camera distance
 ```
 
 CLI viewpoint flags (`--vpr`, `--vpt`, `--vpd`, `--vpf`) override any viewpoint set by `@variant`.
+
+## Calling a variant yourself
+
+Calling a variant method gives you its scene, the same one `scadwright build` writes to a file:
+
+```python
+from scadwright.render import render
+
+design = BoxAndLid()
+render(design.display(), "check.scad")
+```
+
+Everything on the `@variant` line applies at the call. The geometry carries the variant's `fn`, and the scene carries its camera, so the file above matches `scadwright build --variant=display` line for line. Only `out=` and `default=` stay out of it: both choose which file gets written, and you did that by passing a path.
+
+Each call builds its own copy of the design's parts, so one variant can't disturb another:
+
+```python
+print_scene = design.print()
+display_scene = design.display()     # print_scene is unaffected
+```
+
+Hold both, render them in either order, render one of them twice: each keeps the resolution its own variant declared. Reading a part straight off the design (`design.box`) gives it as declared, untouched by any variant you have run.
+
+Reach for this in tests, when measuring a scene with the [assertions](testing.md#geometry-assertions), or any time a script wants the geometry rather than a file.
 
 ## `run()` dispatch rules
 
@@ -234,4 +258,4 @@ class BoxAndLid(Design):
 
 - The `current_variant()` function and `with variant("name"):` context manager are available for edge cases where a Component's `build()` method needs to branch on the active variant. `Design` + `@variant` is the preferred approach for most projects; reach for `current_variant()` only when a single Component genuinely needs variant-aware geometry.
 
-- **Components shared across variants rebuild fresh per variant.** A Component instantiated as a Design class attribute (the typical pattern) caches its built tree, but the cache is invalidated before each variant render. So a Component referenced by both `print(self)` and `display(self)` builds once per variant, picking up that variant's `fn=`, `clearances`, and viewpoint contexts each time.
+- **Each variant builds its own copy of the parts.** A part used by both `print(self)` and `display(self)` is built twice, once per variant, so each picks up its own `fn=` and `clearances` and neither can disturb the other. [Specs](specs_and_adjustments.md) are shared rather than copied, which is what keeps a measured dimension one number across every part that reads it.

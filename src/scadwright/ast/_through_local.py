@@ -415,7 +415,7 @@ def intrinsic_cut_axis(node) -> str | None:
     from scadwright.ast.transforms import (
         Color, Echo, ForceRender, Mirror, MultMatrix, Offset,
         PreviewModifier, Projection, Resize, Rotate, Scale, Translate,
-        WithAnchor, WithBBox,
+        WithAnchor, WithBBox, WithViewpoint,
     )
     from scadwright.component.base import Component
 
@@ -424,8 +424,8 @@ def intrinsic_cut_axis(node) -> str | None:
 
     forward_through = (
         Translate, Rotate, Scale, Mirror, MultMatrix,
-        Color, WithAnchor, WithBBox, PreviewModifier, ForceRender,
-        Resize, Projection, Offset, Echo,
+        Color, WithAnchor, WithBBox, WithViewpoint, PreviewModifier,
+        ForceRender, Resize, Projection, Offset, Echo,
     )
     if isinstance(node, forward_through):
         return intrinsic_cut_axis(node.child)

@@ -206,7 +206,9 @@ def test_ambiguous_variant_name_across_designs_errors_on_lookup():
         resolve_variants("same", kind="build")
 
 
-def test_shared_parts_are_single_instance_across_variants():
+def test_a_part_is_declared_once_and_built_once_per_variant():
+    """The part is written down once. Each variant then builds it from its
+    own copy, so the variants can't reach into each other's geometry."""
     calls = {"n": 0}
 
     class Tracked(Component):
@@ -225,10 +227,12 @@ def test_shared_parts_are_single_instance_across_variants():
         def b(self):
             return self.part.translate([5, 0, 0])
 
-    # Class-body instantiation runs once. Methods reference self.part, which
-    # points back to the same class-level instance.
     d = D()
+    # Reading the part off the design gives the declaration itself.
     assert d.part is D.part
+    d.a()
+    d.b()
+    assert calls["n"] == 2, "each variant builds its own copy of the part"
 
 
 # --- Variant ambient-context capture (regression for the resolution leak) ---
@@ -327,10 +331,9 @@ def test_variant_viewpoint_reaches_emit():
     )
 
 
-def test_variant_eager_build_runs_inside_context():
-    """After method() returns, every Component in the tree should already
-    be built (`_built_tree` populated). Confirms eager-build ran inside
-    the variant's contexts."""
+def test_variant_returns_a_tree_already_built_leaving_the_declaration_alone():
+    """A variant hands back geometry that's already built, and builds it
+    from its own copy so the declared part is untouched."""
 
     class TrackedHousing(Component):
         equations = "r, h > 0"
@@ -343,23 +346,22 @@ def test_variant_eager_build_runs_inside_context():
             from scadwright.bbox import BBox
             return BBox(min=(-self.r, -self.r, 0), max=(self.r, self.r, self.h))
 
-    captured = {}
-
     class D(Design):
         h = TrackedHousing(r=10, h=20)
 
         @variant(fn=48)
         def go(self):
-            # Capture the Component's cache state when method() returns.
-            captured["pre"] = self.h._built_tree
             return self.h.translate([0, 0, 0])
 
-    _scad_for_variant(D, "go")
-    # After eager-build runs (before render), the cache should be filled.
-    # We can only sample via a reference outside the variant body — the
-    # post-render state of the class-attribute Component.
-    assert D.h._built_tree is not None, (
-        "after render, Component should have been eagerly built and cached"
+    part = D().go().child
+    assert part._built_tree is not None, (
+        "the variant should hand back a tree that is already built, so a "
+        "failing build() surfaces at the call rather than mid-render"
+    )
+    assert part is not D.h, "the variant should build from its own copy"
+    assert D.h._built_tree is None, (
+        "building a variant should leave the declared part untouched, so "
+        "one variant can't reach into another's geometry"
     )
 
 
@@ -715,3 +717,333 @@ def test_missing_output_directory_is_created_rather_than_raising():
         out = _render_one(D, "nested", D.__variants__["nested"], base_dir=Path(tmp))
         assert out.exists()
         assert out.read_text().count("cube") == 1
+
+
+# ---------------------------------------------------------------------------
+# Calling a variant as a plain method
+#
+# `render(design.check_closed(), path)` from a test script is a documented
+# way to reach a variant, and for a while it quietly produced a different
+# file than `scadwright build` did: the settings on the `@variant` line
+# were applied by the CLI rather than by the variant itself, so a direct
+# call dropped them. These assert on the emitted text, since asserting on
+# the metadata is what let the original bug through.
+# ---------------------------------------------------------------------------
+
+
+class _Housing(Component):
+    equations = "r, h > 0"
+
+    def build(self):
+        return difference(
+            cylinder(h=self.h, r=self.r),
+            cylinder(h=self.h + 2, r=self.r - 2).down(1),
+        )
+
+
+def _emit(node) -> str:
+    from scadwright.emit.scad import emit_str
+    return emit_str(node)
+
+
+def test_calling_a_variant_directly_applies_its_fn():
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+
+        @variant(fn=48)
+        def check_closed(self):
+            return self.hsg.translate([0, 0, 0])
+
+    scad = _emit(D().check_closed())
+    assert "$fn = 48" in scad, (
+        f"@variant(fn=48) was lost on a direct method call.\n{scad[:400]}"
+    )
+
+
+def test_calling_a_variant_directly_applies_its_camera():
+    class D(Design):
+        @variant(rotation=(60, 0, 30), distance=200)
+        def view(self):
+            return cube(10)
+
+    scad = _emit(D().view())
+    assert "$vpr = [60, 0, 30]" in scad, scad[:400]
+    assert "$vpd = 200" in scad, scad[:400]
+
+
+def test_a_direct_call_and_the_cli_agree():
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+
+        @variant(fn=48, rotation=(60, 0, 30))
+        def check_closed(self):
+            return self.hsg.translate([0, 0, 0])
+
+    assert _emit(D().check_closed()) == _scad_for_variant(D, "check_closed")
+
+
+def test_two_variants_held_at_once_keep_their_own_resolution():
+    """The bug this guards: parts were shared, so the second call rewrote
+    the geometry of the tree the first had already handed back."""
+
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+
+        @variant(fn=48)
+        def coarse(self):
+            return self.hsg.translate([0, 0, 0])
+
+        @variant(fn=128)
+        def fine(self):
+            return self.hsg.translate([0, 0, 0])
+
+    d = D()
+    coarse, fine = d.coarse(), d.fine()
+    assert "$fn = 48" in _emit(coarse)
+    assert "$fn = 128" in _emit(fine)
+    # And the first tree still says what it said before the second ran.
+    assert "$fn = 48" in _emit(coarse)
+
+
+def test_calling_one_variant_twice_gives_the_same_answer():
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+
+        @variant(fn=48)
+        def only(self):
+            return self.hsg.translate([0, 0, 0])
+
+    d = D()
+    assert _emit(d.only()) == _emit(d.only())
+
+
+def test_rendering_a_variant_does_not_disturb_the_declared_part():
+    """A part read on its own before and after a variant runs reports the
+    same geometry; the variant works on its own copy."""
+
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+
+        @variant(fn=48)
+        def go(self):
+            return self.hsg.translate([0, 0, 0])
+
+    before = _emit(D.hsg)
+    D().go()
+    assert _emit(D.hsg) == before
+
+
+def test_an_enclosing_viewpoint_block_overrides_the_variant_camera():
+    class D(Design):
+        @variant(rotation=(60, 0, 30), distance=200)
+        def view(self):
+            return cube(10)
+
+    from scadwright.animation import viewpoint
+
+    node = D().view()
+    with viewpoint(rotation=(10, 20, 30)):
+        scad = _emit(node)
+    # The block names the rotation; the distance still comes from the variant.
+    assert "$vpr = [10, 20, 30]" in scad, scad[:400]
+    assert "$vpd = 200" in scad, scad[:400]
+
+
+def test_two_variant_cameras_in_one_scene_is_reported():
+    from scadwright.boolops import union
+
+    class D(Design):
+        @variant(rotation=(60, 0, 30))
+        def left(self):
+            return cube(10)
+
+        @variant(rotation=(10, 0, 0))
+        def right(self):
+            return cube(10).right(20)
+
+    d = D()
+    with pytest.raises(ValidationError) as exc:
+        _emit(union(d.left(), d.right()))
+    msg = str(exc.value)
+    assert "sets the camera 2 different ways" in msg
+    assert "with viewpoint(...)" in msg
+
+
+def test_a_variant_camera_is_not_part_of_the_geometry_hash():
+    """Retouching the camera shouldn't move a pinned tree_hash."""
+    from scadwright import tree_hash
+
+    class WithCamera(Design):
+        @variant(rotation=(60, 0, 30))
+        def view(self):
+            return cube(10)
+
+    class WithoutCamera(Design):
+        @variant()
+        def view(self):
+            return cube(10)
+
+    assert tree_hash(WithCamera().view()) == tree_hash(WithoutCamera().view())
+
+
+def test_a_resolution_block_around_emit_str_reaches_a_prebuilt_component():
+    """`emit_str` honours an enclosing resolution block the same way
+    `render` does, whether or not the tree was already built."""
+    from scadwright.api.resolution import resolution
+
+    part = _Housing(r=10, h=20)
+    node = part.translate([0, 0, 0])
+    with resolution(fn=64):
+        assert "$fn = 64" in _emit(node)
+
+
+def test_a_morph_keeps_the_resolution_its_stages_declared():
+    """The morph emitter re-wraps every animated part in a `$t` chain.
+    That re-wrap happens outside any resolution block, and it used to
+    strip the parts of the `fn` their stages had already built them with.
+    """
+    from scadwright import morph
+    from scadwright.boolops import union
+
+    class Peg(Component):
+        equations = "d > 0"
+
+        def build(self):
+            return cylinder(h=self.d, r=self.d / 2)
+
+    class D(Design):
+        base = Peg(d=10)
+        cap = Peg(d=8)
+
+        @variant(fn=32)
+        def apart(self):
+            return union(self.base, self.cap.up(40))
+
+        @variant(fn=32, default=True)
+        def together(self):
+            return union(self.base, self.cap.up(10))
+
+        assemble = morph(stages=["apart", "together"])
+
+    scad = _scad_for_variant(D, "assemble")
+    assert "$fn = 32" in scad, (
+        f"the morph lost the fn its stages declared.\n{scad[:500]}"
+    )
+    assert "$t" in scad, "expected an animated morph"
+
+
+def test_re_wrapping_a_part_outside_any_block_keeps_its_resolution():
+    """A wrap states a preference only when a resolution block is open."""
+    from scadwright.api.resolution import resolution
+
+    with resolution(fn=64):
+        part = _Housing(r=10, h=20)
+    node = part.translate([0, 0, 0])          # no block open here
+    assert "$fn = 64" in _emit(node)
+
+
+def test_re_wrapping_a_part_inside_a_block_still_takes_the_new_value():
+    from scadwright.api.resolution import resolution
+
+    with resolution(fn=64):
+        part = _Housing(r=10, h=20)
+    with resolution(fn=16):
+        node = part.translate([0, 0, 0])
+    scad = _emit(node)
+    assert "$fn = 16" in scad, scad[:300]
+    assert "$fn = 64" not in scad
+
+
+def test_the_variant_body_sees_the_design_it_was_called_on():
+    """The parts are swapped for copies during the call, but `self` stays
+    the caller's own object so the body behaves like a normal method."""
+    seen = {}
+
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+
+        @variant(fn=48)
+        def go(self):
+            seen["self"] = self
+            seen["part_is_declaration"] = self.hsg is D.hsg
+            self.note = "kept"
+            return self.hsg
+
+    d = D()
+    d.go()
+    assert seen["self"] is d
+    assert not seen["part_is_declaration"], "the body should see its own copy"
+    assert d.note == "kept", "what the body sets on self should survive"
+    assert d.hsg is D.hsg, "the part goes back to the declaration afterwards"
+
+
+def test_a_part_that_cannot_be_copied_says_so():
+    import threading
+
+    awkward = _Housing(r=10, h=20)
+    awkward.handle = threading.Lock()
+
+    class D(Design):
+        part = awkward
+
+        @variant(fn=8)
+        def go(self):
+            return self.part
+
+    with pytest.raises(SCADwrightError) as exc:
+        D().go()
+    msg = str(exc.value)
+    assert "has to be copyable" in msg
+    assert "D:" in msg
+
+
+def test_a_shape_composed_at_class_scope_is_copied_too():
+    """A design may write a composed shape down next to its parts. The
+    parts inside it are copied per call like any other, so two variants
+    reading the same composed attribute still get their own geometry."""
+
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+        shell = cube(30)
+        composed = difference(shell, hsg)
+
+        @variant(fn=48)
+        def coarse(self):
+            return self.composed
+
+        @variant(fn=128)
+        def fine(self):
+            return self.composed
+
+    d = D()
+    coarse, fine = d.coarse(), d.fine()
+    assert "$fn = 48" in _emit(coarse)
+    assert "$fn = 128" in _emit(fine)
+    assert "$fn = 48" in _emit(coarse), "the first scene should not have moved"
+    assert D.hsg._built_tree is None, "the declaration stays untouched"
+
+
+def test_a_composed_declaration_and_its_parts_share_one_copy():
+    """`self.composed` and `self.hsg` have to name the same part, or a
+    variant that used both would emit two copies of one thing."""
+
+    class D(Design):
+        hsg = _Housing(r=10, h=20)
+        shell = cube(30)
+        composed = difference(shell, hsg)
+
+        @variant(fn=48)
+        def go(self):
+            return self.composed
+
+        @variant(fn=48)
+        def check(self):
+            # Returns the pair so the test can compare identities.
+            return difference(self.composed, self.hsg.up(100))
+
+    d = D()
+    d.go()
+    node = d.check()
+    from_composed = node.children[0].children[1]
+    from_attribute = node.children[1].child
+    assert from_composed is from_attribute

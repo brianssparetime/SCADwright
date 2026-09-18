@@ -125,6 +125,11 @@ class _TransformVisitorMixin:
         # anchor dict; SCAD output is just the child.
         self.visit(n.child)
 
+    def visit_WithViewpoint(self, n) -> None:
+        # Metadata-only wrapper. The camera becomes the file's $vp*
+        # preamble (see _effective_viewpoint); the body is just the child.
+        self.visit(n.child)
+
     def visit_WithBBox(self, n: WithBBox) -> None:
         # Metadata-only wrapper. The bbox override lives in the bbox
         # visitor; SCAD output is just the child.

@@ -85,8 +85,18 @@ def _eval_vec(vec, t_value: float):
     return tuple(_eval_expr(x, t_value) for x in vec)
 
 
-def _chain_matrix(node, t_value: float, leaf) -> Matrix:
+def _is_part(node, leaf) -> bool:
+    """Whether ``node`` is the part ``leaf`` names. A variant call builds
+    from its own copies of the design's parts, so the two are never the
+    same object; the declared name is what they share."""
     if node is leaf:
+        return True
+    name = getattr(node, "_design_attr", None)
+    return name is not None and name == getattr(leaf, "_design_attr", None)
+
+
+def _chain_matrix(node, t_value: float, leaf) -> Matrix:
+    if _is_part(node, leaf):
         return Matrix.identity()
     if isinstance(node, Translate):
         v = _eval_vec(node.v, t_value)
@@ -134,7 +144,7 @@ def test_walker_three_stages_produces_two_legs():
             return self.box.up(20)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     assert isinstance(plan, ChainPlan)
     assert len(plan.legs) == 2
     # Both legs animate self.box.
@@ -164,7 +174,7 @@ def test_walker_leaf_static_in_one_leg_appears_only_in_other():
             return self.box.up(10)  # same as b — leg 1 is static for box.
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     assert len(plan.legs) == 2
     assert len(plan.legs[0].leaves) == 1
     assert plan.legs[1].leaves == ()
@@ -195,7 +205,7 @@ def test_walker_two_parts_animating_in_different_legs():
             return union(self.foo.up(10), self.bar.up(20))
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     assert [l.display_name for l in plan.legs[0].leaves] == ["foo"]
     assert [l.display_name for l in plan.legs[1].leaves] == ["bar"]
 
@@ -225,7 +235,7 @@ def test_walker_structural_mismatch_in_middle_stage_raises():
         ValidationError,
         match=r"(?s)variant ASTs differ in structure between stages\[0\] and stages\[1\]",
     ):
-        walk_chain((inst.a(), inst.b(), inst.c()), inst)
+        walk_chain((inst.a(), inst.b(), inst.c()))
 
 
 def test_walker_decoration_mismatch_in_middle_stage_raises():
@@ -252,7 +262,7 @@ def test_walker_decoration_mismatch_in_middle_stage_raises():
         ValidationError,
         match=r"(?s)decoration mismatch.*between stages\[0\] and stages\[1\].*Color\.c",
     ):
-        walk_chain((inst.a(), inst.b(), inst.c()), inst)
+        walk_chain((inst.a(), inst.b(), inst.c()))
 
 
 def test_walker_mirror_in_middle_leg_raises_with_stage_indices():
@@ -277,7 +287,7 @@ def test_walker_mirror_in_middle_leg_raises_with_stage_indices():
         ValidationError,
         match=r"(?s)between stages\[0\] and stages\[1\].*mirror.*det = -1",
     ):
-        walk_chain((inst.a(), inst.b(), inst.c()), inst)
+        walk_chain((inst.a(), inst.b(), inst.c()))
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +314,7 @@ def test_emit_three_stage_chain_endpoints():
             return self.box.up(30)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     spec = morph(stages=["a", "b", "c"], simultaneous=True)
     out = build_animated_tree(plan, spec)
 
@@ -335,7 +345,7 @@ def test_emit_three_stage_chain_hits_middle_pose_at_leg_boundary():
             return self.box.up(30)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     spec = morph(stages=["a", "b", "c"], simultaneous=True)
     out = build_animated_tree(plan, spec)
 
@@ -369,7 +379,7 @@ def test_emit_static_leg_gets_min_fraction():
 
     inst = D()
     plan = walk_chain(
-        (inst.a(), inst.b(), inst.c(), inst.d()), inst,
+        (inst.a(), inst.b(), inst.c(), inst.d()),
     )
     spec = morph(stages=["a", "b", "c", "d"], simultaneous=True)
     out = build_animated_tree(plan, spec)
@@ -404,7 +414,7 @@ def test_emit_chain_with_partial_leg_animation():
 
     inst = D()
     plan = walk_chain(
-        (inst.a(), inst.b(), inst.c(), inst.d()), inst,
+        (inst.a(), inst.b(), inst.c(), inst.d()),
     )
     spec = morph(stages=["a", "b", "c", "d"], simultaneous=True)
     out = build_animated_tree(plan, spec)
@@ -432,7 +442,7 @@ def test_emit_chain_with_rotation_in_one_leg_translation_in_another():
             return self.part.up(20).rotate([90, 0, 0])
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     spec = morph(stages=["a", "b", "c"], simultaneous=True)
     out = build_animated_tree(plan, spec)
 
@@ -459,7 +469,7 @@ def test_emit_chain_compatible_with_2_stage_emit():
             return self.box.rotate([180, 0, 0]).up(30)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b()), inst)
+    plan = walk_chain((inst.a(), inst.b()))
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
 
@@ -502,7 +512,7 @@ def test_emit_chain_with_order_applies_per_leg():
             return union(self.a_part.up(20), self.b_part.up(20))
 
     inst = D()
-    plan = walk_chain((inst.s0(), inst.s1(), inst.s2()), inst)
+    plan = walk_chain((inst.s0(), inst.s1(), inst.s2()))
     spec = morph(stages=["s0", "s1", "s2"], order=["a_part", "b_part"])
     out = build_animated_tree(plan, spec)
 
@@ -539,7 +549,7 @@ def test_emit_pingpong_two_stage_returns_to_start():
             return self.box.up(20)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b()), inst)
+    plan = walk_chain((inst.a(), inst.b()))
     spec = morph(stages=["a", "b"], pingpong=True, simultaneous=True)
     out = build_animated_tree(plan, spec)
 
@@ -569,7 +579,7 @@ def test_emit_pingpong_three_stage_chain_returns_to_start():
             return self.box.up(30)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b(), inst.c()), inst)
+    plan = walk_chain((inst.a(), inst.b(), inst.c()))
     spec = morph(stages=["a", "b", "c"], pingpong=True, simultaneous=True)
     out = build_animated_tree(plan, spec)
 
@@ -609,7 +619,7 @@ def test_emit_pingpong_off_by_default():
             return self.box.up(20)
 
     inst = D()
-    plan = walk_chain((inst.a(), inst.b()), inst)
+    plan = walk_chain((inst.a(), inst.b()))
     spec = morph(stages=["a", "b"], simultaneous=True)
     out = build_animated_tree(plan, spec)
 

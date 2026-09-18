@@ -60,7 +60,7 @@ def test_walker_static_part_produces_no_animation_entry():
             return self.box
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert isinstance(plan, ChainPlan)
     assert plan.legs[0].leaves == ()
 
@@ -78,10 +78,13 @@ def test_walker_pairs_translated_part():
             return self.box.up(5)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 1
     leaf = plan.legs[0].leaves[0]
-    assert leaf.leaf is D.box
+    # The leaf is stage 0's own copy of the part, carrying the name
+    # the design declared it under.
+    assert leaf.leaf._design_attr == "box"
+    assert leaf.display_name == "box"
     assert leaf.display_name == "box"
     assert leaf.M_a.is_identity
     assert leaf.M_b.translation == (0.0, 0.0, 5.0)
@@ -101,7 +104,7 @@ def test_walker_two_parts_in_union():
             return union(self.box, self.lid.up(20))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     # box is static (M_a == M_b == identity), so only lid is in leaves.
     assert len(plan.legs[0].leaves) == 1
     lid_leaf = plan.legs[0].leaves[0]
@@ -130,7 +133,7 @@ def test_walker_substitution_root_at_topmost_spatial_wrapper():
             return Translate(v=(5.0, 6.0, 7.0), child=self.box)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 1
     leaf = plan.legs[0].leaves[0]
     # The substitution root is the outer Translate of variant A.
@@ -154,7 +157,7 @@ def test_walker_substitution_root_resets_at_csg_node():
             return Translate(v=(1.0, 0.0, 0.0), child=union(self.box.up(5), sphere(10).up(20)))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     # self.box animates from identity to translate(0,0,5) — the outer
     # Translate is preserved structurally and doesn't accumulate.
     box_leaves = [l for l in plan.legs[0].leaves if l.display_name == "box"]
@@ -185,7 +188,7 @@ def test_walker_part_inside_difference_now_animates():
             return difference(self.body, self.hole.up(10))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     # body is static; hole animates.
     assert len(plan.legs[0].leaves) == 1
     hole_leaf = plan.legs[0].leaves[0]
@@ -208,7 +211,7 @@ def test_walker_part_inside_intersection_animates():
             return intersection(self.body, self.cutter.up(5))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 1
     assert plan.legs[0].leaves[0].display_name == "cutter"
 
@@ -228,7 +231,7 @@ def test_walker_difference_with_no_components_is_carried_in_tree_a():
             return union(self.box.up(10), difference(cube(5), sphere(3)).up(20))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     box_leaves = [l for l in plan.legs[0].leaves if l.display_name == "box"]
     assert len(box_leaves) == 1
     # The diff-of-primitives is static; it pairs structurally because the
@@ -256,7 +259,7 @@ def test_walker_inline_primitive_can_animate():
             return union(self.box, cube(5).up(30))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     primitive_leaves = [l for l in plan.legs[0].leaves if "inline" in l.display_name]
     assert len(primitive_leaves) == 1
     assert primitive_leaves[0].M_a.translation == (0.0, 0.0, 20.0)
@@ -278,7 +281,7 @@ def test_walker_inline_primitive_static_doesnt_animate():
             return union(self.box.up(10), cube(5).up(20))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     # Only self.box animates; cube is static.
     assert all(l.display_name == "box" for l in plan.legs[0].leaves)
 
@@ -298,7 +301,7 @@ def test_walker_different_primitive_types_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)inline primitive geometry differs"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_primitive_parameters_raises():
@@ -316,7 +319,7 @@ def test_walker_different_primitive_parameters_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)inline primitive geometry differs"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +344,7 @@ def test_walker_csg_node_type_mismatch_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)variant ASTs differ in structure"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_arity_mismatch_raises():
@@ -361,7 +364,7 @@ def test_walker_arity_mismatch_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)Union.*2 parts.*3 parts"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_components_at_same_position_raises():
@@ -382,7 +385,7 @@ def test_walker_different_components_at_same_position_raises():
         ValidationError,
         match=r"(?s)stages\[0\] has `self\.box`.*stages\[1\] has `self\.lid`",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +407,7 @@ def test_walker_mirror_difference_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)mirror.*det = -1.*hinge swing"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_uniform_scale_change_ok():
@@ -421,7 +424,7 @@ def test_walker_uniform_scale_change_ok():
             return Scale(factor=(2.0, 2.0, 2.0), child=self.box)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 1
 
 
@@ -440,7 +443,7 @@ def test_walker_non_uniform_scale_difference_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)non-uniform scale.*differs"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +467,7 @@ def test_walker_color_preserved_and_matches_required():
             return Color(c="red", child=self.box.up(5))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 1
 
 
@@ -490,7 +493,7 @@ def test_walker_color_in_one_variant_only_gives_specific_guidance():
         ValidationError,
         match=r"(?s)decoration wrapper present in one stage only.*Color",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_decoration_asymmetry_names_both_sides():
@@ -513,7 +516,7 @@ def test_walker_decoration_asymmetry_names_both_sides():
         ValidationError,
         match=r"(?s)stages\[1\] has: Color.*stages\[0\] has: the leaf with no wrapper",
     ):
-        walk(inst.plain(), inst.colored(), inst)
+        walk(inst.plain(), inst.colored())
 
 
 def test_walker_different_colors_raises():
@@ -531,7 +534,7 @@ def test_walker_different_colors_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)decoration mismatch.*Color\.c"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_color_alphas_raises():
@@ -551,7 +554,7 @@ def test_walker_different_color_alphas_raises():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"(?s)decoration mismatch.*Color\.alpha"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_preview_modifier_modes_raises():
@@ -574,7 +577,7 @@ def test_walker_different_preview_modifier_modes_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)decoration mismatch.*PreviewModifier\.mode",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_same_preview_modifier_mode_passes():
@@ -591,7 +594,7 @@ def test_walker_same_preview_modifier_mode_passes():
             return PreviewModifier(mode="highlight", child=self.box.up(10))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 1
 
 
@@ -614,7 +617,7 @@ def test_walker_different_force_render_convexity_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)decoration mismatch.*ForceRender\.convexity",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_resize_new_size_raises():
@@ -636,7 +639,7 @@ def test_walker_different_resize_new_size_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)decoration mismatch.*Resize\.new_size",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_resize_wrapping_animated_component_raises():
@@ -659,7 +662,7 @@ def test_walker_resize_wrapping_animated_component_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)animates inside a Resize.*size-jitter",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_resize_wrapping_animated_inline_primitive_raises():
@@ -681,7 +684,7 @@ def test_walker_resize_wrapping_animated_inline_primitive_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)inline Cube animates inside a Resize",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_resize_wrapping_static_content_is_fine():
@@ -703,7 +706,7 @@ def test_walker_resize_wrapping_static_content_is_fine():
             return union(self.box.up(15), Resize(new_size=(20.0, 20.0, 5.0), child=self.decor))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     # Only box animates; decor (under Resize) is static, doesn't appear in leaves.
     assert len(plan.legs[0].leaves) == 1
     assert plan.legs[0].leaves[0].display_name == "box"
@@ -728,7 +731,7 @@ def test_walker_resize_below_a_csg_still_catches_animation():
     with pytest.raises(
         ValidationError, match=r"(?s)animates inside a Resize",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_projection_cut_raises():
@@ -748,7 +751,7 @@ def test_walker_different_projection_cut_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)decoration mismatch.*Projection\.cut",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_with_bbox_is_a_decoration():
@@ -769,7 +772,7 @@ def test_walker_with_bbox_is_a_decoration():
             return WithBBox(child=self.box.up(5), source=cube(10))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     # box animates through the WithBBox wrapper; one leaf in the plan.
     assert len(plan.legs[0].leaves) == 1
     assert plan.legs[0].leaves[0].display_name == "box"
@@ -794,7 +797,7 @@ def test_walker_with_bbox_different_sources_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)decoration mismatch.*WithBBox\.source",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_walker_different_with_anchor_names_raises():
@@ -820,7 +823,7 @@ def test_walker_different_with_anchor_names_raises():
     with pytest.raises(
         ValidationError, match=r"(?s)decoration mismatch.*WithAnchor\.anchor_name",
     ):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 # ---------------------------------------------------------------------------
@@ -842,7 +845,7 @@ def test_walker_multiplicity_pairs_by_tree_position():
             return union(self.leg.up(50), self.leg.up(60))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     assert len(plan.legs[0].leaves) == 2
     z_pairs = sorted(
         (leaf.M_a.translation[2], leaf.M_b.translation[2])
@@ -870,7 +873,7 @@ def test_walker_part_inside_hull_animates():
             return hull(self.a_part, self.b_part.up(30))
 
     inst = D()
-    plan = walk(inst.first(), inst.second(), inst)
+    plan = walk(inst.first(), inst.second())
     assert len(plan.legs[0].leaves) == 1
     assert plan.legs[0].leaves[0].display_name == "b_part"
 
@@ -879,7 +882,7 @@ def test_walker_part_inside_hull_animates():
 # What the identity error says
 # ---------------------------------------------------------------------------
 #
-# Which side of the mismatch resolves to a class attribute is the whole
+# Which side of the mismatch resolves to a declared name is the whole
 # diagnosis. Reporting all three cases with one message is what made the
 # checker look broken: two parts built in a helper print identical
 # descriptions, so the error read as evidence of nothing.
@@ -901,12 +904,14 @@ def test_parts_built_per_call_are_reported_as_one_construction_site():
 
     inst = D()
     with pytest.raises(ValidationError) as exc:
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
     msg = str(exc.value)
     assert "each built their own _Box" in msg
     # The old message printed the same repr twice as proof they differed.
     assert msg.count("_helper_part") <= 1
-    assert "class attribute" in msg
+    # The fix is shown in the form the user would write it.
+    assert "`part = _Box(...)`" in msg
+    assert "`self.part`" in msg
 
 
 def test_named_against_inline_names_the_part_to_reference():
@@ -923,9 +928,9 @@ def test_named_against_inline_names_the_part_to_reference():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"stages\[0\] has `self\.box`"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
     with pytest.raises(ValidationError, match=r"stages\[1\] built a new _Box"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_inline_against_named_reports_in_the_same_terms():
@@ -943,7 +948,7 @@ def test_inline_against_named_reports_in_the_same_terms():
 
     inst = D()
     with pytest.raises(ValidationError, match=r"stages\[1\] has `self\.box`"):
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
 
 
 def test_arity_error_names_a_way_out():
@@ -961,7 +966,7 @@ def test_arity_error_names_a_way_out():
 
     inst = D()
     with pytest.raises(ValidationError) as exc:
-        walk(inst.a(), inst.b(), inst)
+        walk(inst.a(), inst.b())
     msg = str(exc.value)
     assert "1 part in stages[0] but 2 parts in stages[1]" in msg
     assert "no pose to move between" in msg

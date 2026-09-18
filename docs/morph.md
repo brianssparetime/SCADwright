@@ -88,7 +88,7 @@ Options:
 
 ## Part identity
 
-Parts in a `Design` are class attributes (`box = MyBox()`, `lid = MyLid()`). The morph pairs parts across stages by **Python object identity** — every stage references the same `Component` instance via `self.box`, so the morph knows they're the same part. No labels or names needed.
+Parts in a `Design` are class attributes (`box = MyBox()`, `lid = MyLid()`). The morph pairs parts across stages by **the name they're declared under**: every stage reaches the part through `self.box`, and that shared name is what says they're one part. Each stage builds its own copy, so no stage disturbs another's geometry, and you never write a label.
 
 For inline geometry (a `cube(5)` or similar constructed in-place inside a variant body), the morph pairs by **structural position and `tree_hash`**: if every stage has a `cube(5)` at the same point in the CSG tree, they pair. Their transform stacks may differ, and the cube then animates between the positions.
 
@@ -243,37 +243,18 @@ The morph framework is intentionally "easy mode" — not infinitely extensible. 
 - **Different parts in different stages.** A part in one stage must appear in every stage, in the same structural position, because a part that is only in one stage has no pose to move between. Park it where it belongs while it's out of play, or write the stages as [one scene, several poses](#one-scene-several-poses).
 - **`Resize` wrapping animated content.** `Resize` is bbox-dependent: its scale factor is recomputed from the child's bounding box at render time. If the child is animated (rotating, translating), the bbox changes per frame and the scale factor changes with it, producing visible size-jitter as the part moves. Move the `Resize` outside the morph (apply it to the final unioned result), or replace it with `Scale` using explicit factors so the scale is constant. A `Resize` over static decoration (geometry that's identical in every stage) is fine.
 
-For the inline-primitive case where you want to animate a `cube(5)`-like piece between stages, lift it to a class attribute (`self.spacer = cube(5)`) so every stage references the same instance.
+A part built inside a variant body can't pair across stages. See [Declaring a part so it can animate](#declaring-a-part-so-it-can-animate).
 
-## Lifting inline parts
+## Declaring a part so it can animate
 
-If you see "inline primitive geometry differs at the same structural position," two stages have a `cube(...)` (or `sphere`, `cylinder`, etc.) at the same point in the CSG tree but with different transforms. Inline primitives can't pair across stages, so they can't animate.
+Two errors lead here, and they mean different things.
 
-**Why the rule exists.** A class-attribute Component (`self.spacer = MyPart()`) is a single Python object referenced from every stage; the morph pairs it across stages by `id()`. An inline `cube(10)` built inside the variant body is a fresh Python object on every call — there's no shared identity to pair with. To keep the rules simple, the morph requires the shared-identity pattern for animation.
-
-**The fix: promote the inline part to a class attribute.** Before:
+**"each built their own ..."** means a stage constructed a part in its own body. Parts pair across stages by the name the design declares them under, and one built inside a variant has no name, so nothing says two stages meant the same part. Declare it once and reference it from every stage:
 
 ```python
 class Widget(Design):
     body = MyBody()
-
-    @variant
-    def low(self):
-        return union(self.body, cube(10).up(5))        # inline cube → can't animate
-
-    @variant(default=True)
-    def high(self):
-        return union(self.body, cube(10).up(20))       # different transform → mismatch error
-
-    open = morph(stages=["low", "high"])               # error
-```
-
-After:
-
-```python
-class Widget(Design):
-    body = MyBody()
-    spacer = cube(10)                                  # class attribute — shared identity
+    spacer = Spacer()                                  # declared once, so it has a name
 
     @variant
     def low(self):
@@ -286,9 +267,11 @@ class Widget(Design):
     open = morph(stages=["low", "high"])               # works
 ```
 
-The class attribute can be a `Component`, a primitive (`cube(...)`, `sphere(...)`, etc.), or any expression that yields a Node — they all become shared-identity values.
+**"inline primitive geometry differs at the same structural position"** is a different problem. A bare `cube(...)` or `sphere(...)` written straight into a variant body needs no declaring: primitives pair by their shape and their place in the tree, so the same `cube(10)` in both stages animates between its two positions on its own.
 
-**When you don't need to lift.** If the inline geometry is in the *same position* in every stage (same primitive, same parameters, same transforms), the morph sees it as static decoration and passes it through unchanged. You only need to lift when the inline thing should *move* between stages.
+The error fires only when the shapes themselves disagree — `cube(10)` in one stage against `cube(14)` in the other. Nothing changes shape mid-animation, so write the same primitive in both stages, or declare the two as separate parts.
+
+Geometry that sits in the same position in every stage needs none of this. The morph treats it as static and passes it through unchanged.
 
 ## Composing with viewpoint
 
@@ -336,4 +319,4 @@ If a part inside your morph changes size frame-by-frame, the cause is a `Resize(
 
 ### "Inline primitive geometry differs"
 
-See [Lifting inline parts](#lifting-inline-parts) above.
+See [Declaring a part so it can animate](#declaring-a-part-so-it-can-animate) above.

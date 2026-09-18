@@ -38,7 +38,7 @@ class MyProject(Design):
 
     @variant(default=True)
     def print(self):
-        return self.assembly()     # every joint built inside picks it up
+        return self.assembly()     # every joint constructed here picks it up
 ```
 
 ### Scoped — `with clearances(...)`
@@ -90,7 +90,7 @@ Per-field resolution, highest priority first:
 1. **Per-call `clearance=` kwarg** — always wins for the one Component instance.
 2. **Component class attribute** — pushed as an inner scope during the Component's `build()`. Inner scope wins over outer, mirroring how `fn` on a Component class beats an outer `with resolution(fn=...)`.
 3. **`with clearances(...)` scope** — ContextVar; partial specs merge with enclosing scopes per-field.
-4. **Design class attribute** — pushed as an outer scope around each variant's build.
+4. **Design class attribute** — pushed as an outer scope around each variant's build, so it reaches any part the variant *constructs*. A part declared in the class body was made before the Design existed and keeps the default. See [Where a Design's clearances reach](#where-a-designs-clearances-reach).
 5. **`DEFAULT_CLEARANCES`** — framework floor, all fields concrete.
 
 Example of the chain in action:
@@ -108,6 +108,25 @@ with clearances(Clearances(sliding=0.3)):          # outer scope
     outside = AlignmentPin(d=4, h=8, lead_in=1)    # uses sliding=0.3 (with scope)
     inside = Tight()
 ```
+
+## Where a Design's clearances reach
+
+A joint resolves its `clearance` when it is constructed, not when it builds. The number becomes one of its dimensions, solved alongside `d` and `h`, so nothing later can move it.
+
+Construction order decides what a `Design`'s `clearances` reaches. A part written in the class body is constructed when Python reads the class, before the Design exists, so it keeps the default. A part the variant constructs picks up the Design's values:
+
+```python
+class Panel(Design):
+    clearances = Clearances(sliding=0.42)
+    pin = AlignmentPin(d=5, h=8, lead_in=1)        # sliding=0.1, the default
+
+    @variant(fn=48)
+    def print(self):
+        spare = AlignmentPin(d=5, h=8, lead_in=1)  # sliding=0.42
+        return union(self.pin, spare.right(20))
+```
+
+To set the fit on a declared part, pass `clearance=0.42` to it, which also puts the number next to the part it describes. If several declared parts share one fit, declare the whole class inside a `with clearances(...)` block instead.
 
 ## The press-fit sign convention
 

@@ -626,6 +626,7 @@ class BBoxVisitor(Visitor):
     def visit_Color(self, n): return self.visit(n.child)
     def visit_ForceRender(self, n): return self.visit(n.child)
     def visit_WithAnchor(self, n): return self.visit(n.child)
+    def visit_WithViewpoint(self, n): return self.visit(n.child)
 
     def visit_WithBBox(self, n):
         # User assertion: this node's bbox is `source`'s bbox.

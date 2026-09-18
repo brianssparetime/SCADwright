@@ -45,6 +45,7 @@ def _canonicalize(value):
     """Recursively turn a value into a hashable, source_location-free form."""
     from scadwright.ast.base import Node, SourceLocation
     from scadwright.ast.custom import Custom
+    from scadwright.ast.transforms import WithViewpoint
     from scadwright.component.base import Component
 
     if value is None or isinstance(value, (bool, int, float, str)):
@@ -60,6 +61,11 @@ def _canonicalize(value):
             param_items.append((name, _canonicalize(getattr(value, name, None))))
         materialized = _canonicalize(value._get_built_tree())
         return ("Component", cls.__qualname__, tuple(param_items), materialized)
+    if isinstance(value, WithViewpoint):
+        # The camera a variant declares is a view onto the geometry, not
+        # part of it. Hashing straight through keeps a pinned hash
+        # stable when only the camera angle is retouched.
+        return _canonicalize(value.child)
     if isinstance(value, Custom):
         return (
             "Custom",

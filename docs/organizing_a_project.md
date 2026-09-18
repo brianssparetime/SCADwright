@@ -78,7 +78,7 @@ As the Component grows, you'll sometimes need values worked out from other value
 
 ### Stage 3: Add a Design with variants
 
-When the project has multiple parts or needs different render arrangements (one for printing, one for display), add a [Design](variants.md) class. Parts are instantiated once and shared across variants:
+When the project has multiple parts or needs different render arrangements (one for printing, one for display), add a [Design](variants.md) class. Parts are written down once and every variant can use them:
 
 ```python
 from scadwright.boolops import union

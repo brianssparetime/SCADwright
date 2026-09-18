@@ -1670,11 +1670,11 @@ def _geometry_leaf(node):
     ``_planar_footprint`` to recognize the underlying primitive."""
     from scadwright.ast.transforms import (
         Color, ForceRender, Mirror, PreviewModifier, Rotate, Translate,
-        WithAnchor, WithBBox,
+        WithAnchor, WithBBox, WithViewpoint,
     )
     wrappers = (
         Translate, Rotate, Mirror, Color, PreviewModifier, ForceRender,
-        WithAnchor, WithBBox,
+        WithAnchor, WithBBox, WithViewpoint,
     )
     seen = set()
     while isinstance(node, wrappers) and id(node) not in seen:

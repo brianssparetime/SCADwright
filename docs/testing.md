@@ -31,7 +31,7 @@ These check bounding boxes, not mesh geometry. They're fast (no rendering requir
 
 ## Testing variants
 
-To test that each variant builds without errors:
+Call the variant method to get its scene. What you get back is what `scadwright build` writes, so a test can assert on the real output:
 
 ```python
 from scadwright import emit_str
@@ -46,6 +46,22 @@ def test_display_variant_builds():
     design = MyDesign()
     node = design.display()
     assert tree_hash(node) == "..."
+```
+
+Scenes from different variants don't interfere, so one test can compare them:
+
+```python
+def test_both_variants_fit_the_bed():
+    design = MyDesign()
+    assert_fits_in(design.print(), [220, 220, 250])
+    assert_fits_in(design.display(), [400, 400, 400])
+```
+
+Assert on the emitted text when the thing you care about is a setting rather than a shape. A `tree_hash` tells you the geometry changed, not what it changed to, and the camera doesn't move it at all:
+
+```python
+def test_final_variant_is_smooth():
+    assert "$fn = 128" in emit_str(MyDesign().final())
 ```
 
 ## Golden-file testing

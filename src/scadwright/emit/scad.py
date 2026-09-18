@@ -28,6 +28,147 @@ from scadwright.emit.visitors import (
 _log = get_logger("scadwright.emit")
 
 
+def _capture_unsnapshotted_components(node) -> None:
+    """Walk the AST; for any Component with a vacuous resolution snapshot
+    (every axis ``None``) and a non-empty ambient context active, capture
+    the context active here onto the Component.
+
+    Forgiving fallback for the user who writes ``with resolution(): render(...)``
+    rather than ``with resolution(): construct/wrap()``. Components whose
+    snapshot already has values (set during construction or wrap inside
+    a meaningful context) are left alone — their wrap-time context wins.
+    Recursing into ``children`` and ``child`` covers the AST conventions.
+
+    This runs from ``emit`` rather than from ``render`` so that the two
+    agree: a resolution block around ``emit_str(model)`` means what a
+    resolution block around ``render(model, path)`` means.
+    """
+    from scadwright.api.resolution import current as _current_resolution
+    from scadwright.component.base import Component
+
+    ambient = _current_resolution()
+    if all(v is None for v in ambient):
+        # No render-time context to contribute; nothing to do.
+        return
+
+    def _walk(n):
+        if isinstance(n, Component):
+            snap = n._ctx_resolution
+            if snap is None or all(v is None for v in snap):
+                n._capture_resolution_context()
+            # Don't recurse into n's already-built tree (if any) — its
+            # nested Components will be handled when their parent frames
+            # walk them, or via this Component's own snapshot at build.
+            return
+        children = getattr(n, "children", None)
+        if children:
+            for c in children:
+                _walk(c)
+        c = getattr(n, "child", None)
+        if c is not None:
+            _walk(c)
+
+    _walk(node)
+
+
+def _collect_tree_viewpoints(node) -> list:
+    """Every camera carried by a ``WithViewpoint`` anywhere in ``node``.
+
+    A ``@variant`` that declares a camera attaches it to the scene it
+    returns, so the camera survives whatever the caller does with that
+    scene next — rendering it directly, or composing it into a larger
+    one. Built Component subtrees are walked too, so a camera can't hide
+    behind a Component that happens to wrap a variant's scene.
+    """
+    from scadwright.ast.transforms import WithViewpoint
+    from scadwright.component.base import Component
+
+    found = []
+    seen: set[int] = set()
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if id(n) in seen:
+            continue
+        seen.add(id(n))
+        if isinstance(n, WithViewpoint):
+            found.append(n.viewpoint)
+        if isinstance(n, Component):
+            stack.append(n._get_built_tree())
+            continue
+        for slot in ("child", "children"):
+            c = getattr(n, slot, None)
+            if isinstance(c, (list, tuple)):
+                stack.extend(c)
+            elif c is not None:
+                stack.append(c)
+    return found
+
+
+def _camera_key(vp) -> tuple:
+    """A key that matches for two cameras saying the same thing.
+
+    Plain numbers and sequences of them compare by value. Anything else
+    — a ``$t`` expression, say, which answers every comparison with
+    another expression rather than a yes or no — is keyed by identity,
+    so two of those count as one camera only when they are the same
+    object. That way an unreadable value makes two cameras look
+    different, which is reported, rather than alike, which is not.
+    """
+    def key(v):
+        if v is None or isinstance(v, (int, float, str, bool)):
+            return v
+        if isinstance(v, (list, tuple)):
+            return tuple(key(x) for x in v)
+        return ("id", id(v))
+
+    return (key(vp.rotation), key(vp.target), key(vp.distance), key(vp.fov))
+
+
+def _effective_viewpoint(node):
+    """The camera to write at the top of the file, or None for none.
+
+    Two sources can name one: a camera declared by a ``@variant``, which
+    rides on the tree, and an enclosing ``with viewpoint(...)`` block,
+    which is also how the CLI's ``--vpr`` and friends arrive. The block
+    is the more immediate instruction, so it wins field by field, the
+    same way an explicit ``fn=`` beats the value a ``resolution()``
+    block supplies.
+
+    Two variants' cameras in one scene have no such tiebreak, so that
+    raises rather than quietly picking one.
+    """
+    from scadwright.animation import Viewpoint, current_viewpoint
+    from scadwright.errors import ValidationError
+
+    ambient = current_viewpoint()
+    distinct = {}
+    for vp in _collect_tree_viewpoints(node):
+        distinct.setdefault(_camera_key(vp), vp)
+    if len(distinct) > 1:
+        rendered = "\n".join(f"  {vp}" for vp in distinct.values())
+        raise ValidationError(
+            f"this scene sets the camera {len(distinct)} different ways:\n"
+            f"{rendered}\n"
+            f"Each comes from a @variant that declares rotation, target, "
+            f"distance or fov, and a file has room for one camera. Take "
+            f"the camera off all but one of those variants, or put "
+            f"`with viewpoint(...):` around the render to name the one "
+            f"you want, which overrides every camera in the scene."
+        )
+    tree_vp = next(iter(distinct.values()), None)
+    if tree_vp is None:
+        return ambient
+    if ambient is None:
+        return tree_vp
+    return Viewpoint(
+        rotation=ambient.rotation if ambient.rotation is not None else tree_vp.rotation,
+        target=ambient.target if ambient.target is not None else tree_vp.target,
+        distance=ambient.distance if ambient.distance is not None else tree_vp.distance,
+        fov=ambient.fov if ambient.fov is not None else tree_vp.fov,
+    )
+
+
 class SCADEmitter(
     _PrimitiveVisitorMixin,
     _TransformVisitorMixin,
@@ -288,8 +429,7 @@ class SCADEmitter(
         if hoisted_wrote and self.pretty:
             self.out.write("\n")
         # Viewpoint assignments (set $vpr/$vpt/$vpd/$vpf if a viewpoint is active).
-        from scadwright.animation import current_viewpoint
-        vp = current_viewpoint()
+        vp = _effective_viewpoint(node)
         if vp is not None:
             wrote_any = False
             for var, value in (
@@ -328,6 +468,11 @@ def emit(
     scad_use: list[str] | None = None,
     scad_include: list[str] | None = None,
 ) -> None:
+    # Snapshot any Components whose resolution context wasn't captured at
+    # construction or wrap time — typically the user wrote
+    # ``with resolution(...): emit_str(...)`` rather than wrapping
+    # construction. See ``Component._capture_resolution_context``.
+    _capture_unsnapshotted_components(node)
     t0 = time.perf_counter()
     SCADEmitter(
         out, pretty=pretty, debug=debug, banner=banner,

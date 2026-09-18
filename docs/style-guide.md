@@ -456,22 +456,22 @@ part.translate([0, 0, 5])
 part.up(5)
 ```
 
-### Don't compose AST nodes at Design class scope
+### Prefer composing in variant bodies, not at Design class scope
 
-Composition belongs in variant bodies, not as class-level attributes. A composed node declared at class scope (`box_minus_h = difference(cube(20), h)` next to the parts list) freezes its Components' resolution context at class-def time, when no `with resolution(...)` block is active. The variant's `@variant(fn=...)` and any user-managed `with resolution(...)` block can't reach Components inside an already-composed class-level node — they'd have to re-wrap to retrigger the snapshot capture.
+Both work. A composed shape declared at class scope (`box_minus_h = difference(cube(20), h)` next to the parts list) is copied per variant call like any other declaration, so it picks up the variant's `fn` and stays independent of what other variants do. Preferring the variant body is a matter of readability, not correctness:
 
 ```python
-# Wrong (composition at class scope freezes context):
+# Fine, but the class body now mixes parts with an arrangement of them:
 class Project(Design):
     h = Housing()
     box = cube(20)
-    composed = difference(box, h)        # ← context frozen at class-def time
+    composed = difference(box, h)
 
     @variant(fn=48)
     def go(self):
-        return self.composed             # h's snapshot is from class-def time
+        return self.composed
 
-# Right (composition in variant body picks up the variant's context):
+# Clearer — class scope lists the parts, the variant arranges them:
 class Project(Design):
     h = Housing()
     box = cube(20)
@@ -481,7 +481,7 @@ class Project(Design):
         return difference(self.box, self.h)
 ```
 
-Class scope holds the *parts* — Components, simple primitives. Variant bodies hold the *composition*.
+Reach for the class-scope form when several variants share one arrangement and you'd otherwise repeat it. Otherwise let class scope hold the *parts* and variant bodies hold the *composition*.
 
 ---
 

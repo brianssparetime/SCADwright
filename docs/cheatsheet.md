@@ -744,6 +744,8 @@ if __name__ == "__main__":
 
 Writes `build/widget-print.scad` and the rest; the directory is created if missing. Per-variant override: `@variant(out="fixtures/jig.scad")`, relative to `out_dir`. `scadwright build ... -o path.scad` beats both.
 
+`WidgetProject().print()` returns that variant's scene with its `fn` and camera applied, identical to what `scadwright build --variant=print` writes. Each call copies the parts, so two variants' scenes can be held side by side.
+
 ## Morph (variant-to-variant animation) &nbsp; &nbsp;[→ full](morph.md)
 
 ```python

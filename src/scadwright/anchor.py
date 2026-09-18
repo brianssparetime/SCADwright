@@ -549,6 +549,7 @@ class _AnchorVisitor(_Visitor):
     def visit_Color(self, n): return self.visit(n.child)
     def visit_PreviewModifier(self, n): return self.visit(n.child)
     def visit_ForceRender(self, n): return self.visit(n.child)
+    def visit_WithViewpoint(self, n): return self.visit(n.child)
 
     # --- WithAnchor: recurse, then add the named anchor on top. ---
 

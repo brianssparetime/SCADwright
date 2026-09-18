@@ -98,12 +98,26 @@ def _eval_vec(vec, t_value: float) -> tuple[float, float, float]:
     return tuple(_eval_expr(x, t_value) for x in vec)
 
 
+def _is_part(node, leaf) -> bool:
+    """Whether ``node`` is the part ``leaf`` names.
+
+    A variant call builds from its own copies of the design's parts, so
+    the part in an emitted tree is never the same object as the ``D.box``
+    a test reaches for. What they share is the name the design declared,
+    which is how the morph machinery pairs them too.
+    """
+    if node is leaf:
+        return True
+    name = getattr(node, "_design_attr", None)
+    return name is not None and name == getattr(leaf, "_design_attr", None)
+
+
 def _chain_matrix(node, t_value: float, leaf) -> Matrix:
     """Walk the animated chain rooted at ``node`` down to ``leaf``,
     composing the transform matrices encountered. Returns the matrix
     representing the cumulative transform applied to ``leaf`` at the
     given $t."""
-    if node is leaf:
+    if _is_part(node, leaf):
         return Matrix.identity()
     if isinstance(node, Translate):
         v = _eval_vec(node.v, t_value)
@@ -147,7 +161,7 @@ def test_emit_no_animation_returns_tree_a_unchanged():
             return self.box
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     assert out is plan.tree_a
@@ -171,7 +185,7 @@ def test_emit_pure_translation_endpoints():
             return self.box.up(20)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
 
@@ -197,7 +211,7 @@ def test_emit_pure_translation_intermediate_is_lerp():
             return self.box.up(20)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"], simultaneous=True)
     out = build_animated_tree(plan, spec)
     # At $t=0.5 the eased alpha smoothstep(0.5) = 0.5; translation should be (0, 0, 10).
@@ -229,7 +243,7 @@ def test_emit_screw_180_endpoints():
             return self.lid.up(30).rotate([180, 0, 0])
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
 
@@ -254,7 +268,7 @@ def test_emit_screw_90_endpoints():
             return self.part.up(20).rotate([90, 0, 0])
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     M_at_0 = _chain_matrix(out, 0.0, D.part)
@@ -285,7 +299,7 @@ def test_emit_screw_180_traces_an_arc_not_a_straight_line():
             return self.lid.rotate([180, 0, 0]).up(30)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     M_at_half = _chain_matrix(out, 0.5, D.lid)
@@ -314,7 +328,7 @@ def test_emit_screw_180_sign_choice_is_deterministic():
             return self.lid.rotate([180, 0, 0]).up(30)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out_1 = build_animated_tree(plan, spec)
     out_2 = build_animated_tree(plan, spec)
@@ -347,7 +361,7 @@ def test_emit_srt_fallback_endpoints():
             return self.part.up(100).rotate([0, 0, 10])
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     M_at_0 = _chain_matrix(out, 0.0, D.part)
@@ -375,7 +389,7 @@ def test_emit_simultaneous_alpha_smoothstep_at_half():
             return self.box.up(10)
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"], simultaneous=True)
     out = build_animated_tree(plan, spec)
     M_at_quarter = _chain_matrix(out, 0.25, D.box)
@@ -407,7 +421,7 @@ def test_emit_one_at_a_time_slot_boundaries():
             return union(self.foo.up(10), self.bar.up(10))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(
         stages=["a", "b"],
         order=["foo", "bar"],  # foo first, bar second
@@ -451,7 +465,7 @@ def test_emit_default_order_destination_z_ascending():
             return union(self.hi.up(50), self.lo.up(10))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     # At $t = 0.4, lo's slot [0, 0.5] is in its second half (eased), hi
@@ -487,7 +501,7 @@ def test_emit_explicit_order_respected():
             return union(self.a_part.up(20), self.b_part.up(5))
 
     inst = D()
-    plan = walk(inst.first(), inst.second(), inst)
+    plan = walk(inst.first(), inst.second())
     spec = morph(stages=["first", "second"], order=["a_part", "b_part"])
     out = build_animated_tree(plan, spec)
     # At $t = 0.4: a_part should already be moving (slot 0 of 2 runs [0, 0.5]).
@@ -523,13 +537,13 @@ def test_emit_preserves_difference_structure():
             return difference(self.body, self.hole.up(10))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     assert isinstance(out, Difference)
     # The first child is self.body (unchanged); the second child is the
     # animated chain.
-    assert out.children[0] is D.body
+    assert _is_part(out.children[0], D.body)
     # At t=0, the animated chain on the cutter side reproduces the
     # original .up(5) position.
     M_hole_at_0 = _chain_matrix(out.children[1], 0.0, D.hole)
@@ -553,7 +567,7 @@ def test_emit_preserves_color_decoration():
             return Color(c="red", child=self.box.up(20))
 
     inst = D()
-    plan = walk(inst.a(), inst.b(), inst)
+    plan = walk(inst.a(), inst.b())
     spec = morph(stages=["a", "b"])
     out = build_animated_tree(plan, spec)
     # Color stays at the root.
@@ -593,7 +607,7 @@ def _held_design():
 def _tree_for(spec):
     D = _held_design()
     inst = D()
-    plan = walk(inst.apart(), inst.together(), inst)
+    plan = walk(inst.apart(), inst.together())
     return build_animated_tree(plan, spec), D.box
 
 
@@ -660,14 +674,11 @@ def test_hold_mid_chain_pauses_between_two_motions():
             return self.box
 
     from scadwright.animation._morph_walker import walk_chain
-    from scadwright.design import _capture_variant
 
     spec = morph(stages=["exploded", "loose", "seated"], hold={"loose": 0.2})
     inst = D()
-    trees = tuple(
-        _capture_variant(D, inst, n, D.__variants__[n]) for n in spec.stages
-    )
-    out = build_animated_tree(walk_chain(trees, inst), spec)
+    trees = tuple(getattr(inst, n)() for n in spec.stages)
+    out = build_animated_tree(walk_chain(trees), spec)
 
     loose = Matrix.translate(0, 0, 20)
     # Motion legs share 0.8, so the pause sits at [0.4, 0.6].
@@ -683,7 +694,7 @@ def test_hold_weights_always_span_the_whole_timeline():
 
     D = _held_design()
     inst = D()
-    plan = walk(inst.apart(), inst.together(), inst)
+    plan = walk(inst.apart(), inst.together())
     for hold in ({}, {"together": 0.3}, {"apart": 0.1, "together": 0.5}):
         spec = morph(stages=["apart", "together"], hold=hold or None)
         legs, fractions = _legs_with_holds(plan, spec)

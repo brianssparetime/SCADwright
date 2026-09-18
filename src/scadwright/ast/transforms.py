@@ -318,3 +318,41 @@ class WithBBox(Node):
             source=self.source,
             source_location=self.source_location,
         )
+
+
+@dataclass(frozen=True)
+class WithViewpoint(Node):
+    """Metadata-only wrapper carrying the camera a ``@variant`` declared.
+
+    ``$vpr`` / ``$vpt`` / ``$vpd`` / ``$vpf`` are file-level settings, but
+    a variant declares them next to its geometry and the user may reach
+    that geometry without going through the CLI — ``render(design.display(),
+    path)`` is the documented way to test a variant. Riding the camera on
+    the returned tree is what lets those two paths produce the same file.
+
+    Transparent everywhere geometry is concerned: bbox, anchors, hashing
+    and the emitted body all see straight through to ``child``. The only
+    thing it changes is the ``$vp*`` block at the top of the file, which
+    ``SCADEmitter`` collects from the tree.
+
+    Created by the ``@variant`` wrapper, never by user code; a user who
+    wants a camera by hand has ``with viewpoint(...)``.
+    """
+
+    child: Node
+    viewpoint: object  # scadwright.animation.Viewpoint
+
+    def fuse_extend(self, anchor, eps: float):
+        """Pass through to child; re-wrap the extended result.
+
+        Metadata-only, so parametric extension reaches the underlying
+        geometry and the camera stays attached to the result.
+        """
+        extended_child = self.child.fuse_extend(anchor, eps)
+        if extended_child is None:
+            return None
+        return WithViewpoint(
+            child=extended_child,
+            viewpoint=self.viewpoint,
+            source_location=self.source_location,
+        )

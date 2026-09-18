@@ -6,7 +6,10 @@ See docs/organizing_a_project.md for the recommended patterns.
 
 from __future__ import annotations
 
+import copy
+import functools
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -60,14 +63,27 @@ def variant(
             directory.
         default: if exactly one variant in the design is marked
             `default=True`, it's rendered when no `--variant` is given.
+
+    Calling the decorated method applies everything it declares, so
+    `design.display()` in a test script and `scadwright build` produce
+    the same geometry. See `_invoke_variant` for what that involves.
     """
 
     def deco(f: Callable) -> Callable:
-        f._scadwright_variant = _VariantMeta(
+        meta = _VariantMeta(
             fn=fn, fa=fa, fs=fs, out=out, default=default,
             rotation=rotation, target=target, distance=distance, fov=fov,
         )
-        return f
+
+        @functools.wraps(f)
+        def call(self):
+            return _invoke_variant(self, f, meta)
+
+        call._scadwright_variant = meta
+        # The undecorated body, kept reachable for tooling that wants to
+        # read the source the user actually wrote.
+        call._scadwright_variant_body = f
+        return call
 
     if func is None:
         return deco
@@ -121,6 +137,7 @@ class Design:
         # Late import: scadwright.api.morph depends only on errors, so this
         # late-bind sidesteps any potential cycle if morph.py grows imports.
         from scadwright.api.morph import _MorphSpec
+        from scadwright.component.base import Component
 
         variants: dict[str, _VariantMeta] = {}
         morphs: dict[str, _MorphSpec] = {}
@@ -131,6 +148,13 @@ class Design:
                 continue
             if isinstance(value, _MorphSpec):
                 morphs[name] = value
+                continue
+            if isinstance(value, Component):
+                # Tell the part the name it was declared under. Every
+                # copy a variant call makes inherits it, and that shared
+                # name is what pairs the copies as one part across a
+                # morph's stages.
+                value._design_attr = name
         # Synthesize a _VariantMeta for each morph so resolve_variants() finds
         # it by name. The fields are all-None: resolution / viewpoint context
         # for a morph is sourced per-end from the underlying variants at
@@ -300,43 +324,199 @@ def resolve_variants(
     )
 
 
-def _invalidate_design_components(design_cls: type) -> None:
-    """Reset cached ``_built_tree`` / bbox / tree_hash on every Component
-    stored as a class-level attribute on ``design_cls`` or any of its
-    base classes.
+def _declared_parts(design_instance) -> dict[str, Any]:
+    """Every piece of geometry the design declares, keyed by its name.
 
-    Called before each variant render so the next render builds fresh
-    under the variant's resolution / clearance / viewpoint contexts.
-    Without this, two variants in the same Design class that share a
-    Component (the documented class-attribute pattern) would emit the
-    same baked-in resolution — whichever one happened to fill the cache
-    first.
+    Any Node counts, not only Components. A design may write a whole
+    composed shape down at class scope (``lid_with_holes =
+    difference(lid, holes)``), and the parts inside it need copying for
+    the same reason a bare part does.
+
+    Walks the class hierarchy base-first so a subclass redeclaring a part
+    shadows its base, then lets anything set on the instance itself win.
+    """
+    from scadwright.ast.base import Node
+
+    parts: dict[str, Any] = {}
+    for klass in reversed(type(design_instance).__mro__):
+        for name, value in vars(klass).items():
+            if isinstance(value, Node):
+                parts[name] = value
+    for name, value in vars(design_instance).items():
+        if isinstance(value, Node):
+            parts[name] = value
+    return parts
+
+
+def _each_component(node):
+    """Yield every Component in ``node``, including ``node`` itself.
+
+    Walks the tree as declared. A Component's built subtree is not
+    followed: whatever is in there came out of its ``build()`` and is
+    rebuilt from scratch whenever that runs again.
     """
     from scadwright.component.base import Component
 
-    for klass in design_cls.__mro__:
-        for val in vars(klass).values():
-            if isinstance(val, Component):
-                val._invalidate_full()
+    stack = [node]
+    seen: set[int] = set()
+    while stack:
+        n = stack.pop()
+        if id(n) in seen:
+            continue
+        seen.add(id(n))
+        if isinstance(n, Component):
+            yield n
+            continue
+        for slot in ("child", "children"):
+            c = getattr(n, slot, None)
+            if isinstance(c, (list, tuple)):
+                stack.extend(c)
+            elif c is not None:
+                stack.append(c)
+
+
+@contextmanager
+def _own_parts(design_instance):
+    """Lend ``design_instance`` its own copies of the design's parts for
+    the duration of the block, then put it back as it was.
+
+    A design declares its parts once, as class attributes, and every
+    variant reads the same objects. A Component is more than a
+    declaration though: it caches the tree it builds and the resolution
+    context it was last wrapped in. Shared, that cache lets the last
+    variant to run rewrite the geometry of every tree already handed
+    out, so two variants can't be held side by side and a variant's
+    tree stops being stable as soon as another variant runs.
+
+    Giving each call its own copies makes a variant's return value an
+    ordinary value: built once, from its own parts, and unaffected by
+    whatever runs next. The copies are taken in a single pass, so parts
+    that reference each other reach their own copies rather than back
+    into the shared originals. Specs are classes and stay shared, which
+    is what keeps them one source of truth.
+
+    The copies go onto the design itself rather than onto a stand-in, so
+    ``self`` inside the variant body is the object the caller called,
+    and anything the body sets on it behaves normally. Restoring
+    afterwards is what keeps a part read straight off the design
+    (``design.box``) the part as declared.
+    """
+    try:
+        parts = copy.deepcopy(_declared_parts(design_instance))
+    except Exception as exc:
+        raise SCADwrightError(
+            f"{type(design_instance).__name__}: could not copy this "
+            f"design's parts for a variant run. Each variant builds from "
+            f"its own copies so the variants can't disturb each other, "
+            f"which means every part has to be copyable. Something a part "
+            f"holds is not: {exc}"
+        ) from exc
+
+    previous = {
+        name: design_instance.__dict__[name]
+        for name in parts
+        if name in design_instance.__dict__
+    }
+    from scadwright.component.base import Component
+
+    for name, part in parts.items():
+        # A part may carry a build from an earlier direct use
+        # (`assert_fits_in(Demo.box, ...)`); drop it so the copy captures
+        # this call's context instead of replaying that one's. Parts
+        # reachable only through a composed declaration need this too.
+        for component in _each_component(part):
+            component._invalidate_full()
+        if isinstance(part, Component):
+            # A composed declaration holds the very same copies as the
+            # bare ones, since the copy was taken in a single pass, so
+            # naming the bare ones names every reference to them.
+            part._design_attr = name
+        setattr(design_instance, name, part)
+    try:
+        yield design_instance
+    finally:
+        for name in parts:
+            if name in previous:
+                setattr(design_instance, name, previous[name])
+            else:
+                design_instance.__dict__.pop(name, None)
+
+
+def _invoke_variant(design_instance, body: Callable, meta: _VariantMeta):
+    """Run one variant body and return its scene.
+
+    Everything the ``@variant`` line declares is applied here rather than
+    by the CLI, so a plain ``design.display()`` call, ``run()``, and
+    ``scadwright build`` all produce the same geometry:
+
+    - the design's parts are copied for this call (see ``_own_parts``),
+    - the variant's ``fn`` / ``fa`` / ``fs`` and the design's
+      ``clearances`` are in effect while the body runs,
+    - every part is built before those contexts close, which pins the
+      geometry to them and surfaces a failing ``build()`` at the call
+      site rather than part-way through writing a file,
+    - a declared camera rides home on the returned tree, since ``$vpr``
+      and friends are written at emit time, long after the contexts
+      here have closed.
+    """
+    from contextlib import ExitStack
+    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
+
+    design_clearances = getattr(type(design_instance), "clearances", None)
+
+    with ExitStack() as stack:
+        if _meta_has_resolution(meta):
+            stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
+        if isinstance(design_clearances, Clearances):
+            stack.enter_context(_clearances_ctx(design_clearances))
+        stack.enter_context(_own_parts(design_instance))
+        node = body(design_instance)
+        _force_eager_build(node)
+
+    if _meta_has_viewpoint(meta):
+        from scadwright.animation import Viewpoint
+        from scadwright.ast.transforms import WithViewpoint
+
+        node = WithViewpoint(
+            child=node,
+            viewpoint=Viewpoint(
+                rotation=meta.rotation, target=meta.target,
+                distance=meta.distance, fov=meta.fov,
+            ),
+        )
+    return node
+
+
+def _split_viewpoint(node):
+    """Separate a variant's scene from the camera riding on it.
+
+    Returns ``(tree, viewpoint_or_None)``. The morph path wants the bare
+    trees: it compares the stages structurally, and takes one camera for
+    the whole animation rather than one per stage.
+    """
+    from scadwright.ast.transforms import WithViewpoint
+
+    if isinstance(node, WithViewpoint):
+        return node.child, node.viewpoint
+    return node, None
 
 
 def _force_eager_build(node) -> None:
     """Walk ``node`` recursively, forcing eager build on every Component.
 
     Each Component's ``_get_built_tree()`` runs inside whatever ambient
-    context (resolution / clearances / viewpoint) is active at this call
-    site. Subsequent reads return the cached tree.
+    context (resolution, clearances) is active at this call site.
+    Subsequent reads return the cached tree.
 
-    Called after ``method()`` returns and before ``render()``, both
-    inside the variant's context stack. This gives two guarantees:
+    Called by ``_invoke_variant`` once the body has returned and while
+    the variant's contexts are still open. This gives two guarantees:
 
     1. **Fail fast on build errors.** A Component that raises during
-       ``build()`` surfaces the error in the variant body's wake — no
-       output file is written, the traceback points at the Component,
-       and the user sees the problem before any partial SCAD lands.
-    2. **Cache reflects the variant's context.** Even if some future
-       code path moved emit outside the context, the cache from this
-       eager pass already captured the right values.
+       ``build()`` surfaces the error at the variant call, so the
+       traceback points at the Component and nothing has been written.
+    2. **The geometry is pinned to the variant's settings** before the
+       tree is handed back, rather than depending on whatever context
+       happens to be live whenever the tree is finally emitted.
 
     Idempotent: a Component whose tree is already built is a cache
     read with no rebuild.
@@ -376,36 +556,35 @@ def _render_one(
         from scadwright.animation._morph_walker import walk_chain
 
         spec = design_cls.__morphs__[vname]
-        stage_metas = [design_cls.__variants__[s] for s in spec.stages]
         instance = design_cls()
 
-        # Capture all stages, with stages[0] captured LAST so its Component
-        # cache wins. Component _built_tree reflects whichever variant
-        # built it most recently; leaving stages[0]'s build last means
-        # components carry stages[0]'s resolution snapshot through to the
-        # final render. (The "fn inherits from the first stage" rule.)
-        trees = [None] * len(spec.stages)
-        for i in range(len(spec.stages) - 1, -1, -1):
-            trees[i] = _capture_variant(
-                design_cls, instance, spec.stages[i], stage_metas[i],
-            )
+        # Each stage call builds from its own copies of the design's
+        # parts, so the stages are independent and capture order carries
+        # no meaning. stages[0]'s tree is the one emit substitutes into,
+        # which is where the "fn comes from the first stage" rule falls
+        # out of. The per-stage cameras come off the trees here; a morph
+        # has one camera for the whole animation, taken from the end.
+        captured = [
+            _split_viewpoint(getattr(instance, s)()) for s in spec.stages
+        ]
+        trees = [t for t, _ in captured]
+        end_viewpoint = captured[-1][1]
 
-        plan = walk_chain(tuple(trees), instance)
+        plan = walk_chain(tuple(trees))
         animated = build_animated_tree(plan, spec)
 
-        # Render inside the final stage's viewpoint context (so the
-        # output SCAD's $vpr/$vpt/etc. frame the end pose, which is what
-        # users typically want to look at) plus the CLI viewpoint
-        # override if any. Resolution is already pinned via stages[0]'s
-        # components in cache; we don't re-enter resolution context here.
-        end_meta = stage_metas[-1]
+        # The end stage's camera frames the pose the animation settles
+        # on, which is the one worth looking at. The CLI's flags override
+        # it, and michael_bay overrides the rotation on top of both.
         from contextlib import ExitStack
         from scadwright.animation import t as _t_var, viewpoint as _viewpoint
         with ExitStack() as stack:
-            if _meta_has_viewpoint(end_meta):
+            if end_viewpoint is not None:
                 stack.enter_context(_viewpoint(
-                    rotation=end_meta.rotation, target=end_meta.target,
-                    distance=end_meta.distance, fov=end_meta.fov,
+                    rotation=end_viewpoint.rotation,
+                    target=end_viewpoint.target,
+                    distance=end_viewpoint.distance,
+                    fov=end_viewpoint.fov,
                 ))
             if cli_viewpoint:
                 stack.enter_context(_viewpoint(**cli_viewpoint))
@@ -421,43 +600,17 @@ def _render_one(
             render(animated, out_path)
         return out_path
 
-    # Regular variant flow.
-    instance = design_cls()
-    method = getattr(instance, vname)
-
+    # Regular variant flow. The variant method applies its own
+    # resolution, clearances and camera, so all that's left here is the
+    # CLI's viewpoint override and the write itself.
     from contextlib import ExitStack
     from scadwright.animation import viewpoint as _viewpoint
-    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
 
-    design_clearances = getattr(design_cls, "clearances", None)
-    has_cli_vp = bool(cli_viewpoint)
-
-    # Class-attribute Components (the documented Design pattern) cache
-    # `_built_tree` across renders. If a prior variant render filled the
-    # cache, this variant's contexts won't reach the build. Invalidate
-    # before entering contexts so the next access rebuilds fresh.
-    _invalidate_design_components(design_cls)
+    node = getattr(design_cls(), vname)()
 
     with ExitStack() as stack:
-        if _meta_has_resolution(meta):
-            stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
-        if isinstance(design_clearances, Clearances):
-            stack.enter_context(_clearances_ctx(design_clearances))
-        if _meta_has_viewpoint(meta):
-            stack.enter_context(_viewpoint(
-                rotation=meta.rotation, target=meta.target,
-                distance=meta.distance, fov=meta.fov,
-            ))
-        if has_cli_vp:
+        if cli_viewpoint:
             stack.enter_context(_viewpoint(**cli_viewpoint))
-        node = method()
-        # Force every Component in the tree to build now, while the
-        # variant's contexts are still active. This catches build
-        # errors fail-fast (no half-written output file) and pins each
-        # Component's cached tree to the variant's context.
-        _force_eager_build(node)
-        # Render inside the context stack as well, so any emit-time
-        # context reads (e.g. viewpoint) see the variant's contexts.
         render(node, out_path)
 
     return out_path
@@ -504,38 +657,6 @@ def _meta_has_resolution(meta) -> bool:
 def _meta_has_viewpoint(meta) -> bool:
     return (meta.rotation is not None or meta.target is not None
             or meta.distance is not None or meta.fov is not None)
-
-
-def _capture_variant(design_cls, instance, vname, meta):
-    """Invoke variant ``vname`` inside its full context; return the AST
-    and leave Components in the design with caches reflecting this
-    variant's context.
-
-    Used by the morph dispatch to capture start and end trees with their
-    proper resolution / clearance / viewpoint contexts. The variant's
-    method is invoked, eager-built, and discarded as a return value of
-    this helper — only the AST and Component-cache state matter.
-    """
-    from contextlib import ExitStack
-    from scadwright.animation import viewpoint as _viewpoint
-    from scadwright.api.clearances import Clearances, clearances as _clearances_ctx
-
-    design_clearances = getattr(design_cls, "clearances", None)
-    _invalidate_design_components(design_cls)
-    with ExitStack() as stack:
-        if _meta_has_resolution(meta):
-            stack.enter_context(_resolution(fn=meta.fn, fa=meta.fa, fs=meta.fs))
-        if isinstance(design_clearances, Clearances):
-            stack.enter_context(_clearances_ctx(design_clearances))
-        if _meta_has_viewpoint(meta):
-            stack.enter_context(_viewpoint(
-                rotation=meta.rotation, target=meta.target,
-                distance=meta.distance, fov=meta.fov,
-            ))
-        method = getattr(instance, vname)
-        node = method()
-        _force_eager_build(node)
-    return node
 
 
 def run(*, variant: str | None = None, kind: str = "build") -> None:

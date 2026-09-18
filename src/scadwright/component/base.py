@@ -120,6 +120,13 @@ class Component(Node):
         # of when the build actually runs (eager or lazy, in-context or out).
         self._ctx_resolution: tuple | None = None
         self._capture_resolution_context()
+        # Name this part was declared under on a Design, set when a
+        # variant call takes its own copy of the design's parts. Two
+        # copies made for two different variants are different objects
+        # holding the same name, which is what lets morph pair them
+        # across stages. None for a part built inside a variant body,
+        # where there is no declaration to name.
+        self._design_attr: str | None = None
 
     def _capture_resolution_context(self) -> None:
         """Snapshot the current ambient ``(fn, fa, fs)`` context onto self.
@@ -127,23 +134,31 @@ class Component(Node):
         Called from ``__init__`` (initial capture) and from
         ``Node.__post_init__`` whenever this Component is wrapped as a
         direct child of a parent Node (re-capture; wrap-time wins).
-        Also called by ``render()`` as a forgiving fallback when the
+        Also called from ``emit`` as a forgiving fallback when the
         existing snapshot is "no preference" — every axis ``None`` —
-        and the user's render-time context has values to contribute.
+        and the user's context at that point has values to contribute.
 
         Stores ``(fn, fa, fs)`` as a tuple; ``None`` for any axis with
         no ambient value at capture time.
+
+        A wrap with no resolution context active states no preference,
+        so it leaves an existing snapshot alone rather than clearing it.
+        Otherwise any later re-wrap outside a ``resolution()`` block
+        would strip the settings off an already-built part — which is
+        what the morph emitter does when it wraps each animated leaf in
+        its ``$t`` chain, and it silently cost those parts their ``fn``.
 
         If a captured snapshot differs from the previous one and the
         Component already has a cached ``_built_tree``, the cache is
         invalidated. Otherwise an eager build inside one context
         followed by a re-wrap in another context would silently keep
-        the first context's geometry. Same family of silent-drift bug
-        Position Y is meant to eliminate.
+        the first context's geometry.
         """
         from scadwright.api.resolution import current as _current_resolution
 
         new = _current_resolution()
+        if all(v is None for v in new) and self._ctx_resolution is not None:
+            return
         if (
             self._ctx_resolution is not None
             and self._ctx_resolution != new
@@ -460,9 +475,8 @@ class Component(Node):
 
         Does NOT clear the resolution snapshot. Param.__set__ calls this
         when a Param value changes; that's a Param-value change, not a
-        resolution-context change. For the @variant case where shared
-        class-attribute Components need to re-capture context per variant,
-        use ``_invalidate_full()``.
+        resolution-context change. To clear the snapshot too, use
+        ``_invalidate_full()``.
         """
         self._built_tree = None
         self._bbox_cache = None
@@ -471,11 +485,11 @@ class Component(Node):
     def _invalidate_full(self) -> None:
         """Clear cache AND resolution snapshot.
 
-        Called by ``_invalidate_design_components`` between @variant
-        renders so a Component reused across variants re-captures
-        resolution context from the new variant's ambient. Without this,
-        the cache from variant 1 would carry forward into variant 2 with
-        variant 1's resolution snapshot.
+        Used when a copy of this Component is about to enter a different
+        context than the original was last used in — the variant machinery
+        copies a design's parts per call and resets them so each copy
+        captures its own variant's resolution rather than replaying
+        whatever the original last saw.
         """
         self._built_tree = None
         self._bbox_cache = None
