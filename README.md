@@ -37,9 +37,9 @@ SCADwright optimizes for common cases, for those with little background in objec
 
 SCADwright calls OpenSCAD only at render time. The Python side requires `sympy` (pulled in automatically by pip) and nothing else.  I've taken some care to make emitted SCAD human-readable.
 
-SCADwright is close to the point where the problems left are OpenSCAD's, not SCADwright's. Mesh CSG has no edges, so rounding the seam where one cylinder cuts through another is a project in itself, and the mesh errors never end. I may develop this further, but the obvious next step is to replace the backend with one built on B-rep.
-
 If you're comparing SCADwright against SolidPython, PythonSCAD, CadQuery, Build123d, or other Python+CAD tools, see [How is SCADwright different?](docs/how_is_scadwright_different.md) for a side-by-side.
+
+At this point, most of the flaws with SCADwright are in the SCAD part - OpenSCAD has some serious in-built limitations and quirks.  Although SCADwright is great for evolving beginner projects into medium ones, and large projects are still far less of a nightmare than OpenSCAD, I can already see a better tool.  Fortunately, I wrote SCADwright so that I could substitute a different back-end in the future - if development continues, that will likely be the approach for a SCADwright2.
 
 The [quick start / organizing a project guide](docs/organizing_a_project.md) is the best place to see the power of SCADwright in action, but there's also [full documentation](docs/README.md) and [examples projects](examples/README.md).
 
