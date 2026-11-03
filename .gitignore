@@ -16,6 +16,8 @@ examples/rocketship-print/
 
 # Generated mesh exports (3D-printable output of `scadwright render`).
 *.stl
+!examples/pentacon-six-mount/body_cap-cap.stl
+!examples/pentacon-six-mount/rear_lens_cap-cap.stl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
